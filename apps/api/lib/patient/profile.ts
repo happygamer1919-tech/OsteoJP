@@ -1,7 +1,43 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { patients } from "@osteojp/db";
 import { runAsPatient, type PatientPrincipal } from "@/lib/auth/patient";
+import { surveyAppliesTo } from "./survey-mode";
+
+// ─── SAT-01 (S8): the patient's own survey switch ─────────────────────────────
+//
+// `patients.survey_enabled` (migration 0102): on by default; off, no survey is
+// sent to this patient by any path. Here the patient reads and sets their own.
+//
+// THE DOOR IS THE ONE THE REMINDER SWITCHES USE. 0102 gives the patient role a
+// column grant, UPDATE (survey_enabled), beside the table SELECT of 0010; the
+// row gates are the two self-scope policies (0010, 0019), untouched. So this is
+// a plain SELECT and a plain UPDATE inside runAsPatient, and the database
+// writes its own audit row, `survey.switch_changed`, from a trigger in the same
+// transaction, carrying the patient's id as the actor.
+//
+// OFFERED OR ABSENT, NEVER HIDDEN-BUT-THERE. While SURVEY_SEND_MODE reads off
+// the patient sees nothing of the survey (owner, 2026-10-12), and under canary
+// only a patient on the list does (strategy, 2026-10-13). When the switch is
+// not offered to this patient the column is not read, the profile carries no
+// `surveyEnabled` key, and a write that names it changes nothing. The portal
+// draws the switch only when the key is there, so it needs no variable of its
+// own and cannot disagree with this file.
+//
+// WHY THE COLUMN IS NAMED IN SQL. `schema.ts` does not declare
+// `survey_enabled`, and declaring it there would put it into every whole-row
+// read of a patient in every application. apps/web/lib/patients/survey-switch.ts
+// names the one column the same way, for the same reason.
+//
+// ONLY THIS COLUMN IS WRITTEN BY ITS STATEMENT. The two reminder switches are
+// not named in it.
+
+const surveyEnabledColumn = sql<boolean>`${patients}."survey_enabled"`;
+
+/** Is this patient offered their survey switch, to see and to change? */
+export function ownSurveySwitchOffered(principal: PatientPrincipal): boolean {
+  return surveyAppliesTo(principal.patientId).applies;
+}
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
@@ -15,6 +51,8 @@ export type PatientProfile = {
   city: string | null;
   reminderSmsEnabled: boolean;
   reminderEmailEnabled: boolean;
+  /** SAT-01: present only when the survey switch is offered to this patient. */
+  surveyEnabled?: boolean;
 };
 
 type ProfileRow = {
@@ -27,6 +65,8 @@ type ProfileRow = {
   city: string | null;
   reminderSmsEnabled: boolean;
   reminderEmailEnabled: boolean;
+  /** Selected only when the switch is offered; otherwise not on the row. */
+  surveyEnabled?: boolean;
 };
 
 export function toProfileDTO(row: ProfileRow): PatientProfile {
@@ -40,12 +80,15 @@ export function toProfileDTO(row: ProfileRow): PatientProfile {
     city: row.city,
     reminderSmsEnabled: row.reminderSmsEnabled,
     reminderEmailEnabled: row.reminderEmailEnabled,
+    // A key only when the column was read, and it is read only when offered.
+    ...(typeof row.surveyEnabled === "boolean" && { surveyEnabled: row.surveyEnabled }),
   };
 }
 
 export async function getOwnProfile(
   principal: PatientPrincipal,
 ): Promise<PatientProfile | null> {
+  const offered = ownSurveySwitchOffered(principal);
   return runAsPatient(principal, async (tx) => {
     const rows = await tx
       .select({
@@ -58,6 +101,7 @@ export async function getOwnProfile(
         city: patients.city,
         reminderSmsEnabled: patients.reminderSmsEnabled,
         reminderEmailEnabled: patients.reminderEmailEnabled,
+        ...(offered && { surveyEnabled: surveyEnabledColumn }),
       })
       .from(patients)
       .where(
@@ -91,6 +135,8 @@ export type PatientProfilePatch = {
   city?: string | null;
   reminderSmsEnabled?: boolean;
   reminderEmailEnabled?: boolean;
+  /** SAT-01: applied only when the switch is offered to this patient. */
+  surveyEnabled?: boolean;
 };
 
 /**
@@ -111,23 +157,46 @@ export async function updateOwnProfile(
     }
   }
 
+  // SAT-01: decided here as well as in the route, so no caller of this
+  // function can set the switch for a patient who is not offered it.
+  const offered = ownSurveySwitchOffered(principal);
+  const surveyEnabled = offered ? patch.surveyEnabled : undefined;
+  const hasProfileFields =
+    patch.phone !== undefined ||
+    patch.address !== undefined ||
+    patch.postalCode !== undefined ||
+    patch.city !== undefined ||
+    patch.reminderSmsEnabled !== undefined ||
+    patch.reminderEmailEnabled !== undefined;
+
   return runAsPatient(principal, async (tx) => {
-    await tx
-      .update(patients)
-      .set({
-        ...(patch.phone !== undefined && { phone: patch.phone }),
-        ...(patch.address !== undefined && { address: patch.address }),
-        ...(patch.postalCode !== undefined && { postalCode: patch.postalCode }),
-        ...(patch.city !== undefined && { city: patch.city }),
-        ...(patch.reminderSmsEnabled !== undefined && { reminderSmsEnabled: patch.reminderSmsEnabled }),
-        ...(patch.reminderEmailEnabled !== undefined && { reminderEmailEnabled: patch.reminderEmailEnabled }),
-      })
-      .where(
-        and(
-          eq(patients.id, principal.patientId),
-          eq(patients.tenantId, principal.tenantId),
-        ),
+    if (hasProfileFields) {
+      await tx
+        .update(patients)
+        .set({
+          ...(patch.phone !== undefined && { phone: patch.phone }),
+          ...(patch.address !== undefined && { address: patch.address }),
+          ...(patch.postalCode !== undefined && { postalCode: patch.postalCode }),
+          ...(patch.city !== undefined && { city: patch.city }),
+          ...(patch.reminderSmsEnabled !== undefined && { reminderSmsEnabled: patch.reminderSmsEnabled }),
+          ...(patch.reminderEmailEnabled !== undefined && { reminderEmailEnabled: patch.reminderEmailEnabled }),
+        })
+        .where(
+          and(
+            eq(patients.id, principal.patientId),
+            eq(patients.tenantId, principal.tenantId),
+          ),
+        );
+    }
+
+    // The survey switch: its own statement, naming its one column.
+    if (surveyEnabled !== undefined) {
+      await tx.execute(
+        sql`update ${patients} set "survey_enabled" = ${surveyEnabled}
+             where ${patients.id} = ${principal.patientId}::uuid
+               and ${patients.tenantId} = ${principal.tenantId}::uuid`,
       );
+    }
 
     // Re-fetch and return the updated row
     const rows = await tx
@@ -141,6 +210,7 @@ export async function updateOwnProfile(
         city: patients.city,
         reminderSmsEnabled: patients.reminderSmsEnabled,
         reminderEmailEnabled: patients.reminderEmailEnabled,
+        ...(offered && { surveyEnabled: surveyEnabledColumn }),
       })
       .from(patients)
       .where(

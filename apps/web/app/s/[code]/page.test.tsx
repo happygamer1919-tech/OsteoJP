@@ -6,8 +6,12 @@
  *   2. ONE PAGE FOR EVERY LINK THAT IS NOT VALID: byte-identical HTML, and the
  *      same single lookup, whatever the code's shape and whatever went wrong.
  *   3. THE VISIT DATE ONLY: the form shows the date, text 7 and the three
- *      questions, and no opt-out control.
+ *      questions.
  *   4. NOT INDEXED, and never cached.
+ *   5. THE OPT-OUT (S8): on the form of a valid link and nowhere else, as a
+ *      form of its own that carries no answer; and its outcome page.
+ *   6. EACH FAILED WRITE SAYS ITS OWN WORDS: an answer text 25, the opt-out
+ *      text 84 (strategy, 2026-10-14).
  *
  * The same properties against a real database, as the real role, are in
  * lib/surveys/survey-page.db.test.ts.
@@ -46,10 +50,15 @@ vi.mock("@/lib/surveys/survey-store", () => ({
     H.calls.push({ fn: "submitSurveyResponse", arg: args });
     return "recorded";
   },
+  optOutSurvey: async (args: unknown) => {
+    H.calls.push({ fn: "optOutSurvey", arg: args });
+    return "recorded";
+  },
 }));
 
 import { CURRENT_SURVEY_CONSENT_VERSION, getStrings } from "@osteojp/i18n";
 import SurveyPage, { dynamic, metadata } from "./page";
+import { surveyFormSummary } from "./survey-form";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const APPOINTMENT = "22222222-2222-4222-8222-222222222222";
@@ -108,17 +117,43 @@ describe("a live code", () => {
       "survey.page.q2Error",
       "survey.page.commentError",
       "survey.page.saveError",
+      "survey.page.optOutSaveError",
     ] as const) {
       expect(html, key).not.toContain(pt[key]);
     }
   });
 
-  it("has no opt-out control: that is a later pull request", async () => {
+  it("has the opt-out under the submit button, with its note (texts 19 and 20)", async () => {
     const html = await render(LIVE);
-    // Texts 19 and 20 of the copy file, which this pull request does not add.
-    expect(html).not.toContain("Não quero receber mais avaliações");
-    expect(html).not.toContain("Os lembretes de consulta não são afetados");
-    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).toContain("Não quero receber mais avaliações");
+    expect(html).toContain("Os lembretes de consulta não são afetados.");
+    // Two buttons and no third: the answer's, then the opt-out's.
+    const buttons = [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+    expect(buttons).toEqual([pt["survey.page.submit"], pt["survey.page.optOut"]]);
+    expect(html.indexOf(pt["survey.page.optOutNote"])).toBeGreaterThan(html.indexOf(pt["survey.page.optOut"]));
+  });
+
+  it("the opt-out is a form of its own: it carries the code and the language, and no answer", async () => {
+    const html = await render(LIVE);
+    const forms = [...html.matchAll(/<form[^>]*>([\s\S]*?)<\/form>/g)].map((m) => m[1]!);
+    expect(forms).toHaveLength(2);
+    const [answer, optOut] = forms as [string, string];
+    // CONTROL: the reader does find fields, in the form that has them.
+    expect(answer).toMatch(/name="nps"/);
+    expect(answer).not.toContain(pt["survey.page.optOut"]);
+    expect(optOut).toContain(pt["survey.page.optOut"]);
+    const names = [...optOut.matchAll(/name="([^"]+)"/g)].map((m) => m[1]).filter((n) => !n!.startsWith("$"));
+    expect(names.sort()).toEqual(["code", "locale"]);
+    expect(optOut).toContain(`name="code" value="${LIVE}"`);
+    expect(optOut).not.toMatch(/type="(radio|checkbox)"|<textarea/);
+  });
+
+  it("the opt-out is in the clinic's language too", async () => {
+    H.settings = { locale: "en" };
+    const html = await render(LIVE);
+    expect(html).toContain(en["survey.page.optOut"]);
+    expect(html).toContain(en["survey.page.optOutNote"]);
+    expect(html).not.toContain(pt["survey.page.optOut"]);
   });
 
   it("is in the clinic's language when the clinic has one set", async () => {
@@ -142,13 +177,14 @@ describe("a live code", () => {
 describe("OPENING NEVER WRITES", () => {
   it("no render, of any code, with any flag, calls the answer", async () => {
     for (const code of [LIVE, "unknownX", "short", "survey:ABCDEFGH"]) {
-      for (const query of [{}, { r: "generic" }, { r: "answered" }, { r: "anything" }]) {
+      for (const query of [{}, { r: "generic" }, { r: "answered" }, { r: "optedout" }, { r: "anything" }]) {
         await render(code, query);
       }
     }
     // CONTROL: the recorder recorded, so the absence below is a fact.
     expect(H.calls.length).toBeGreaterThan(8);
     expect(H.calls.filter((c) => c.fn === "submitSurveyResponse")).toEqual([]);
+    expect(H.calls.filter((c) => c.fn === "optOutSurvey")).toEqual([]);
     expect(new Set(H.calls.map((c) => c.fn))).toEqual(
       new Set(["resolveSurveyCode", "loadSurveyTenantSettings"]),
     );
@@ -234,6 +270,48 @@ describe("ONE PAGE FOR EVERY LINK THAT IS NOT VALID", () => {
     expect(reference).not.toContain(pt["survey.page.title"]);
     expect(reference).not.toContain("<form");
   });
+
+  it("THE OPT-OUT IS NOT ON IT: a link that is not valid offers nothing to press", async () => {
+    // CONTROL: the reading below finds the opt-out where it is.
+    expect(await render(LIVE)).toContain(pt["survey.page.optOut"]);
+    for (const [code, query] of [
+      ["ZZZZZZZZ", {}],
+      ["short", {}],
+      [LIVE, { r: "generic" }],
+      ["ZZZZZZZZ", { r: "generic" }],
+    ] as const) {
+      const html = await render(code, query);
+      expect(html, code).not.toContain(pt["survey.page.optOut"]);
+      expect(html, code).not.toContain(pt["survey.page.optOutNote"]);
+      expect(html, code).not.toContain("<button");
+    }
+  });
+});
+
+describe("the page after an opt-out", () => {
+  it("says the request was recorded (texts 28 and 29), the same for every address, without a lookup", async () => {
+    const a = await render(LIVE, { r: "optedout", l: "pt" });
+    expect(a).toContain("Pedido registado");
+    expect(a).toContain(
+      "Não voltará a receber avaliações de satisfação da OsteoJP. Os lembretes de consulta não são afetados.",
+    );
+    expect(await render("ZZZZZZZZ", { r: "optedout", l: "pt" })).toBe(a);
+    expect(await render("short", { r: "optedout" })).toBe(a);
+    expect(H.calls).toEqual([]);
+  });
+
+  it("is in the language the form was shown in, and falls back to the default on anything else", async () => {
+    expect(await render(LIVE, { r: "optedout", l: "en" })).toContain(en["survey.page.optedOutTitle"]);
+    expect(await render(LIVE, { r: "optedout", l: "xx" })).toContain(pt["survey.page.optedOutTitle"]);
+  });
+
+  it("offers nothing to press, and is not the page an answer gets or the page a bad link gets", async () => {
+    const optedOut = await render(LIVE, { r: "optedout", l: "pt" });
+    expect(optedOut).not.toContain("<form");
+    expect(optedOut).not.toContain("<button");
+    expect(optedOut).not.toBe(await render(LIVE, { r: "answered", l: "pt" }));
+    expect(optedOut).not.toBe(await render("ZZZZZZZZ"));
+  });
 });
 
 describe("the page after an answer", () => {
@@ -257,5 +335,44 @@ describe("the route's own settings", () => {
   it("is never indexed and never cached", () => {
     expect(metadata.robots).toEqual({ index: false, follow: false });
     expect(dynamic).toBe("force-dynamic");
+  });
+});
+
+describe("the line above the questions when something failed (texts 21, 25 and 84)", () => {
+  const labels = {
+    saveError: pt["survey.page.saveError"],
+    optOutSaveError: pt["survey.page.optOutSaveError"],
+    errorSummary: pt["survey.page.errorSummary"],
+  };
+  const OPT_OUT_FAILED = "Não foi possível registar o pedido. Tente novamente dentro de alguns minutos.";
+  const ANSWER_FAILED = "Não foi possível registar a resposta. Tente novamente dentro de alguns minutos.";
+
+  it("an opt-out that was not saved says a request was not registered, and nothing about an answer", () => {
+    expect(labels.optOutSaveError).toBe(OPT_OUT_FAILED);
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: true, fieldError: false, labels })).toBe(OPT_OUT_FAILED);
+    // A field the visitor left empty in the other form does not take its place.
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: true, fieldError: true, labels })).toBe(OPT_OUT_FAILED);
+  });
+
+  it("an answer that was not saved still says text 25, as before", () => {
+    expect(surveyFormSummary({ answerFailed: true, optOutFailed: false, fieldError: false, labels })).toBe(ANSWER_FAILED);
+  });
+
+  it("both failed: both are said, the answer's first", () => {
+    expect(surveyFormSummary({ answerFailed: true, optOutFailed: true, fieldError: false, labels })).toBe(
+      `${ANSWER_FAILED} ${OPT_OUT_FAILED}`,
+    );
+  });
+
+  it("CONTROL: a field left empty is text 21, and nothing failed is no line", () => {
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: false, fieldError: true, labels })).toBe(
+      pt["survey.page.errorSummary"],
+    );
+    expect(surveyFormSummary({ answerFailed: false, optOutFailed: false, fieldError: false, labels })).toBeNull();
+  });
+
+  it("the English page has its own sentence for each", () => {
+    expect(en["survey.page.optOutSaveError"]).toBe("Your request could not be saved. Please try again in a few minutes.");
+    expect(en["survey.page.optOutSaveError"]).not.toBe(en["survey.page.saveError"]);
   });
 });

@@ -163,6 +163,13 @@ d("SAT-01: the survey page against a real database", () => {
   /**
    * Everything a render or a refused submit could have touched, as one row of
    * digests. Whole rows, so a changed timestamp counts as a change.
+   *
+   * EVERY LINE IS THIS SUITE'S OWN TENANT, and the limiter's line is this
+   * suite's own addresses (each carries the run's tag). The other DB-gated
+   * files of this workspace write survey sends, answers and limiter rows on
+   * the same database while this one runs beside them, so a count over a
+   * whole table moves under their inserts and deletes and says nothing about
+   * this page.
    */
   const snapshot = () =>
     one<Record<string, string | number>>(raw`
@@ -180,9 +187,8 @@ d("SAT-01: the survey page against a real database", () => {
         (select coalesce(md5(string_agg(p::text, '|' order by p.id)), 'none')
            from patients p where p.tenant_id = ${tenant}::uuid) as patients,
         (select count(*)::int from audit_log where tenant_id = ${tenant}::uuid) as audit_rows,
-        (select count(*)::int from appointment_survey_sends) as all_sends,
-        (select count(*)::int from appointment_survey_responses) as all_answers,
-        (select coalesce(sum(count), 0)::int from rate_limit_counters where key like 's-code:%') as limiter_hits
+        (select coalesce(sum(count), 0)::int from rate_limit_counters
+          where key like ${`s-code:ip:%-${run}`}) as limiter_hits
     `);
 
   async function render(code: string, query: { r?: string; l?: string } = {}): Promise<string> {

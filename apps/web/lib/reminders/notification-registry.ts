@@ -270,16 +270,16 @@ export const REMINDER_TEMPLATES: readonly TemplateEntry[] = [
     /**
      * SEVENTEENTH BODY: the satisfaction survey email. SAT-01.
      *
-     * NOTHING SENDS IT YET. This entry and the one below register the two
-     * texts; no dispatch calls either id. The sender that comes later asks
-     * SURVEY_SEND_MODE first (lib/reminders/survey-mode.ts), and that switch is
-     * off unless the owner sets it.
+     * ONE SENDER: `dispatchSurvey` (lib/reminders/dispatch.ts), the automatic
+     * send, for this entry and the one below. It asks SURVEY_SEND_MODE first
+     * (lib/reminders/survey-mode.ts), and that switch is off unless the owner
+     * sets it.
      *
-     * READ THIS BEFORE WRITING THAT SENDER: these two are `approved: true` and
-     * ride REMINDERS_LIVE_SEND through `patientTemplate`, like every patient
-     * body, so the two locks of this registry are both already open for them
-     * wherever reminders are live. The survey's own switch is the ONLY thing
-     * that holds a survey back, and this registry does not read it.
+     * READ THIS BEFORE WRITING ANOTHER SENDER: these two are `approved: true`
+     * and ride REMINDERS_LIVE_SEND through `patientTemplate`, like every
+     * patient body, so the two locks of this registry are both already open
+     * for them wherever reminders are live. The survey's own switch is the
+     * ONLY thing that holds a survey back, and this registry does not read it.
      *
      * The trigger is the concluded visit, 24 hours later. Staff can also send
      * it by hand, which is no event; the field is documentation.

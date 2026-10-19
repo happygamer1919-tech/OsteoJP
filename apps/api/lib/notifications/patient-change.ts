@@ -80,7 +80,7 @@ export type PatientChangeKind =
  * never stated.
  */
 export type NotificationAudience = {
-  /** Every reception user in the tenant. */
+  /** Every active reception user who can see the appointment's clinic (centre.ts resolves it). */
   reception: true;
   /**
    * The assigned practitioners, by id. Never by name. One entry for an ordinary

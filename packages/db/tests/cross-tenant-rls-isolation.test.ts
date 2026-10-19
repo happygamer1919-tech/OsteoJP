@@ -20,6 +20,13 @@
  *   (roles_tenant_select), so a staff session inserts no roles row at all,
  *   own tenant included. Its own-tenant INSERT case asserts that refusal
  *   (`ownInsert: "refused"`); its other four cases are unchanged.
+ *   A second with 0104 (held): clinical_episodes carries one policy per
+ *   command, each keyed on tenant_id = jwt_tenant_id() first, and a staff
+ *   session holds no DELETE on it. Its cases run as the OWNER, whose arm is
+ *   every episode of the tenant on either side of 0104, and its cross-tenant
+ *   DELETE asserts the side the database is on (clinical-episodes-0104-state.ts):
+ *   refused for want of the privilege where 0104 is applied (`crossDelete:
+ *   "refused"`), 0 rows where it is not. No case is skipped on either side.
  *
  *   Non-standard policies — tested for what the policy ACTUALLY says, not the
  *   four-verb template:
@@ -53,7 +60,11 @@
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { episodes0104State } from "./clinical-episodes-0104-state";
 import { asRole, claimsFor, connect, live, type AppRole } from "./rls-harness";
+
+/** Which side of 0104 this database is on; it decides one case of clinical_episodes. */
+const e104 = await episodes0104State();
 
 /* ---------------------------------------------------------------------- */
 /* Fixture ids — one full FK-satisfying graph per tenant. Random so an     */
@@ -190,6 +201,12 @@ type StdCfg = {
    */
   ownInsert?: "allowed" | "refused";
   insertCross: (tx: TransactionSql) => Promise<unknown>;
+  /**
+   * What the cross-tenant DELETE must do. Default "zero rows". "refused" is for
+   * a table on which a staff session holds no DELETE privilege at all
+   * (clinical_episodes, where 0104 is applied).
+   */
+  crossDelete?: "zero rows" | "refused";
   /** A harmless, existing column to SET in the cross-tenant UPDATE attempt. */
   updateCrossSet: string;
 };
@@ -321,7 +338,9 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
     },
     {
       table: "clinical_episodes",
-      policyDesc: "FOR ALL, tenant_id = jwt_tenant_id()",
+      policyDesc: `tenant_id = jwt_tenant_id() on every staff policy, asserted as the owner [${e104.side}]`,
+      role: "owner",
+      crossDelete: e104.applied ? "refused" : "zero rows",
       ownRowId: A.episode,
       otherRowId: B.episode,
       insertOwn: (tx) =>
@@ -464,15 +483,28 @@ describe.skipIf(!live)("cross-tenant RLS isolation — all tenant-scoped tables"
         expect(updated.length).toBe(0);
       });
 
-      it("DELETE of a tenant-B row under tenant-A JWT affects 0 rows", async () => {
-        const deleted = await asRole(sql, "authenticated", claims(), async (tx) =>
-          (await tx.unsafe(
-            `delete from ${cfg.table} where id = $1 returning id`,
-            [cfg.otherRowId],
-          )) as { id: string }[],
-        );
-        expect(deleted.length).toBe(0);
-      });
+      if (cfg.crossDelete === "refused") {
+        it("DELETE of a tenant-B row under tenant-A JWT is refused (a staff session holds no DELETE on this table)", async () => {
+          await expect(
+            asRole(sql, "authenticated", claims(), (tx) =>
+              tx.unsafe(`delete from ${cfg.table} where id = $1 returning id`, [cfg.otherRowId]),
+            ),
+          ).rejects.toThrow(/permission denied/i);
+          // Not vacuous: the row is there, read on the owner connection.
+          const still = (await sql.unsafe(`select id from ${cfg.table} where id = $1`, [cfg.otherRowId])) as { id: string }[];
+          expect(still.length).toBe(1);
+        });
+      } else {
+        it("DELETE of a tenant-B row under tenant-A JWT affects 0 rows", async () => {
+          const deleted = await asRole(sql, "authenticated", claims(), async (tx) =>
+            (await tx.unsafe(
+              `delete from ${cfg.table} where id = $1 returning id`,
+              [cfg.otherRowId],
+            )) as { id: string }[],
+          );
+          expect(deleted.length).toBe(0);
+        });
+      }
     });
   }
 

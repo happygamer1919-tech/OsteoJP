@@ -16,17 +16,22 @@ import { SurveyForm } from "./survey-form";
 //
 // Built on /c/[code] and keeping its rules:
 //
-//   OPENING THE LINK PERFORMS NOTHING. This renders. The answer is written only
-//   by the POST in actions.ts, so a mail or SMS scanner that follows the link
-//   spends nothing.
+//   OPENING THE LINK PERFORMS NOTHING. This renders. The answer and the
+//   opt-out are written only by the POSTs in actions.ts, so a mail or SMS
+//   scanner that follows the link spends nothing.
 //
 //   THE VISIT DATE ONLY. No patient name, no therapist, no service, no time, no
 //   clinic and no clinical content. The page does not read any of them: the
 //   door it asks returns a tenant, an appointment id and the visit's end.
 //
 //   ONE PAGE FOR EVERY LINK THAT IS NOT VALID (SR-30): malformed, never issued,
-//   a code of another kind, expired, already answered, no longer eligible. The
-//   page does not say which, and it takes the same lookup for each.
+//   a code of another kind, expired, already answered, already used to opt
+//   out, no longer eligible. The page does not say which, and it takes the
+//   same lookup for each.
+//
+//   THE OPT-OUT (S8) IS ON THE FORM, so only a link that is valid shows it. It
+//   is offered whatever the survey's switch says: a patient holding a valid
+//   link may always ask for no more of them.
 //
 //   NO SESSION. The page is public like /c/[code]: nothing here asks who the
 //   visitor is, and the database is reached on the server's own connection.
@@ -99,6 +104,14 @@ export default async function SurveyPage({
       <Message title={s["survey.page.answeredTitle"]} body={s["survey.page.answeredBody"]} />
     );
   }
+  // The other finished outcome: the opt-out (S8, texts 28 and 29). The same
+  // rule: one page for every address, and nothing is looked up to show it.
+  if (r === "optedout") {
+    const s = getStrings(localeOf(l));
+    return (
+      <Message title={s["survey.page.optedOutTitle"]} body={s["survey.page.optedOutBody"]} />
+    );
+  }
 
   // A RENDER RESOLVES AND NEVER WRITES. Every code takes this one lookup,
   // whatever its shape: the store looks a malformed one up against a hash that
@@ -152,6 +165,9 @@ export default async function SurveyPage({
           q2Error: s["survey.page.q2Error"],
           commentError: s["survey.page.commentError"],
           saveError: s["survey.page.saveError"],
+          optOutSaveError: s["survey.page.optOutSaveError"],
+          optOut: s["survey.page.optOut"],
+          optOutNote: s["survey.page.optOutNote"],
         }}
       />
     </Shell>

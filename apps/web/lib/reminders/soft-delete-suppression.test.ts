@@ -234,7 +234,7 @@ describe("the gate cannot be bypassed by a fifth dispatcher", () => {
    * this exists for. A dispatcher that delegates to something that does not gate
    * fails too, because the callee is then checked by the same rule.
    */
-  it("all four exported dispatchers go through it, directly or by one named delegation", () => {
+  it("all five exported dispatchers go through it, directly or by one named delegation", () => {
     const gatedBody = (at: number): boolean => src.slice(at, at + 600).includes("loadDispatchable(");
 
     for (const fn of [
@@ -242,6 +242,9 @@ describe("the gate cannot be bypassed by a fifth dispatcher", () => {
       "dispatchConfirmation",
       "dispatchFollowUp",
       "dispatchNoShow",
+      // SAT-01. With its switch off it IS dispatchFollowUp, which is gated
+      // above; otherwise it delegates to dispatchSurveyInner, checked here.
+      "dispatchSurvey",
     ]) {
       const at = src.indexOf(`export async function ${fn}(`);
       expect(at, `${fn} is gone`).toBeGreaterThan(-1);

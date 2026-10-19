@@ -140,7 +140,7 @@ const COPY = readFileSync(
   "utf8",
 ).split("\n");
 
-/** Copy text number to string key: texts 4 to 18 and 21 to 31 (19 and 20 are the opt-out button, not built yet). */
+/** Copy text number to string key: texts 4 to 31, the page's whole section (19 and 20 are the opt-out, S8). */
 const KEY_OF_TEXT: Record<number, StringKey> = {
   4: "survey.page.title",
   5: "survey.page.visitLine",
@@ -157,6 +157,8 @@ const KEY_OF_TEXT: Record<number, StringKey> = {
   16: "survey.page.healthNote",
   17: "survey.page.contactConsent",
   18: "survey.page.submit",
+  19: "survey.page.optOut",
+  20: "survey.page.optOutNote",
   21: "survey.page.errorSummary",
   22: "survey.page.q1Error",
   23: "survey.page.q2Error",
@@ -192,12 +194,8 @@ const asStringKey = (text: string): string => text.replace("{{appointment_date}}
 describe("the page's strings are the approved copy, character for character", () => {
   const numbers = Object.keys(KEY_OF_TEXT).map(Number);
 
-  it("covers texts 4 to 18 and 21 to 31, and nothing else", () => {
-    const expected = [
-      ...Array.from({ length: 15 }, (_, i) => i + 4),
-      ...Array.from({ length: 11 }, (_, i) => i + 21),
-    ];
-    expect(numbers).toEqual(expected);
+  it("covers texts 4 to 31, and nothing else", () => {
+    expect(numbers).toEqual(Array.from({ length: 28 }, (_, i) => i + 4));
   });
 
   it.each(numbers)("text %i, in Portuguese and in English", (n) => {
@@ -221,7 +219,86 @@ describe("the page's strings are the approved copy, character for character", ()
   it("no em or en dash in any survey string", () => {
     for (const locale of ["pt", "en"] as const) {
       const s = getStrings(locale);
-      for (const key of Object.values(KEY_OF_TEXT)) expect(s[key], key).not.toMatch(/[\u2013\u2014]/);
+      for (const key of [
+        ...Object.values(KEY_OF_TEXT),
+        ...Object.values(STAFF_KEY_OF_TEXT),
+        ...Object.values(NEW_KEY_OF_TEXT),
+      ]) {
+        expect(s[key], key).not.toMatch(/[\u2013\u2014]/);
+      }
     }
+  });
+
+  it("THE OPT-OUT IS NOT PART OF WHAT AN ANSWER WAS GIVEN UNDER: its texts are outside the label", () => {
+    // Texts 19 and 20 say nothing about what an answer means or who reads it,
+    // so adding them changed no label and no pinned hash.
+    const pinned = SURVEY_CONSENT_TEXT_KEYS as readonly string[];
+    expect(pinned).not.toContain("survey.page.optOut");
+    expect(pinned).not.toContain("survey.page.optOutNote");
+    // Nor is its failure sentence (text 84, 2026-10-14).
+    expect(pinned).not.toContain("survey.page.optOutSaveError");
+  });
+});
+
+/** The patient ficha's section (copy section G): its title, the switch and the note under it when off. */
+const STAFF_KEY_OF_TEXT: Record<number, StringKey> = {
+  58: "patients.surveySwitchTitle",
+  59: "patients.surveySwitchLabel",
+  60: "patients.surveySwitchOffNote",
+};
+
+describe("the ficha's survey switch strings are the copy file's, character for character", () => {
+  it.each(Object.keys(STAFF_KEY_OF_TEXT).map(Number))("text %i, in Portuguese and in English", (n) => {
+    const key = STAFF_KEY_OF_TEXT[n]!;
+    const pt = approvedPt(n);
+    const en = publishedEn(n);
+    expect(pt.length, "the reader found a text").toBeGreaterThan(5);
+    expect(en.length, "the reader found a text").toBeGreaterThan(5);
+    expect(getStrings("pt")[key]).toBe(pt);
+    expect(getStrings("en")[key]).toBe(en);
+  });
+});
+
+/**
+ * Copy section M, written by strategy on 2026-10-14: the opt-out's failure
+ * (84, patient), a month with no sends (86) and no clinic (87) in the list,
+ * and the ficha's empty list for anyone but the owner (88). Text 85 is the
+ * portal's and is pinned with the portal's own strings
+ * (apps/portal/app/portal/account/AccountView.render.test.tsx).
+ */
+const NEW_KEY_OF_TEXT: Record<number, StringKey> = {
+  84: "survey.page.optOutSaveError",
+  86: "surveyList.emptyMonth",
+  87: "surveyList.noClinic",
+  88: "patients.surveyRowsNoneVisible",
+};
+
+describe("the texts of 2026-10-14 are the copy file's, character for character", () => {
+  it.each(Object.keys(NEW_KEY_OF_TEXT).map(Number))("text %i, in Portuguese and in English", (n) => {
+    const key = NEW_KEY_OF_TEXT[n]!;
+    const pt = approvedPt(n);
+    const en = publishedEn(n);
+    expect(pt.length, "the reader found a text").toBeGreaterThan(5);
+    expect(en.length, "the reader found a text").toBeGreaterThan(5);
+    expect(getStrings("pt")[key]).toBe(pt);
+    expect(getStrings("en")[key]).toBe(en);
+  });
+
+  it("text 85 is the portal's own string, in Portuguese and in English", () => {
+    const portal = (locale: "pt" | "en"): { account: Record<string, string> } =>
+      JSON.parse(
+        readFileSync(
+          join(HERE, "..", "..", "..", "..", "packages", "i18n", "src", "portal", `strings.${locale}.json`),
+          "utf8",
+        ),
+      );
+    expect(approvedPt(85).length).toBeGreaterThan(5);
+    expect(portal("pt").account.survey_save_error).toBe(approvedPt(85));
+    expect(portal("en").account.survey_save_error).toBe(publishedEn(85));
+  });
+
+  it("CONTROL: the reader reads section M", () => {
+    expect(approvedPt(88)).toBe("Nenhuma avaliação de satisfação visível para si.");
+    expect(publishedEn(86)).toBe("No survey sent this month.");
   });
 });

@@ -708,6 +708,20 @@
       "when": 1788502400000,
       "tag": "0103_revoke_anon_sequences_default",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1788502500000,
+      "tag": "0104_clinical_episodes_role_matrix",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788502600000,
+      "tag": "0105_clinical_records_episode_key",
+      "breakpoints": true
     }
   ]
 }

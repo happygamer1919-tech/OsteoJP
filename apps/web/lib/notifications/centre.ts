@@ -1,6 +1,14 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
-import { appointments, getDbAdmin, patients, roles, staffNotifications, users } from "@osteojp/db";
+import { and, asc, desc, eq, exists, inArray, isNull, ne, notExists, or, sql } from "drizzle-orm";
+import {
+  appointments,
+  getDbAdmin,
+  patients,
+  roles,
+  staffLocations,
+  staffNotifications,
+  users,
+} from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 
 // W13-02 (Wave 13 LOOP 2) — the notification centre's READ half. PG4.
@@ -389,9 +397,17 @@ type StaffTransitionKind = "confirmed" | "cancelled" | "rescheduled";
  * notified of their own clicks and the queue gets noisier rather than truer. The
  * card says so in its last line, and it is the reason for this shape.
  *
- * THE RECIPIENT RULE, unchanged from the confirm path it generalises: every
- * active reception user in the tenant, plus the appointment's practitioners,
- * minus whoever just acted.
+ * THE RECIPIENT RULE: the active reception users who can see this
+ * appointment's clinic, plus the appointment's practitioners, minus whoever
+ * just acted.
+ *
+ * "CAN SEE THIS APPOINTMENT'S CLINIC" IS THE SAME TEST THE READS USE (0073):
+ * a reception user with no staff_locations row sees every clinic, and one with
+ * rows sees only those clinics. Until 2026-10-16 this went to EVERY reception
+ * user in the tenant, so a receptionist at one clinic was told of another
+ * clinic's cancellations. Her own reads cannot show that patient or that
+ * visit, so the centre printed "Paciente não identificado" and the agenda
+ * showed nothing (reported by the clinic on 2026-10-16).
  *
  * BEST-EFFORT BY CONTRACT. Every caller runs this AFTER the transaction commits,
  * so a failed notification must never be reported as a failed cancellation. The
@@ -424,6 +440,39 @@ async function emitStaffTransitionNotification(args: {
           eq(roles.slug, RECEPTION_ROLE_SLUG),
           // Never notify the person who just acted.
           ne(users.id, args.actorUserId),
+          // Only reception who can see this appointment's clinic.
+          or(
+            notExists(
+              db
+                .select({ one: sql`1` })
+                .from(staffLocations)
+                .where(
+                  and(
+                    eq(staffLocations.userId, users.id),
+                    eq(staffLocations.tenantId, args.tenantId),
+                  ),
+                ),
+            ),
+            exists(
+              db
+                .select({ one: sql`1` })
+                .from(staffLocations)
+                .innerJoin(
+                  appointments,
+                  and(
+                    eq(appointments.locationId, staffLocations.locationId),
+                    eq(appointments.tenantId, staffLocations.tenantId),
+                  ),
+                )
+                .where(
+                  and(
+                    eq(staffLocations.userId, users.id),
+                    eq(staffLocations.tenantId, args.tenantId),
+                    eq(appointments.id, args.appointmentId),
+                  ),
+                ),
+            ),
+          ),
         ),
       );
 
