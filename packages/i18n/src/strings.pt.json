@@ -1111,6 +1111,7 @@
   "auth.setPassword.backToLogin": "Ir para o início de sessão",
   "auth.setPassword.detailsSummary": "Detalhes técnicos",
   "login.forgotPassword": "Esqueceu-se da palavra-passe?",
+  "login.appUpdatedReloading": "A aplicação foi atualizada. A recarregar a página…",
   "auth.forgotPassword.title": "Recuperar a palavra-passe",
   "auth.forgotPassword.subtitle": "Indique o email da sua conta. Enviamos uma ligação para definir uma nova palavra-passe.",
   "auth.forgotPassword.emailLabel": "Email",
