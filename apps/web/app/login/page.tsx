@@ -9,15 +9,25 @@ import {
 import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useState } from "react";
 
-import { login, type LoginState } from "./actions";
+import { login } from "./actions";
+import {
+  browserStaleReloadDeps,
+  withStaleActionReload,
+  type LoginClientState,
+} from "./stale-action";
 import { s } from "@/lib/i18n";
 
-const initial: LoginState = { error: null };
+const initial: LoginClientState = { error: null, staleAction: false };
+
+// OSTEOJP-WEB-7: a tab older than the current deployment names a server action
+// that no longer exists. That one error shows a line and reloads the page once;
+// every other outcome is exactly what `login` returns or throws.
+const loginAction = withStaleActionReload(login, browserStaleReloadDeps);
 
 type FieldErrors = { email?: string; password?: string };
 
 export default function LoginPage() {
-  const [state, formAction, pending] = useActionState(login, initial);
+  const [state, formAction, pending] = useActionState(loginAction, initial);
   const [showPassword, setShowPassword] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
@@ -74,6 +84,12 @@ export default function LoginPage() {
               {s["login.subtitle"]}
             </p>
           </div>
+
+          {state.staleAction ? (
+            <div className="mb-4 overflow-hidden rounded-lg">
+              <Banner tone="info">{s["login.appUpdatedReloading"]}</Banner>
+            </div>
+          ) : null}
 
           {state.error ? (
             <div className="mb-4 overflow-hidden rounded-lg">
