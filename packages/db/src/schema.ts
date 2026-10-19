@@ -2809,19 +2809,19 @@ export const appointmentSurveyResponses = pgTable("appointment_survey_responses"
 });
 
 /* ================================================================== */
-/* THE REMINDER SWEEP'S OWN TABLES (pending; ruled number 0106).      */
+/* THE REMINDER SWEEP'S OWN TABLES (migration 0106).                  */
 /* ================================================================== */
 
 /**
  * `reminder_claims` and `reminder_sweep_passes`: the reminder sweep's claim
  * store and its heartbeat, ruled off `audit_log` by strategy on 2026-10-12.
  *
- * TYPES ONLY, AND UNTIL THE MIGRATION IS PROMOTED AND APPLIED THE TABLES ARE
- * IN NO DATABASE. Their migration is
- * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql`
- * (strategy ruled its number on 2026-10-13: 0106). Nothing applies a pending
- * file, so a database built from the numbered migrations does not have them.
- * Code that queries them must not reach production before the apply.
+ * TYPES ONLY. Their migration is `packages/db/migrations/0106_reminder_claims.sql`
+ * (strategy ruled its number on 2026-10-13; promoted 2026-10-19 from
+ * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql` with no
+ * byte changed). It merges before it is applied to production, so for a while
+ * main has the tables and production does not: code that queries them must not
+ * reach production before the apply.
  *
  * APPEND ONLY, AND ONLY THE REMINDER JOB WRITES. `authenticated` holds SELECT
  * and INSERT and nothing else, `service_role` holds nothing, and the INSERT
