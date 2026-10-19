@@ -281,10 +281,13 @@ functions revoked in a rolled-back transaction it read `1 refused`, FAIL.
 **What it costs.**
 
 - **A coupling.** A later migration that narrows what an admin session with no user reads in
-  `appointments` narrows what the job can claim, without touching this table. The job's claim
-  fails open (the reminder still goes, the claim is not recorded and an error is logged), so
-  nothing a patient receives changes, but the claim store goes quiet. The suite's "SEES" arm is
-  the tripwire: it goes red in CI on the pull request that makes such a change.
+  `appointments` narrows what the job can claim, without touching this table. On the open path
+  (`takeReminderClaim`) the claim fails open: the reminder still goes, the claim is not recorded
+  and an error is logged. On SWEEP-47's closed path (`takeReminderClaimClosed`) the refusal
+  throws `ReminderClaimStoreError` and the reminder is NOT sent, so such a narrowing would
+  silently stop the sweep's sends (corrected 2026-10-19; this line used to say nothing a patient
+  receives changes). The suite's "SEES" arm is the tripwire: it goes red in CI on the pull
+  request that makes such a change.
 - **Time.** One lookup in `appointments` for each row inserted into `reminder_claims`. Measured
   on the throwaway as the job, with `EXPLAIN (ANALYZE)`: with 20,000 appointments in the tenant
   and the statistics fresh, an index scan on `appointments_pkey`, `Execution Time: 0.309 ms`
@@ -712,6 +715,15 @@ real file was applied again at the end and read 52 passed.
 |---|---|---|---|
 | 1 | W-5: `service_role` left out of the REVOKE on `reminder_claims` | 4 | "service_role is REFUSED every read, insert, update, delete and truncate", "THE JOB'S WRITE PATH STILL SUCCEEDS", the two catalogue arms |
 | 2 | W-5: `service_role` left out of the REVOKE on `reminder_sweep_passes` | 4 | the same four |
+
+*Note added 2026-10-19 (review):* mutants 1 and 2 were measured on a stack where the platform's
+default privileges applied and no seed ran after the migration. On CI the tables get no default
+privileges and the seed's blanket grant, then its guarded revoke, decide what `service_role` holds,
+so the CI suite cannot tell the migration's REVOKE from the seed's. On production the migration's
+REVOKE is what counts, and post-check verdicts 22 and 23 read it directly (Q-4).
+
+| # | Weakened | Tests that went red | Killed by |
+|---|---|---|---|
 | 3 | W-6: the tenant tie (the whole `EXISTS`) dropped | 3 | "REFUSED a row with its OWN tenant that names ANOTHER tenant's appointment", "REFUSED an appointment that does not exist by the SAME error", "the other tenant's job ... REFUSED this tenant's" |
 | 4 | W-6: the `EXISTS` kept, its `a.tenant_id` test dropped | **0, SURVIVED IN THE SUITE** | the one-off probe in "W-6" above: with this mutant the row is `ACCEPTED`, with the real file `REFUSED`. Under the `appointments` policies the two are the same, so no standing test can tell them apart |
 | 5 | W-1: the claims INSERT policy also admits `reception` and `therapist` | 1 | "REFUSED when a session with no user carries the role reception or therapist" |
@@ -853,9 +865,11 @@ journal row, and this draft does not.
 
 Added on 2026-10-14:
 
-- **The sending code on the attempt number.** Neither sweep branch sets `attempt` yet (see the
-  writer list in "Q-5"); their DB-gated suites were not run against this revision. Until they
-  are changed, every claim they insert is refused (`23514`).
+- **The sending code on the attempt number.** *Superseded 2026-10-19:* both sweep branches now
+  set `attempt` (see the corrected paragraph under "EVERY WRITER OF THIS TABLE"), and their
+  DB-gated suites ran against this revision on 2026-10-15 (SWEEP-13 lib/reminders 1471 of 1471,
+  SWEEP-47 1797 of 1797, on a local database with this migration applied). The line as written
+  on 2026-10-14 said neither branch set it and every claim would be refused (`23514`).
 - **The S12 count on production's data,** which is its point; and the S12 block with its
   final pin against a live database (see the third rehearsal).
 - **Verdicts 22 and 23 on a server other than Postgres 17.** The MAINTAIN guard was read only on
@@ -919,7 +933,7 @@ Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. W
 
 1. **A release tied to its claim's kind, offset and channel, by a generated column (strategy,
    to confirm).** Built, because the brief asked for it if cheap and provable, and it was both.
-   It adds a sixteenth column that only the database writes. (a) As built. (b) Offset and
+   It adds a column that only the database writes (the seventeenth, since Q-5 added `attempt`). (a) As built. (b) Offset and
    channel only, no generated column: a release could then name a shadow row or another
    release, and the reader would go on checking the kind itself. Recommend (a).
 2. **The seed's guarded revoke (the lead, to confirm).** Without it the suite that proves W-5
