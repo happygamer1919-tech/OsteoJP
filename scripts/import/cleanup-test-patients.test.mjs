@@ -44,6 +44,9 @@ const DELETE_ORDER = [
   "appointment_survey_codes",
   "appointment_survey_responses",
   "appointment_survey_sends",
+  // 0106 (the reminder sweep): a claim, release or shadow row is a child of its
+  // appointment, so it goes before it.
+  "reminder_claims",
   "appointments",
   "analytics_events",
   "clinical_episodes",
@@ -238,10 +241,13 @@ const CREATED = new Set(
  * that merge the three are in CREATED and their entries were inert, and they
  * are removed in this GATE-CHANGE, which follows the apply.
  *
- * EMPTY NOW: every table in DELETE_ORDER must be created by a numbered
- * migration.
+ * ONE ENTRY NOW: reminder_claims, the reminder sweep's table, so the cleanup
+ * can list it before 0106_reminder_claims.sql reaches main (that migration
+ * merges first and is applied from main). Once 0106 is promoted the entry is
+ * inert; the next GATE-CHANGE that touches this file removes it and raises the
+ * floor of the FK-path test below from 24 to 25 (the promoted tree reaches 25).
  */
-const AHEAD_OF_MIGRATION = new Set([]);
+const AHEAD_OF_MIGRATION = new Set(["reminder_claims"]);
 
 test("every table it deletes from still exists in schema.ts", () => {
   // A renamed or dropped table lands here as a red test rather than as a failed
@@ -349,6 +355,7 @@ test("the delete order is deepest-first, and appointments precede pack instances
     ["appointment_survey_responses", "appointments"],
     ["appointment_survey_codes", "appointment_survey_sends"],
     ["appointment_survey_sends", "appointments"],
+    ["reminder_claims", "appointments"],
   ]) {
     if (pos(earlier) > -1 && pos(later) > -1) {
       assert.ok(pos(earlier) < pos(later), `${earlier} must be deleted before ${later}`);
