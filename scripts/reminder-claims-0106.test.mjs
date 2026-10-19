@@ -474,15 +474,32 @@ export function postCommitProblems(block, markerLine, contradicting) {
   return problems;
 }
 
-/** Every STOP of the S12 count's block names it and sends GREEN on; no other block's STOP does. */
+/**
+ * THE HALT RULE'S ONE EXCEPTION. Exactly one STOP of the S12 count's block ends that block alone and sends
+ * GREEN on to the closing read: the line on the count's own query, after the transaction read as READ ONLY.
+ * Every other STOP of that block is a full STOP of the halt rule, and names neither the exception nor the closing read.
+ */
+export const S12_EXCEPTION_START = '[ "${S12OK}" = yes ] || { echo "STOP: the S12 count\'s block only: ';
+/** The one psql line of the document that carries no halt of its own: its failure is read by the two lines after it. */
+export const S12_RUN_TAIL = " 2>&1 | tee /tmp/0106-s12-count.out || S12OK=no";
+export const S12_READ_ONLY_START = "grep -q 'read only: on' /tmp/0106-s12-count.out || { echo \"STOP: ";
 export function s12StopProblems(block) {
   const problems = [];
-  block.split("\n").forEach((l, i) => {
+  const lines = block.split("\n");
+  const exceptions = lines.filter((l) => l.startsWith(S12_EXCEPTION_START) && EXPLICIT_HALT.test(l));
+  if (exceptions.length !== 1) problems.push(`${exceptions.length} lines are the S12 exception, not 1`);
+  else if (!STOP_TEXT.exec(exceptions[0])[1].endsWith(S12_GO_ON)) problems.push("the S12 exception does not send GREEN on to the closing read");
+  lines.forEach((l, i) => {
     const m = STOP_TEXT.exec(l);
-    if (!m) return;
-    if (!`STOP: ${m[1]}`.startsWith(S12_ONLY)) problems.push(`line ${i + 1}: a STOP that does not say it ends the S12 count's block only`);
-    if (!m[1].endsWith(S12_GO_ON)) problems.push(`line ${i + 1}: a STOP that does not send GREEN on to the closing read`);
+    if (!m || l.startsWith(S12_EXCEPTION_START)) return;
+    if (`STOP: ${m[1]}`.startsWith(S12_ONLY) || m[1].includes(S12_GO_ON) || m[1].includes("closing journal read next")) problems.push(`line ${i + 1}: a STOP that is not the exception says it ends the S12 block only or sends GREEN on`);
   });
+  const run = lines.findIndex((l) => l.startsWith('psql "${DATABASE_URL_DIRECT}"') && l.endsWith(S12_RUN_TAIL));
+  const ro = lines.findIndex((l) => l.startsWith(S12_READ_ONLY_START) && EXPLICIT_HALT.test(l));
+  const ex = lines.findIndex((l) => l.startsWith(S12_EXCEPTION_START));
+  if (run < 1 || lines[run - 1] !== "S12OK=yes") problems.push("the count's run is not set up by S12OK=yes on the line before it");
+  if (!(run >= 0 && ro === run + 1 && ex === run + 2)) problems.push("the read-only check and the exception do not follow the count's run, in that order");
+  if ((block.match(/\bS12OK=/g) ?? []).length !== 2) problems.push("S12OK is set somewhere else as well");
   return problems;
 }
 
@@ -824,7 +841,7 @@ test("THE SIDECAR pins the document, byte for byte; the document is ASCII; and i
   assert.doesNotMatch(banner, /[A-Z]-PENDING/);
 });
 
-test("THE HALT RULE stands in the document word for word, with its one exception for the S12 count named as strategy's", () => {
+test("THE HALT RULE stands in the document word for word, with its one exception for the S12 count's own query inside its own text", () => {
   const rule = [
     "THE HALT RULE. Any refusal (a REFUSE line, or a harness or classifier refusal), any",
     "STOP line, any FAIL verdict, any ERROR and any non-zero exit stops the sitting, and",
@@ -834,10 +851,16 @@ test("THE HALT RULE stands in the document word for word, with its one exception
     'with the line "0106 APPLIED. Paste stage 2 now." No block, and no dispatch',
     "step, runs anything after a refusal, a STOP, a FAIL, an ERROR or a non-zero exit:",
     "no closing read and no journal read. Whether and when a halted sitting starts again",
-    "is the lead's call, never the runner's.",
+    "is the lead's call, never the runner's. The one exception: a STOP line that begins",
+    '"STOP: the S12 count\'s block only:" ends that block alone, because the S12 count\'s',
+    "own query failed inside a transaction that read as READ ONLY; the closing read is",
+    "pasted next.",
   ].join("\n");
-  assert.ok(doc.includes(rule));
-  assert.match(doc, /ONE EXCEPTION, AND IT IS STRATEGY'S RULING, NOT A LOOSENING:\*\* the S12 count is information for strategy and "never a STOP condition" for the sitting/);
+  assert.ok(doc.includes(`${rule}\n\n`), "the halt rule, with its one exception inside its own text, is not in the document word for word");
+  assert.match(doc, /THE ONE EXCEPTION IS NARROW\.\*\* Strategy's words, "never a STOP condition" \(2026-10-14\), are about the S12 count's values/);
+  // The exception is the one sentence added to 0094's rule; nothing else of it moved.
+  const r0094 = read("docs/migration-apply-0094.md");
+  assert.ok(r0094.includes(rule.split(" The one exception:")[0].replaceAll("0106", "0094")), "the rule is no longer 0094's with the number changed");
 });
 
 test("THE ONLY WRITE IS verified-migrate, once; every psql call is READ ONLY; and no statement that would remove the tables stands in any block", () => {
@@ -974,8 +997,12 @@ test("A POST-COMMIT STOP SAYS WHAT STANDS: stage 2, the S12 count's block and th
       assert.match(flatProblems[0], /does not say the state is UNKNOWN/);
     }
   }
-  const s12stop = sb.split("\n").find((l) => l.includes("the transaction did not read as READ ONLY"));
-  assert.deepEqual(s12StopProblems(sb.replace(s12stop, () => s12stop.replace(` ${S12_GO_ON}`, " The lead rules"))).length, 1);
+  const s12ex = sb.split("\n").find((l) => l.startsWith(S12_EXCEPTION_START));
+  assert.deepEqual(s12StopProblems(sb.replace(s12ex, () => s12ex.replace(` ${S12_GO_ON}`, " The lead rules"))), ["the S12 exception does not send GREEN on to the closing read"]);
+  const roLine = sb.split("\n").find((l) => l.startsWith(S12_READ_ONLY_START));
+  assert.equal(s12StopProblems(sb.replace(roLine, () => roLine.replace("; the S12 count's block and the closing read (READ ONLY) run again only on the owner's or the lead's word", `. ${S12_GO_ON}`))).length, 1, "a read-only failure that sends GREEN on");
+  assert.equal(s12StopProblems(sb.replace(`${roLine}\n`, "")).length, 1, "the read-only check removed");
+  assert.equal(unguardedLines(sb.replace(S12_EXCEPTION_START, "[ x ] || { echo \"STOP: x ")).length, 1, "the run without its exception line must carry its own halt");
   assert.deepEqual(stageOnePostApplyProblems(swap(s1, "Do not read this as nothing applied: ", "")), ["the apply's STOP does not say it may have applied and that nothing else is pasted"]);
 });
 
@@ -1076,6 +1103,7 @@ export function unguardedLines(block) {
   const out = [];
   block.split("\n").forEach((line, i) => {
     if (/^if /.test(line) || /^echo "[^"]*"$/.test(line)) return;
+    if (line.startsWith('psql "${DATABASE_URL_DIRECT}"') && line.endsWith(S12_RUN_TAIL) && block.includes(S12_EXCEPTION_START)) return;
     if (MUST_HALT.some((re) => re.test(line)) && !EXPLICIT_HALT.test(line)) out.push(`${i + 1}: ${line.slice(0, 100)}`);
   });
   return out;
@@ -1288,6 +1316,7 @@ function harnessFixtures() {
     "post-fail.out": table(postRows([]).map((r) => (r.trimStart().startsWith("24. post-check verdict") ? r.replace(/\| OK$/, "| FAIL") : r))),
     "post-short.out": table(postRows([]).filter((r) => !r.trimStart().startsWith("9. post-check verdict"))),
     "s12.out": s12("on"), "s12-off.out": s12("off"),
+    "s12-noconn.out": "psql: error: connection to server at harness.invalid failed: FATAL: harness\n",
     "last3.out": last3, "vm.out": vm,
   };
 }
@@ -1554,21 +1583,37 @@ const HARNESS_BLOCKS = {
 };
 const HARNESS_PLAN = ["bys", "stage0", "clock", "stage1", "stage2", "s12", "closing"];
 
+/**
+ * The network-time calls of the dispatch blocks, each named by its program and its arguments, never by
+ * where it falls: a command added among them later is not exempt by accident.
+ */
+export const NETWORK_CALLS = Object.freeze([
+  ["sntp", (a) => a[0] === "time.apple.com" && a.length === 1],
+  ["curl", (a) => a[0] === "-sI" && a[1] === "--max-time" && a[2] === "8" && /^https:\/\/(api\.github\.com|www\.cloudflare\.com)$/.test(a[3] ?? "")],
+  ["date", (a) => (a[0] === "-u" && a[1] === "+%s") || (a[0] === "-j" && a[1] === "-u" && a[2] === "-f" && a[3] === "%a, %d %b %Y %H:%M:%S GMT")],
+  ["awk", (a) => a[0] === '$1 ~ /^[+-][0-9]+[.][0-9]+$/ && $2 == "+/-" && $4 == "time.apple.com" { v = $1 } END { print v }'],
+  ["awk", (a) => a[0] === "-v" && /^o=/.test(a[1] ?? "") && a[2] === "BEGIN { o += 0; if (o < 0) o = -o; if (o <= 5) exit 0; exit 1 }"],
+  ["awk", (a) => a[0] === '{ sub(/\\r$/, "") } tolower($1) == "date:" { v = $0; sub(/^[^ ]+ +/, "", v) } END { print v }'],
+  ["grep", (a) => a[0] === "-qxE" && ["[+-][0-9]+[.][0-9]+", "[1-9][0-9]{8,10} [1-9][0-9]{8,10}"].includes(a[1])],
+  ["grep", (a) => a[0] === "-qxE" && (a[1] ?? "").startsWith("(Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} (Jan|")],
+]);
+export const isNetworkCall = (call) => {
+  const prog = call.id.split("#")[0];
+  const args = call.args.split("\n").filter((l) => !l.startsWith("STDIN ")).slice(0, -1);
+  return NETWORK_CALLS.some(([p, ok]) => p === prog && ok(args));
+};
+
 /** The calls whose failure may leave a block running, each with its reason. */
 export function mayContinue(name) {
-  return (positive) => {
-    const first = positive.calls.find((c) => c.id.startsWith("sntp#"));
-    const lisbon = positive.calls.find((c) => c.id.startsWith("date#") && c.args.split("\n")[0] === "+%Y%m%d%H%M %u %Z");
-    return (call) => {
-      const prog = call.id.split("#")[0];
-      if ((name === "stage0" || name === "stage1") && (call.args.includes(GATE_FILE) || (prog === "grep" && call.args.includes("[0-9a-f]{64}")))) {
-        return "an R9 proof 1 call: a failure reads no, and proof 1 decides nothing in a closed-hours-only arm";
-      }
-      if ((name === "bys" || name === "clock") && first && lisbon && call.pos >= first.pos && call.pos < lisbon.pos) {
-        return "a network-time read: a source NOT READ goes on while another was read, and a disagreement STOPs";
-      }
-      return null;
-    };
+  return () => (call) => {
+    const prog = call.id.split("#")[0];
+    if ((name === "stage0" || name === "stage1") && (call.args.includes(GATE_FILE) || (prog === "grep" && call.args.includes("[0-9a-f]{64}")))) {
+      return "an R9 proof 1 call: a failure reads no, and proof 1 decides nothing in a closed-hours-only arm";
+    }
+    if ((name === "bys" || name === "clock") && isNetworkCall(call)) {
+      return "a network-time read: a source NOT READ goes on while another was read, and a disagreement STOPs";
+    }
+    return null;
   };
 }
 
@@ -1796,6 +1841,14 @@ test("NETWORK TIME, both dispatch blocks whole: one source read is enough, a sou
         const run = (net, id) => runOnce({ ...harnessConfig(doc, name, CLOSED, shell, base), net }, `${shell}-net-${name}-${id}`, null);
         const all = await run({}, "all");
         assert.equal(all.code, 0, all.out.slice(-600));
+        // THE EXEMPTION IS BY NAME: every call between the first sntp and the Lisbon clock read is a named
+        // network-time call, and no named one falls outside that span.
+        const first = all.calls.find((c) => c.id.startsWith("sntp#")).pos;
+        const lisbon = all.calls.find((c) => c.id.startsWith("date#") && c.args.split("\n")[0] === "+%Y%m%d%H%M %u %Z").pos;
+        const span = all.calls.filter((c) => c.pos >= first && c.pos < lisbon).map((c) => c.id);
+        assert.deepEqual(all.calls.filter(isNetworkCall).map((c) => c.id), span, `${shell} ${name}`);
+        assert.equal(span.length, 16, `${shell} ${name}: ${span.join(" ")}`);
+        assert.ok(!isNetworkCall({ id: "grep#99", args: "-qxE\n[0-9a-f]{64}\n" }) && !isNetworkCall({ id: "git#99", args: "fetch\norigin\n" }));
         assert.match(all.out, /^network time: {2}the machine's clock agrees with every source that could be read\. Read: sntp https:\/\/api\.github\.com https:\/\/www\.cloudflare\.com\. Not read: none\.$/m);
         const noSntp = await run({ sntp: "down" }, "nosntp");
         assert.equal(noSntp.code, 0, noSntp.out.slice(-600));
@@ -1836,7 +1889,7 @@ test("THE W-9 SEARCH, stage 0 whole: the three lines of the one test pass; a rea
   });
 });
 
-test("THE S12 COUNT, its block whole: a count read only passes; a transaction that is not read only, a failed run and no pass mark from stage 2 STOP that block only", async () => {
+test("THE S12 COUNT, its block whole: a count read only passes; only its own query failing ends that block alone, and every other STOP of it is the halt rule's", async () => {
   await withHarness(async (base) => {
     for (const shell of shellsHere()) {
       const cfg = harnessConfig(doc, "s12", CLOSED, shell, base);
@@ -1845,16 +1898,26 @@ test("THE S12 COUNT, its block whole: a count read only passes; a transaction th
       assert.match(ok.out, /^ read only: on$/m);
       const s12Call = ok.calls.find((c) => c.id.startsWith("psql#"));
       assert.deepEqual(s12Call.args.trim().split("\n").slice(1), ["-X", "-v", "ON_ERROR_STOP=1", "-P", "pager=off", "-c", "begin read only", "-c", "set local statement_timeout = '120s'", "-c", "select 'read only: ' || current_setting('transaction_read_only') as s12_transaction", "-f", S12, "-c", "rollback"]);
+      const guardCall = ok.calls.find((c) => c.args.startsWith("scripts/assert-production-target.mjs"));
+      const FULL = "0106 IS APPLIED and the write stands. Run nothing again, not stage 0 and not stage 1; the S12 count's block and the closing read (READ ONLY) run again only on the owner's or the lead's word";
+      // [label, override, fault, the STOP, whether it is the one exception]
       const cases = [
-        ["not read only", { db: { s12: "s12-off.out" } }, /^STOP: the S12 count's block only: the transaction did not read as READ ONLY/],
-        ["psql exit 3", { db: { s12Exit: 3 } }, /^STOP: the S12 count's block only: the S12 count did not complete/],
-        ["no pass mark", { setup: (tmp) => { cfg.setup(tmp); rmSync(join(tmp, "0106-stage2.ok")); } }, /^STOP: the S12 count's block only: stage 2 left no pass mark/],
+        ["the count's own query fails after the transaction read as READ ONLY", { db: { s12Exit: 3 } }, null, /^STOP: the S12 count's block only: the count's own query did not complete/, true],
+        ["not read only", { db: { s12: "s12-off.out" } }, null, /^STOP: the S12 count did not reach its query inside a transaction that read as READ ONLY/, false],
+        ["psql never reaches the query", { db: { s12: "s12-noconn.out", s12Exit: 2 } }, null, /^STOP: the S12 count did not reach its query inside a transaction that read as READ ONLY/, false],
+        ["the target guard refuses", {}, { call: guardCall.id }, /^STOP: the target guard refused or failed/, false],
+        ["no pass mark from stage 2", { setup: (tmp) => { cfg.setup(tmp); rmSync(join(tmp, "0106-stage2.ok")); } }, null, /^STOP: stage 2 left no pass mark, so it did not pass\. /, false],
+        ["no applied marker", { setup: (tmp) => { cfg.setup(tmp); rmSync(join(tmp, "0106-applied.ok")); } }, null, /^STOP: stage 1 left no applied marker\. If stage 1 ended with its line 0106 APPLIED, then /, false],
       ];
-      for (const [label, over, stop] of cases) {
-        const r = await runOnce({ ...cfg, ...over }, `${shell}-s12-${label.replace(/\W+/g, "-")}`, null);
+      for (const [label, over, fault, stop, exception] of cases) {
+        const r = await runOnce({ ...cfg, ...over }, `${shell}-s12-${label.replace(/\W+/g, "-")}`, fault);
         assertStops(r, "s12", stop, `${shell} S12, ${label}`);
         const line = r.out.split("\n").find((l) => l.startsWith("STOP: "));
-        assert.ok(line.endsWith(S12_GO_ON), line);
+        if (exception) assert.ok(line.startsWith(S12_ONLY) && line.endsWith(S12_GO_ON), line);
+        else {
+          assert.ok(!line.startsWith(S12_ONLY) && !line.includes("closing journal read next"), `${label}: ${line}`);
+          if (label !== "no applied marker") assert.ok(line.endsWith(FULL), `${label}: ${line}`);
+        }
       }
     }
   });
@@ -1968,7 +2031,7 @@ test("A RECORD THAT READS EMPTY OR SHORT, and a clock call without its zone: eac
         clock: /^STOP: stage 0's record is not a full sha\./,
         stage1: /^STOP: stage 0's record did not read as a full 40-character sha \[/,
         stage2: /^STOP: stage 0's record did not read as a full 40-character sha \[/,
-        s12: /^STOP: the S12 count's block only: stage 0's record did not read as a full 40-character sha \[/,
+        s12: /^STOP: stage 0's record did not read as a full 40-character sha \[/,
         closing: /^STOP: stage 0's record did not read as a full 40-character sha \[/,
       };
       for (const [name, stop] of Object.entries(want)) {
@@ -2054,7 +2117,7 @@ test("THE WINDOW FEED: stage 1 refuses every run-window record it must, before p
   });
 });
 
-test("THE APPLIED MARKER: one from this sitting stops stages 0 and 1, one 13 hours old does not; any at all stops the two dispatch blocks", async () => {
+test("THE APPLIED MARKER: one from this sitting stops stages 0 and 1 and the two dispatch blocks; one 13 hours old stops none of them", async () => {
   await withHarness(async (base) => {
     for (const shell of shellsHere()) {
       for (const name of ["stage0", "stage1"]) {
@@ -2071,8 +2134,11 @@ test("THE APPLIED MARKER: one from this sitting stops stages 0 and 1, one 13 hou
       }
       for (const name of ["bys", "clock"]) {
         const cfg = harnessConfig(doc, name, CLOSED, shell, base);
-        const r = await runOnce({ ...cfg, setup: (tmp) => { cfg.setup(tmp); putRecord(tmp, "0106-applied.ok", "", 780); } }, `${shell}-${name}-marker`, null);
-        assertStops(r, name, /^STOP: 0106 was applied in this sitting \([^)]*0106-applied\.ok is there\)/, `${shell} ${name}`);
+        const young = await runOnce({ ...cfg, setup: (tmp) => { cfg.setup(tmp); putRecord(tmp, "0106-applied.ok", "", 719); } }, `${shell}-${name}-marker-719`, null);
+        assertStops(young, name, /^STOP: 0106 was applied in this sitting \([^)]*0106-applied\.ok is there and under 12 hours old\), or its age could not be read\. /, `${shell} ${name}`);
+        assert.deepEqual(young.calls.filter((c) => /^(git|sntp|curl)#/.test(c.id)), [], `${shell} ${name}: it went on after the marker`);
+        const old = await runOnce({ ...cfg, setup: (tmp) => { cfg.setup(tmp); putRecord(tmp, "0106-applied.ok", "", 780); } }, `${shell}-${name}-marker-780`, null);
+        assert.equal(old.code, 0, `${shell} ${name}, a marker 13 hours old: ${old.out.slice(-500)}`);
       }
     }
   });
