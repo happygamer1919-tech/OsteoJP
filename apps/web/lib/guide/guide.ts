@@ -17,6 +17,15 @@
 // ever named a role without the capability would stay hidden rather than
 // describe a screen that role cannot open.
 //
+// A lesson tied to a feature ("feature: survey" in its front matter) is shown
+// only while the platform shows that feature: GUIDE_FEATURES below maps each
+// feature name to the same question the feature's own screens ask, and
+// visibleTo asks it on every read, for every role. While the answer is false
+// the lesson is in no list, its address answers 404 like any lesson outside
+// the viewer's guide, and no FAQ entry links it. A feature name with no entry
+// in GUIDE_FEATURES is hidden, always. The PDFs never print such a lesson
+// (docs/guide/build/guide-model.mjs, printableGuide).
+//
 // Inside a lesson, a role block is text for some profiles only. Every lesson
 // these helpers return has its role blocks already resolved for the viewer:
 // a block naming the viewer's profile is unwrapped in place, any other block
@@ -27,6 +36,8 @@
 // repository. Nothing about a viewer is read or stored here.
 
 import { can, type Capability, type Role } from "@osteojp/auth";
+
+import { surveyVisible } from "../reminders/survey-mode";
 
 import guideJson from "./guide-data.json";
 
@@ -67,6 +78,8 @@ export type GuideLesson = GuideSection & {
   answers: string[];
   see: string[];
   review: string | null;
+  /** The feature this lesson waits on (GUIDE_FEATURES), or null for none. */
+  feature: string | null;
   /** null: no capture yet, and the page shows "sem imagem" instead. */
   images: { phone: GuideImage; desktop: GuideImage } | null;
 };
@@ -100,13 +113,42 @@ export const PROFILE_OF_ROLE: Record<Role, GuideProfile> = {
   reception: "rececao",
 };
 
+/**
+ * The features a lesson can wait on with "feature: <name>", each with the one
+ * question that decides whether the platform shows it. Adding a feature is one
+ * entry here and the key on its lessons; nothing else changes.
+ *
+ *   survey  SAT-01, the satisfaction survey. surveyVisible() is the question
+ *           the survey's own staff screens ask (the Comunicações tab, its
+ *           page, the ficha's section and switch): false while
+ *           SURVEY_SEND_MODE reads off, true for canary and on. Owner,
+ *           2026-10-12: while the survey is off, staff see nothing of it.
+ *
+ * TEMPORARY BY DESIGN. Once the survey is on for good, drop "feature: survey"
+ * from its lessons, and this entry with it.
+ */
+export const GUIDE_FEATURES: Readonly<Record<string, () => boolean>> = {
+  survey: () => surveyVisible(),
+};
+
+/** Whether a lesson waiting on this feature is shown now. No feature: yes. A name with no entry: never. */
+export function featureShown(feature: string | null): boolean {
+  if (feature === null) return true;
+  if (!Object.hasOwn(GUIDE_FEATURES, feature)) return false;
+  return GUIDE_FEATURES[feature]() === true;
+}
+
 /** Whether a capability name is one packages/auth knows (the owner holds every one). */
 export function isCapability(name: string): name is Capability {
   return can("owner", name as Capability);
 }
 
-/** Whether a lesson or FAQ entry is for this role: its profile is listed, and the role holds its capability. */
+/**
+ * Whether a lesson or FAQ entry is for this role, now: its feature (if any) is
+ * shown, its profile is listed, and the role holds its capability.
+ */
 export function visibleTo(role: Role, item: GuideLesson): boolean {
+  if (!featureShown(item.feature)) return false;
   if (!item.roles.includes(PROFILE_OF_ROLE[role])) return false;
   if (item.capability === null) return true;
   return isCapability(item.capability) && can(role, item.capability);

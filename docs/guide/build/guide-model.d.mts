@@ -59,6 +59,8 @@ export type ModelItem = {
   see: string[];
   review: string | null;
   hold: string | null;
+  /** "feature: <name>": shown only while that part of the platform is (guide.ts); never printed. */
+  feature: string | null;
   blocks: ModelBlock[];
   words: number;
   images: { phone: ModelImage; desktop: ModelImage } | null;
@@ -98,6 +100,9 @@ export function inlineSpans(text: string): Span[];
 export function guideData(guide: Guide): Record<string, unknown>;
 export function serializeGuideData(data: unknown): string;
 export function renderGuideData(options?: LoadOptions): string;
+
+/** The guide as the PDFs print it: every lesson and FAQ entry with a "feature" key left out. */
+export function printableGuide(guide: Guide): Guide;
 
 /** The sha256 (hex) the guide PDFs are bound to: the published model plus every capture file it shows. */
 export function guideSourceHash(guide: Guide): string;
