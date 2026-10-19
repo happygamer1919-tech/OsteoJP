@@ -73,7 +73,7 @@
     "scripts/grants-revoke-0099.test.mjs": "675cfb8ef8f4509dacf5673d6db872965b835c2f275982274d362019c85f98a9",
     "scripts/guest-intake-article9-guard.test.mjs": "8b0a73c0e96779f35277622e8fbe755c599f66b0a38e450d126b24a7cfbae398",
     "scripts/guest-request-email-0101.test.mjs": "d513b0d5d81bf7ad46ff6a927983864ed754837899f81ee184bbea138427d174",
-    "scripts/guide-content.test.mjs": "68d46c07bebe3132a64b5087228bea1235d5609cef2b33f0dec54d40dd31cd73",
+    "scripts/guide-content.test.mjs": "baf6456ba416052909bc33a750178db026dd85ee8bb05da880b53c7682488966",
     "scripts/handover-counts-match-the-render.test.mjs": "416556caff7490c66f1599d5183b3d73d19be92031be642d1045bf1d99dfd9fc",
     "scripts/held-for-apply-blocks-merge.test.mjs": "1cb935eaa057a1d5a9a702941da5f340b9a90d6e19506d761e53a4c06a58de2a",
     "scripts/import/backfill-location-scripts.test.mjs": "bb577b6994ebe4169a62b319fa3c19d0abf91de612623dffeda991f2b2051a8f",
