@@ -1,10 +1,11 @@
 /**
  * reminder-claims-rls.db.test.ts: the reminder sweep's two tables,
- * reminder_claims and reminder_sweep_passes (pending; strategy ruled the
- * number 0106 on 2026-10-13).
+ * reminder_claims and reminder_sweep_passes (migration 0106, numbered by
+ * strategy on 2026-10-13).
  *
- * The migration is packages/db/migrations-pending/NEXT-AFTER-0105_reminder_
- * claims.sql until it is promoted. So this file ASKS THE DATABASE WHICH SIDE IT
+ * The migration is packages/db/migrations/0106_reminder_claims.sql, promoted
+ * on 2026-10-19 from packages/db/migrations-pending/NEXT-AFTER-0105_reminder_
+ * claims.sql with no byte changed. This file ASKS THE DATABASE WHICH SIDE IT
  * IS ON and names it in each title. On a database that has both tables, every
  * arm runs. On one that has neither, every arm is skipped. It THROWS on a
  * database that has one table of the two, and from the promotion commit on it
@@ -1017,6 +1018,21 @@ d(`reminder_claims and reminder_sweep_passes: only the job writes, nobody rewrit
         { rel: "reminder_claims", rls: true, policies: "a:authenticated,r:authenticated" },
         { rel: "reminder_sweep_passes", rls: true, policies: "a:authenticated,r:authenticated" },
       ]);
+    });
+
+    it("THE CLAIMS INSERT POLICY'S WITH CHECK is the pinned expression, its a.tenant_id test included (W-6)", async () => {
+      // The md5 of pg_get_expr(polwithcheck) of reminder_claims_job_insert, the
+      // value the post-check's verdict 9 pins. It is the one standing test of
+      // the sub-select's `a.tenant_id = reminder_claims.tenant_id`: under the
+      // policies of appointments the job cannot see another tenant's
+      // appointment at all, so no arm that inserts can tell that test from its
+      // absence (mutant 4 of the second sweep). Postgres 17 prints the
+      // expression this way; another major version may print it otherwise.
+      const rows = (await sql`
+        select p.polname::text as name, md5(pg_get_expr(p.polwithcheck, p.polrelid)) as h
+          from pg_policy p
+         where p.polrelid = 'public.reminder_claims'::regclass and p.polcmd = 'a'`) as { name: string; h: string }[];
+      expect(rows).toEqual([{ name: "reminder_claims_job_insert", h: "3db6b5cccdd94267bf0633f2323ec17a" }]);
     });
 
     it("neither table owns a sequence, carries a trigger of its own, or names a patient or a recipient", async () => {

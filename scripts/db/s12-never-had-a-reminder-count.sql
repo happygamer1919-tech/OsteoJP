@@ -19,9 +19,10 @@
 -- Its own first line still says PROPOSED: the definition is strategy's
 -- provisional ruling of 2026-10-14, not yet final.
 --
--- Run:
+-- Run (the 0106 document's block does exactly this, with a 120 second bound):
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
---        -c "begin read only" -f scripts/db/s12-never-had-a-reminder-count.sql -c "rollback"
+--        -c "begin read only" -c "set local statement_timeout = '120s'"
+--        -f scripts/db/s12-never-had-a-reminder-count.sql -c "rollback"
 --
 -- BEGIN OF THE HANDOVER FILE
 -- S12, PROPOSED DEFINITION: "a visit that never had a reminder".
