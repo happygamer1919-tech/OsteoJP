@@ -15,8 +15,11 @@
  *       start AND the therapist, so a real change is never swallowed, and an
  *       identical re-save sends nothing;
  *   (2) a THERAPIST-ONLY change sends the EMAIL only, the SMS only when the
- *       patient has no email;
+ *       patient has no usable email (no address, or email off for the clinic
+ *       or for the patient);
  *   (3) Cancelada back to Confirmada keeps today's send.
+ * And, from the first review: a change of CLINIC sends the full confirmation,
+ * because the message names the clinic.
  *
  * WHAT IS REAL HERE. The two server actions (`rescheduleAppointment`, through
  * the ficha's own `therapistChangeInput` where the Terapeuta changes, and
@@ -288,7 +291,9 @@ async function received(events = h.sent) {
 }
 
 /** The row the dispatch reads: a confirmed portal appointment. */
-function dispatchRow(contact: { email: boolean } = { email: true }) {
+function dispatchRow(
+  contact: { email?: boolean; patientEmailOn?: boolean; clinicEmailOn?: boolean } = {},
+) {
   return {
     appointmentId: APPT,
     startsAt: rowState.startsAt,
@@ -297,10 +302,10 @@ function dispatchRow(contact: { email: boolean } = { email: true }) {
     origin: "patient_portal",
     patientId: PATIENT,
     patientName: "Paciente Exemplo",
-    patientEmail: contact.email ? "paciente@example.test" : null,
+    patientEmail: contact.email === false ? null : "paciente@example.test",
     patientPhone: "+351 912 000 001",
     patientReminderSmsEnabled: true,
-    patientReminderEmailEnabled: true,
+    patientReminderEmailEnabled: contact.patientEmailOn !== false,
     patientDeletedAt: null,
     patientHasAcceptedTerms: false,
     practitionerName: "Dra Inventada",
@@ -308,7 +313,8 @@ function dispatchRow(contact: { email: boolean } = { email: true }) {
     locationPhone: "+351 272 111 111",
     locationAddress: "Rua de Exemplo 1, 6000-000 Castelo Branco",
     serviceName: "Osteopatia",
-    tenantSettings: { locale: "pt" },
+    tenantSettings:
+      contact.clinicEmailOn === false ? { locale: "pt", reminders: { emailEnabled: false } } : { locale: "pt" },
   };
 }
 
@@ -426,6 +432,18 @@ describe("rule 2: a THERAPIST-ONLY change sends the EMAIL only; the SMS only wit
     expect(await received()).toEqual({ email: [], sms: ["confirmation.sms"] });
   });
 
+  it("an email on file that the PATIENT switched off is no usable email: the SMS", async () => {
+    h.loadReminderData.mockImplementation(async () => dispatchRow({ patientEmailOn: false }));
+    await changeTherapistFromFicha(RUI);
+    expect(await received()).toEqual({ email: [], sms: ["confirmation.sms"] });
+  });
+
+  it("an email on file with email reminders off for the CLINIC is no usable email: the SMS", async () => {
+    h.loadReminderData.mockImplementation(async () => dispatchRow({ clinicEmailOn: false }));
+    await changeTherapistFromFicha(RUI);
+    expect(await received()).toEqual({ email: [], sms: ["confirmation.sms"] });
+  });
+
   it("inside the same day as the booking's confirmation it is NOT swallowed: the therapist is in the key", async () => {
     await booked();
     await changeTherapistFromFicha(RUI);
@@ -433,6 +451,27 @@ describe("rule 2: a THERAPIST-ONLY change sends the EMAIL only; the SMS only wit
     expect(dropped).toEqual([]);
     expect(runs).toHaveLength(2);
     expect(runs[1]).toMatchObject({ practitionerId: RUI, therapistChangeOnly: true });
+  });
+});
+
+describe("a change of CLINIC sends the full confirmation: the message names the clinic", () => {
+  it("the clinic only, same start and therapist: email and SMS, no therapist-only marker", async () => {
+    await move({ locationId: "loc-2" });
+    expect(h.sent[0]!.data).toEqual({
+      appointmentId: APPT,
+      tenantId: TENANT,
+      startsAt: ORIGINAL.toISOString(),
+      practitionerId: ANA,
+      confirmationEligible: true,
+    });
+    expect(await received()).toEqual({ email: ["confirmation.email"], sms: ["confirmation.sms"] });
+  });
+
+  it("the clinic AND the therapist at the same start: the full pair too, not the email alone", async () => {
+    await move({ locationId: "loc-2", practitionerId: RUI });
+    expect(h.sent[0]!.data).toMatchObject({ practitionerId: RUI, confirmationEligible: true });
+    expect("therapistChangeOnly" in h.sent[0]!.data).toBe(false);
+    expect(await received()).toEqual({ email: ["confirmation.email"], sms: ["confirmation.sms"] });
   });
 });
 
@@ -479,10 +518,9 @@ describe("an IDENTICAL re-save sends nothing", () => {
     expect(await received()).toEqual({ email: [], sms: [] });
   });
 
-  it("the edit panel changing only the DURATION or only the CLINIC is the same save: nothing is sent", async () => {
+  it("the edit panel changing only the DURATION is the same save: nothing is sent", async () => {
     await move({ durationMin: 45 });
-    await move({ locationId: "loc-2" });
-    expect(h.sent.map((e) => e.data.confirmationEligible)).toEqual([false, false]);
+    expect(h.sent.map((e) => e.data.confirmationEligible)).toEqual([false]);
     expect(await received()).toEqual({ email: [], sms: [] });
   });
 
@@ -518,6 +556,47 @@ describe("a START-TIME change AFTER a therapist change still notifies", () => {
   });
 });
 
+/**
+ * KNOWN RESIDUAL OF THE RULED KEY (Q-K review, round 1; put to strategy).
+ *
+ * The key is appointment + start + therapist, as ruled. Inside its 24 hours it
+ * drops ANY confirmation whose start and therapist were already confirmed for
+ * this appointment, so a change that RETURNS to an earlier pair is swallowed
+ * and the patient's last message names the pair they are no longer booked
+ * for. These arms pin that as it stands: if the key's composition changes,
+ * they fail and the change is visible.
+ */
+describe("KNOWN RESIDUAL: a change back to an earlier start and therapist within 24 hours is dropped", () => {
+  it("Terapeuta A to B and back to A: the return to A is dropped", async () => {
+    await booked();
+    await changeTherapistFromFicha(RUI);
+    await changeTherapistFromFicha(ANA);
+    // The save asked for a confirmation each time...
+    expect(h.sent.map((e) => e.data.confirmationEligible)).toEqual([true, true, true]);
+    // ...and the key drops the third, which repeats the booking's pair.
+    const { runs, dropped } = deliver(h.sent);
+    expect(runs.map((r) => r.practitionerId)).toEqual([ANA, RUI]);
+    expect(dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}:${ANA}`]);
+  });
+
+  it("10:00 to 15:00 and back to 10:00: the return is dropped, although rule 1 says a start change notifies", async () => {
+    await booked();
+    await move({ startsAt: LATER });
+    await move({ startsAt: ORIGINAL });
+    const { runs, dropped } = deliver(h.sent);
+    expect(runs.map((r) => r.startsAt)).toEqual([ORIGINAL.toISOString(), LATER.toISOString()]);
+    expect(dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}:${ANA}`]);
+  });
+
+  it("after 24 hours the same return is sent: the residual is the key's window, not the save's decision", async () => {
+    await booked();
+    await changeTherapistFromFicha(RUI);
+    h.sent.length = 0;
+    await changeTherapistFromFicha(ANA);
+    expect(deliver(h.sent).runs).toHaveLength(1);
+  });
+});
+
 /* ================================================================== */
 
 describe("planConfirmationChannels: the legs of today's confirmation", () => {
@@ -546,11 +625,27 @@ describe("planConfirmationChannels: the legs of today's confirmation", () => {
     });
   });
 
-  it("a therapist-only change with an email on file but switched off: neither (the SMS is for a missing address only)", () => {
+  it("a therapist-only change with the PATIENT's email switched off: no usable email, so the SMS", () => {
     expect(planConfirmationChannels({ ...all, therapistChangeOnly: true, patientEmailEnabled: false })).toEqual({
       email: false,
-      sms: false,
+      sms: true,
     });
+  });
+
+  it("a therapist-only change with the CLINIC's email reminders off: no usable email, so the SMS", () => {
+    expect(planConfirmationChannels({ ...all, therapistChangeOnly: true, tenantEmailEnabled: false })).toEqual({
+      email: false,
+      sms: true,
+    });
+  });
+
+  it("a therapist-only change with no usable email AND the SMS off: nothing (the SMS keeps its own conditions)", () => {
+    expect(
+      planConfirmationChannels({ ...all, therapistChangeOnly: true, patientEmailEnabled: false, tenantSmsEnabled: false }),
+    ).toEqual({ email: false, sms: false });
+    expect(
+      planConfirmationChannels({ ...all, therapistChangeOnly: true, tenantEmailEnabled: false, hasPhone: false }),
+    ).toEqual({ email: false, sms: false });
   });
 
   it("the switches still hold every leg", () => {

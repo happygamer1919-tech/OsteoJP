@@ -2028,7 +2028,12 @@ export async function updateAppointment(
           ...uncancelling
             .filter((a) => a.startsAt.getTime() > nowMs)
             .filter((a) => !backAsPedido.has(a.id))
-            .map((a) => ({ appointmentId: a.id, startsAt: a.startsAt, practitionerId: a.practitionerId })),
+            .map((a) => ({
+              appointmentId: a.id,
+              startsAt: a.startsAt,
+              practitionerId: a.practitionerId,
+              ...(patch.status ? { status: patch.status } : {}),
+            })),
         ];
         return { ok: true, data: { id } };
       },
@@ -2303,22 +2308,28 @@ export async function rescheduleAppointment(
         //
         // Q-K (strategy's ruling): WHAT THE MOVE OWES THE CONFIRMATION, per
         // row, from `affected` (the row BEFORE this save) against what it
-        // became. A new start: today's confirmation. The Terapeuta only: the
-        // email alone. Neither: none, though the event still goes out for the
-        // reminders. See `moveConfirmation` in ./move-confirmation.ts.
+        // became. A new start or a new clinic: today's confirmation. The
+        // Terapeuta only: the email alone. None of those: none, though the
+        // event still goes out for the reminders. See `moveConfirmation` in
+        // ./move-confirmation.ts.
         const beforeById = new Map(affected.map((a) => [a.id, a]));
         reminderTargets = targets
           .filter((t) => !unacceptedPedidoIds.has(t.id))
           .map((t) => {
-            const confirmation = moveConfirmation(beforeById.get(t.id), {
+            const before = beforeById.get(t.id);
+            const confirmation = moveConfirmation(before, {
               startsAt: t.startsAt,
               practitionerId: input.practitionerId,
+              locationId: input.locationId,
             });
             return {
               appointmentId: t.id,
               startsAt: t.startsAt,
               practitionerId: input.practitionerId,
               ...(confirmation ? { confirmation } : {}),
+              // A move does not change the status: a cancelled occurrence
+              // moved with its series stays cancelled and cannot confirm.
+              ...(before ? { status: before.status } : {}),
             };
           });
         // THE OLD INSTANTS, matched to the new ones by id. This is the only kind

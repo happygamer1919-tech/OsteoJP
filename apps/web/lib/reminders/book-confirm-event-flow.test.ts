@@ -233,7 +233,8 @@ describe("the four doors that can accept a pedido build their target with the ma
   it("updateAppointment does NOT mark the rows it brings back from Cancelada", () => {
     const b = body("lib/scheduling/actions.ts", "updateAppointment");
     const uncancel = b.slice(b.indexOf("...uncancelling"), b.indexOf("return { ok: true, data: { id } };"));
-    expect(uncancel).toContain("appointmentId: a.id, startsAt: a.startsAt, practitionerId: a.practitionerId");
+    expect(uncancel).toContain("appointmentId: a.id,");
+    expect(uncancel).toContain("practitionerId: a.practitionerId,");
     expect(uncancel).not.toContain("acceptedPedido");
   });
 

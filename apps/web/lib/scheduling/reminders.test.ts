@@ -10,8 +10,9 @@ import { enqueueRemindersAfterCommit } from "./reminders";
 import { liveSendEnabled } from "@/lib/reminders/clients";
 
 const TENANT = "22222222-2222-2222-2222-222222222222";
-const T1 = new Date("2026-07-01T09:00:00.000Z");
-const T2 = new Date("2026-07-08T09:00:00.000Z");
+// In the FUTURE: since Q-K a past occurrence never carries the confirmation.
+const T1 = new Date("2031-07-01T09:00:00.000Z");
+const T2 = new Date("2031-07-08T09:00:00.000Z");
 const PRAC = "therapist-1";
 
 let savedFlag: string | undefined;

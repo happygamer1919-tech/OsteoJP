@@ -9,6 +9,7 @@
  * the enqueue the right field for each kind of save:
  *
  *   a new start                          no field: today's confirmation (rule 1)
+ *   a new clinic                         no field: the message names the clinic
  *   a new Terapeuta at the same start    "therapist_only" (rule 2)
  *   Cancelada back to Confirmada         no field: today's send (rule 3)
  *   the same start and the same Terapeuta "none": an identical re-save
@@ -172,49 +173,61 @@ d("Q-K: what a staff save of a confirmed portal appointment asks of its confirma
     return calls[calls.length - 1]![1];
   };
 
+  // Every target of a move carries the row's status (a move does not change
+  // it), and the un-cancel carries the status it brings the row back to.
+  const C = "confirmed";
+
   it("rule 1: a new START carries no field, so today's confirmation goes", async () => {
     const id = await portalRow();
     await save(id, { start: at(WED, 16) });
-    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 16), practitionerId: tAna }]);
+    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 16), practitionerId: tAna, status: C }]);
   });
 
   it("rule 1: a new start AND a new therapist in one save is a start change", async () => {
     const id = await portalRow();
     await save(id, { start: at(WED, 16), practitionerId: tRui });
-    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 16), practitionerId: tRui }]);
+    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 16), practitionerId: tRui, status: C }]);
   });
 
-  it("rule 2: a new TERAPEUTA at the same start is therapist_only, with the new therapist", async () => {
+  it("rule 2: a new TERAPEUTA at the same start and clinic is therapist_only, with the new therapist", async () => {
     const id = await portalRow();
     await save(id, { practitionerId: tRui });
     expect(lastTargets()).toEqual([
-      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tRui, confirmation: "therapist_only" },
+      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tRui, confirmation: "therapist_only", status: C },
     ]);
+  });
+
+  it("a new CLINIC only carries no field: the full confirmation, because the message names the clinic", async () => {
+    const id = await portalRow();
+    await save(id, { locationId: locTwo });
+    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, status: C }]);
+  });
+
+  it("a new CLINIC AND a new therapist carries no field either: full, not the email alone", async () => {
+    const id = await portalRow();
+    await save(id, { locationId: locTwo, practitionerId: tRui });
+    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 15), practitionerId: tRui, status: C }]);
   });
 
   it("rule 3: Cancelada back to Confirmada carries no field, so today's send goes", async () => {
     const id = await portalRow({ status: "cancelled" });
     expect((await actions.updateAppointment(id, { status: "confirmed" })).ok).toBe(true);
-    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna }]);
+    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, status: C }]);
   });
 
   it("an IDENTICAL re-save is none: the event still goes for the reminders, the confirmation does not", async () => {
     const id = await portalRow();
     await save(id);
     expect(lastTargets()).toEqual([
-      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, confirmation: "none" },
+      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, confirmation: "none", status: C },
     ]);
   });
 
-  it("a save that changes only the DURATION or only the CLINIC is none too", async () => {
+  it("a save that changes only the DURATION is none too", async () => {
     const id = await portalRow();
     await save(id, { minutes: 45 });
     expect(lastTargets()).toEqual([
-      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, confirmation: "none" },
-    ]);
-    await save(id, { locationId: locTwo });
-    expect(lastTargets()).toEqual([
-      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, confirmation: "none" },
+      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tAna, confirmation: "none", status: C },
     ]);
   });
 
@@ -222,14 +235,14 @@ d("Q-K: what a staff save of a confirmed portal appointment asks of its confirma
     const id = await portalRow();
     await save(id, { practitionerId: tRui });
     expect(lastTargets()).toEqual([
-      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tRui, confirmation: "therapist_only" },
+      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tRui, confirmation: "therapist_only", status: C },
     ]);
     await save(id, { start: at(WED, 17) });
-    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 17), practitionerId: tRui }]);
+    expect(lastTargets()).toEqual([{ appointmentId: id, startsAt: at(WED, 17), practitionerId: tRui, status: C }]);
     // And saving that state again owes nothing.
     await save(id);
     expect(lastTargets()).toEqual([
-      { appointmentId: id, startsAt: at(WED, 17), practitionerId: tRui, confirmation: "none" },
+      { appointmentId: id, startsAt: at(WED, 17), practitionerId: tRui, confirmation: "none", status: C },
     ]);
   });
 });

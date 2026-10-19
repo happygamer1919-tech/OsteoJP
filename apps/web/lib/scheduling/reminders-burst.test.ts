@@ -39,7 +39,8 @@ import {
 } from "./reminders";
 
 const TENANT = "3a2d0711-0000-0000-0000-000000000000";
-const BASE = Date.UTC(2026, 8, 1, 9, 0, 0);
+// In the FUTURE: since Q-K a past occurrence never carries the confirmation.
+const BASE = Date.UTC(2031, 8, 1, 9, 0, 0);
 
 /** A weekly series of `n` occurrences, earliest first. */
 function series(n: number): ReminderEnqueueTarget[] {
@@ -129,6 +130,36 @@ describe("Q-K: which occurrence of a move carries the confirmation", () => {
   it("a row that owes nothing never takes the confirmation from one that does", () => {
     expect(confirmationEligibleIndex([target(0, "none"), target(1, "therapist_only")])).toBe(1);
     expect(confirmationEligibleIndex([target(0, "none"), target(1)])).toBe(1);
+  });
+
+  it("a CANCELLED occurrence moved with its series never takes the confirmation, even with the better rank", async () => {
+    const cancelled = { ...target(0), status: "cancelled" };
+    const live = { ...target(1, "therapist_only"), status: "confirmed" };
+    expect(confirmationEligibleIndex([cancelled, live], BASE - 1)).toBe(1);
+    await enqueueRemindersAfterCommit(TENANT, [cancelled, live]);
+    expect(sent.filter((e) => e.data.confirmationEligible === true).map((e) => e.data.appointmentId)).toEqual([
+      "appt-1",
+    ]);
+  });
+
+  it("a PAST occurrence never takes the confirmation, even with the better rank and the earlier start", () => {
+    // `now` sits between the two starts: appt-0 is past, appt-1 is ahead.
+    const now = at(0).getTime() + 1;
+    expect(confirmationEligibleIndex([target(0), target(1, "therapist_only")], now)).toBe(1);
+    // A start exactly at `now` is not ahead either.
+    expect(confirmationEligibleIndex([target(0)], at(0).getTime())).toBe(-1);
+  });
+
+  it("only unconfirmable occurrences: nobody carries the confirmation", () => {
+    const now = at(1).getTime() + 1;
+    expect(
+      confirmationEligibleIndex([target(0), { ...target(2), status: "cancelled" }, { ...target(3), status: "no_show" }], now),
+    ).toBe(-1);
+  });
+
+  it("a known CONFIRMABLE status is no obstacle: scheduled and confirmed both carry it", () => {
+    expect(confirmationEligibleIndex([{ ...target(0), status: "scheduled" }], BASE - 1)).toBe(0);
+    expect(confirmationEligibleIndex([{ ...target(0), status: "confirmed" }], BASE - 1)).toBe(0);
   });
 
   it("every event carries the therapist, the confirmation key's second half", async () => {

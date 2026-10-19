@@ -206,7 +206,13 @@ describe("the Terapeuta changed from the ficha: what the save writes", () => {
     // Q-K rule 2: the start is the one the row had and the Terapeuta is new, so
     // the confirmation goes by email alone.
     expect(h.enqueue).toHaveBeenCalledWith("tenant-A", [
-      { appointmentId: APPT, startsAt: new Date(START), practitionerId: NEW, confirmation: "therapist_only" },
+      {
+        appointmentId: APPT,
+        startsAt: new Date(START),
+        practitionerId: NEW,
+        confirmation: "therapist_only",
+        status: "confirmed",
+      },
     ]);
   });
 

@@ -1,3 +1,4 @@
+import { CONFIRMABLE_STATUSES } from "./confirmable-statuses";
 import "server-only";
 import { parseTenantConfig, type ReminderConfig } from "@/lib/admin/settings-config";
 import { isGuestLinkedAppointment, loadReminderData } from "./data";
@@ -931,8 +932,8 @@ async function dispatchReminderInner(
 /* Confirmation dispatch                                               */
 /* ================================================================== */
 
-/** Statuses where a booking confirmation makes sense (pre-visit only). */
-const CONFIRMABLE_STATUSES = new Set(["scheduled", "confirmed"]);
+// Statuses where a booking confirmation makes sense (pre-visit only): one
+// list, shared with the scheduling side (./confirmable-statuses.ts).
 
 /**
  * DECISION A (owner, 2026-08-31): the booking confirmation is sent ONLY for a
@@ -985,10 +986,10 @@ export type ConfirmationDispatchOptions = {
   acceptedGuestRequest?: boolean;
   /**
    * Q-K (strategy's ruling). The marker a save puts on the event when it
-   * changed the Terapeuta and KEPT the start (lib/scheduling/move-confirmation.ts,
-   * `moveConfirmation`). Today's confirmation then goes by email alone, and by
-   * SMS only to a patient with no email on file. It only ever narrows the
-   * channels, so a stray `true` can cost an SMS, never add a message.
+   * changed the Terapeuta and KEPT the start and the clinic
+   * (lib/scheduling/move-confirmation.ts, `moveConfirmation`). Today's
+   * confirmation then goes by ONE channel: the email when it is usable, the
+   * SMS otherwise. It never adds a message to a patient: at most one leg goes.
    */
   therapistChangeOnly?: boolean;
 };
@@ -1000,11 +1001,13 @@ export type ConfirmationDispatchOptions = {
  * has, and needs the contact it sends to.
  *
  * Q-K: A CHANGE OF THERAPIST AT THE SAME START sends the email only; the SMS
- * goes only when there is NO EMAIL ON FILE. "On file" is the address, not the
- * switch: a patient with an address whose email is switched off gets neither,
- * because the ruling sends an SMS for a missing address and for nothing else.
- * Every other confirmation (a new booking, a change of start, a visit brought
- * back to Confirmada) sends both legs, exactly as before.
+ * goes only when the patient has NO USABLE EMAIL. "No usable email" is any of:
+ * no address on file, email reminders switched off for the clinic, or the
+ * patient's own email reminder switch off. Then the SMS goes, under its own
+ * usual conditions. (Review of Q-K, round 1: an address with the email
+ * switched off used to get nothing at all.) Every other confirmation (a new
+ * booking, a change of start or clinic, a visit brought back to Confirmada)
+ * sends both legs, exactly as before.
  */
 export function planConfirmationChannels(args: {
   hasEmail: boolean;
@@ -1015,12 +1018,14 @@ export function planConfirmationChannels(args: {
   patientSmsEnabled: boolean;
   therapistChangeOnly: boolean;
 }): { email: boolean; sms: boolean } {
+  // The email leg is the usable email, in every case.
   const email = args.tenantEmailEnabled && args.patientEmailEnabled && args.hasEmail;
   const sms =
     args.tenantSmsEnabled &&
     args.patientSmsEnabled &&
     args.hasPhone &&
-    !(args.therapistChangeOnly && args.hasEmail);
+    // A therapist-only change sends the SMS only when the email cannot go.
+    !(args.therapistChangeOnly && email);
   return { email, sms };
 }
 

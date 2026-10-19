@@ -1,5 +1,6 @@
 import { enqueueAppointmentReminders, enqueueFollowUp, enqueueNoShow } from "@/lib/reminders";
 import { MAX_OCCURRENCES } from "./recurrence";
+import { CONFIRMABLE_STATUSES } from "@/lib/reminders/confirmable-statuses";
 import type { MoveConfirmation } from "./move-confirmation";
 
 // Bridge from a committed appointment mutation (Stream B) to the reminder
@@ -29,12 +30,20 @@ export type ReminderEnqueueTarget = {
    * and by nobody else.
    * Absent: today's confirmation, email and SMS (a booking, an acceptance, a
    * visit brought back to Confirmada, a change of start).
-   *   "therapist_only"  the Terapeuta changed and the start did not: the email
-   *                     alone, the SMS only when there is no email on file.
+   *   "therapist_only"  the Terapeuta changed and the start and the clinic did
+   *                     not: the email alone, the SMS only when there is no
+   *                     usable email.
    *   "none"            neither changed: no confirmation at all. The event is
    *                     still emitted, for the reminders.
    */
   confirmation?: MoveConfirmation;
+  /**
+   * Q-K. The row's status AFTER the save, where the caller knows it (the move
+   * and the un-cancel set it). A row whose status cannot be confirmed
+   * (CONFIRMABLE_STATUSES) never carries the confirmation; absent means "not
+   * known here", and the dispatch's own status gate still applies.
+   */
+  status?: string;
   /**
    * BOOK-CONFIRM. True only for the acceptance of an online booking request;
    * built by `acceptedPedidoTarget` in ./pedido-acceptance.ts and nowhere else.
@@ -112,7 +121,7 @@ export async function enqueueRemindersAfterCommit(
   // Exactly one confirmation per booking action. The FIRST occurrence carries it;
   // 2..n schedule reminders only. The invariant lives here, not at the three call
   // sites, so a future call site inherits it instead of having to remember it.
-  const eligibleIndex = confirmationEligibleIndex(targets);
+  const eligibleIndex = confirmationEligibleIndex(targets, Date.now());
 
   for (const [i, t] of targets.entries()) {
     try {
@@ -142,8 +151,13 @@ export async function enqueueRemindersAfterCommit(
  * sort, so keying on the array position alone would make the patient's
  * confirmation depend on row order. Returns -1 for an empty list.
  *
- * Q-K: a target whose save owes no confirmation (`confirmation: "none"`) is
- * never chosen, so a list of those returns -1 and the action sends none. And
+ * Q-K: a target that CANNOT be confirmed is never chosen: its save owes no
+ * confirmation (`confirmation: "none"`), its status is known and is not one a
+ * confirmation goes out for (a cancelled occurrence moved with its series),
+ * or its start is not after `nowMs` (a past occurrence). Those are left out
+ * BEFORE the rank, so none of them can take the confirmation from an
+ * occurrence that would send it; a list of only those returns -1 and the
+ * action sends none. And
  * a FULL confirmation (no `confirmation` field) wins over a therapist-only one
  * before the start is compared: in a series move where some occurrences
  * changed start and others only changed Terapeuta, the start change is the one
@@ -152,12 +166,19 @@ export async function enqueueRemindersAfterCommit(
  *
  * Exported for direct testing.
  */
-export function confirmationEligibleIndex(targets: readonly ReminderEnqueueTarget[]): number {
+export function confirmationEligibleIndex(
+  targets: readonly ReminderEnqueueTarget[],
+  nowMs: number = Date.now(),
+): number {
   const rank = (t: ReminderEnqueueTarget) => (t.confirmation === "therapist_only" ? 1 : 0);
+  const confirmable = (t: ReminderEnqueueTarget) =>
+    t.confirmation !== "none" &&
+    (t.status === undefined || CONFIRMABLE_STATUSES.has(t.status)) &&
+    t.startsAt.getTime() > nowMs;
   let best = -1;
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i]!;
-    if (t.confirmation === "none") continue;
+    if (!confirmable(t)) continue;
     if (best === -1) {
       best = i;
       continue;

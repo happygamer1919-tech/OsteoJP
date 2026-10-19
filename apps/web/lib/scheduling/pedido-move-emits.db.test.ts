@@ -208,7 +208,7 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     expect(await isPedido(id)).toBe(false);
 
     expect((await move(id, D2)).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId, status: "confirmed" }]);
   });
 
   it("a STAFF booking that is still Agendada, moved: emits, because it is not a pedido", async () => {
@@ -216,7 +216,7 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
     expect(await isPedido(id)).toBe(false);
 
     expect((await move(id, D2)).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D2, practitionerId, status: "scheduled" }]);
   });
 
   it("a LEGACY pedido (staff origin, a request notification) moved: nothing, by the database's own definition", async () => {
@@ -251,13 +251,13 @@ d("a move or an un-cancel of an unaccepted request emits nothing", () => {
   it("an online request brought back straight to CONFIRMADA emits, unmarked, as before", async () => {
     const id = await seed({ status: "cancelled", origin: "patient_portal" });
     expect((await actions.updateAppointment(id, { status: "confirmed" })).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId, status: "confirmed" }]);
   });
 
   it("a STAFF booking brought back to Agendada emits, so its reminders exist again", async () => {
     const id = await seed({ status: "cancelled", origin: "staff" });
     expect((await actions.updateAppointment(id, { status: "scheduled" })).ok).toBe(true);
     expect(await isPedido(id)).toBe(false);
-    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId }]);
+    expect(emitted()).toEqual([{ appointmentId: id, startsAt: D1, practitionerId, status: "scheduled" }]);
   });
 });

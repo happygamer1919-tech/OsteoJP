@@ -365,7 +365,13 @@ d("MARC-THERAPIST-01: the Terapeuta changed from the ficha's Gerir marcação", 
     // with the new therapist and (Q-K rule 2) marked as a therapist-only change.
     expect(h.enqueueRemindersAfterCommit).toHaveBeenCalledTimes(1);
     expect(h.enqueueRemindersAfterCommit).toHaveBeenCalledWith(tenantId, [
-      { appointmentId: id, startsAt: at(WED, 15), practitionerId: tFree, confirmation: "therapist_only" },
+      {
+        appointmentId: id,
+        startsAt: at(WED, 15),
+        practitionerId: tFree,
+        confirmation: "therapist_only",
+        status: "scheduled",
+      },
     ]);
   });
 

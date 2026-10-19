@@ -18,18 +18,21 @@ export type AppointmentScheduledData = {
   startsAt: string; // ISO-8601 UTC
   /**
    * Q-K. The appointment's Terapeuta (a staff user id) at the moment of the
-   * save that emitted this event. ALWAYS PRESENT: the confirmation's duplicate
-   * key is appointment + start + therapist (CONFIRMATION_IDEMPOTENCY_KEY in
-   * ./functions.ts), and a key that reads a field some events lack is a key
-   * whose behaviour on those events nobody measured. A staff id, not a fact
-   * about the patient.
+   * save that emitted this event. Part of the confirmation's duplicate key,
+   * appointment + start + therapist (CONFIRMATION_IDEMPOTENCY_KEY in
+   * ./functions.ts). PRESENT ON EVERY EVENT THE APPLICATION SENDS, and only
+   * those: the owner-run re-arm and backfill scripts (packages/db/scripts/
+   * inc-1007-rearm-reminders-emit.mjs, obs-05-backfill-emit.mjs) omit it and
+   * send `confirmationEligible: false`, so their events never start a
+   * confirmation run. ./functions.ts states the assumption that rests on. A
+   * staff id, not a fact about the patient.
    */
   practitionerId: string;
   /**
    * Q-K. Present, and `true`, ONLY when the save that emitted this event
-   * changed the Terapeuta and kept the start. The confirmation dispatch then
-   * sends the email alone, and the SMS only to a patient with no email on
-   * file. Absent on every other event, which keeps today's confirmation. A
+   * changed the Terapeuta and kept the start and the clinic. The confirmation
+   * dispatch then sends the email alone, and the SMS only to a patient with no
+   * usable email. Absent on every other event, which keeps today's confirmation. A
    * flag about the EVENT; it names nobody.
    */
   therapistChangeOnly?: true;
