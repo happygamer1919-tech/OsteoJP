@@ -359,8 +359,17 @@ claims; on lane blue, `Tests 58 passed (58)`):
 | On the owner connection: a claim with no attempt; attempt 0; attempt -1; a release or a shadow row with an attempt | `attempt_matches_kind`, `attempt_positive`, `attempt_positive`, `attempt_matches_kind` twice |
 
 **EVERY WRITER OF THIS TABLE ON THE TWO SWEEP BRANCHES, and what Q-5 asks of each.** Read on
-2026-10-14 from the worktrees, not edited. Both branches carry their own copy of the pending
-migration and of `schema.ts`, without `attempt`; each needs this branch merged in first.
+2026-10-14 from the worktrees, not edited. The line numbers below are that day's.
+
+**CORRECTED 2026-10-19: BOTH BRANCHES NOW SET THE ATTEMPT NUMBER.** The tables below are the
+2026-10-14 survey of what had to change, kept as the record. Since 2026-10-15 both branches carry
+this branch merged in (`d62027ee`, a merge, no rebase), and every claim writer sets `attempt` to
+one more than the highest attempt of that reminder's claims, read inside the claim's transaction
+after its lock (`nextReminderClaimAttempt` in `apps/web/lib/reminders/reminder-claim.ts`, called
+from `takeReminderClaim` and, on SWEEP-47, from `takeReminderClaimClosed`). The release, shadow and
+heartbeat writers set none, as the CHECK requires. The test fixtures that insert a claim set a
+distinct number per claim. Heads checked on 2026-10-19: `reminders/SWEEP-13-on-table` `13d496e4`,
+`reminders/SWEEP-47-sweep-sends` `83d48e7b`. Both branches are local; none of it is on `main`.
 
 `reminders/SWEEP-13-on-table` (`914417fe`):
 
@@ -385,15 +394,14 @@ migration and of `schema.ts`, without `attempt`; each needs this branch merged i
 | test fixtures that insert a claim: `reminder-claim-closed.db.test.ts:194`, `reminder-claim.db.test.ts:275`, `reminder-log.db.test.ts:799`, `sweep-send.db.test.ts:192`, `sweep.db.test.ts:205` | claim | **YES** |
 | test fixtures that insert a shadow row, a release or a heartbeat: `reminder-claim-closed.db.test.ts:203` and `:387`, `reminder-claim.db.test.ts:287` and `:295`, `reminder-log.db.test.ts:793`, `sweep-send.db.test.ts:197`, `:211` and `:536`, `sweep.db.test.ts:179` and `:213` | other | no |
 
-**A consequence the sending code must take on, not decided here.** `takeReminderClaim` catches
-every failure and answers "not held, no claim id" (`reminder-claim.ts:399-405` on SWEEP-47, `:382-388` on SWEEP-13), so
-the caller goes on and sends. Today a `23505` from this index would be such a failure: the
-duplicate the table refused would still be sent by the open path. The closed path
-(`takeReminderClaimClosed`) throws `ReminderClaimStoreError` and sends nothing, which is the safe
-side. Whether the open path should answer `held` on `23505 reminder_claims_claim_attempt_key` is
-an open question below. Until a writer sets `attempt`, every claim insert it makes is refused by
-`reminder_claims_attempt_matches_kind` (`23514`): on the open path that is a logged failure and a
-send without a claim; on the closed path, no send.
+**The `23505` from this index, RULED AND BUILT (strategy Q-A (a), 2026-10-15; corrected
+2026-10-19).** Until then `takeReminderClaim` caught every failure and answered "not held, no
+claim id", so the open path would have sent a duplicate the table refused. Now, on both branches
+and on both paths, a `23505` naming `reminder_claims_claim_attempt_key` is HELD: nothing is sent,
+the outcome is `claim_held_by_duplicate`, the sweep pass counts it apart (`heldByDuplicate`), and
+one log line carries only the reason, the offset and the channel. No ledger row is written, the
+same as an ordinary held claim. Any other error keeps its earlier handling: the closed path
+(`takeReminderClaimClosed`) still throws `ReminderClaimStoreError` and sends nothing.
 
 ## No code on `main` reads either table (W-9)
 
@@ -900,13 +908,10 @@ The migration has none. The rollback block above drops two tables this file crea
 
 Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. What is open now:
 
-0. **The open claim and a `23505` (the sending code's, raised by Q-5; not this file's).**
-   `takeReminderClaim` answers "not held" on every failure, so a claim the index refuses as a
-   duplicate would still be sent. (a) On `23505` with constraint
-   `reminder_claims_claim_attempt_key`, answer `held`: another taker holds this attempt. (b) Keep
-   the open path fail-open and rely on the lock, which makes the collision unreachable for it.
-   (c) Retry once with the next number. Recommend (a): the table's refusal then means what it
-   says on both paths. The closed path already sends nothing on any failure.
+0. **CLOSED 2026-10-15: the open claim and a `23505`.** Strategy ruled (a): a `23505` naming
+   `reminder_claims_claim_attempt_key` is held, nothing is sent, and it is recorded as
+   held-by-duplicate. Built on both sweep branches; see the corrected paragraph under "EVERY
+   WRITER OF THIS TABLE".
 
 1. **A release tied to its claim's kind, offset and channel, by a generated column (strategy,
    to confirm).** Built, because the brief asked for it if cheap and provable, and it was both.
@@ -919,9 +924,18 @@ Strategy's rulings of 2026-10-13 closed the nine questions of the first draft. W
    (c) Drop the blanket grant and grant `service_role` table by table in a migration, which the
    seed's own comment names as the durable path; a larger change with its own sitting.
    Recommend (a) now.
-3. **Should `0104` or `0105` touch `appointments`' policies** (strategy knows their content;
-   this document does not quote it): if so, the rehearsal on top of them reads verdict 8 and
-   the "SEES" arm first.
+3. **CLOSED 2026-10-19: neither `0104` nor `0105` touches `appointments`.** `0104` changed only
+   `clinical_episodes`' policies; `0105` added a unique index on `clinical_episodes` and a
+   foreign key on `clinical_records`, and replaced `merge_patients`. Both are applied (journal
+   103), and their post-checks proved every other policy unchanged by hash.
+
+4. **ACCEPTED BY STRATEGY 2026-10-18 (Q-I): the attempt key has no tenant column.**
+   `reminder_claims_claim_attempt_key` is unique on the reminder's appointment, offset, channel,
+   start and attempt, with no `tenant_id`. A claim row of one tenant naming another tenant's
+   appointment would take that reminder's attempt number and hold it for good. The job's INSERT
+   policy makes such a row impossible for every role that row security binds (W-6: a row's
+   appointment must belong to the row's tenant, checked against `appointments`), so only a role
+   that bypasses row security (the table's owner, a superuser) could write it. Strategy accepted this as is; nothing in the migration changes for it.
 
 ## Review history
 
