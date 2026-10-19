@@ -11277,7 +11277,7 @@
               "strong": "Avaliações de satisfação"
             },
             {
-              "text": " lista as avaliações enviadas, com a coluna "
+              "text": " lista as avaliações enviadas que pode ver, com a coluna "
             },
             {
               "strong": "Resposta"
@@ -11315,7 +11315,7 @@
               "strong": "Avaliações de satisfação"
             },
             {
-              "text": " mostra as avaliações enviadas a esse paciente que pode ler."
+              "text": " mostra as avaliações enviadas a esse paciente que pode ver."
             }
           ],
           "type": "para"
@@ -11368,7 +11368,7 @@
       "see": [],
       "shots": null,
       "title": "Avaliação de satisfação",
-      "words": 195
+      "words": 198
     },
     {
       "answers": [],

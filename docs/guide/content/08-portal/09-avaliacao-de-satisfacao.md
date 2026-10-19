@@ -13,9 +13,9 @@ Quando uma consulta é marcada como **Concluída** em **Estado**, o paciente pod
 
 O paciente recebe no máximo uma avaliação a cada 60 dias. Não é enviada se a consulta já não estiver **Concluída** nessa altura, nem se o paciente tiver recusado as avaliações, na própria ligação ou no portal, em Conta.
 
-Em **Comunicações**, o separador **Avaliações de satisfação** lista as avaliações enviadas, com a coluna **Resposta** (**Com resposta** ou **Sem resposta**). Cada resposta é visível para o terapeuta que realizou a consulta, se decorreu numa das suas clínicas, para a receção e os administradores dessa clínica e para o proprietário.
+Em **Comunicações**, o separador **Avaliações de satisfação** lista as avaliações enviadas que pode ver, com a coluna **Resposta** (**Com resposta** ou **Sem resposta**). Cada resposta é visível para o terapeuta que realizou a consulta, se decorreu numa das suas clínicas, para a receção e os administradores dessa clínica e para o proprietário.
 
-Na ficha do paciente, no separador **Resumo**, a secção **Avaliações de satisfação** mostra as avaliações enviadas a esse paciente que pode ler.
+Na ficha do paciente, no separador **Resumo**, a secção **Avaliações de satisfação** mostra as avaliações enviadas a esse paciente que pode ver.
 
 ::: rececao proprietario
 Na mesma secção, o interruptor **Enviar avaliação de satisfação depois das consultas** está ligado por omissão. Desligado, não é enviada nenhuma avaliação a esse paciente. Desligar não afeta os lembretes de consulta.
