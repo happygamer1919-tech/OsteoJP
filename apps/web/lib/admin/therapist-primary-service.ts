@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { services, therapistServices } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
@@ -152,6 +152,102 @@ export async function setTherapistPrimaryService(
       entityId: therapistId,
       // PII-free: ids + counts only.
       metadata: { serviceId, added: !ids.includes(serviceId), total: ordered.length },
+    });
+  });
+}
+
+/**
+ * The OTHER services a therapist delivers, ticked in Equipa (owner ruling Q-M,
+ * 2026-10-20). The patient app offers and assigns a therapist only for a
+ * service they are mapped to, so reception needs to mark SEVERAL services per
+ * therapist, not just the primary.
+ *
+ * THE PRIMARY IS NEVER TOUCHED, and that is the whole contract. The staff agenda
+ * preselects the earliest-created mapping (W3-04, read oldest-first by
+ * scheduling/therapist-services.ts), and PL-06a still governs the staff side.
+ * So this function:
+ *   - keeps the earliest row exactly as it is, whatever the form posted (its
+ *     checkbox is shown ticked and disabled; the primary moves only through
+ *     setTherapistPrimaryService above);
+ *   - ADDS a newly ticked service as a plain INSERT stamped clock_timestamp(),
+ *     which is later than the primary's committed created_at, so the primary
+ *     stays the earliest;
+ *   - REMOVES an unticked non-primary service with a DELETE of that row only.
+ * Never an UPDATE (0023 is add/remove only; UPDATE 42501-throws). No migration:
+ * one row per (therapist, service) is what `therapist_services` already holds.
+ *
+ * ONLY ACTIVE SERVICES ARE OFFERED, SO ONLY ACTIVE SERVICES ARE REMOVED. The form
+ * lists the tenant's active services; a mapping to an archived service is not on
+ * the form, so its absence from the post is not an untick and the row is kept.
+ *
+ * A therapist with NO primary yet is refused ("invalid"): the primary is the one
+ * row the staff agenda reads, so it is chosen deliberately first, never inferred
+ * from the order of a checkbox list. Admin-only, server-enforced (users:manage),
+ * like the primary.
+ */
+export async function setTherapistServices(
+  actor: RequestContext,
+  therapistId: string,
+  serviceIds: string[],
+): Promise<void> {
+  assertCan(actor.role, "users:manage");
+  if (!therapistId) throw new AdminError("invalid");
+  const wanted = [...new Set(serviceIds.filter((id) => id !== ""))];
+
+  await runScoped(actor, async (tx) => {
+    const mapped = await tx
+      .select({ serviceId: therapistServices.serviceId })
+      .from(therapistServices)
+      .where(eq(therapistServices.therapistUserId, therapistId))
+      .orderBy(asc(therapistServices.createdAt));
+    const ids = mapped.map((m) => m.serviceId);
+    const primary = ids[0];
+    if (primary === undefined) throw new AdminError("invalid");
+
+    // Every ticked id must be an ACTIVE service of this tenant (RLS scopes the
+    // read); a forged or archived id refuses the whole save.
+    const active = await tx
+      .select({ id: services.id })
+      .from(services)
+      .where(eq(services.isActive, true));
+    const activeIds = new Set(active.map((r) => r.id));
+    if (wanted.some((id) => !activeIds.has(id))) throw new AdminError("invalid");
+
+    const toAdd = wanted.filter((id) => !ids.includes(id));
+    const toRemove = ids
+      .slice(1) // never the primary
+      .filter((id) => activeIds.has(id) && !wanted.includes(id));
+    if (toAdd.length === 0 && toRemove.length === 0) return;
+
+    if (toRemove.length > 0) {
+      await tx
+        .delete(therapistServices)
+        .where(
+          and(
+            eq(therapistServices.therapistUserId, therapistId),
+            inArray(therapistServices.serviceId, toRemove),
+          ),
+        ); // RLS scopes tenant
+    }
+    for (const s of toAdd) {
+      await tx.insert(therapistServices).values({
+        tenantId: actor.tenantId, // NOT NULL + RLS WITH CHECK
+        therapistUserId: therapistId,
+        serviceId: s,
+        createdAt: sql`clock_timestamp()`,
+      });
+    }
+
+    await writeAudit(tx, actor, {
+      action: "therapist.services.set",
+      entityType: "therapist_services",
+      entityId: therapistId,
+      // PII-free: counts only.
+      metadata: {
+        added: toAdd.length,
+        removed: toRemove.length,
+        total: ids.length + toAdd.length - toRemove.length,
+      },
     });
   });
 }

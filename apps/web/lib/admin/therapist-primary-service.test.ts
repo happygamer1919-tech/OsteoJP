@@ -16,6 +16,7 @@ import { writeAudit } from "./audit";
 import {
   getTherapistPrimaryServiceId,
   setTherapistPrimaryService,
+  setTherapistServices,
 } from "./therapist-primary-service";
 import type { RequestContext } from "@osteojp/auth";
 
@@ -143,5 +144,142 @@ describe("getTherapistPrimaryServiceId (W3-04)", () => {
     mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
 
     await expect(getTherapistPrimaryServiceId(admin, "ther-1")).resolves.toBeNull();
+  });
+});
+
+// Q-M (owner ruling, 2026-10-20): reception ticks SEVERAL services per
+// therapist. The patient app offers a therapist only for a mapped service; the
+// staff agenda preselects the PRIMARY (earliest row) and must not move. A fake
+// tx for setTherapistServices. Two selects run in order:
+//   (1) the therapist's mapped services → `.orderBy()` → oldest-first;
+//   (2) the tenant's ACTIVE services → awaited straight off `.where()`.
+// Deletes record the `where` they were given; `update` must stay untouched.
+function setServicesTx(mapped: string[], active: string[]) {
+  const calls = {
+    deletes: 0,
+    inserts: [] as Array<Record<string, unknown>>,
+    updates: 0,
+  };
+  let selectIdx = 0;
+  const tx = {
+    select: () => {
+      const idx = selectIdx++;
+      return {
+        from: () => ({
+          where: () =>
+            idx === 0
+              ? { orderBy: async () => mapped.map((serviceId) => ({ serviceId })) }
+              : Promise.resolve(active.map((id) => ({ id }))),
+        }),
+      };
+    },
+    delete: () => ({ where: async () => { calls.deletes++; } }),
+    insert: () => ({ values: async (v: Record<string, unknown>) => { calls.inserts.push(v); } }),
+    update: () => { calls.updates++; return { set: () => ({ where: async () => {} }) }; },
+  };
+  return { tx, calls };
+}
+
+const ACTIVE = ["svc-primary", "svc-b", "svc-c", "svc-d"];
+
+describe("setTherapistServices (Q-M): several services, the primary never moves", () => {
+  it("ticking several services INSERTS each new one and never touches the primary row", async () => {
+    const { tx, calls } = setServicesTx(["svc-primary"], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await setTherapistServices(admin, "ther-1", ["svc-b", "svc-c"]);
+
+    expect(calls.deletes).toBe(0); // the primary row is not deleted and re-inserted
+    expect(calls.updates).toBe(0);
+    expect(serviceIdsOf(calls.inserts)).toEqual(["svc-b", "svc-c"]);
+    expect(serviceIdsOf(calls.inserts)).not.toContain("svc-primary");
+    expect(calls.inserts[0]).toMatchObject({ tenantId: "tenant-A", therapistUserId: "ther-1" });
+    expect(writeAudit).toHaveBeenCalledWith(
+      tx,
+      admin,
+      expect.objectContaining({
+        action: "therapist.services.set",
+        metadata: { added: 2, removed: 0, total: 3 },
+      }),
+    );
+  });
+
+  it("unticking a service DELETES that row only; the primary survives a post that omits it", async () => {
+    // The primary checkbox is disabled, so a real post never carries it.
+    const { tx, calls } = setServicesTx(["svc-primary", "svc-b", "svc-c"], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await setTherapistServices(admin, "ther-1", ["svc-c"]);
+
+    expect(calls.deletes).toBe(1); // svc-b only
+    expect(calls.inserts).toHaveLength(0);
+    expect(calls.updates).toBe(0);
+    expect(writeAudit).toHaveBeenCalledWith(
+      tx,
+      admin,
+      expect.objectContaining({ metadata: { added: 0, removed: 1, total: 2 } }),
+    );
+  });
+
+  it("an empty post removes every ticked extra and still keeps the primary", async () => {
+    const { tx, calls } = setServicesTx(["svc-primary", "svc-b"], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await setTherapistServices(admin, "ther-1", []);
+
+    expect(calls.deletes).toBe(1);
+    expect(calls.inserts).toHaveLength(0);
+    expect(writeAudit).toHaveBeenCalledWith(
+      tx,
+      admin,
+      expect.objectContaining({ metadata: { added: 0, removed: 1, total: 1 } }),
+    );
+  });
+
+  it("is a no-op (no write, no audit) when nothing changed", async () => {
+    const { tx, calls } = setServicesTx(["svc-primary", "svc-b"], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await setTherapistServices(admin, "ther-1", ["svc-b", "svc-primary"]);
+
+    expect(calls.deletes).toBe(0);
+    expect(calls.inserts).toHaveLength(0);
+    expect(writeAudit).not.toHaveBeenCalled();
+  });
+
+  it("a mapping to an ARCHIVED service is not on the form, so it is kept", async () => {
+    const { tx, calls } = setServicesTx(["svc-primary", "svc-archived"], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await setTherapistServices(admin, "ther-1", ["svc-b"]);
+
+    expect(calls.deletes).toBe(0);
+    expect(serviceIdsOf(calls.inserts)).toEqual(["svc-b"]);
+  });
+
+  it("refuses a therapist with no primary yet (the primary is chosen first, deliberately)", async () => {
+    const { tx, calls } = setServicesTx([], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await expect(setTherapistServices(admin, "ther-1", ["svc-b"])).rejects.toMatchObject({
+      code: "invalid",
+    });
+    expect(calls.inserts).toHaveLength(0);
+  });
+
+  it("refuses an inactive or forged service id, writing nothing", async () => {
+    const { tx, calls } = setServicesTx(["svc-primary"], ACTIVE);
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await expect(
+      setTherapistServices(admin, "ther-1", ["svc-b", "svc-forged"]),
+    ).rejects.toMatchObject({ code: "invalid" });
+    expect(calls.inserts).toHaveLength(0);
+    expect(calls.deletes).toBe(0);
+  });
+
+  it("refuses a non-admin (users:manage gate, server-enforced)", async () => {
+    await expect(setTherapistServices(reception, "ther-1", ["svc-b"])).rejects.toThrow();
+    expect(mockRunScoped).not.toHaveBeenCalled();
   });
 });
