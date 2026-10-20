@@ -41,6 +41,7 @@ import {
   PORTAL_BASE_URL,
   PORTAL_PATIENT,
   PORTAL_STORAGE,
+  SERVICE,
   STORAGE,
   WEB_BASE_URL,
 } from "./fixtures";
@@ -160,15 +161,23 @@ async function bookFromPortal(page: Page): Promise<BookOutcome> {
   const clinic = page.getByRole("button", { name: new RegExp(LOCATION.name, "i") });
   if (await becameVisible(clinic.first(), 5_000)) await clinic.first().click();
 
-  // Service step: take the first offered service, whatever it is. Naming one
-  // would couple this sync proof to the service catalog, which is LOOP 4's
-  // subject and not this file's.
-  const service = page.getByRole("button").filter({ hasText: /\d+\s*min/i });
+  // Service step. This used to take the FIRST offered service, whatever it was,
+  // so as not to couple the sync proof to the catalogue. Owner ruling Q-M
+  // (2026-10-20) made that unsafe: the portal now offers slots only from
+  // therapists mapped to the chosen service, and the first row sorts as a
+  // service the seed maps to nobody (the staff-side PL-06a fixture). Its
+  // calendar is empty by design, which this helper would report as the one
+  // legitimate skip. Osteopatia is mapped to both Linda-a-Velha therapists, so
+  // it is named.
+  const service = page
+    .getByRole("button")
+    .filter({ hasText: /\d+\s*min/i })
+    .filter({ hasText: SERVICE.name });
   await service.first().waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
   if ((await service.count()) === 0) {
     // NOT an empty calendar. The catalog is seeded and independent of the run
     // day, so no service rows means the flow itself is broken.
-    return { ok: false, why: "flow-broken", detail: "service step offered no service" };
+    return { ok: false, why: "flow-broken", detail: `service step did not offer ${SERVICE.name}` };
   }
   const serviceName = (await service.first().textContent())?.trim().slice(0, 60) ?? "?";
   console.log(`[W13-07] A: service chosen = ${serviceName}`);
