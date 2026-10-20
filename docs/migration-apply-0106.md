@@ -1,8 +1,8 @@
 # 0106: apply the reminder sweep's two tables
 
-**NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number on `main`'s position after 0105, and this document now carries its seven blocks. Open, in order: the rehearsal of every block on a throwaway at production's position, by an agent that did not write them; one R4 round on this document's blocks, the two check files' journal verdicts and the script test (they are bytes that run against production); the cleanup test's GATE-CHANGE merged by the owner; SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the values this document cannot hold (the merge commit's sha as MERGED, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). Until the pull request is merged every block below STOPs at its first check, because this document is not on `origin/main`. **The sitting is closed hours only** (this migration creates policies; see "Closed hours, and the locks").
+**NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number on `main`'s position after 0105, and this document carries its seven blocks, reviewed, and rehearsed on a throwaway at production's position by an agent that did not write them. Open, in order: one R4 round on this revision's record of the rehearsal (the status lines, the NOT READY list, "Rehearsal", "NOT REHEARSED" and stage 1's EXPECT; no block byte changed); SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the values this document cannot hold (the merge commit's sha as MERGED, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). Until the pull request is merged every block below STOPs at its first check, because this document is not on `origin/main`. **The sitting is closed hours only** (this migration creates policies; see "Closed hours, and the locks").
 
-**Status: AUTHORED; REVIEWED (a fresh reviewer PASSED the migration revision on 2026-10-19 with three MINOR findings, all answered; see "Review history"); PROMOTED 2026-10-19 (`packages/db/migrations/0106_reminder_claims.sql`, journal idx 103); BLOCKS WRITTEN 2026-10-19 AND PROVEN BY THEIR FAULT-INJECTION TEST ONLY. THE BLOCKS ARE NOT REHEARSED AGAINST A DATABASE YET. ONE R4 ROUND ON THEM RAN ON 2026-10-19 (ONE MAJOR, FOUR MINOR FINDINGS, ALL ANSWERED); THE FIXES CHANGE BYTES OF BEFORE YOU START, THE CLOCK CHECK AND THE S12 BLOCK, AND ARE NOT RE-REVIEWED. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9`, 24 statements, unchanged by the promotion.
+**Status: AUTHORED; REVIEWED (a fresh reviewer PASSED the migration revision on 2026-10-19 with three MINOR findings, all answered; see "Review history"); PROMOTED 2026-10-19 (`packages/db/migrations/0106_reminder_claims.sql`, journal idx 103); BLOCKS WRITTEN 2026-10-19 AND PROVEN BY THEIR FAULT-INJECTION TEST; ONE R4 ROUND ON THEM 2026-10-19 (ONE MAJOR, FOUR MINOR FINDINGS, ALL ANSWERED) AND A RE-REVIEW OF THE FIXES THE SAME DAY (READY, TWO MINOR WORDING FINDINGS, ANSWERED); REHEARSED 2026-10-19 AND 2026-10-20 ON A THROWAWAY BY AN AGENT THAT DID NOT WRITE THEM ("The fourth rehearsal"): STAGES 0, 1 AND 2, THE S12 COUNT'S BLOCK AND THE CLOSING READ RAN, NO BLOCKER AND NO MAJOR; BEFORE YOU START AND THE CLOCK CHECK STOP AT THEIR PENDING LINES THERE, AS THEY MUST, AND ARE NOT REHEARSED. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9`, 24 statements, unchanged by the promotion.
 
 **In plain language.** The daily reminder sweep needs a place of its own to write down which reminders it took and when it ran. This migration creates that place: two new, empty tables. Only the reminder job's own session may add a row; staff of the clinic group may read them; nobody may change or remove a row; `service_role` holds nothing on either. Nothing that exists today changes: no existing table, policy, function or grant. No screen changes. Nothing reads or writes the tables until the sweep's own pull requests merge, after the apply.
 
@@ -33,9 +33,9 @@ non-zero exit end that block alone, and the closing read is pasted next.
 
 1. **DONE: `0104` and `0105` are applied to production and merged.** GREEN applied both on 2026-10-15 (`0104` 00:40 to 00:45 Lisbon, `0105` 21:30 to 21:32); production's journal reads 103, `0105` at idx 102. `main` was merged into this branch on 2026-10-19 (merge commit `f3ac14f6`; no conflict).
 2. **DONE 2026-10-19: a fresh reviewer passed the migration's revision** (R4, Tier C), with three MINOR findings: (a) the S12 file's printed Run line did not carry the 120 second bound its block sets; (b) the `a.tenant_id` mutant (mutant 4 of the second sweep) survived the suite on CI; (c) the header, this list and the status lines were stale. Each is answered: (a) the Run line carries it, and every pin of the S12 file moved to `d8c94f0f...150fb7`; (b) the suite gained the arm "THE CLAIMS INSERT POLICY'S WITH CHECK is the pinned expression", which reads mutant 4 red (see "Mutation sweeps"); (c) this header, this list and the status lines.
-3. **OPEN, THE OWNER: the GATE-CHANGE the promotion forces merges first,** as its own pull request, on green: the cleanup test learns `reminder_claims` (branch `ci/GATE-CHANGE-cleanup-learns-reminder-claims`). Until it merges, `pnpm test:scripts` on this branch reads 2 failures, both in `scripts/import/cleanup-test-patients.test.mjs` and both the ones that GATE-CHANGE answers (its test file passes 26 of 26 against this tree).
+3. **DONE 2026-10-19: the GATE-CHANGE the promotion forces is merged,** as its own pull request: the cleanup test learns `reminder_claims` (#1617, merged by the owner at 17:32 Lisbon). `main` was merged into this branch after it (`4c4bc929`); the cleanup test passes 26 of 26 on this branch.
 4. **DONE 2026-10-19: the promotion** (the next section).
-5. **DONE 2026-10-19, WITHOUT A DATABASE: this document's blocks, its sidecar and its fault-injection test** (`scripts/reminder-claims-0106.test.mjs`), and the check files' journal verdicts. **OPEN: the rehearsal,** by an agent that did not write them, of every block on a throwaway at production's position (`0000` to `0105` applied, a drizzle journal of 103 rows), under the lead's rule of 2026-09-30. **One R4 round** on the blocks, the check files' new verdicts and the script test ran on 2026-10-19 (see "Review history"); its MAJOR finding changed block bytes, so a further round on the changed bytes is owed before the READY line.
+5. **DONE 2026-10-19: this document's blocks, its sidecar and its fault-injection test** (`scripts/reminder-claims-0106.test.mjs`), and the check files' journal verdicts. **DONE 2026-10-19: one R4 round** on the blocks, the check files' new verdicts and the script test (one MAJOR, four MINOR, all answered), **and a re-review of the changed bytes** (READY; two MINOR wording findings, answered in `8df52cee`; see "Review history"). **DONE 2026-10-19 and 2026-10-20: the rehearsal,** by an agent that did not write them, of every block on a throwaway at production's position (`0000` to `0105` applied, a drizzle journal of 103 rows), under the lead's rule of 2026-09-30 (see "The fourth rehearsal"). No BLOCKER and no MAJOR. Its two MINOR findings, the stale record lines and four items missing from "NOT REHEARSED" and stage 1's EXPECT, are answered in this revision, which changes no block byte. **OPEN: one R4 round on this revision's changed prose.**
 6. **OPEN: SOLO's READY line; the pull request, opened held (`held-for-apply`, unarmed); `main` merged into the branch with CI green on that head.**
 7. **OPEN, THE OWNER: he takes `held-for-apply` off and merges** (strategy W-9: "merge first, apply from main"). Merges to main stop from that merge until GREEN's report on 0106.
 8. **OPEN: SOLO fills GREEN's dispatch** after the merge: MERGED (the merge commit), DOCSHA (this document's sha256 at that commit) and a run window while both clinics are closed. Stage 0 runs the W-9 search on the commit the sitting runs from, by itself.
@@ -560,7 +560,7 @@ echo "0106 APPLIED. Paste stage 2 now."
 - The run window line, with now inside it; the target guard's `host:`, `port:`, `ref:` and `target verified: production, session pooler.`
 - The pre-check's table: 13 OK (the journal verdicts 10 and 11 naming 0106 absent and 0105 the newest row at 1788502600000, and the row `journal_rows_before` reading 103), 9 CARRY rows and 3 INFO rows; then `the pre-check profile: 13 OK / 0 VACUOUS / 0 FAIL. REPORT, AS PRINTED ABOVE, every INFO row ...`. **GREEN reports, as printed, every INFO row.**
 - `run window, again before the apply: ...`; the clock again, `closed`, `active clinics ...: 0 of <n>` with `n` at least 1, `the clinics' own rows against the weekday table: inside`, the three proof lines, then `R9: closed hours by the weekday table, and every active clinic's own hours lie inside it. 0106 runs in closed hours only`.
-- verified-migrate's lines, teed to `/tmp/0106-apply.out`: `pending    1  [0106_reminder_claims]`, the drizzle-kit banner, `journal    103 -> 104  (delta 1)` and `0106_reminder_claims present by sha256: yes`.
+- verified-migrate's lines, teed to `/tmp/0106-apply.out`: `pending    1  [0106_reminder_claims]`, the drizzle-kit banner, `journal    103 -> 104  (delta 1)` and `0106_reminder_claims present by sha256: yes`. **Inside the drizzle-kit banner, two NOTICE objects are expected** on a database that already holds drizzle's journal, as production does: code `42P06`, `schema "drizzle" already exists, skipping`, and code `42P07`, `relation "__drizzle_migrations" already exists, skipping`, then the line ending `migrations applied successfully!`. They are not errors and decide nothing (the fourth rehearsal printed both).
 - `0106 APPLIED. Paste stage 2 now.` Exit 0.
 
 **WHAT THE EXIT MEANS.** Any STOP before the apply line means nothing was applied. A pre-check that prints a FAIL, a VACUOUS, or an OK count that is not 13 is such a STOP. The apply is the only writing command in this document. If verified-migrate exits non-zero, do not read that as nothing applied: its exit 3 before the migration ran is a precondition (on a database that already holds 0106 it reads `PRECONDITION FAILED: ... ALREADY in drizzle.__drizzle_migrations`, exit 3, nothing run), but exit 3 or 4 can also follow a committed apply. A lock it cannot take in 5 seconds is a clean failure with nothing applied (`journal    103 -> 103  (delta 0)`); it is still a halt.
@@ -879,7 +879,7 @@ arm of Q-5, whose winner commits.
 | **W-11** confirmed as built: `send` in the mode list, one release per claim, `due_at` and `early` stored | Unchanged | Post-check verdicts 4 and 5 (the constraints, pinned), OK |
 | **Q-5 (2026-10-14)** the TABLE refuses a duplicate claim for the same attempt, not only the sending code | The stored column `attempt`, two CHECKs, and the partial unique index `reminder_claims_claim_attempt_key` | See "Q-5" below. The suite, as the job: same attempt `23505`, the next attempt and a retry after a release accepted, shadow rows and heartbeats not refused, six concurrent sessions with one winner. Mutation sweep: 8 of 9 killed, the ninth equivalent |
 | **Q-4 (2026-10-14)** the post-check reads `service_role`'s grants on both tables directly | Post-check verdicts 22 and 23 | See "What every verdict must read". 24 OK on lane blue; each shown FAIL in a rolled-back transaction; VACUOUS shown on a scratch copy |
-| **S12 (2026-10-14)** the read-only count runs in the sitting as its own block, for the final S12 ruling | `scripts/db/s12-never-had-a-reminder-count.sql` and "THE S12 COUNT" block, between stage 2 and the closing read | Its earlier form was rehearsed on lane blue on 2026-10-14, in bash and zsh, with two halts shown; its form of 2026-10-19 (it loads the environment and asserts the target itself) is proven by the script test only. Never a STOP condition |
+| **S12 (2026-10-14)** the read-only count runs in the sitting as its own block, for the final S12 ruling | `scripts/db/s12-never-had-a-reminder-count.sql` and "THE S12 COUNT" block, between stage 2 and the closing read | Its earlier form was rehearsed on lane blue on 2026-10-14, in bash and zsh, with two halts shown; its form of 2026-10-19 (it loads the environment and asserts the target itself) ran in the fourth rehearsal on 2026-10-20: it printed the count, ended that block alone when its query ran past 120 seconds, and stopped the sitting on the guard's refusal. Its counts are never a STOP condition |
 
 ## 3. The design, in brief
 
@@ -1407,11 +1407,69 @@ nine went red. Not run again.
 
 ## Rehearsal
 
-None of the three below is a sitting rehearsal: they ran before the blocks were written. What
-ran each time is the migration itself, the two check files, the suite and the rollback; the
-third also ran the S12 block as it stood then. **The rehearsal of this document's blocks is
-open** (see "NOT READY", step 5); until it has run, the blocks are proven by their script test
-alone.
+**The fourth rehearsal, first below, ran this document's blocks.** The first three are not
+sitting rehearsals: they ran before the blocks were written. What ran each time is the migration
+itself, the two check files, the suite and the rollback; the third also ran the S12 block as it
+stood then.
+
+### The fourth rehearsal, 2026-10-19 and 2026-10-20: the blocks, by an agent that did not write them
+
+**No BLOCKER and no MAJOR.** Every block that can run on a throwaway did what this document says;
+the two dispatch blocks stopped at their PENDING lines, and the closing read stopped at the reader
+line the rehearsal does not run, both as expected.
+
+**The bytes.** The document at `8fa7af89` (sha256 `f5c58bf0c719cea50ef5e56f9711fa2c473283d77f449f02a030e28141aa2e4e`)
+and at `f68aa79e` (sha256 `d973c681ef7552e225341f2452e3fa04e0eb6bf7a59b769aef595f415ecaa01d`), each
+matching its sidecar. The document as it stands now was not run as a whole: every fenced block in
+it is byte for byte that of `f68aa79e` (compared by machine on 2026-10-20), and only its prose has
+changed since.
+
+**The throwaway and the method (0105's).** A local Supabase stack of its own (`r0106`, PostgreSQL
+17.6), built from `main`'s migrations `0000` to `0105` and `main`'s seed; a drizzle journal of 103
+rows built by hand (each `hash` its file's sha256, each `created_at` its `when`); two active clinics,
+08:00 to 21:00. Each block was cut from the document by machine and run in a fresh `zsh -f` with a
+cleared environment (`exec -c`), in GREEN's shape. Substituted: the `cd` into the apply worktree went
+to a scratch clone whose origin is a local bare repository with `main` at the rehearsed commit, and
+`/tmp/0106-*` went to a scratch folder. Not run: the lines that load the production environment
+file, the target guard's lines and the reader's lines (see "NOT REHEARSED"). The guard and the
+reader each ran once on their own against the throwaway and refused it, exit 2
+(`REFUSING: project ref is "postgres", not the production project.`, and the reader's `REFUSED:`
+line), which is their purpose.
+
+| Block | 8fa7af89 (Mon 2026-10-19, 21:59 Lisbon) | f68aa79e (Tue 2026-10-20, 21:01) |
+|---|---|---|
+| BEFORE YOU START | NOT REHEARSED: `STOP: MERGED is not a filled-in sha, so this block is NOT READY ...` | NOT REHEARSED: the same STOP; its new applied-marker age lines come after it and never ran |
+| Stage 0 | REHEARSED-OK: exit 0, W-9 three lines, check-journal 104 of 104. At 15:01 it stopped on the clock (`... inside clinic hours ...`); at 23:31 at "outside strategy's start windows" | Byte-identical; run again to make the sitting's records |
+| CLOCK CHECK | NOT REHEARSED: `STOP: the document's sha256 in this block is still PENDING ...` | NOT REHEARSED: the same STOP |
+| Stage 1 | REHEARSED-OK: pre-check 13 OK / 0 VACUOUS / 0 FAIL (9 CARRY, 3 INFO); clinics `0 of 2`, inside; `journal    103 -> 104  (delta 1)`; `0106 APPLIED. Paste stage 2 now.` | Byte-identical; pre-check 13 OK again after the rollback |
+| Stage 2 | REHEARSED-OK: post-check 26 OK / 0 VACUOUS / 0 FAIL; `0106 POST-CHECK PASSED` | Byte-identical |
+| The S12 count | REHEARSED-OK (its form before the R4 fixes): `read only: on`, `(0 rows)` | REHEARSED-OK: `read only: on`, `(0 rows)`, `S12 COUNT PRINTED` |
+| The closing read | REHEARSED-STOPPED at the reader line not run: `STOP: the journal read after the apply does not say 104 ...` | The same |
+
+**Repeats and negatives.**
+
+- **A second paste:** stage 1, then stage 0, each stopped with `STOP: stage 1 has ALREADY APPLIED 0106 in this sitting ...`, exit 1. Nothing more was applied.
+- **A fresh sitting on a database that already holds 0106** (no applied marker; Tue 21:01): stage 0 exit 0; stage 1's pre-check read 9 OK / 4 FAIL (verdicts 2, 10, 11 and `journal_rows_before` 104), then `STOP: the pre-check printed [4] FAIL verdicts ...`. Nothing was applied; the journal stayed at 104.
+- **The S12 count's query failing (a):** another session held an ACCESS EXCLUSIVE lock on `appointments`, a database condition, not an edit. The block printed `read only: on`, then `ERROR: canceling statement due to statement timeout` after 120 seconds, then the one STOP that ends that block alone, ending `... report this output, and paste the closing journal read next`.
+- **The S12 count's guard refusing (b):** only the environment-file line was left out, so the real guard ran. It printed `REFUSING: project ref is "postgres"`, then the full halt: `STOP: the target guard refused or failed ... the S12 count's block and the closing read (READ ONLY) run again only on the owner's or the lead's word`.
+
+**By hand, outside the blocks.** The post-check before the apply: psql exit 3, `relation
+"public.reminder_claims" does not exist`, as "What every verdict must read" says. verified-migrate:
+exit 0, and run a second time exit 3, `PRECONDITION FAILED: ... ALREADY in drizzle.__drizzle_migrations`.
+The rollback in "Rollback": the pre-check then read 10 OK / 3 FAIL, the three journal verdicts,
+because the journal row stays; with that row removed, every verdict and carry matched the first run.
+
+**Counts.** Pre-check 13 OK / 0 VACUOUS / 0 FAIL. Post-check 26 OK / 0 VACUOUS / 0 FAIL four times
+(after the hand apply, after each block apply, after each suite run). `reminder-claims-rls` 59 of 59
+four times; the whole `packages/db` suite 1690 of 1690 (104 files).
+
+**Cleanup.** The stack was stopped with `--no-backup`; no container or volume of it is left, and no
+other stack was touched. No real `/tmp/0106-*` file existed before the rehearsal or after it.
+
+**Its two findings, both MINOR,** answered on 2026-10-20 in this revision: the status line, NOT
+READY step 5 and the first item of "NOT REHEARSED" still said no block had run; and "NOT
+REHEARSED" lacked the dispatch blocks whole, the environment, guard and reader lines and the
+hand-written window record, while stage 1's EXPECT lacked verified-migrate's two NOTICE lines.
 
 ### The check files' journal verdicts, read once, 2026-10-19 (the builder, not a rehearsal)
 
@@ -1572,23 +1630,41 @@ journal row, and this draft does not.
 
 ### NOT REHEARSED, said one by one
 
+Added on 2026-10-20, by the fourth rehearsal:
+
+- **BEFORE YOU START and the CLOCK CHECK, whole.** A copy from this document STOPs at its first
+  check on a PENDING value (MERGED, DOCSHA, the run window), as it must, so no line after those
+  checks ran on the throwaway, the applied-marker age lines added after the R4 round among them.
+  Those lines are proven by `scripts/reminder-claims-0106.test.mjs` only. The dispatch's filled
+  copies run for the first time at the sitting.
+- **In every block: the line that loads the production environment file, the target guard's
+  lines and the reader's lines.** The guard and the reader refuse any target but production, so
+  the rehearsal left them out (its substitution diffs are kept with its evidence). Each ran once
+  on its own against the throwaway and refused it, exit 2. The closing read therefore stopped at
+  the reader's line, not on anything this document says.
+- **The run window record that stage 1 reads (`/tmp/0106-window.ok`)** was written by hand, by
+  running the CLOCK CHECK's own clock lines on the real clock, because the CLOCK CHECK stops at
+  its PENDING lines.
+- **The apply worktree and `/tmp`.** The `cd` went to a scratch clone whose origin is a local bare
+  repository, and the `/tmp/0106-*` files to a scratch folder.
+
 Added on 2026-10-19:
 
-- **EVERY BLOCK OF THIS DOCUMENT:** BEFORE YOU START, stage 0, CLOCK CHECK, stage 1, stage 2,
-  the S12 count's block and the closing read. They are proven by `scripts/reminder-claims-0106.test.mjs`
-  only: every block in GREEN's tool shape, in bash and in zsh, against stubs, each external
-  call made to fail in turn. **No block has run against a database.** The rehearsal agent's run
-  is open (NOT READY, step 5). When it runs, the lines that load the production environment
-  file, the target guard's lines and the reader's lines cannot run on a throwaway (the guard and
-  the reader refuse any target but production), and are recorded NOT REHEARSED.
+- **EVERY BLOCK OF THIS DOCUMENT.** *Superseded 2026-10-20:* the fourth rehearsal ran stage 0,
+  stage 1, stage 2, the S12 count's block and the closing read against a throwaway; what it
+  could not run is the list above. All seven blocks are also proven by
+  `scripts/reminder-claims-0106.test.mjs`: every block in GREEN's tool shape, in bash and in zsh,
+  against stubs, each external call made to fail in turn.
 - **The network-time lines and the start-window lines of BEFORE YOU START and the CLOCK CHECK**
   use BSD `date -j` (macOS, where GREEN runs). In the script test they run against a stub, on
   Linux as on macOS; they are 0105's dispatch's lines, unchanged.
-- **The S12 count's block in its form of 2026-10-19,** which loads the environment, asserts the
-  target and checks the head, the pass mark and the window itself. Its earlier form ran on lane
-  blue on 2026-10-14 (the third rehearsal).
-- **The journal verdicts on a journal that drizzle wrote.** They read right on a journal built by
-  hand on the builder's throwaway (above), not on one `verified-migrate.mjs` wrote.
+- **The S12 count's block in its form of 2026-10-19.** *Ran 2026-10-20* in the fourth rehearsal,
+  but for its environment-file line and, in its pass, its guard's lines: the count, the block-only
+  STOP and the guard's full halt are each shown there.
+- **The journal verdicts on a journal that drizzle wrote.** *Partly answered 2026-10-20:* in the
+  fourth rehearsal 0106's row, the 104th, was written by `verified-migrate.mjs` (drizzle-kit
+  migrate), and the post-check's verdicts 24 and 25 read OK on it. The 103 rows under it were
+  built by hand, as on the builder's throwaway.
 
 Added on 2026-10-14:
 
@@ -1607,8 +1683,11 @@ Added on 2026-10-14:
 Carried from 2026-10-13:
 
 - **Any block.** *Superseded 2026-10-19:* the blocks are written; see the first list above.
-- **The real applier.** The file was applied with `psql -1`, one transaction. `drizzle-kit
-  migrate` through `verified-migrate.mjs` was not run, and neither journal reader. Under the
+- **The real applier.** *Answered 2026-10-20:* stage 1 ran `verified-migrate.mjs` (drizzle-kit
+  migrate) in the fourth rehearsal, and stage 0 ran check-journal; the production reader refuses a
+  throwaway and is NOT REHEARSED (above). As written on 2026-10-13: the file was applied with
+  `psql -1`, one transaction. `drizzle-kit migrate` through `verified-migrate.mjs` was not run, and
+  neither journal reader. Under the
   Supabase CLI each file runs in its own implicit transaction; that path ran the 101 migrations
   under this one and not this one.
 - **On top of `0104` and `0105`.** *Answered 2026-10-19:* the builder's throwaway was built
@@ -1718,9 +1797,14 @@ five minor findings.** What became of each in this revision:
 | MINOR: the script test exempted network-time calls by position | They are named by program and arguments (`NETWORK_CALLS`), and the test proves the named set is exactly the 16 calls between the first `sntp` and the Lisbon clock read |
 | MINOR: the W-9 search leaves out the cleanup script, which now deletes from `reminder_claims` | A paragraph under "No code on `main` reads either table": run on production between the merge and the apply it ends with `relation does not exist` and rolls back; the owner does not run it in that window |
 
-**The fixes change the bytes of three blocks (BEFORE YOU START, the CLOCK CHECK, the S12 count's
-block) and are not re-reviewed.** Stage 0, stage 1, stage 2 and the closing read are unchanged by
-them. No pinned file changed.
+The fixes change the bytes of three blocks (BEFORE YOU START, the CLOCK CHECK, the S12 count's
+block). Stage 0, stage 1, stage 2 and the closing read are unchanged by them. No pinned file changed.
+**A re-review of the fixes, 2026-10-19: READY, two MINOR wording findings,** answered in `8df52cee`
+with no block byte changed: the halt rule's exception now names "that line and its non-zero exit",
+and the S12 heading says that its counts, not its STOPs, never stop the sitting.
+
+**The fourth rehearsal, 2026-10-20: no BLOCKER and no MAJOR, two MINOR findings,** answered in this
+revision (see the end of "The fourth rehearsal"). No block byte changed.
 
 ## JUDGMENTS, NOT RULINGS, in this document (2026-10-19)
 
