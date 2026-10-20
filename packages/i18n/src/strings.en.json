@@ -720,6 +720,7 @@
   "admin.staff.noPrimary": "No primary service",
   "admin.staff.servicesProvided": "Services provided",
   "admin.staff.servicesPortalHelp": "In the patient portal, this therapist is only offered for the ticked services.",
+  "admin.staff.servicesSaveSeparately": "Each part saves on its own: Set changes the primary service, Save keeps the ticked services.",
   "admin.staff.servicesNeedPrimary": "Set the primary service first.",
   "admin.staff.primaryTag": "primary",
   "admin.staff.dangerZone": "Danger zone",

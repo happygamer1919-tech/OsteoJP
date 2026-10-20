@@ -720,6 +720,7 @@
   "admin.staff.noPrimary": "Sem serviço principal",
   "admin.staff.servicesProvided": "Serviços que realiza",
   "admin.staff.servicesPortalHelp": "No portal, este terapeuta só é oferecido aos pacientes para os serviços assinalados.",
+  "admin.staff.servicesSaveSeparately": "Cada parte guarda-se em separado: Definir muda o serviço principal, Guardar guarda os serviços assinalados.",
   "admin.staff.servicesNeedPrimary": "Defina primeiro o serviço principal.",
   "admin.staff.primaryTag": "principal",
   "admin.staff.dangerZone": "Zona de perigo",

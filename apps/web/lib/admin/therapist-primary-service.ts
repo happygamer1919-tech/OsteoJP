@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { services, therapistServices } from "@osteojp/db";
+import { services, therapistServices, users, type DbTx } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
@@ -23,7 +23,35 @@ import { AdminError } from "./errors";
  * (X was inserted in a prior transaction), so X becomes the earliest = primary.
  * X itself is never touched, so its row is stable. Adding a NEW service is a
  * plain INSERT (newest) and never disturbs the primary.
+ *
+ * TIES ARE BROKEN BY `id`, EVERYWHERE (Q-M review, 2026-10-20). Two rows can
+ * share one `created_at` (a bulk insert, a data op, a seed), and an ORDER BY on
+ * `created_at` alone leaves their order to the planner, so the card, the save
+ * and the staff preselection could each pick a different "primary". Every read
+ * that orders the mappings therefore orders by `created_at, id`, through
+ * PRIMARY_ORDER below and its twin in scheduling/therapist-services.ts.
  */
+
+/** The one ordering of a therapist's mappings: oldest first, ties by id. */
+const PRIMARY_ORDER = [asc(therapistServices.createdAt), asc(therapistServices.id)] as const;
+
+/**
+ * Serialise every write to ONE member's mappings (Q-M review, 2026-10-20): the
+ * services save and the primary save both read the current rows and then write
+ * from what they read, so two of them interleaving could each keep or remove a
+ * row on stale information. `SELECT ... FOR UPDATE` on the member's own users
+ * row, the same row lock the admin settings writers take on `tenants`. It also
+ * refuses a member this actor cannot see (another tenant's id), which the
+ * foreign key on therapist_services would otherwise accept.
+ */
+async function lockMember(tx: DbTx, therapistId: string): Promise<void> {
+  const [row] = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, therapistId))
+    .for("update");
+  if (!row) throw new AdminError("not_found");
+}
 
 export type TherapistServiceOption = { id: string; name: string };
 export type TherapistPrimary = {
@@ -47,7 +75,7 @@ export async function listTherapistPrimaries(
       })
       .from(therapistServices)
       .innerJoin(services, eq(therapistServices.serviceId, services.id))
-      .orderBy(asc(therapistServices.therapistUserId), asc(therapistServices.createdAt));
+      .orderBy(asc(therapistServices.therapistUserId), ...PRIMARY_ORDER);
 
     const byTherapist = new Map<string, TherapistPrimary>();
     for (const r of rows) {
@@ -77,7 +105,7 @@ export async function getTherapistPrimaryServiceId(
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
       .where(eq(therapistServices.therapistUserId, therapistId))
-      .orderBy(asc(therapistServices.createdAt))
+      .orderBy(...PRIMARY_ORDER)
       .limit(1);
     return row?.serviceId ?? null;
   });
@@ -107,6 +135,7 @@ export async function setTherapistPrimaryService(
   if (!therapistId || !serviceId) throw new AdminError("invalid");
 
   await runScoped(actor, async (tx) => {
+    await lockMember(tx, therapistId);
     // Defense: `serviceId` must be an ACTIVE service of this tenant (the dropdown
     // only lists active services; reject a forged / archived id). RLS scopes the
     // read to the actor's tenant.
@@ -121,7 +150,7 @@ export async function setTherapistPrimaryService(
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
       .where(eq(therapistServices.therapistUserId, therapistId))
-      .orderBy(asc(therapistServices.createdAt));
+      .orderBy(...PRIMARY_ORDER);
     const ids = mapped.map((m) => m.serviceId);
 
     // Already the primary (earliest) and already mapped → nothing to change.
@@ -159,11 +188,11 @@ export async function setTherapistPrimaryService(
 /**
  * The OTHER services a therapist delivers, ticked in Equipa (owner ruling Q-M,
  * 2026-10-20). The patient app offers and assigns a therapist only for a
- * service they are mapped to, so reception needs to mark SEVERAL services per
- * therapist, not just the primary.
+ * service they are mapped to, so the owner and the admins (users:manage) need
+ * to mark SEVERAL services per therapist, not just the primary.
  *
  * THE PRIMARY IS NEVER TOUCHED, and that is the whole contract. The staff agenda
- * preselects the earliest-created mapping (W3-04, read oldest-first by
+ * preselects the earliest-created mapping, ties by id (W3-04, read by
  * scheduling/therapist-services.ts), and PL-06a still governs the staff side.
  * So this function:
  *   - keeps the earliest row exactly as it is, whatever the form posted (its
@@ -195,11 +224,12 @@ export async function setTherapistServices(
   const wanted = [...new Set(serviceIds.filter((id) => id !== ""))];
 
   await runScoped(actor, async (tx) => {
+    await lockMember(tx, therapistId);
     const mapped = await tx
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
       .where(eq(therapistServices.therapistUserId, therapistId))
-      .orderBy(asc(therapistServices.createdAt));
+      .orderBy(...PRIMARY_ORDER);
     const ids = mapped.map((m) => m.serviceId);
     const primary = ids[0];
     if (primary === undefined) throw new AdminError("invalid");
@@ -230,12 +260,17 @@ export async function setTherapistServices(
         ); // RLS scopes tenant
     }
     for (const s of toAdd) {
-      await tx.insert(therapistServices).values({
-        tenantId: actor.tenantId, // NOT NULL + RLS WITH CHECK
-        therapistUserId: therapistId,
-        serviceId: s,
-        createdAt: sql`clock_timestamp()`,
-      });
+      await tx
+        .insert(therapistServices)
+        .values({
+          tenantId: actor.tenantId, // NOT NULL + RLS WITH CHECK
+          therapistUserId: therapistId,
+          serviceId: s,
+          createdAt: sql`clock_timestamp()`,
+        })
+        // A double submit that slipped past the lock finds the row there:
+        // the unique (tenant, therapist, service) makes it a no-op, not a 500.
+        .onConflictDoNothing();
     }
 
     await writeAudit(tx, actor, {

@@ -41,6 +41,9 @@ export function TherapistServicesFields({
       <input type="hidden" name="therapistId" value={therapistId} />
       <span className={adminLabel}>{s["admin.staff.servicesProvided"]}</span>
       <p className="text-xs text-v2-text-secondary">{s["admin.staff.servicesPortalHelp"]}</p>
+      {/* Two forms in one section (the primary select above, this list here),
+          each with its own button, so the help says so (Q-M review). */}
+      <p className="text-xs text-v2-text-secondary">{s["admin.staff.servicesSaveSeparately"]}</p>
       {primaryId === "" ? (
         <p className="text-sm text-v2-text-secondary">{s["admin.staff.servicesNeedPrimary"]}</p>
       ) : (

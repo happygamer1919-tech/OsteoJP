@@ -2,8 +2,9 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-// Q-M (owner ruling, 2026-10-20): reception ticks SEVERAL services per
-// therapist in Equipa. Pinned here:
+// Q-M (owner ruling, 2026-10-20): the owner or an admin (users:manage, the
+// only roles that can save it) ticks SEVERAL services per therapist in Equipa.
+// Pinned here:
 //  1. every active service is a tickable checkbox posting `serviceIds`, and
 //     each mapped service starts ticked, so several can be held at once;
 //  2. the PRIMARY is ticked and DISABLED (the staff agenda preselects it, and
@@ -81,6 +82,10 @@ describe("TherapistServicesFields (Q-M): several services per therapist", () => 
       "No portal, este terapeuta só é oferecido aos pacientes para os serviços assinalados.",
     );
     expect(html).toContain("Guardar");
+    // Two forms, two buttons: the help says each part saves on its own.
+    expect(html).toContain(
+      "Cada parte guarda-se em separado: Definir muda o serviço principal, Guardar guarda os serviços assinalados.",
+    );
   });
 
   it("with no primary yet, offers no checkbox and asks for the primary first", () => {

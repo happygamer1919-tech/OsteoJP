@@ -54,8 +54,8 @@ test("Equipa: assign a primary to a zero-mapping therapist from the Gerir modal 
   await page.waitForURL(/admin\/staff/);
   await expect(card(page, THER)).toContainText("Osteopatia");
 
-  // Q-M (owner ruling, 2026-10-20): reception ticks SEVERAL services the
-  // therapist does, below the primary. The primary is shown ticked and cannot
+  // Q-M (owner ruling, 2026-10-20): an admin (users:manage) ticks SEVERAL
+  // services the therapist does, below the primary. The primary is shown ticked and cannot
   // be unticked here; two more are ticked and saved, and both stay ticked.
   const services = (await openSection(page, THER, "Serviço principal")).getByTestId(
     "therapist-services-form",

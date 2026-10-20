@@ -24,12 +24,13 @@ const mockRunScoped = vi.mocked(runScoped);
 const admin: RequestContext = { tenantId: "tenant-A", role: "admin", userId: "admin-1" };
 const reception: RequestContext = { tenantId: "tenant-A", role: "reception", userId: "recep-1" };
 
-// A fake tx for setTherapistPrimaryService. Two selects run in order:
+// A fake tx for setTherapistPrimaryService. Three selects run in order:
+//   (0) the member lock → `.for("update")` → [{id}] (Q-M review);
 //   (1) active-service validation → `.limit(1)` → [{id}] when active, else [];
 //   (2) the therapist's mapped services → `.orderBy()` → oldest-first.
 // delete/insert are recorded; `update` must stay untouched (42501-safe).
 function setPrimaryTx(mapped: string[], { serviceActive = true } = {}) {
-  const calls = { deletes: 0, inserts: [] as Array<Record<string, unknown>>, updates: 0 };
+  const calls = { deletes: 0, inserts: [] as Array<Record<string, unknown>>, updates: 0, locks: [] as unknown[] };
   let selectIdx = 0;
   const tx = {
     select: () => {
@@ -38,8 +39,10 @@ function setPrimaryTx(mapped: string[], { serviceActive = true } = {}) {
         from: () => ({
           where: () =>
             idx === 0
-              ? { limit: async () => (serviceActive ? [{ id: "svc" }] : []) }
-              : { orderBy: async () => mapped.map((serviceId) => ({ serviceId })) },
+              ? { for: async (mode: unknown) => { calls.locks.push(mode); return [{ id: "ther-1" }]; } }
+              : idx === 1
+                ? { limit: async () => (serviceActive ? [{ id: "svc" }] : []) }
+                : { orderBy: async () => mapped.map((serviceId) => ({ serviceId })) },
         }),
       };
     },
@@ -69,6 +72,7 @@ describe("setTherapistPrimaryService (W3-04 + W4-01)", () => {
     expect(serviceIdsOf(calls.inserts)).toEqual(["svc-b", "svc-a"]); // chosen first
     expect(calls.inserts[0]).toMatchObject({ tenantId: "tenant-A", therapistUserId: "ther-1" });
     expect(writeAudit).toHaveBeenCalledTimes(1);
+    expect(calls.locks).toEqual(["update"]); // the member row is locked first
   });
 
   it("zero-mapping therapist: INSERT the first service, becomes primary (no delete, no UPDATE)", async () => {
@@ -150,15 +154,19 @@ describe("getTherapistPrimaryServiceId (W3-04)", () => {
 // Q-M (owner ruling, 2026-10-20): reception ticks SEVERAL services per
 // therapist. The patient app offers a therapist only for a mapped service; the
 // staff agenda preselects the PRIMARY (earliest row) and must not move. A fake
-// tx for setTherapistServices. Two selects run in order:
+// tx for setTherapistServices. Three selects run in order:
+//   (0) the member lock → `.for("update")` → [{id}], or [] for a member this
+//       actor cannot see;
 //   (1) the therapist's mapped services → `.orderBy()` → oldest-first;
 //   (2) the tenant's ACTIVE services → awaited straight off `.where()`.
-// Deletes record the `where` they were given; `update` must stay untouched.
-function setServicesTx(mapped: string[], active: string[]) {
+// Inserts record their values and whether they carried onConflictDoNothing.
+function setServicesTx(mapped: string[], active: string[], { memberVisible = true } = {}) {
   const calls = {
     deletes: 0,
     inserts: [] as Array<Record<string, unknown>>,
+    onConflictDoNothing: 0,
     updates: 0,
+    locks: [] as unknown[],
   };
   let selectIdx = 0;
   const tx = {
@@ -168,13 +176,20 @@ function setServicesTx(mapped: string[], active: string[]) {
         from: () => ({
           where: () =>
             idx === 0
-              ? { orderBy: async () => mapped.map((serviceId) => ({ serviceId })) }
-              : Promise.resolve(active.map((id) => ({ id }))),
+              ? { for: async (mode: unknown) => { calls.locks.push(mode); return memberVisible ? [{ id: "ther-1" }] : []; } }
+              : idx === 1
+                ? { orderBy: async () => mapped.map((serviceId) => ({ serviceId })) }
+                : Promise.resolve(active.map((id) => ({ id }))),
         }),
       };
     },
     delete: () => ({ where: async () => { calls.deletes++; } }),
-    insert: () => ({ values: async (v: Record<string, unknown>) => { calls.inserts.push(v); } }),
+    insert: () => ({
+      values: (v: Record<string, unknown>) => {
+        calls.inserts.push(v);
+        return { onConflictDoNothing: async () => { calls.onConflictDoNothing++; } };
+      },
+    }),
     update: () => { calls.updates++; return { set: () => ({ where: async () => {} }) }; },
   };
   return { tx, calls };
@@ -193,6 +208,9 @@ describe("setTherapistServices (Q-M): several services, the primary never moves"
     expect(calls.updates).toBe(0);
     expect(serviceIdsOf(calls.inserts)).toEqual(["svc-b", "svc-c"]);
     expect(serviceIdsOf(calls.inserts)).not.toContain("svc-primary");
+    // A double submit is a no-op on the unique key, never an error.
+    expect(calls.onConflictDoNothing).toBe(2);
+    expect(calls.locks).toEqual(["update"]);
     expect(calls.inserts[0]).toMatchObject({ tenantId: "tenant-A", therapistUserId: "ther-1" });
     expect(writeAudit).toHaveBeenCalledWith(
       tx,
@@ -278,8 +296,22 @@ describe("setTherapistServices (Q-M): several services, the primary never moves"
     expect(calls.deletes).toBe(0);
   });
 
-  it("refuses a non-admin (users:manage gate, server-enforced)", async () => {
-    await expect(setTherapistServices(reception, "ther-1", ["svc-b"])).rejects.toThrow();
+  it("refuses every role without users:manage (reception, therapist), before any DB work", async () => {
+    const therapist: RequestContext = { tenantId: "tenant-A", role: "therapist", userId: "ther-1" };
+    for (const actor of [reception, therapist]) {
+      await expect(setTherapistServices(actor, "ther-1", ["svc-b"])).rejects.toThrow();
+    }
     expect(mockRunScoped).not.toHaveBeenCalled();
+  });
+
+  it("refuses a member this actor cannot see (another tenant's id), writing nothing", async () => {
+    const { tx, calls } = setServicesTx(["svc-primary"], ACTIVE, { memberVisible: false });
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(tx as never)));
+
+    await expect(setTherapistServices(admin, "ther-x", ["svc-b"])).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(calls.inserts).toHaveLength(0);
+    expect(calls.deletes).toBe(0);
   });
 });

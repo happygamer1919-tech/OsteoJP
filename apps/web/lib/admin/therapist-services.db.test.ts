@@ -1,5 +1,5 @@
 /**
- * therapist-services.db.test.ts - Q-M (owner ruling, 2026-10-20): reception
+ * therapist-services.db.test.ts - Q-M (owner ruling, 2026-10-20): the owner or an admin
  * ticks SEVERAL services per therapist in Equipa, AND THE STAFF AGENDA'S
  * PRESELECTION DOES NOT MOVE. Proven against a real Postgres, through the real
  * `runScoped`, RLS and audit insert.
@@ -37,6 +37,7 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
   let setTherapistServices: typeof import("./therapist-primary-service").setTherapistServices;
   let listTherapistPrimaries: typeof import("./therapist-primary-service").listTherapistPrimaries;
   let getTherapistServiceIds: typeof import("@/lib/scheduling/therapist-services").getTherapistServiceIds;
+  let getTherapistPrimaryServiceId: typeof import("./therapist-primary-service").getTherapistPrimaryServiceId;
 
   const tenant = randomUUID();
   const adminRole = randomUUID();
@@ -50,6 +51,17 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
 
   const actor: RequestContext = { tenantId: tenant, role: "admin", userId: admin };
 
+  /** A second member whose two mappings share ONE created_at (the tie case). */
+  const tied = randomUUID();
+  /** Sorts FIRST by id, and is inserted SECOND, so insertion order cannot win. */
+  const tieLowId = "00000000-0000-4000-8000-0000000000a1";
+  const tieHighId = "ffffffff-ffff-4fff-bfff-fffffffffff1";
+
+  /** Another tenant: a member and a service this actor must never reach. */
+  const otherTenant = randomUUID();
+  const otherMember = randomUUID();
+  const otherService = randomUUID();
+
   /** What the staff drawer preselects: the first id of its own read. */
   const staffPreselection = async (): Promise<string | undefined> =>
     (await getTherapistServiceIds(actor, therapist))[0];
@@ -59,9 +71,12 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
   beforeAll(async () => {
     const schema = await import("@osteojp/db");
     db = schema.getDbAdmin();
-    ({ setTherapistPrimaryService, setTherapistServices, listTherapistPrimaries } = await import(
-      "./therapist-primary-service"
-    ));
+    ({
+      setTherapistPrimaryService,
+      setTherapistServices,
+      listTherapistPrimaries,
+      getTherapistPrimaryServiceId,
+    } = await import("./therapist-primary-service"));
     ({ getTherapistServiceIds } = await import("@/lib/scheduling/therapist-services"));
 
     await db.execute(
@@ -76,11 +91,12 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
     for (const [id, role, label] of [
       [admin, adminRole, "admin"],
       [therapist, therapistRole, "terapeuta"],
+      [tied, therapistRole, "empate"],
     ] as const) {
       await db.execute(
         raw`insert into users (id, tenant_id, role_id, email, full_name, is_bookable)
             values (${id}::uuid, ${tenant}::uuid, ${role}::uuid,
-                    ${`${label}-${id.slice(0, 8)}@qm.test`}, ${`${label} QM`}, ${label === "terapeuta"})`,
+                    ${`${label}-${id.slice(0, 8)}@qm.test`}, ${`${label} QM`}, ${label !== "admin"})`,
       );
     }
     await db.execute(
@@ -91,6 +107,29 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
                  (${archived}::uuid, ${tenant}::uuid, 'Arquivado QM', 60, true)`,
     );
 
+    // THE TIE: two rows for `tied` with the SAME created_at, the higher id
+    // inserted first. Nothing but an explicit tie-break makes the order stable.
+    await db.execute(
+      raw`insert into therapist_services (id, tenant_id, therapist_user_id, service_id, created_at)
+          values (${tieHighId}::uuid, ${tenant}::uuid, ${tied}::uuid, ${fisio}::uuid, '2026-01-01T09:00:00Z'),
+                 (${tieLowId}::uuid, ${tenant}::uuid, ${tied}::uuid, ${osteo}::uuid, '2026-01-01T09:00:00Z')`,
+    );
+
+    // Another tenant, out of this actor's reach.
+    await db.execute(
+      raw`insert into tenants (id, name, slug)
+          values (${otherTenant}::uuid, 'qm other', ${"qmo-" + otherTenant.slice(0, 8)})`,
+    );
+    await db.execute(
+      raw`insert into users (id, tenant_id, email, full_name, is_bookable)
+          values (${otherMember}::uuid, ${otherTenant}::uuid,
+                  ${`outro-${otherMember.slice(0, 8)}@qm.test`}, 'outro QM', true)`,
+    );
+    await db.execute(
+      raw`insert into services (id, tenant_id, name, duration_min, is_active)
+          values (${otherService}::uuid, ${otherTenant}::uuid, 'Outro Servico QM', 60, true)`,
+    );
+
     // The primary is set the way Equipa sets it today, in its own transaction.
     await setTherapistPrimaryService(actor, therapist, osteo);
   });
@@ -98,6 +137,10 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
   afterAll(async () => {
     if (!db) return;
     const statements = [
+      raw`delete from therapist_services where tenant_id = ${otherTenant}::uuid`,
+      raw`delete from services where tenant_id = ${otherTenant}::uuid`,
+      raw`delete from users where tenant_id = ${otherTenant}::uuid`,
+      raw`delete from tenants where id = ${otherTenant}::uuid`,
       raw`delete from audit_log where tenant_id = ${tenant}::uuid`,
       raw`delete from therapist_services where tenant_id = ${tenant}::uuid`,
       raw`delete from services where tenant_id = ${tenant}::uuid`,
@@ -168,5 +211,66 @@ d("Q-M: several services per therapist, and the staff preselection stays the pri
     await setTherapistPrimaryService(actor, therapist, fisio);
     expect(await staffPreselection()).toBe(fisio);
     expect(await mappedSet()).toEqual([osteo, fisio, archived].sort());
+  });
+
+  /* --------------------- the tie on created_at (Q-M review) --------------------- */
+
+  it("TIE: the card, the one-row read and the staff preselection all name the same primary", async () => {
+    // Two rows share one created_at; the lower id is the primary by rule.
+    const staff = (await getTherapistServiceIds(actor, tied))[0];
+    const card = (await listTherapistPrimaries(actor)).get(tied)?.primaryServiceId;
+    const one = await getTherapistPrimaryServiceId(actor, tied);
+    expect(staff).toBe(osteo);
+    expect(card).toBe(osteo);
+    expect(one).toBe(osteo);
+  });
+
+  it("TIE: a save never deletes the primary; it removes only the unticked other row", async () => {
+    // The disabled primary checkbox is not posted, so an empty post is the
+    // real "untick everything else".
+    await setTherapistServices(actor, tied, []);
+    const rows = (await db.execute(
+      raw`select id::text as id from therapist_services where therapist_user_id = ${tied}::uuid`,
+    )) as unknown as { id: string }[];
+    expect(rows.map((r) => r.id)).toEqual([tieLowId]);
+    expect((await getTherapistServiceIds(actor, tied))[0]).toBe(osteo);
+  });
+
+  /* --------------------------------- refusals -------------------------------- */
+
+  it("refuses a role without users:manage (reception), and writes nothing", async () => {
+    const reception: RequestContext = { tenantId: tenant, role: "reception", userId: admin };
+    const before = await mappedSet();
+    await expect(setTherapistServices(reception, therapist, [acup])).rejects.toThrow();
+    expect(await mappedSet()).toEqual(before);
+  });
+
+  it("refuses a forged service id, and writes nothing", async () => {
+    const before = await mappedSet();
+    await expect(setTherapistServices(actor, therapist, [randomUUID()])).rejects.toMatchObject({
+      code: "invalid",
+    });
+    expect(await mappedSet()).toEqual(before);
+  });
+
+  it("refuses a service of ANOTHER tenant (RLS hides it), and writes nothing", async () => {
+    const before = await mappedSet();
+    await expect(setTherapistServices(actor, therapist, [otherService])).rejects.toMatchObject({
+      code: "invalid",
+    });
+    expect(await mappedSet()).toEqual(before);
+  });
+
+  it("refuses a member of ANOTHER tenant on both saves, and maps nothing to them", async () => {
+    await expect(setTherapistServices(actor, otherMember, [fisio])).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await expect(setTherapistPrimaryService(actor, otherMember, fisio)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    const rows = (await db.execute(
+      raw`select count(*)::int as n from therapist_services where therapist_user_id = ${otherMember}::uuid`,
+    )) as unknown as { n: number }[];
+    expect(rows[0]!.n).toBe(0);
   });
 });
