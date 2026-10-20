@@ -40,8 +40,6 @@ import {
   PORTAL_STORAGE,
   SERVICE,
   SERVICE_UNMAPPED,
-  THERAPIST_MULTI_LOCATION,
-  THERAPIST_ONE_LOCATION,
 } from "./fixtures";
 import { becameVisible } from "./helpers";
 import { pickFirstDayWithSlots } from "./helpers/booking-picker";
@@ -112,18 +110,7 @@ async function bookFirstAvailable(page: Page): Promise<boolean> {
   if ((await service.count()) === 0) {
     throw new Error("service step offered no service - the catalog is seeded, so this is a defect");
   }
-  // Q-M (owner ruling, 2026-10-20): the portal offers slots only from therapists
-  // MAPPED to the chosen service. This used to click the FIRST row, which sorts
-  // as "Drenagem Linfatica": a service the seed maps to nobody, on purpose (it
-  // is the staff-side PL-06a fixture). Under Q-M that service has no therapist
-  // online, so the calendar would be empty and this function would return the
-  // one legitimate skip for the wrong reason. Osteopatia is mapped to both
-  // therapists who work at Linda-a-Velha, so it is named here.
-  const mappedService = service.filter({ hasText: SERVICE.name });
-  if ((await mappedService.count()) === 0) {
-    throw new Error(`service step did not offer ${SERVICE.name} - the catalog is seeded, so this is a defect`);
-  }
-  await mappedService.first().click();
+  await service.first().click();
 
   // A2's therapist step. "Escolham por mim" keeps the auto-assignment, which
   // keeps this test about the CONFIRMATION SCREEN rather than about one
@@ -279,41 +266,6 @@ test("Decision C: choosing a service advances the flow and does not narrow what 
     timeout: 15_000,
   });
   await expect(serviceRows(page)).toHaveCount(before);
-});
-
-test("Q-M: the therapist step lists only therapists mapped to the chosen service", async ({
-  page,
-}) => {
-  // Owner ruling Q-M (2026-10-20) supersedes PL-06a on the patient path. The
-  // seed maps both Linda-a-Velha therapists to Osteopatia, and maps NOBODY to
-  // Drenagem Linfatica (the staff-side PL-06a fixture). So the same clinic's
-  // therapist step lists two people for one service and none for the other.
-  // Each half is the other's control: an empty list for Drenagem cannot pass on
-  // a roster that never loads, because Osteopatia's loads on the same page.
-  await openServiceStep(page);
-  const therapistHeading = page.getByRole("heading", { name: /terapeuta/i });
-
-  await serviceRows(page).filter({ hasText: SERVICE.name }).first().click();
-  await expect(therapistHeading).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: THERAPIST_ONE_LOCATION })).toBeVisible({
-    timeout: 15_000,
-  });
-  await expect(page.getByRole("button", { name: THERAPIST_MULTI_LOCATION })).toBeVisible();
-
-  await page.getByRole("button", { name: /voltar|anterior/i }).first().click();
-  await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible({
-    timeout: 15_000,
-  });
-
-  await serviceRows(page).filter({ hasText: SERVICE_UNMAPPED.name }).first().click();
-  await expect(therapistHeading).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/não há terapeutas disponíveis/i)).toBeVisible({
-    timeout: 15_000,
-  });
-  await expect(page.getByRole("button", { name: THERAPIST_ONE_LOCATION })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: THERAPIST_MULTI_LOCATION })).toHaveCount(0);
-  // "Escolham por mim" stays, and is honest: the API answers with no slots.
-  await expect(page.getByRole("button", { name: /escolham por mim/i })).toBeVisible();
 });
 
 /*

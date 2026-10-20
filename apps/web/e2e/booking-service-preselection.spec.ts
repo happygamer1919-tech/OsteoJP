@@ -17,12 +17,6 @@
  *
  * Runs as admin (appointments:write). Books on its own future day; the seed
  * creates no appointments, so re-runs never collide.
- *
- * STILL TRUE AFTER Q-M (owner ruling, 2026-10-20), and unchanged on purpose. Q-M
- * restricts the PATIENT portal to therapists mapped to the chosen service and
- * says the staff agenda keeps PL-06a. This spec is the staff half, so it still
- * books an unmapped service from the agenda; the portal half is
- * portal-booking-request-mode.spec.ts.
  */
 import { test, expect } from "@playwright/test";
 import { dateField, fillDate, fillTime, openNewAppointment } from "./helpers";
