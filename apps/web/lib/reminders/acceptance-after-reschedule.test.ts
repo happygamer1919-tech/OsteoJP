@@ -332,7 +332,7 @@ describe("the model drops a duplicate key, so the arms below are not passing by 
   it("IF the move still emitted, the acceptance's confirmation would be dropped (its reminders no longer are)", async () => {
     // The old behaviour, reproduced by hand: an event for the unaccepted
     // request at its new start, then the acceptance at that same start.
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: MOVED_ONCE }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: MOVED_ONCE, practitionerId: "therapist-1" }]);
     rowState = { ...rowState, startsAt: MOVED_ONCE, endsAt: hourAfter(MOVED_ONCE) };
     await accept();
 
@@ -343,7 +343,7 @@ describe("the model drops a duplicate key, so the arms below are not passing by 
     // reminder key now carries the save, so they run.
     expect(confirmationRuns).toHaveLength(1);
     expect(confirmationRuns[0]!.acceptedPedido).toBeUndefined();
-    expect(dropped).toEqual([`confirmation|${APPT}:confirmation:${MOVED_ONCE.toISOString()}`]);
+    expect(dropped).toEqual([`confirmation|${APPT}:confirmation:${MOVED_ONCE.toISOString()}:therapist-1`]);
     expect(reminderRuns).toHaveLength(2);
   });
 });
@@ -363,6 +363,7 @@ describe("a request MOVED and then ACCEPTED gets its message and its reminders",
       appointmentId: APPT,
       tenantId: TENANT,
       startsAt: MOVED_ONCE.toISOString(),
+      practitionerId: "therapist-1",
       confirmationEligible: true,
       acceptedPedido: true,
     });
@@ -437,6 +438,7 @@ describe("a moved ACCEPTED appointment re-emits exactly as before", () => {
           appointmentId: APPT,
           tenantId: TENANT,
           startsAt: MOVED_ONCE.toISOString(),
+          practitionerId: "therapist-1",
           confirmationEligible: true,
         },
       },
@@ -446,7 +448,7 @@ describe("a moved ACCEPTED appointment re-emits exactly as before", () => {
 
   it("and that event supersedes: the reminders that remain are the NEW start's", async () => {
     // The acceptance's own event first, then the move.
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL, practitionerId: "therapist-1" }]);
     await move(MOVED_ONCE);
     const { reminderRuns, dropped } = deliver(h.sent);
     expect(dropped).toEqual([]);
@@ -515,7 +517,10 @@ describe("the THERAPIST changed from the ficha keeps one waiting reminder per ch
           appointmentId: APPT,
           tenantId: TENANT,
           startsAt: ORIGINAL.toISOString(),
+          // Q-K: the new Terapeuta, and the marker that sends the email alone.
+          practitionerId: "therapist-2",
           confirmationEligible: true,
+          therapistChangeOnly: true,
         },
       },
     ]);
@@ -523,20 +528,21 @@ describe("the THERAPIST changed from the ficha keeps one waiting reminder per ch
 
   it("after the save exactly one 48 h email and one 24 h SMS are waiting, and no reminder was dropped", async () => {
     // The booking's own event first: its two reminders are the ones waiting.
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL, practitionerId: "therapist-1" }]);
     expect(deliver(h.sent).reminderRuns).toEqual(oneOfEach);
 
     await changeTherapist("therapist-2");
     const { reminderRuns, dropped } = deliver(h.sent);
     expect(reminderRuns).toEqual(oneOfEach);
     expect(dropped.filter((key) => key.startsWith("reminder|"))).toEqual([]);
-    // The one key that IS a duplicate is the confirmation's (one per appointment
-    // and start, however many saves): no second confirmation inside 24 hours.
-    expect(dropped).toEqual([`confirmation|${APPT}:confirmation:${ORIGINAL.toISOString()}`]);
+    // Q-K: the confirmation's key now carries the therapist, so the change is
+    // NOT dropped as a duplicate of the booking's confirmation: nothing is.
+    // (Until Q-K it was, inside 24 hours, and the patient was never told.)
+    expect(dropped).toEqual([]);
   });
 
   it("changed to a colleague and back: still exactly one per channel", async () => {
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL, practitionerId: "therapist-1" }]);
     await changeTherapist("therapist-2");
     await changeTherapist("therapist-1");
     expect(h.sent).toHaveLength(3);
@@ -546,7 +552,7 @@ describe("the THERAPIST changed from the ficha keeps one waiting reminder per ch
   });
 
   it("WITH THE KEY AS IT WAS BEFORE #1562 the same save loses both reminders, so the arms above can fail", async () => {
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: ORIGINAL, practitionerId: "therapist-1" }]);
     await changeTherapist("therapist-2");
     // One constant in place of the per-save event id is the old key.
     const { reminderRuns, dropped } = deliver(h.sent, () => "no-save-in-the-key");

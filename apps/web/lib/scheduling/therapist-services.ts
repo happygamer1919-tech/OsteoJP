@@ -26,8 +26,10 @@ export async function getTherapistServiceIds(
       // Deterministic order (W3-03): the booking form defaults Serviço to the
       // FIRST mapped service, so the order must be stable across requests.
       // Oldest mapping first — a stand-in for "primary" until W3-04 lands a
-      // dedicated primary designation.
-      .orderBy(asc(therapistServices.createdAt));
+      // dedicated primary designation. Ties on created_at are broken by id
+      // (Q-M review, 2026-10-20), the SAME order admin/therapist-primary-service
+      // uses, so the Equipa card, the save and this preselection always agree.
+      .orderBy(asc(therapistServices.createdAt), asc(therapistServices.id));
     return rows.map((r) => r.serviceId);
   });
 }

@@ -217,8 +217,45 @@ export const sendAppointmentReminder = inngest.createFunction(
 // Idempotency includes startsAt so a reschedule (new time → new event with
 // different startsAt) sends a fresh confirmation while duplicate delivery of
 // the same event still dedupes.
+//
+// Q-K (strategy's ruling): THE KEY ALSO CARRIES THE THERAPIST. Before it, a
+// change of Terapeuta at the same start inside 24 hours of the last
+// confirmation reused the key and was dropped, so the patient was never told.
+//
+// WHICH EVENTS CARRY `practitionerId`. Every appointment/scheduled event the
+// APPLICATION sends: lib/reminders/index.ts writes it unconditionally. NOT the
+// events of the owner-run scripts packages/db/scripts/
+// inc-1007-rearm-reminders-emit.mjs and obs-05-backfill-emit.mjs, which omit
+// it. Those send `confirmationEligible: false`, so the confirmation trigger's
+// `if` filter below stops them before this key is evaluated. The assumption this rests on,
+// NOT VERIFIED: that Inngest evaluates the trigger's `if` before the
+// idempotency key, or tolerates a missing field in it. The SDK documents no
+// default-value syntax for this expression (inngest 4.5.0,
+// components/InngestFunction.d.ts says only "an idempotency key using event
+// data"), so none is used. A future script that sends a confirmation-eligible
+// event must send `practitionerId`.
+//
+// THE KEY IS NOT WHAT STOPS AN IDENTICAL RE-SAVE. Inngest forgets a key after 24
+// hours, which is how a re-save a day later sent "Marcação confirmada" again.
+// The save itself decides: lib/scheduling/move-confirmation.ts makes a save
+// that kept the start, the clinic AND the therapist carry no confirmation.
+//
+// WHAT THE KEY DOES, IN FULL, inside its 24 hours: it drops a second delivery
+// of one event, AND it drops any confirmation whose start and therapist were
+// already confirmed for this appointment in that window. That second part is a
+// KNOWN RESIDUAL of the ruled composition: a change that RETURNS to an earlier
+// pair (Terapeuta A to B and back to A, or 10:00 to 11:00 and back to 10:00,
+// inside 24 hours of the first confirmation) is dropped, and the patient's
+// last message names the pair they are no longer booked for. Pinned by the
+// "KNOWN RESIDUAL" arm of lib/reminders/confirmation-resend-rule.test.ts, so a
+// change to it is visible; put to strategy as a question.
+//
+// THIS IS A SETTING, NOT CODE: it is live only after the owner presses Resync
+// on the Inngest app (Apps, osteojp-reminders, Resync). Until then the key
+// stays appointment + start, and a therapist change within 24 hours of the
+// last confirmation is still dropped.
 export const CONFIRMATION_IDEMPOTENCY_KEY =
-  'event.data.appointmentId + ":confirmation:" + event.data.startsAt';
+  'event.data.appointmentId + ":confirmation:" + event.data.startsAt + ":" + event.data.practitionerId';
 
 /**
  * Series burst guard. A 10-session recurring booking emits 10
@@ -242,7 +279,7 @@ export const sendAppointmentConfirmation = inngest.createFunction(
     idempotency: CONFIRMATION_IDEMPOTENCY_KEY,
   },
   async ({ event, step }) => {
-    const { appointmentId, tenantId, acceptedPedido, acceptedGuestRequest } =
+    const { appointmentId, tenantId, acceptedPedido, acceptedGuestRequest, therapistChangeOnly } =
       event.data as AppointmentScheduledData;
     const outcome = await step.run("dispatch-confirmation", () =>
       // BOOK-CONFIRM: the acceptance marker travels from the event to the
@@ -251,6 +288,9 @@ export const sendAppointmentConfirmation = inngest.createFunction(
       dispatchConfirmation(tenantId, appointmentId, {
         acceptedPedido: acceptedPedido === true,
         acceptedGuestRequest: acceptedGuestRequest === true,
+        // Q-K: the same rule for the therapist-only marker, which narrows the
+        // channels and never widens them.
+        therapistChangeOnly: therapistChangeOnly === true,
       }),
     );
     return { appointmentId, ...outcome };

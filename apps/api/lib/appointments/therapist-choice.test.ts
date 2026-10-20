@@ -5,6 +5,8 @@ import { join } from "node:path";
 import {
   bookAppointment,
   listBookableTherapists,
+  listOpenSlots,
+  listRescheduleOptions,
   parseBookingInput,
   type AppointmentsStore,
 } from "./booking";
@@ -204,15 +206,98 @@ describe('NEGATIVE ARM: "let us choose for you" is byte-for-byte the old path', 
   });
 });
 
-describe("the roster is a roster, not a restriction (PL-06a)", () => {
-  it("returns every bookable therapist at the location, unfiltered by service", async () => {
-    const { store } = makeStore();
+// Q-M (owner ruling, 2026-10-20) REPLACED THIS BLOCK'S PREMISE. It was titled
+// "the roster is a roster, not a restriction (PL-06a)" and asserted the roster
+// came back "unfiltered by service". Q-M supersedes PL-06a for the patient-facing
+// surfaces only: the roster, the slots and the assignment keep only therapists
+// mapped to the service. The filter itself is SQL and is proven against Postgres
+// in therapist-service-mapping.db.test.ts; what this unit suite can prove is that
+// the orchestration HANDS THE SERVICE to every store query that must filter by it.
+describe("the roster, the slots and the assignment are asked for THIS service (Q-M)", () => {
+  it("the roster query receives the resolved service id", async () => {
+    const seen: unknown[] = [];
+    const { store } = makeStore({
+      listBookableTherapists: async (_p: unknown, args: unknown) => {
+        seen.push(args);
+        return [{ id: "th-ana", name: "Ana" }];
+      },
+    } as Partial<AppointmentsStore>);
     const rows = await listBookableTherapists(
       principal,
       { serviceId: "svc-1", locationId: "loc-1" },
       store,
     );
-    expect(rows.map((r) => r.id).sort()).toEqual(["th-ana", "th-bruno"]);
+    expect(seen).toEqual([{ locationId: "loc-1", serviceId: "svc-1" }]);
+    expect(rows.map((r) => r.id)).toEqual(["th-ana"]);
+  });
+
+  it("the assignment query receives the resolved service id", async () => {
+    const seen: Array<{ serviceId?: string }> = [];
+    const { store } = makeStore({
+      listAvailableTherapists: async (_p: unknown, args: { serviceId?: string }) => {
+        seen.push(args);
+        return AVAILABLE;
+      },
+    } as Partial<AppointmentsStore>);
+    await bookAppointment(
+      principal,
+      { serviceId: "svc-1", locationId: "loc-1", startsAt: future(), practitionerId: null },
+      store,
+      new Date(),
+    );
+    expect(seen.map((a) => a.serviceId)).toEqual([SERVICE.id]);
+  });
+
+  it("the slot sweep receives the resolved service id, with and without a chosen therapist", async () => {
+    const seen: Array<{ serviceId?: string | null; practitionerId?: string | null }> = [];
+    const { store } = makeStore({
+      listOpenSlots: async (_p: unknown, args: { serviceId?: string | null; practitionerId?: string | null }) => {
+        seen.push(args);
+        return [];
+      },
+    } as Partial<AppointmentsStore>);
+    await listOpenSlots(principal, { serviceId: "svc-1", locationId: "loc-1", practitionerId: null }, store, new Date());
+    await listOpenSlots(principal, { serviceId: "svc-1", locationId: "loc-1", practitionerId: "th-ana" }, store, new Date());
+    expect(seen.map((a) => [a.serviceId, a.practitionerId])).toEqual([
+      [SERVICE.id, null],
+      [SERVICE.id, "th-ana"],
+    ]);
+  });
+
+  it("the reschedule options are NOT a new assignment and ask for no service", async () => {
+    const seen: Array<{ serviceId?: string | null }> = [];
+    const startsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    const { store } = makeStore({
+      getOwnMutable: async () => ({
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 60 * 60 * 1000),
+        status: "scheduled",
+        locationId: "loc-1",
+        practitionerId: "th-ana",
+      }),
+      listOpenSlots: async (_p: unknown, args: { serviceId?: string | null }) => {
+        seen.push(args);
+        return [];
+      },
+    } as Partial<AppointmentsStore>);
+    await listRescheduleOptions(principal, "appt-1", store, new Date());
+    expect(seen.map((a) => a.serviceId)).toEqual([null]);
+  });
+
+  it("a chosen therapist the service-filtered set does not hold is refused, not swapped", async () => {
+    // The store answers with the MAPPED set only; th-bruno is not in it.
+    const { store, created } = makeStore({
+      listAvailableTherapists: async () => [{ practitionerId: "th-ana", sortKey: "Ana" }],
+    } as Partial<AppointmentsStore>);
+    await expect(
+      bookAppointment(
+        principal,
+        { serviceId: "svc-1", locationId: "loc-1", startsAt: future(), practitionerId: "th-bruno" },
+        store,
+        new Date(),
+      ),
+    ).rejects.toMatchObject({ code: "no_therapist" });
+    expect(created).toEqual([]);
   });
 
   it("refuses to enumerate staff for a service the patient cannot book", async () => {

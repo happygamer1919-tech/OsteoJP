@@ -162,13 +162,18 @@ describe("rescheduleAppointment", () => {
     pedidoIds = [];
     expect((await move()).ok).toBe(true);
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
-    expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", [{ appointmentId: "appt-1", startsAt: NEW_STARTS }]);
+    // A new start owes today's confirmation (Q-K rule 1), so no `confirmation` field.
+    expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", [
+      { appointmentId: "appt-1", startsAt: NEW_STARTS, practitionerId: "therapist-1", status: "confirmed" },
+    ]);
   });
 
   it("moving a STAFF booking that is still Agendada emits: it is not a pedido", async () => {
     pedidoIds = [];
     expect((await move()).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: "appt-1", startsAt: NEW_STARTS }]);
+    expect(emitted()).toEqual([
+      { appointmentId: "appt-1", startsAt: NEW_STARTS, practitionerId: "therapist-1", status: "scheduled" },
+    ]);
   });
 
   it("asks the question once, inside the transaction", async () => {
@@ -191,7 +196,9 @@ describe("updateAppointment: bringing a Cancelada back", () => {
   it("a STAFF booking brought back to Agendada emits, so its reminders exist again", async () => {
     pedidoIds = [];
     expect((await updateAppointment("appt-1", { status: "scheduled" })).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: "appt-1", startsAt: STARTS }]);
+    expect(emitted()).toEqual([
+      { appointmentId: "appt-1", startsAt: STARTS, practitionerId: "therapist-1", status: "scheduled" },
+    ]);
   });
 
   it("a row brought back straight to CONFIRMADA emits, and the pedido question is not asked for it", async () => {
@@ -200,7 +207,9 @@ describe("updateAppointment: bringing a Cancelada back", () => {
     // no affected row is `scheduled` before the write.)
     pedidoIds = ["appt-1"];
     expect((await updateAppointment("appt-1", { status: "confirmed" })).ok).toBe(true);
-    expect(emitted()).toEqual([{ appointmentId: "appt-1", startsAt: STARTS }]);
+    expect(emitted()).toEqual([
+      { appointmentId: "appt-1", startsAt: STARTS, practitionerId: "therapist-1", status: "confirmed" },
+    ]);
     expect(probes).toBe(0);
   });
 
