@@ -1,8 +1,8 @@
 # 0106: apply the reminder sweep's two tables
 
-**NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number on `main`'s position after 0105, and this document carries its seven blocks, reviewed, and rehearsed on a throwaway at production's position by an agent that did not write them. Open, in order: one R4 round on this revision's record of the rehearsal (the status lines, the NOT READY list, "Rehearsal", "NOT REHEARSED" and stage 1's EXPECT; no block byte changed); SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the values this document cannot hold (the merge commit's sha as MERGED, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). Until the pull request is merged every block below STOPs at its first check, because this document is not on `origin/main`. **The sitting is closed hours only** (this migration creates policies; see "Closed hours, and the locks").
+**NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number on `main`'s position after 0105, and this document carries its seven blocks, reviewed; five of them rehearsed on a throwaway at production's position by an agent that did not write them (BEFORE YOU START and the CLOCK CHECK stop at their PENDING lines there and are NOT REHEARSED). Open, in order: one R4 round on this revision's record of the rehearsal (the status lines, the NOT READY list, "Rehearsal", "NOT REHEARSED" and stage 1's EXPECT; no block byte changed); SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the values this document cannot hold (the merge commit's sha as MERGED, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). Until the pull request is merged every block below STOPs at its first check, because this document is not on `origin/main`. **The sitting is closed hours only** (this migration creates policies; see "Closed hours, and the locks").
 
-**Status: AUTHORED; REVIEWED (a fresh reviewer PASSED the migration revision on 2026-10-19 with three MINOR findings, all answered; see "Review history"); PROMOTED 2026-10-19 (`packages/db/migrations/0106_reminder_claims.sql`, journal idx 103); BLOCKS WRITTEN 2026-10-19 AND PROVEN BY THEIR FAULT-INJECTION TEST; ONE R4 ROUND ON THEM 2026-10-19 (ONE MAJOR, FOUR MINOR FINDINGS, ALL ANSWERED) AND A RE-REVIEW OF THE FIXES THE SAME DAY (READY, TWO MINOR WORDING FINDINGS, ANSWERED); REHEARSED 2026-10-19 AND 2026-10-20 ON A THROWAWAY BY AN AGENT THAT DID NOT WRITE THEM ("The fourth rehearsal"): STAGES 0, 1 AND 2, THE S12 COUNT'S BLOCK AND THE CLOSING READ RAN, NO BLOCKER AND NO MAJOR; BEFORE YOU START AND THE CLOCK CHECK STOP AT THEIR PENDING LINES THERE, AS THEY MUST, AND ARE NOT REHEARSED. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9`, 24 statements, unchanged by the promotion.
+**Status: AUTHORED; REVIEWED (a fresh reviewer PASSED the migration revision on 2026-10-19 with three MINOR findings, all answered; see "Review history"); PROMOTED 2026-10-19 (`packages/db/migrations/0106_reminder_claims.sql`, journal idx 103); BLOCKS WRITTEN 2026-10-19 AND PROVEN BY THEIR FAULT-INJECTION TEST; ONE R4 ROUND ON THEM 2026-10-19 (ONE MAJOR, FOUR MINOR FINDINGS, ALL ANSWERED) AND A RE-REVIEW OF THE FIXES THE SAME DAY (READY, TWO MINOR WORDING FINDINGS, ANSWERED); REHEARSED 2026-10-19 AND 2026-10-20 ON A THROWAWAY BY AN AGENT THAT DID NOT WRITE THEM ("The fourth rehearsal"): STAGES 0, 1 AND 2, AND THE S12 COUNT'S BLOCK RAN, AND THE CLOSING READ RAN TO ITS READER LINE, WHICH A THROWAWAY CANNOT RUN; NO BLOCKER AND NO MAJOR; BEFORE YOU START AND THE CLOCK CHECK STOP AT THEIR PENDING LINES THERE, AS THEY MUST, AND ARE NOT REHEARSED. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9`, 24 statements, unchanged by the promotion.
 
 **In plain language.** The daily reminder sweep needs a place of its own to write down which reminders it took and when it ran. This migration creates that place: two new, empty tables. Only the reminder job's own session may add a row; staff of the clinic group may read them; nobody may change or remove a row; `service_role` holds nothing on either. Nothing that exists today changes: no existing table, policy, function or grant. No screen changes. Nothing reads or writes the tables until the sweep's own pull requests merge, after the apply.
 
@@ -817,7 +817,7 @@ echo "CLOSING READ: the journal reads 104, 0106 is APPLIED, and nothing is pendi
 
 | # | Click | When | What it starts |
 |---|---|---|---|
-| 1 | Merge the GATE-CHANGE `ci/GATE-CHANGE-cleanup-learns-reminder-claims` (the cleanup test learns `reminder_claims`) | on green, before this pull request merges | `pnpm test:scripts` on this branch goes whole once `main` is merged in |
+| 1 | DONE 2026-10-19 (#1617, merged 17:32 Lisbon): merge the GATE-CHANGE `ci/GATE-CHANGE-cleanup-learns-reminder-claims` (the cleanup test learns `reminder_claims`) | on green, before this pull request merges | `pnpm test:scripts` on this branch goes whole once `main` is merged in |
 | 2 | On this pull request: take the label `held-for-apply` off | after the rehearsal of the blocks, the R4 round on them, SOLO's READY line, and `main` merged into the branch with CI green on that head | nothing by itself |
 | 3 | On this pull request: merge | right after click 2, and never while a sitting of GREEN's is in flight | `main` is then one migration ahead of production. Nothing else merges until GREEN's report on 0106 |
 | 4 | Launch GREEN and hand it SOLO's dispatch, which names `0106_reminder_claims.sql` | after SOLO has filled the dispatch (MERGED, DOCSHA, the window); in closed hours, inside its run window | the sitting: BEFORE YOU START, stage 0, CLOCK CHECK, stage 1, stage 2, the S12 count, the closing read |
@@ -826,7 +826,7 @@ echo "CLOSING READ: the journal reads 104, 0106 is APPLIED, and nothing is pendi
 
 ## GATE-CHANGES
 
-- **Before the promotion merges, ONE, the owner's (click 1):** `scripts/import/cleanup-test-patients.test.mjs` learns `reminder_claims` (`DELETE_ORDER`, the pair `["reminder_claims", "appointments"]`, `AHEAD_OF_MIGRATION` holding `reminder_claims`, and a floor that raises itself from 24 to 25 the moment a migration creates the table), with `.github/gate-manifest.json` regenerated. It is on the branch `ci/GATE-CHANGE-cleanup-learns-reminder-claims` (two commits on `main` at `88d0aa4f`). Measured on 2026-10-19: against this promoted tree that test file passes 26 of 26; `main`'s version of it reads 2 failures here (`reminder_claims is deleted from but is not in the patient dependency graph`, and `reminder_claims has an FK path to patients but the script never deletes from it`).
+- **Before the promotion merges, ONE, the owner's (click 1):** `scripts/import/cleanup-test-patients.test.mjs` learns `reminder_claims` (`DELETE_ORDER`, the pair `["reminder_claims", "appointments"]`, `AHEAD_OF_MIGRATION` holding `reminder_claims`, and a floor that raises itself from 24 to 25 the moment a migration creates the table), with `.github/gate-manifest.json` regenerated. It is on the branch `ci/GATE-CHANGE-cleanup-learns-reminder-claims` (two commits on `main` at `88d0aa4f`). Measured on 2026-10-19: against this promoted tree that test file passes 26 of 26; `main`'s version of it reads 2 failures here (`reminder_claims is deleted from but is not in the patient dependency graph`, and `reminder_claims has an FK path to patients but the script never deletes from it`). Merged 2026-10-19 as #1617; `main` carries it and this branch passes 26 of 26 since `4c4bc929`.
 - **None for the apply.** The SECURITY DEFINER count stays 36.
 - **After the merge, TWO, the owner's (click 6), each its own pull request:**
   - `.github/scripts/assert-rls-executed.mjs`: the skip guard lists `reminder-claims-rls.db.test.ts` (`{ file: "reminder-claims-rls.db.test.ts", hard: true },` after the list's last entry), with the manifest regenerated. Until then the suite runs on CI but its absence would not be red.
@@ -1273,7 +1273,7 @@ the script never deletes from it`); the GATE-CHANGE's version of that file passe
 
 | # | Pull request | Kind | When |
 |---|---|---|---|
-| 1 | The cleanup test learns `reminder_claims` (branch `ci/GATE-CHANGE-cleanup-learns-reminder-claims`) | GATE-CHANGE, the owner merges | before the promotion merges |
+| 1 | DONE 2026-10-19 (#1617, merged 17:32 Lisbon): the cleanup test learns `reminder_claims` (branch `ci/GATE-CHANGE-cleanup-learns-reminder-claims`) | GATE-CHANGE, the owner merges | before the promotion merges |
 | 2 | The promotion, with `scripts/import/cleanup-test-patients.sql` gaining its delete, this document with its blocks, the check files, the suite, the schema entry and the seed's guarded revoke | Tier C, `held-for-apply` until the owner takes the label off and merges | after 1, and after `0105` is on `main` |
 | 3 | GREEN applies from `main` | the sitting | after 2 has merged |
 | 4 | The skip guard lists the suite; the cleanup test's `AHEAD_OF_MIGRATION` emptied and its floor fixed at 25 | GATE-CHANGEs, the owner merges | after 2 has merged |
@@ -1439,7 +1439,7 @@ line), which is their purpose.
 | Block | 8fa7af89 (Mon 2026-10-19, 21:59 Lisbon) | f68aa79e (Tue 2026-10-20, 21:01) |
 |---|---|---|
 | BEFORE YOU START | NOT REHEARSED: `STOP: MERGED is not a filled-in sha, so this block is NOT READY ...` | NOT REHEARSED: the same STOP; its new applied-marker age lines come after it and never ran |
-| Stage 0 | REHEARSED-OK: exit 0, W-9 three lines, check-journal 104 of 104. At 15:01 it stopped on the clock (`... inside clinic hours ...`); at 23:31 at "outside strategy's start windows" | Byte-identical; run again to make the sitting's records |
+| Stage 0 | REHEARSED-OK: exit 0, W-9 three lines, check-journal 104 of 104. At 15:01 it stopped on the clock (`... inside clinic hours ...`); at 23:31 it passed (closed hours), and the CLOCK CHECK's clock lines, run by hand, stopped at "outside strategy's start windows" | Byte-identical; run again to make the sitting's records |
 | CLOCK CHECK | NOT REHEARSED: `STOP: the document's sha256 in this block is still PENDING ...` | NOT REHEARSED: the same STOP |
 | Stage 1 | REHEARSED-OK: pre-check 13 OK / 0 VACUOUS / 0 FAIL (9 CARRY, 3 INFO); clinics `0 of 2`, inside; `journal    103 -> 104  (delta 1)`; `0106 APPLIED. Paste stage 2 now.` | Byte-identical; pre-check 13 OK again after the rollback |
 | Stage 2 | REHEARSED-OK: post-check 26 OK / 0 VACUOUS / 0 FAIL; `0106 POST-CHECK PASSED` | Byte-identical |
@@ -1459,9 +1459,9 @@ exit 0, and run a second time exit 3, `PRECONDITION FAILED: ... ALREADY in drizz
 The rollback in "Rollback": the pre-check then read 10 OK / 3 FAIL, the three journal verdicts,
 because the journal row stays; with that row removed, every verdict and carry matched the first run.
 
-**Counts.** Pre-check 13 OK / 0 VACUOUS / 0 FAIL. Post-check 26 OK / 0 VACUOUS / 0 FAIL four times
+**Counts.** Pre-check 13 OK / 0 VACUOUS / 0 FAIL. Post-check 26 OK / 0 VACUOUS / 0 FAIL in all six of its outputs
 (after the hand apply, after each block apply, after each suite run). `reminder-claims-rls` 59 of 59
-four times; the whole `packages/db` suite 1690 of 1690 (104 files).
+three times on record (a fourth run printed nothing: its script passed the wrong argument); the whole `packages/db` suite 1690 of 1690 (104 files).
 
 **Cleanup.** The stack was stopped with `--no-backup`; no container or volume of it is left, and no
 other stack was touched. No real `/tmp/0106-*` file existed before the rehearsal or after it.
@@ -1805,6 +1805,12 @@ and the S12 heading says that its counts, not its STOPs, never stop the sitting.
 
 **The fourth rehearsal, 2026-10-20: no BLOCKER and no MAJOR, two MINOR findings,** answered in this
 revision (see the end of "The fourth rehearsal"). No block byte changed.
+
+**The R4 round on that record, 2026-10-20: NOT READY, four MINOR findings,** each answered the same
+night with no block byte changed: stage 0 at 23:31 passed (the start-window STOP came from the
+CLOCK CHECK's clock lines run by hand); the post-check read 26 OK in six outputs and the suite 59 of
+59 in three; the header and the status line overstated what ran (five blocks, and the closing read
+only to its reader line); and three places still showed #1617 as pending.
 
 ## JUDGMENTS, NOT RULINGS, in this document (2026-10-19)
 
