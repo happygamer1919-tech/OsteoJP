@@ -23,6 +23,7 @@ import {
   setStaffLocationsAction,
 } from "./actions";
 import { ActivateLoginForm } from "./ActivateLoginForm";
+import { TherapistServicesFields } from "./TherapistServicesFields";
 
 /**
  * StaffManageModal (W12-40) — the ONE place a team member is managed from the
@@ -34,6 +35,7 @@ import { ActivateLoginForm } from "./ActivateLoginForm";
  *   - Função e acesso: role, activate/deactivate,
  *     password-gated delete                            → changeRole/setActive/deleteStaff
  *   - Serviço principal (therapists)                   → setPrimaryServiceAction
+ *     + the services they deliver (Q-M, 2026-10-20)     → setTherapistServicesAction
  *   - Horários (non-reception): weekday schedule +
  *     per-day location + time-off blocks               → saveTherapistScheduleAction / time-off
  *
@@ -71,6 +73,7 @@ export function StaffManageModal({
   isTherapist,
   services,
   currentPrimaryId,
+  mappedServiceIds = [],
   showHours,
   scheduleManageable = true,
   days,
@@ -105,6 +108,8 @@ export function StaffManageModal({
   services: { id: string; name: string }[];
   /** Current primary service id, or "" when none is set. */
   currentPrimaryId: string;
+  /** Q-M: every service this member is mapped to, primary included. */
+  mappedServiceIds?: string[];
   /** Non-reception: show the working-hours section (schedule + blocks). */
   showHours: boolean;
   /** False when the VIEWER may not manage this member's schedule (they are at
@@ -494,37 +499,47 @@ export function StaffManageModal({
             )}
 
             {section === "service" && isTherapist && (
-              <form
-                action={setPrimaryServiceAction}
-                className="flex flex-col gap-2"
-              >
-                <input type="hidden" name="therapistId" value={userId} />
-                <span className={adminLabel}>{s["admin.staff.colPrimaryService"]}</span>
-                {services.length === 0 ? (
-                  <p className="text-sm text-v2-text-secondary">
-                    {s["admin.staff.noServices"]}
-                  </p>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <select
-                      name="serviceId"
-                      defaultValue={currentPrimaryId}
-                      aria-label={s["admin.staff.colPrimaryService"]}
-                      className={adminInputInline}
-                    >
-                      <option value="">{s["admin.staff.selectService"]}</option>
-                      {services.map((svc) => (
-                        <option key={svc.id} value={svc.id}>
-                          {svc.name}
-                        </option>
-                      ))}
-                    </select>
-                    <Button type="submit" variant="ghost" size="sm">
-                      {s["admin.staff.setPrimary"]}
-                    </Button>
-                  </div>
+              <div className="flex flex-col gap-5">
+                <form
+                  action={setPrimaryServiceAction}
+                  className="flex flex-col gap-2"
+                >
+                  <input type="hidden" name="therapistId" value={userId} />
+                  <span className={adminLabel}>{s["admin.staff.colPrimaryService"]}</span>
+                  {services.length === 0 ? (
+                    <p className="text-sm text-v2-text-secondary">
+                      {s["admin.staff.noServices"]}
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <select
+                        name="serviceId"
+                        defaultValue={currentPrimaryId}
+                        aria-label={s["admin.staff.colPrimaryService"]}
+                        className={adminInputInline}
+                      >
+                        <option value="">{s["admin.staff.selectService"]}</option>
+                        {services.map((svc) => (
+                          <option key={svc.id} value={svc.id}>
+                            {svc.name}
+                          </option>
+                        ))}
+                      </select>
+                      <Button type="submit" variant="ghost" size="sm">
+                        {s["admin.staff.setPrimary"]}
+                      </Button>
+                    </div>
+                  )}
+                </form>
+                {services.length > 0 && (
+                  <TherapistServicesFields
+                    therapistId={userId}
+                    services={services}
+                    primaryId={currentPrimaryId}
+                    mappedServiceIds={mappedServiceIds}
+                  />
                 )}
-              </form>
+              </div>
             )}
 
             {section === "hours" && showHours && !scheduleManageable && (

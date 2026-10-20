@@ -10,7 +10,10 @@ import {
   inviteStaff,
   setStaffActive,
 } from "@/lib/admin/staff";
-import { setTherapistPrimaryService } from "@/lib/admin/therapist-primary-service";
+import {
+  setTherapistPrimaryService,
+  setTherapistServices,
+} from "@/lib/admin/therapist-primary-service";
 import { setStaffColor, setStaffLocations } from "@/lib/admin/staff-locations";
 import { isAdminError } from "@/lib/admin/errors";
 
@@ -89,6 +92,26 @@ export async function setPrimaryServiceAction(formData: FormData): Promise<void>
       actor,
       String(formData.get("therapistId") ?? ""),
       String(formData.get("serviceId") ?? ""),
+    );
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/admin/staff");
+  redirect(`/admin/staff?m=${code}`);
+}
+
+// Q-M (2026-10-20): the OTHER services a therapist delivers, ticked in the
+// Serviço principal section. The checkbox group posts zero-or-more
+// `serviceIds`; the primary is kept server-side whatever is posted, so the
+// staff agenda's preselection never moves through this form.
+export async function setTherapistServicesAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "ok";
+  try {
+    await setTherapistServices(
+      actor,
+      String(formData.get("therapistId") ?? ""),
+      formData.getAll("serviceIds").map((v) => String(v)),
     );
   } catch (e) {
     code = isAdminError(e) ? `err:${e.code}` : "err";

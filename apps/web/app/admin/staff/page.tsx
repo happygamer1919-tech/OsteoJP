@@ -327,6 +327,12 @@ export default async function StaffPage({
           {visibleStaff.map((u) => {
             const manageable = isOwner || u.roleSlug !== "owner";
             const isTherapist = u.roleSlug === "therapist";
+            // Q-M (2026-10-20): the patient app offers a member only for the
+            // services mapped to them, so every BOOKABLE member needs the
+            // services section, not just the therapist role. A practising owner
+            // is bookable with role=owner (PL-06b); without this he could never
+            // be mapped and would be hidden online for every service.
+            const offersServices = isTherapist || u.isBookable;
             const showHours = u.roleSlug !== "reception";
             const memberships = staffLocationsByUser.get(u.id) ?? [];
             // Prefer an explicitly-set membership colour; else the deterministic
@@ -424,7 +430,7 @@ export default async function StaffPage({
                     </dd>
                   </div>
 
-                  {isTherapist && (
+                  {offersServices && (
                     <div className="flex gap-2">
                       <dt className="min-w-24 pt-0.5 text-xs font-medium text-v2-text-secondary">
                         {s["admin.staff.cardPrimaryLabel"]}
@@ -484,9 +490,10 @@ export default async function StaffPage({
                       isBookable={u.isBookable}
                       roleOptions={roleOptions}
                       canDelete={u.roleSlug !== "owner" && u.id !== actor.userId}
-                      isTherapist={isTherapist}
+                      isTherapist={offersServices}
                       services={activeServices.map((svc) => ({ id: svc.id, name: svc.name }))}
                       currentPrimaryId={primaryId}
+                      mappedServiceIds={primaries.get(u.id)?.services.map((svc) => svc.id) ?? []}
                       showHours={showHours}
                       days={days}
                       locations={locations.map((l) => ({ id: l.id, name: l.name }))}
