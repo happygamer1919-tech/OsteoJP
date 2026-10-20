@@ -276,6 +276,37 @@ function withinClinicHoursExists(
   )`;
 }
 
+/**
+ * Q-M (owner ruling, 2026-10-20) - ON THE PATIENT PATH A THERAPIST IS OFFERED
+ * ONLY FOR A SERVICE THEY ARE MAPPED TO.
+ *
+ * `therapist_services` (0023) holds one row per (therapist, service) the clinic
+ * says that person delivers; a therapist may have many. Q-M supersedes PL-06a
+ * (2026-07-28, "the mapping is a PRESELECTION, not a RESTRICTION") for the
+ * patient-facing surfaces ONLY: the roster, the slot grid (a chosen therapist
+ * and "Escolham por mim" alike), and the assignment at submit all carry this
+ * predicate. A therapist with NO mapped service therefore matches nothing and is
+ * hidden online for every service. The staff agenda keeps PL-06a unchanged: it
+ * never reads this fragment.
+ *
+ * ONE FRAGMENT FOR EVERY SITE, the same reason the availability and overlap
+ * predicates above are fragments: the grid, the assignment query and the roster
+ * must agree on who may see the patient for this service, or the portal offers a
+ * slot that only an unmapped therapist works and then refuses it at confirm.
+ */
+function deliversServiceExists(
+  tenantId: string,
+  practitioner: Practitioner,
+  serviceId: string,
+): SQL {
+  return sql`exists (
+    select 1 from therapist_services ts
+    where ts.tenant_id = ${tenantId}
+      and ts.therapist_user_id = ${pref(practitioner)}
+      and ts.service_id = ${serviceId}
+  )`;
+}
+
 /** Availability-template coverage for the window, in clinic-local (Lisbon) time.
  *  Reuses Stream B's availability DATA model directly (weekday 0=Sun..6=Sat,
  *  local start/end time, validity window). */
@@ -475,7 +506,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
 
   async listOpenSlots(
     principal,
-    { locationId, durationMin, horizonDays, now, practitionerId },
+    { locationId, durationMin, horizonDays, now, practitionerId, serviceId },
   ): Promise<string[]> {
     // Step-3 source of truth. Expands ACTIVE therapists' ACTIVE availability
     // templates at the location into a grid of concrete starts over the
@@ -510,6 +541,13 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     const endExpr = sql`(s.starts_at + make_interval(mins => ${durationMin}::int))`;
     const nowIso = now.toISOString();
     const notShared = await sharedResourceExclusion();
+    // Q-M (2026-10-20): when the sweep is for a SERVICE, only therapists mapped
+    // to it count, in BOTH halves below for the same reason the A2 therapist
+    // filter is in both. Null (the reschedule options, which keep the already
+    // assigned therapist) leaves the sweep exactly as it was.
+    const mappedToService = serviceId
+      ? sql`and ${deliversServiceExists(principal.tenantId, sql`u.id`, serviceId)}`
+      : sql``;
     const rows = (await getDbAdmin().execute(sql`
       with step as (
         -- W12-29: per-location slot granularity, default 30. Lifted out of the
@@ -556,6 +594,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           -- below would still expand everyone's templates into the series and
           -- could offer a start that only somebody else works.
           and (${practitionerId ?? null}::uuid is null or u.id = ${practitionerId ?? null}::uuid)
+          ${mappedToService}
           and av.weekday = extract(dow from d.day)::int
           and (av.valid_from  is null or av.valid_from  <= d.day::date)
           and (av.valid_until is null or av.valid_until >= d.day::date)
@@ -574,6 +613,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             -- query advertises must be one the confirm guard will accept, and
             -- the confirm will be run against THIS therapist.
             and (${practitionerId ?? null}::uuid is null or u.id = ${practitionerId ?? null}::uuid)
+            ${mappedToService}
             and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startExpr, endExpr)}
             and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, [])}
             and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr)}
@@ -597,7 +637,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     );
   },
 
-  async listAvailableTherapists(principal, { locationId, startsAt, endsAt }): Promise<TherapistCandidate[]> {
+  async listAvailableTherapists(principal, { locationId, startsAt, endsAt, serviceId }): Promise<TherapistCandidate[]> {
     // Candidates = BOOKABLE, active therapists who (a) have a covering
     // availability template at the location for the window, (b) have no
     // overlapping appointment, and (c) are not on time_off. service_role: must
@@ -627,14 +667,16 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // booked online" rather than as a bug. Lurdes is excluded because her flag is
     // false, not because of her title.
     //
-    // WHY NOT A SERVICE-MAPPING FILTER, and this one is a RULING, not a
-    // preference. PL-06a (owner, 2026-07-28): the therapist-to-service mapping is
-    // a PRESELECTION, NEVER A RESTRICTION - the staff Servico select lists every
-    // active service for every therapist. Filtering portal candidates by mapping
-    // would make the portal STRICTER than the staff surface and would silently
-    // narrow who can be booked for a service, which is the opposite of what that
-    // ruling says the mapping means. If JP ever wants the portal to respect
-    // mappings, that is a change to PL-06a and belongs to him, not here.
+    // THE SERVICE MAPPING IS A FILTER HERE, BY RULING. This comment used to say
+    // the opposite, under PL-06a (owner, 2026-07-28): the therapist-to-service
+    // mapping was a PRESELECTION, NEVER A RESTRICTION, and the portal did not
+    // read it. Owner ruling Q-M (2026-10-20) supersedes PL-06a for the
+    // patient-facing surfaces ONLY: reception reported an acupuncturist and an
+    // administrator offered for Fisioterapia. So this assignment query (the
+    // "Escolham por mim" pick AND the validation of a chosen therapist) keeps
+    // only therapists mapped to the booked service, through the same fragment
+    // the roster and the slot grid use. The staff agenda is unchanged: there,
+    // PL-06a still holds and the mapping only preselects.
     const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
@@ -643,6 +685,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         and u.is_active = true
         and u.is_bookable = true
         ${notShared}
+        and ${deliversServiceExists(principal.tenantId, sql`u.id`, serviceId)}
         and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startsAt, endsAt)}
         and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt, [])}
         and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt)}
@@ -655,7 +698,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     return rows.map((r) => ({ practitionerId: r.practitioner_id, sortKey: r.full_name ?? "" }));
   },
 
-  async listBookableTherapists(principal, { locationId }): Promise<BookableTherapist[]> {
+  async listBookableTherapists(principal, { locationId, serviceId }): Promise<BookableTherapist[]> {
     // A2 — THE ROSTER FOR THE THERAPIST STEP. Deliberately NOT an availability
     // query, and that distinction is the whole reason this method exists rather
     // than reusing `listAvailableTherapists` above.
@@ -672,21 +715,23 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // particular time is decided AFTER the date is chosen, by listOpenSlots,
     // which is the existing availability source and is unchanged.
     //
-    // `is_bookable` AND NOTHING ELSE. PL-06b, and it is a ruling with a live
-    // defect behind it: a role predicate once dropped JP from the staff dropdown.
+    // `is_bookable` DECIDES WHO COUNTS AS A THERAPIST, NEVER A ROLE. PL-06b,
+    // and it is a ruling with a live defect behind it: a role predicate once
+    // dropped JP from the staff dropdown.
     // The staff surface filters on this same flag (data.ts:311 ->
     // therapist-bookable.ts:34-36) and D2 (f821eac) brought the two other portal
     // predicates onto it after a portal booking was auto-assigned to an
     // ADMINISTRATOR the staff dropdown refuses. This is the FOURTH surface and it
     // uses the SAME flag - never a title, never a role slug.
     //
-    // NO SERVICE-MAPPING FILTER EITHER, per PL-06a: the mapping is a
-    // PRESELECTION, NEVER A RESTRICTION. `serviceId` is accepted by the caller's
-    // signature for symmetry with the rest of the booking path and is
-    // deliberately UNUSED in the predicate - filtering by it would make the
-    // portal stricter than the staff Servico select, which lists every active
-    // service for every therapist. If JP ever wants mappings respected online,
-    // that is a change to PL-06a and belongs to him.
+    // AND THE SERVICE MAPPING, by owner ruling Q-M (2026-10-20). This used to
+    // read "no service-mapping filter, per PL-06a: the mapping is a
+    // PRESELECTION, NEVER A RESTRICTION", and `serviceId` was accepted and left
+    // unused. Q-M supersedes PL-06a for the patient-facing surfaces ONLY: the
+    // roster lists a therapist only for a service they are mapped to in
+    // `therapist_services`, and a therapist with no mapped service is not listed
+    // at all. The staff Servico select is unchanged and still lists every active
+    // service for every therapist.
     //
     // LOCATION IS A REAL CONSTRAINT, not a preference: it is where the patient is
     // going. A therapist with no active availability template at this clinic
@@ -738,6 +783,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
             and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
         )
+        and ${deliversServiceExists(principal.tenantId, sql`u.id`, serviceId)}
       order by u.full_name
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
 

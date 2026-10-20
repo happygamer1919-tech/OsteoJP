@@ -38,8 +38,9 @@
  * has a therapist of its own; that one is not borrowed here because it asserts
  * its first day reads "Não trabalha", and this spec writes a Base.
  *
- * FIXTURES built here: a login-less, bookable therapist at Linda-a-Velha, and ONE
- * Base row (10:00-12:00) on the weekday of the first test day. Nothing else.
+ * FIXTURES built here: a login-less, bookable therapist at Linda-a-Velha, mapped
+ * to SERVICE (Q-M, 2026-10-20: the portal offers only mapped therapists), and
+ * ONE Base row (10:00-12:00) on the weekday of the first test day. Nothing else.
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -91,6 +92,7 @@ function must<T>(r: { data: T; error: { message: string } | null }, what: string
 
 async function cleanUp(): Promise<void> {
   await db.from("availability_templates").delete().eq("tenant_id", TENANT_A).eq("user_id", THERAPIST_ID);
+  await db.from("therapist_services").delete().eq("tenant_id", TENANT_A).eq("therapist_user_id", THERAPIST_ID);
   await db.from("staff_locations").delete().eq("tenant_id", TENANT_A).eq("user_id", THERAPIST_ID);
   const gone = await db.from("users").delete().eq("id", THERAPIST_ID);
   // Referenced by something (an audit row naming it, say): retire instead, so it
@@ -130,6 +132,19 @@ test.beforeAll(async () => {
         { onConflict: "tenant_id,user_id,location_id" },
       ),
     "therapist at Linda-a-Velha",
+  );
+  // Q-M (owner ruling, 2026-10-20): the portal gives slots only from therapists
+  // MAPPED to the service asked for. This spec asks for SERVICE, so its
+  // therapist is mapped to it; without the row every portal answer would be
+  // empty and the "the portal agrees" arms would read a filter, not the hours.
+  must(
+    await db
+      .from("therapist_services")
+      .upsert(
+        { tenant_id: TENANT_A, therapist_user_id: THERAPIST_ID, service_id: SERVICE.id },
+        { onConflict: "tenant_id,therapist_user_id,service_id" },
+      ),
+    "therapist mapped to the service",
   );
   // THE BASE: an ordinary weekly row, no validity, on the first day's weekday
   // only. The second day's weekday deliberately has none.
