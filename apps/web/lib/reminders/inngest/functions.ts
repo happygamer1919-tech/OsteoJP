@@ -226,8 +226,8 @@ export const sendAppointmentReminder = inngest.createFunction(
 // APPLICATION sends: lib/reminders/index.ts writes it unconditionally. NOT the
 // events of the owner-run scripts packages/db/scripts/
 // inc-1007-rearm-reminders-emit.mjs and obs-05-backfill-emit.mjs, which omit
-// it. Those send `confirmationEligible: false`, so CONFIRMATION_TRIGGER_FILTER
-// below stops them before this key is evaluated. The assumption this rests on,
+// it. Those send `confirmationEligible: false`, so the confirmation trigger's
+// `if` filter below stops them before this key is evaluated. The assumption this rests on,
 // NOT VERIFIED: that Inngest evaluates the trigger's `if` before the
 // idempotency key, or tolerates a missing field in it. The SDK documents no
 // default-value syntax for this expression (inngest 4.5.0,

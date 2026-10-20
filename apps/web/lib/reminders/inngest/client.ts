@@ -25,9 +25,12 @@ export type AppointmentScheduledData = {
    * inc-1007-rearm-reminders-emit.mjs, obs-05-backfill-emit.mjs) omit it and
    * send `confirmationEligible: false`, so their events never start a
    * confirmation run. ./functions.ts states the assumption that rests on. A
-   * staff id, not a fact about the patient.
+   * staff id, not a fact about the patient. OPTIONAL IN THIS TYPE for that
+   * reason: the type describes every event on the wire, and the scripts' events
+   * carry no therapist. The application's sender (lib/reminders/index.ts)
+   * requires it in its own argument type, so no application event omits it.
    */
-  practitionerId: string;
+  practitionerId?: string;
   /**
    * Q-K. Present, and `true`, ONLY when the save that emitted this event
    * changed the Terapeuta and kept the start and the clinic. The confirmation
