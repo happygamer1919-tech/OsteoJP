@@ -35,9 +35,7 @@ export async function GET(req: Request): Promise<Response> {
     // is the pre-A2 behaviour. Present must be a UUID; whether it names a
     // BOOKABLE therapist is decided by the query's own is_bookable predicates,
     // so a well-formed id for a non-bookable user simply yields no slots - it
-    // cannot widen the result. The same holds for a therapist not mapped to the
-    // service: since owner ruling Q-M (2026-10-20) the sweep keeps only
-    // therapists mapped to `serviceId`, with or without this parameter.
+    // cannot widen the result.
     const practitionerRaw = url.searchParams.get("practitionerId");
     if (practitionerRaw !== null && !UUID_RE.test(practitionerRaw)) {
       throw new AppointmentError("invalid_input");

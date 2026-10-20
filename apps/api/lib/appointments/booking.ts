@@ -184,14 +184,6 @@ export interface AppointmentsStore {
       /** A2: narrow the sweep to ONE therapist. Undefined/null keeps the
        *  any-therapist behaviour byte for byte. */
       practitionerId?: string | null;
-      /**
-       * Q-M (owner, 2026-10-20): the service being booked. When set, only
-       * therapists mapped to it in `therapist_services` contribute slots, for a
-       * chosen therapist and for "Escolham por mim" alike. REQUIRED as a key so
-       * every caller decides: null is for the reschedule options only, which
-       * keep the therapist already assigned and are not a new assignment.
-       */
-      serviceId: string | null;
     },
   ): Promise<string[]>;
 
@@ -204,20 +196,17 @@ export interface AppointmentsStore {
    * step runs BEFORE a date is chosen, so there is no window. Free/busy is decided
    * afterwards by `listOpenSlots`.
    *
-   * Filtered on `is_bookable` (PL-06b) AND on the service mapping: owner ruling
-   * Q-M (2026-10-20) supersedes PL-06a for the patient-facing surfaces only, so
-   * a therapist is listed only for a service they are mapped to, and a therapist
-   * with no mapped service is not listed. The staff agenda keeps PL-06a.
+   * Filtered on `is_bookable` ONLY (PL-06b) and NEVER on the service mapping
+   * (PL-06a): the mapping is a preselection, never a restriction.
    */
   listBookableTherapists(
     principal: PatientPrincipal,
     args: { locationId: string; serviceId: string },
   ): Promise<BookableTherapist[]>;
-  /** Therapists who work at the location, are mapped to the service (Q-M,
-   *  2026-10-20) AND have no conflict for the window. */
+  /** Therapists who work at the location AND have no conflict for the window. */
   listAvailableTherapists(
     principal: PatientPrincipal,
-    args: { locationId: string; startsAt: Date; endsAt: Date; serviceId: string },
+    args: { locationId: string; startsAt: Date; endsAt: Date },
   ): Promise<TherapistCandidate[]>;
   /** The patient's most-recent therapist (soft preference), or null. */
   priorTherapistId(principal: PatientPrincipal): Promise<string | null>;
@@ -277,8 +266,7 @@ export type BookingInput = {
   locationId: string;
   startsAt: Date;
   /** A2: the therapist the patient chose, or null for "let us choose for you".
-   *  NEVER trusted - validated against is_bookable and, since Q-M
-   *  (2026-10-20), against the service mapping, server-side in
+   *  NEVER trusted - validated against is_bookable server-side in
    *  bookAppointment before it can reach a row. */
   practitionerId?: string | null;
 };
@@ -444,8 +432,6 @@ export async function listOpenSlots(
     now,
     // A2: null/undefined sweeps every bookable therapist, exactly as before.
     practitionerId: input.practitionerId ?? null,
-    // Q-M (2026-10-20): only therapists mapped to THIS service give slots.
-    serviceId: service.id,
   });
 }
 
@@ -458,12 +444,11 @@ export async function listOpenSlots(
  * endpoint - the roster is only meaningful for a booking they could actually
  * make, so the gate is the booking's own gate rather than a weaker one.
  *
- * IT FILTERS BY THE SERVICE, by owner ruling Q-M (2026-10-20). This used to say
- * the opposite: under PL-06a (2026-07-28) the therapist-to-service mapping was a
- * PRESELECTION, NEVER A RESTRICTION, and `serviceId` only validated the request.
- * Q-M supersedes PL-06a for the patient-facing surfaces ONLY: the roster lists a
- * therapist only for a service they are mapped to, and hides a therapist with
- * no mapped service. The staff Servico select is unchanged.
+ * IT DOES NOT FILTER BY THE SERVICE. PL-06a: the therapist-to-service mapping is
+ * a PRESELECTION, NEVER A RESTRICTION, and the staff Servico select lists every
+ * active service for every therapist. Filtering here would make the portal
+ * STRICTER than the staff surface. `serviceId` exists to validate the request,
+ * not to narrow the answer.
  */
 export async function listBookableTherapists(
   principal: PatientPrincipal,
@@ -529,12 +514,6 @@ export async function bookAppointment(
     locationId: input.locationId,
     startsAt: input.startsAt,
     endsAt,
-    // Q-M (2026-10-20): only therapists mapped to the booked service. This is
-    // what refuses a submitted practitionerId that is not mapped (it is absent
-    // from `available`, so the check below answers no_therapist) and what keeps
-    // "Escolham por mim" from assigning an unmapped therapist. Server-side, so
-    // a request that skips the roster gets the same answer.
-    serviceId: service.id,
   });
 
   // A2 — THE PATIENT'S CHOSEN THERAPIST IS VALIDATED, NEVER TRUSTED.
@@ -550,9 +529,7 @@ export async function bookAppointment(
   //   * a therapist from another tenant, or an id that is not a therapist at
   //     all — the request body is attacker-controlled and this is the only place
   //     that says no;
-  //   * a bookable therapist who is genuinely busy for this window;
-  //   * a bookable therapist who is not mapped to this service (Q-M,
-  //     2026-10-20), which the portal roster no longer offers either.
+  //   * a bookable therapist who is genuinely busy for this window.
   //
   // SILENTLY FALLING BACK TO AUTO-ASSIGNMENT WOULD BE WORSE THAN REFUSING. The
   // patient asked for a named person; giving them a different one without
@@ -703,9 +680,6 @@ export async function listRescheduleOptions(
     durationMin,
     horizonDays: OPEN_SLOTS_HORIZON_DAYS,
     now,
-    // Not a new assignment: the appointment keeps its therapist, so Q-M's
-    // service filter does not apply here and the sweep is as it was.
-    serviceId: null,
   });
 
   // Never offer a slot the action would refuse. Same predicate, one source.

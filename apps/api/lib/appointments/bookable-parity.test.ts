@@ -69,34 +69,11 @@ describe("D2: the portal cannot assign anyone the staff dropdown would refuse", 
     expect(body).toMatch(BOOKABLE);
   });
 
-  // Q-M (owner ruling, 2026-10-20) REVERSED THIS ARM. It read "PL-06a is not
-  // violated: no service-mapping filter is introduced" and asserted the store
-  // never named therapist_services, because the mapping was a PRESELECTION,
-  // never a RESTRICTION. Q-M supersedes PL-06a for the patient-facing surfaces
-  // only: every user-selection site on the portal now carries the mapping, through
-  // ONE fragment, for the same reason D2 put is_bookable in all of them.
-  it("Q-M: the service-mapping fragment is defined once and reads therapist_services", () => {
-    expect(count(STORE, /function deliversServiceExists\(/g)).toBe(1);
-    expect(count(STORE, /from therapist_services ts/g)).toBe(1);
-  });
-
-  it("Q-M: the assignment query carries the mapping fragment", () => {
-    const fn = STORE.slice(STORE.indexOf("async listAvailableTherapists"));
-    const body = fn.slice(0, fn.indexOf("},"));
-    expect(body).toMatch(/deliversServiceExists\(principal\.tenantId, sql`u\.id`, serviceId\)/);
-  });
-
-  it("Q-M: the roster query carries the mapping fragment", () => {
-    const fn = STORE.slice(STORE.indexOf("async listBookableTherapists"));
-    const body = fn.slice(0, fn.indexOf("},"));
-    expect(body).toMatch(/deliversServiceExists\(principal\.tenantId, sql`u\.id`, serviceId\)/);
-  });
-
-  it("Q-M: the slot sweep carries the mapping in BOTH halves (grid and exists)", () => {
-    const fn = STORE.slice(STORE.indexOf("async listOpenSlots"));
-    const body = fn.slice(0, fn.indexOf("async listAvailableTherapists"));
-    expect(body).toMatch(/deliversServiceExists\(principal\.tenantId, sql`u\.id`, serviceId\)/);
-    expect(count(body, /\$\{mappedToService\}/g)).toBe(2);
+  it("PL-06a is not violated: no service-mapping filter is introduced", () => {
+    // The mapping is PRESELECTION, never RESTRICTION (owner ruling, 2026-07-28).
+    // Filtering candidates by it would make the portal stricter than the staff
+    // surface. If this ever needs to change it is JP's call, not a code change.
+    expect(STORE).not.toMatch(/therapist_services/);
   });
 
   it("PL-06b is not violated: bookability is the FLAG, never the role", () => {
@@ -138,19 +115,6 @@ describe("D2 negative arm: the guard fails against the pre-fix SQL", () => {
   it("a role-filter fix would be caught too, since it reintroduces the JP defect", () => {
     const roleFix = "select distinct u.id from users u join roles r on r.id = u.role_id where r.slug = 'therapist'";
     expect(roleFix).toMatch(/role_id/);
-  });
-
-  it("Q-M negative arm: the pre-Q-M roster and assignment SQL carry no mapping fragment", () => {
-    // The real pre-Q-M shape of both queries: is_bookable, the availability
-    // exists, and nothing naming the service. The Q-M arms above must go red on it.
-    const preQm = `
-      async listAvailableTherapists(principal, { locationId, startsAt, endsAt }) {
-        select distinct u.id from users u
-          where u.tenant_id = X and u.is_active = true and u.is_bookable = true
-            and \${availabilityCoversExists(principal.tenantId, sql\`u.id\`, locationId, startsAt, endsAt)}
-      },`;
-    expect(preQm).not.toMatch(/deliversServiceExists\(/);
-    expect(preQm).not.toMatch(/therapist_services/);
   });
 
   it("stripper self-test: prose naming is_bookable must NOT satisfy the guard", () => {

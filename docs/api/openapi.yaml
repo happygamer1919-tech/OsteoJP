@@ -574,9 +574,7 @@ paths:
         time and filtered by the SAME conflict predicates the booking confirm
         re-runs (availability coverage, appointment overlap, time off) — the
         portal step-3 source of truth. A listed slot can only be rejected at
-        confirm by a genuine booking race. Only therapists mapped to the service
-        in `therapist_services` contribute slots (owner ruling Q-M, 2026-10-20),
-        with or without `practitionerId`.
+        confirm by a genuine booking race.
       parameters:
         - name: serviceId
           in: query
@@ -642,14 +640,11 @@ paths:
         against, and free/busy is decided afterwards by /booking/slots.
 
 
-        Filtered on `is_bookable` (PL-06b): never on a title and never on a
+        Filtered on `is_bookable` ONLY (PL-06b): never on a title and never on a
         role slug, because a role predicate once dropped a practitioner from the
-        staff dropdown as a live defect. AND filtered by the service mapping
-        (owner ruling Q-M, 2026-10-20, which supersedes PL-06a for the
-        patient-facing surfaces only): a therapist is listed only for a service
-        they are mapped to in `therapist_services`, and a therapist with no
-        mapped service is not listed at all. `serviceId` validates the request
-        and narrows the answer.
+        staff dropdown as a live defect. NOT filtered by the service mapping
+        (PL-06a): the mapping is a preselection, never a restriction, so
+        `serviceId` validates the request rather than narrowing the answer.
 
 
         The payload is id and name only. No title, no role, no schedule.
@@ -1079,10 +1074,8 @@ paths:
           $ref: "#/components/responses/UnauthorizedLocalized"
         "409":
           description: >
-            `no_therapist`: nobody mapped to the service works the requested
-            window (schedule gap), or the chosen therapist is not available or
-            not mapped to the service (Q-M, 2026-10-20). `no_slot`: the slot
-            was taken by a concurrent booking.
+            `no_therapist` — nobody works the requested window (schedule gap) —
+            or `no_slot` — the slot was taken by a concurrent booking.
           content:
             application/json:
               schema:
@@ -1887,9 +1880,7 @@ components:
         therapist was always server-assigned. It is now READ, because the patient
         may choose one in the therapist step - but reading it is not trusting it.
         A malformed id is rejected as `invalid_input`, and a well-formed id that
-        is not in the bookable candidate set (which, since owner ruling Q-M of
-        2026-10-20, holds only therapists mapped to the service) is rejected as
-        `no_therapist`. It is
+        is not in the bookable candidate set is rejected as `no_therapist`. It is
         NEVER silently swapped for an auto-assignment: the patient asked for a
         named person, and giving them a different one without saying so is a
         booking they did not make.
