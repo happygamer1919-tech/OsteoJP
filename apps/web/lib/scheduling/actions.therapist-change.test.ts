@@ -200,10 +200,20 @@ describe("the Terapeuta changed from the ficha: what the save writes", () => {
     expect(h.careTeam.mock.calls[0]![3]).toEqual({ slots: "primary" });
   });
 
-  it("ONE reminder target, at the start the appointment already had", async () => {
+  it("ONE reminder target, at the start the appointment already had, marked as a therapist-only change", async () => {
     await rescheduleAppointment(APPT, therapistChangeInput(listRow, NEW));
     expect(h.enqueue).toHaveBeenCalledTimes(1);
-    expect(h.enqueue).toHaveBeenCalledWith("tenant-A", [{ appointmentId: APPT, startsAt: new Date(START) }]);
+    // Q-K rule 2: the start is the one the row had and the Terapeuta is new, so
+    // the confirmation goes by email alone.
+    expect(h.enqueue).toHaveBeenCalledWith("tenant-A", [
+      {
+        appointmentId: APPT,
+        startsAt: new Date(START),
+        practitionerId: NEW,
+        confirmation: "therapist_only",
+        status: "confirmed",
+      },
+    ]);
   });
 
   it("the conflict check is asked about the NEW therapist, with this appointment left out of it", async () => {

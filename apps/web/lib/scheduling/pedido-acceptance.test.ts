@@ -39,7 +39,7 @@ beforeEach(() => {
 
 describe("emitAcceptedPedidoReminders", () => {
   it("emits the targets it is given, for the tenant it is given", async () => {
-    const t = [{ appointmentId: "a-1", startsAt: new Date("2026-09-20T09:00:00Z") }];
+    const t = [{ appointmentId: "a-1", startsAt: new Date("2026-09-20T09:00:00Z"), practitionerId: "t-1" }];
     await emitAcceptedPedidoReminders("step", "tenant-A", t);
     expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", t);
   });
@@ -54,7 +54,7 @@ describe("emitAcceptedPedidoReminders", () => {
     mockEnqueue.mockRejectedValueOnce(new Error("patient +351912345678 unreachable"));
     await expect(
       emitAcceptedPedidoReminders("reviewResolve", "tenant-A", [
-        { appointmentId: "a-1", startsAt: new Date() },
+        { appointmentId: "a-1", startsAt: new Date(), practitionerId: "t-1" },
       ]),
     ).resolves.toBeUndefined();
     const logged = spy.mock.calls.flat().join(" ");

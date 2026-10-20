@@ -1,3 +1,4 @@
+import { CONFIRMABLE_STATUSES } from "./confirmable-statuses";
 import "server-only";
 import { parseTenantConfig, type ReminderConfig } from "@/lib/admin/settings-config";
 import { isGuestLinkedAppointment, loadReminderData } from "./data";
@@ -931,8 +932,8 @@ async function dispatchReminderInner(
 /* Confirmation dispatch                                               */
 /* ================================================================== */
 
-/** Statuses where a booking confirmation makes sense (pre-visit only). */
-const CONFIRMABLE_STATUSES = new Set(["scheduled", "confirmed"]);
+// Statuses where a booking confirmation makes sense (pre-visit only): one
+// list, shared with the scheduling side (./confirmable-statuses.ts).
 
 /**
  * DECISION A (owner, 2026-08-31): the booking confirmation is sent ONLY for a
@@ -983,7 +984,50 @@ export type ConfirmationDispatchOptions = {
    * alone, the link row is read first.
    */
   acceptedGuestRequest?: boolean;
+  /**
+   * Q-K (strategy's ruling). The marker a save puts on the event when it
+   * changed the Terapeuta and KEPT the start and the clinic
+   * (lib/scheduling/move-confirmation.ts, `moveConfirmation`). Today's
+   * confirmation then goes by ONE channel: the email when it is usable, the
+   * SMS otherwise. It never adds a message to a patient: at most one leg goes.
+   */
+  therapistChangeOnly?: boolean;
 };
+
+/**
+ * Which legs of TODAY'S confirmation go. Pure, exported for direct testing.
+ *
+ * Every leg sits behind the tenant's and the patient's switch, as it always
+ * has, and needs the contact it sends to.
+ *
+ * Q-K: A CHANGE OF THERAPIST AT THE SAME START sends the email only; the SMS
+ * goes only when the patient has NO USABLE EMAIL. "No usable email" is any of:
+ * no address on file, email reminders switched off for the clinic, or the
+ * patient's own email reminder switch off. Then the SMS goes, under its own
+ * usual conditions. (Review of Q-K, round 1: an address with the email
+ * switched off used to get nothing at all.) Every other confirmation (a new
+ * booking, a change of start or clinic, a visit brought back to Confirmada)
+ * sends both legs, exactly as before.
+ */
+export function planConfirmationChannels(args: {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  tenantEmailEnabled: boolean;
+  tenantSmsEnabled: boolean;
+  patientEmailEnabled: boolean;
+  patientSmsEnabled: boolean;
+  therapistChangeOnly: boolean;
+}): { email: boolean; sms: boolean } {
+  // The email leg is the usable email, in every case.
+  const email = args.tenantEmailEnabled && args.patientEmailEnabled && args.hasEmail;
+  const sms =
+    args.tenantSmsEnabled &&
+    args.patientSmsEnabled &&
+    args.hasPhone &&
+    // A therapist-only change sends the SMS only when the email cannot go.
+    !(args.therapistChangeOnly && email);
+  return { email, sms };
+}
 
 export async function dispatchConfirmation(
   tenantId: string,
@@ -1078,7 +1122,9 @@ export async function dispatchConfirmation(
   // confirmation as a whole and the table needs one channel; `email` keeps
   // these rows (one per staff booking, for `origin`) off reception's Lembretes
   // SMS screen, which lists the `sms` channel only.
-  const outcome = await dispatchTodaysConfirmation(tenantId, appointmentId, data);
+  const outcome = await dispatchTodaysConfirmation(tenantId, appointmentId, data, {
+    therapistChangeOnly: opts.therapistChangeOnly === true,
+  });
   if (!outcome.dispatched) {
     await recordDispatch({
       tenantId,
@@ -1097,12 +1143,14 @@ export async function dispatchConfirmation(
  * patient's switch. What a reschedule of a portal appointment sends, and what an
  * acceptance sends while BOOK_CONFIRM_MODE does not apply to the patient. The
  * messages are the ones it has always sent; what is new is that each channel
- * tried leaves a ledger row.
+ * tried leaves a ledger row. Q-K: a change of therapist at the same start sends
+ * the email alone (`planConfirmationChannels`).
  */
 async function dispatchTodaysConfirmation(
   tenantId: string,
   appointmentId: string,
   data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>>,
+  opts: { therapistChangeOnly: boolean },
 ): Promise<DispatchOutcome> {
   if (!CONFIRMABLE_STATUSES.has(data.status)) {
     return { dispatched: false, reason: "status" };
@@ -1149,8 +1197,15 @@ async function dispatchTodaysConfirmation(
   }
 
   const { reminders } = parseTenantConfig(data.tenantSettings);
-  const email = reminders.emailEnabled && data.patientReminderEmailEnabled && !!data.patientEmail;
-  const sms = reminders.smsEnabled && data.patientReminderSmsEnabled && !!data.patientPhone;
+  const { email, sms } = planConfirmationChannels({
+    hasEmail: !!data.patientEmail,
+    hasPhone: !!data.patientPhone,
+    tenantEmailEnabled: reminders.emailEnabled,
+    tenantSmsEnabled: reminders.smsEnabled,
+    patientEmailEnabled: data.patientReminderEmailEnabled,
+    patientSmsEnabled: data.patientReminderSmsEnabled,
+    therapistChangeOnly: opts.therapistChangeOnly,
+  });
   if (!email && !sms) return { dispatched: false, reason: "channels_off" };
 
   const locale = resolveLocale(data.tenantSettings);
