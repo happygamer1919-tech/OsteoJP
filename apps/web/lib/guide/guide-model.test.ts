@@ -58,7 +58,7 @@ describe("null arm: a clean lesson loads with no error", () => {
 describe("the front matter", () => {
   it("refuses an unknown key", () => {
     expect(errorsOf(load(exampleLesson({ autor: "Marta Exemplo" })))).toEqual([
-      `${LESSON}:7: unknown front matter key "autor"; the keys are: id title goal roles order capability screens shots faq question answers see review hold`,
+      `${LESSON}:7: unknown front matter key "autor"; the keys are: id title goal roles order capability screens shots faq question answers see review hold feature`,
     ]);
   });
 

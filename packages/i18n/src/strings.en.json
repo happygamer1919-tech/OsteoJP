@@ -1111,6 +1111,7 @@
   "auth.setPassword.backToLogin": "Go to sign in",
   "auth.setPassword.detailsSummary": "Technical details",
   "login.forgotPassword": "Forgot your password?",
+  "login.appUpdatedReloading": "The app was updated. Reloading the page…",
   "auth.forgotPassword.title": "Reset your password",
   "auth.forgotPassword.subtitle": "Enter your account email. We will send a link to set a new password.",
   "auth.forgotPassword.emailLabel": "Email",
