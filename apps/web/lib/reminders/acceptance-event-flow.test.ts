@@ -105,7 +105,7 @@ describe("reception accepting a pedido emits the scheduling event", () => {
   it("emits exactly ONE appointment/scheduled with confirmationEligible true", async () => {
     // This is the call confirmAppointmentRequest now makes post-commit, with
     // the accepted appointment as its single target.
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: STARTS_AT }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: STARTS_AT, practitionerId: "therapist-1" }]);
 
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]!.name).toBe("appointment/scheduled");
@@ -119,7 +119,7 @@ describe("reception accepting a pedido emits the scheduling event", () => {
   });
 
   it("that event passes the confirmation function's TRIGGER filter", async () => {
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: STARTS_AT }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: APPT, startsAt: STARTS_AT, practitionerId: "therapist-1" }]);
     // The filter is a string evaluated by Inngest, so it is asserted as the
     // property it expresses rather than executed: the event's flag is true and
     // the filter tests exactly that field for exactly that value.

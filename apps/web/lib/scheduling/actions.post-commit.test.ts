@@ -200,8 +200,16 @@ describe("the batch path enqueues reminders for what it booked", () => {
     const [tenantId, targets] = mockEnqueue.mock.calls[0]!;
     expect(tenantId).toBe("tenant-A");
     expect(targets).toEqual([
-      { appointmentId: "appt-1", startsAt: new Date("2027-06-01T09:00:00.000Z") },
-      { appointmentId: "appt-2", startsAt: new Date("2027-06-08T09:00:00.000Z") },
+      {
+        appointmentId: "appt-1",
+        startsAt: new Date("2027-06-01T09:00:00.000Z"),
+        practitionerId: "22222222-2222-2222-2222-222222222222",
+      },
+      {
+        appointmentId: "appt-2",
+        startsAt: new Date("2027-06-08T09:00:00.000Z"),
+        practitionerId: "22222222-2222-2222-2222-222222222222",
+      },
     ]);
     // A Date, not the ISO string it crossed the boundary as. computeDueReminders
     // does arithmetic on it, and a string would have produced NaN silently.

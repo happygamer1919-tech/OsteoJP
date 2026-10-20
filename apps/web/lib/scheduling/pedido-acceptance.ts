@@ -118,8 +118,12 @@ export async function unconfirmedPedidoIdsAmong(
  * booking-approved message; a reschedule's target is built by hand, without it,
  * and keeps today's confirmation.
  */
-export function acceptedPedidoTarget(appointmentId: string, startsAt: Date): ReminderEnqueueTarget {
-  return { appointmentId, startsAt, acceptedPedido: true };
+export function acceptedPedidoTarget(
+  appointmentId: string,
+  startsAt: Date,
+  practitionerId: string,
+): ReminderEnqueueTarget {
+  return { appointmentId, startsAt, practitionerId, acceptedPedido: true };
 }
 
 /**

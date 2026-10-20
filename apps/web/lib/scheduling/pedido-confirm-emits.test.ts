@@ -139,7 +139,7 @@ describe("W14-02 — the Estado selector accepting a portal pedido emits, like P
     // BOOK-CONFIRM: and it carries the ACCEPTANCE MARKER, which is how the
     // dispatch tells this event from a reschedule of the same row.
     expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", [
-      { appointmentId: "appt-1", startsAt: STARTS, acceptedPedido: true },
+      { appointmentId: "appt-1", startsAt: STARTS, practitionerId: "therapist-1", acceptedPedido: true },
     ]);
   });
 

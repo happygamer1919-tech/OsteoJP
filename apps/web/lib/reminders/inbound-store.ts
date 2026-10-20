@@ -289,10 +289,16 @@ export async function resolveReviewItem(args: {
           .where(
             and(eq(appointments.id, item.appointmentId), eq(appointments.status, "scheduled")),
           )
-          .returning({ id: appointments.id, startsAt: appointments.startsAt });
+          .returning({
+            id: appointments.id,
+            startsAt: appointments.startsAt,
+            practitionerId: appointments.practitionerId,
+          });
         applied = updated.length > 0;
         if (applied && pedido) {
-          accepted = [acceptedPedidoTarget(updated[0]!.id, updated[0]!.startsAt)];
+          accepted = [
+            acceptedPedidoTarget(updated[0]!.id, updated[0]!.startsAt, updated[0]!.practitionerId),
+          ];
         }
       }
 

@@ -402,7 +402,7 @@ describe("confirmAppointmentRequest carries the notice, and never fails because 
     accept(async () => []);
     await confirmAppointmentRequest(APPT);
     expect(mockEnqueue).toHaveBeenCalledWith("tenant-A", [
-      { appointmentId: APPT, startsAt: PEDIDO.startsAt, acceptedPedido: true },
+      { appointmentId: APPT, startsAt: PEDIDO.startsAt, practitionerId: "therapist-1", acceptedPedido: true },
     ]);
   });
 
