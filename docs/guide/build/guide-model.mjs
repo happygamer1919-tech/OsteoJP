@@ -32,6 +32,9 @@
 //   order: rececao 1, terapeuta 3, proprietario 2
 //   capability: appointments:write
 //
+// A lesson or an FAQ entry may also carry "feature: <name>" (see FEATURE
+// LESSONS below).
+//
 // and the body after it:
 //
 //   ## Marcar uma consulta
@@ -45,6 +48,26 @@
 // The body uses the chapters' Markdown subset (build/README.md) plus role
 // blocks: a line "::: <role> [<role> ...]" opens one, a line ":::" closes it,
 // and only viewers of those roles see what is inside.
+//
+// FEATURE LESSONS. "feature: survey" ties a lesson (or an FAQ entry) to a part
+// of the platform that a deployment switch can hide, so the lesson is shown
+// only while that part is shown. The owner's rule for the satisfaction survey
+// (SAT-01, 2026-10-12): while SURVEY_SEND_MODE reads off, staff see nothing of
+// it, and that includes the guide. This module only reads and checks the key;
+// it never reads a switch:
+//
+//   /ajuda       apps/web/lib/guide/guide.ts maps each feature name to the one
+//                question the platform's own screens ask (for "survey",
+//                surveyVisible in apps/web/lib/reminders/survey-mode.ts), and
+//                hides the lesson from the lists, its address and the FAQ links
+//                while that answer is false. A name with no mapping there is
+//                hidden, always: a typo never shows a lesson.
+//   the PDFs     never print a feature lesson (printableGuide below): a
+//                committed PDF cannot read a switch.
+//
+// A new feature needs one entry in that mapping and nothing else here. The key
+// is a stopgap: once the survey is on for good, drop "feature: survey" from its
+// lessons (the PDF then prints them) and, with no feature left, this key.
 //
 // Pure ESM, no dependency. Nothing runs at import time: build-guide.mjs imports
 // this module to print the PDFs, a test imports it to regenerate the JSON that
@@ -222,6 +245,7 @@ export const FRONT_MATTER_KEYS = Object.freeze([
   'see',
   'review',
   'hold',
+  'feature',
 ]);
 
 /** The folder of the FAQ entries; every other NN-<slug> folder is a section. */
@@ -546,6 +570,9 @@ function readGuideFile(file, ctx, at) {
   for (const key of ['review', 'hold']) {
     if (fields[key] && !TOKEN.test(fields[key].value)) at(fields[key].line, `"${key}" is one card name, such as CARE-02a or GUEST-05`);
   }
+  if (fields.feature && !SLUG_ONLY.test(fields.feature.value)) {
+    at(fields.feature.line, `"${fields.feature.value}" is not a feature name such as survey`);
+  }
 
   const title = value('title') ?? '';
   const body = readBody(lines, front.end + 1, { ...ctx, roles, title }, at);
@@ -596,6 +623,7 @@ function readGuideFile(file, ctx, at) {
     see,
     review: value('review'),
     hold: value('hold'),
+    feature: value('feature'),
     blocks,
     words,
     images,
@@ -708,9 +736,11 @@ function crossCheck(guide) {
     }
   }
 
+  // A feature lesson does not count: with its switch off, or in the PDF, the
+  // section would be left with nothing for that role.
   for (const section of guide.sections) {
     for (const role of section.roles) {
-      const reachable = guide.lessons.some((l) => l.section === section.id && !l.hold && l.roles.includes(role));
+      const reachable = guide.lessons.some((l) => l.section === section.id && !l.hold && !l.feature && l.roles.includes(role));
       if (!reachable) errors.push(`${section.file}: the section lists "${role}", but no published lesson in it does`);
     }
   }
@@ -761,6 +791,9 @@ function checkFaqEntry(entry, lessonById, errors) {
   }
   if (entry.capability !== primary.capability) {
     fail(`capability is the primary lesson's, "${primary.capability ?? 'none'}", not "${entry.capability ?? 'none'}"`);
+  }
+  if (entry.feature !== primary.feature) {
+    fail(`feature is the primary lesson's, "${primary.feature ?? 'none'}", not "${entry.feature ?? 'none'}"`);
   }
   if (!primary.faq.includes(entry.slug)) fail(`its primary lesson "${primary.id}" does not name it back with "faq: ${entry.slug}"`);
   if (primary.images && !entry.images) {
@@ -858,6 +891,7 @@ function itemJson(item) {
     answers: item.answers,
     see: item.see,
     review: item.review,
+    feature: item.feature,
     images: item.images,
   };
 }
@@ -913,6 +947,22 @@ export function renderGuideData(options = {}) {
   return serializeGuideData(guideData(loadGuide(options)));
 }
 
+// ==== What the PDFs print ====
+
+/**
+ * The guide as the PDFs print it: every lesson and FAQ entry with a "feature"
+ * key left out, whatever any switch reads, because a committed PDF cannot read
+ * a switch. Everything else is the guide as loaded (held items stay, and
+ * every reader leaves them out as before).
+ */
+export function printableGuide(guide) {
+  return {
+    ...guide,
+    lessons: guide.lessons.filter((l) => !l.feature),
+    faq: guide.faq.filter((f) => !f.feature),
+  };
+}
+
 // ==== The fingerprint the PDFs are bound to ====
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -929,7 +979,7 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
  *                        or FAQ entry shows, by its src ("/ajuda/<section>/...").
  *
  * A held lesson (hold: GUEST-05) is never printed, so its text is not in the
- * hash. Nothing in it depends on where the repository sits on disk: paths are
+ * hash; nor is a feature lesson (printableGuide), for the same reason. Nothing in it depends on where the repository sits on disk: paths are
  * relative ("02-agenda/02-marcar-consulta.md", "/ajuda/agenda/...").
  *
  * build-guide.mjs writes this hash into docs/guide/pdf/guide-pdf.manifest.json
@@ -943,7 +993,7 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
  * Throws GuideError when the source has errors, like guideData.
  */
 export function guideSourceHash(guide) {
-  const data = guideData(guide);
+  const data = guideData(printableGuide(guide));
   const { held: _held, $comment: _comment, ...published } = data;
   const images = {};
   for (const item of [...data.lessons, ...data.faq]) {
