@@ -2807,3 +2807,113 @@ export const appointmentSurveyResponses = pgTable("appointment_survey_responses"
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
   submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* ================================================================== */
+/* THE REMINDER SWEEP'S OWN TABLES (migration 0106).                  */
+/* ================================================================== */
+
+/**
+ * `reminder_claims` and `reminder_sweep_passes`: the reminder sweep's claim
+ * store and its heartbeat, ruled off `audit_log` by strategy on 2026-10-12.
+ *
+ * TYPES ONLY. Their migration is `packages/db/migrations/0106_reminder_claims.sql`
+ * (strategy ruled its number on 2026-10-13; promoted 2026-10-19 from
+ * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql` with no
+ * byte changed). It merges before it is applied to production, so for a while
+ * main has the tables and production does not: code that queries them must not
+ * reach production before the apply.
+ *
+ * APPEND ONLY, AND ONLY THE REMINDER JOB WRITES. `authenticated` holds SELECT
+ * and INSERT and nothing else, `service_role` holds nothing, and the INSERT
+ * policy admits only a session with a tenant and no user, which is what
+ * `withReminderTenantContext` makes. On `reminder_claims` it also asks that
+ * the appointment is of the row's tenant, read as that session. A release is
+ * a NEW ROW of kind `release` naming its claim: never add an update or a
+ * delete helper for either table.
+ *
+ * NO INDEXES, NO CHECKS AND NO COMPOSITE KEYS DECLARED HERE, for
+ * `patientCareTeam`'s reason: the migration is the source of truth for DDL,
+ * and drizzle is used in this repo to query the schema, never to generate it.
+ * So `claimId` carries no reference below, although the table ties a release
+ * to a row of kind `claim` with the same tenant, appointment, offset and
+ * channel.
+ */
+export const reminderClaims = pgTable("reminder_claims", {
+  /** For a row of kind `claim`, this is the claim id a release names. */
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  /** The rows of an appointment go with its hard delete, like the ledger's. */
+  appointmentId: uuid("appointment_id")
+    .notNull()
+    .references(() => appointments.id, { onDelete: "cascade" }),
+  /** `claim`, `release` or `shadow`. Each column below says which kinds carry it. */
+  kind: text("kind").notNull(),
+  /** `48h`, `24h`: the application's offset ids. Not a closed list in the table. */
+  offsetId: text("offset_id").notNull(),
+  /** `sms` or `email`. */
+  channel: text("channel").notNull(),
+  /** Claim and shadow: the start the reminder was for. NULL on a release. */
+  startsAt: timestamp("starts_at", { withTimezone: true }),
+  /**
+   * The instant the reminder was due: the start minus the offset, as the offset
+   * was defined when the row was written. Always set on a shadow row; NULL on a
+   * claim for an offset the application did not know; NULL on a release.
+   */
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  /** Claim only: `run` (the sleeping job) or `sweep`. */
+  taker: text("taker"),
+  /** Claim only: taken more than the early margin before `dueAt`. NULL exactly when `dueAt` is. */
+  early: boolean("early"),
+  /**
+   * Claim only, and REQUIRED on a claim (NULL on every other kind): which try
+   * of this reminder for this start the claim is, from 1. The writer computes
+   * it under the reminder's lock, one more than the highest attempt already
+   * stored for the same appointment, offset, channel and start. The table
+   * refuses a second claim with the same number (unique_violation 23505, index
+   * `reminder_claims_claim_attempt_key`) and a claim without one (CHECK
+   * `reminder_claims_attempt_matches_kind`, 23514). No default, on purpose.
+   */
+  attempt: integer("attempt"),
+  /** Release only: the claim it gives up. One release per claim. */
+  claimId: uuid("claim_id"),
+  /**
+   * Written by the database, never by the application: `claim` on a release,
+   * NULL on every other row. It is the column through which the table proves
+   * that the row a release names is of kind `claim`.
+   */
+  claimKind: text("claim_kind").generatedAlwaysAs(sql`CASE WHEN kind = 'release' THEN 'claim' END`),
+  /** Shadow only: minutes between `dueAt` and the pass. Negative on the day's last pass. */
+  minutesAfterMark: integer("minutes_after_mark"),
+  /** Shadow only: the visit was saved after `dueAt`. */
+  savedAfterMark: boolean("saved_after_mark"),
+  /** The scheduler's id for the pass that wrote the row, when it has one. */
+  passId: text("pass_id"),
+  /** When the row was written: for a claim, when the reminder was taken. */
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const reminderSweepPasses = pgTable("reminder_sweep_passes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id),
+  /** The scheduler's id for the run. Not unique with the tenant: a pass run again is a second row. */
+  passId: text("pass_id"),
+  /** `shadow` or `send`. Nothing writes `send` yet. */
+  mode: text("mode").notNull(),
+  /** The pass's own clock: the instant its comparisons were made against. */
+  passAt: timestamp("pass_at", { withTimezone: true }).notNull(),
+  /** Set on the day's last pass only: it also took the reminders due before this instant. */
+  lookAheadBefore: timestamp("look_ahead_before", { withTimezone: true }),
+  /** Reminders due and not yet taken when the pass read. */
+  dueCount: integer("due_count").notNull(),
+  /** Rows the pass wrote for them. Never more than `dueCount`. */
+  recordedCount: integer("recorded_count").notNull(),
+  /** More was due than the pass was allowed to take. */
+  overCeiling: boolean("over_ceiling").notNull(),
+  /** Visits left out because they never had a reminder. */
+  excludedCount: integer("excluded_count").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
