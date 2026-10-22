@@ -17,6 +17,7 @@ vi.mock("./actions", () => ({
   deleteStaffAction: vi.fn(),
   setActiveAction: vi.fn(),
   setPrimaryServiceAction: vi.fn(),
+  setTherapistServicesAction: vi.fn(),
   setStaffLocationsAction: vi.fn(),
   setStaffColorAction: vi.fn(),
 }));

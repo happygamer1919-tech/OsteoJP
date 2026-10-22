@@ -195,7 +195,24 @@ export type Capability =
   // `users:manage` would put it behind an admin-shaped permission reception does
   // not hold. The care team is a relation between a patient and a therapist and
   // neither existing capability describes it.
-  | "care_team:manage";
+  | "care_team:manage"
+  // SAT-01 (strategy S-1002-D S7, spec 7.3): open the list of satisfaction
+  // survey sends and their answers, Avaliações de satisfação under
+  // Comunicações. Owner, admin, reception AND therapist.
+  //
+  // THE CAPABILITY OPENS THE PAGE AND DECIDES NO ROW. Which sends and which
+  // answers a viewer reads is migration 0102's two SELECT policies: a send by
+  // S4's roles (reception and admin by the appointment's clinic, a therapist
+  // for the patients they treat), an answer by S7's (reception and admin by
+  // clinic, a therapist only for a visit they attended at one of their own
+  // clinics). The list reads under the viewer's own session, so a therapist
+  // holding this grant is shown what those policies show and nothing else.
+  //
+  // ITS OWN CAPABILITY, NOT `followup:read` OR `reminders:log_read`: an answer
+  // carries a patient's comment, and neither of those says who may read one.
+  // Sending a survey by hand is a separate capability that arrives with the
+  // send button.
+  | "surveys:read";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -238,6 +255,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   // permission-matrix.test.ts would then fail with reception holding a
   // capability owner lacks.
   "care_team:manage",
+  "surveys:read",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -297,6 +315,9 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // grant; 0075's SELECT policy plus the INNER join to appointments scope the
     // rows to what this admin may already read.
     "reminders:log_read",
+    // SAT-01 (S7): the survey list. Location-blind grant; 0102's policies scope
+    // sends and answers to appointments at this admin's clinics.
+    "surveys:read",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -357,6 +378,10 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // clinically (clinical_therapist_sees_patient). The guest QUEUE stays out
     // of reach: this is not guest_requests:read.
     "guest_intake:read",
+    // SAT-01 (S7): the survey list. Target-blind like every grant here; 0102's
+    // policies are the scope: the sends of patients this therapist treats, and
+    // an answer only for a visit they attended at one of their own clinics.
+    "surveys:read",
   ]),
 
   // Reception: front-desk scheduling + billing-issue. NO clinical_records at
@@ -405,6 +430,9 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // patient over. The therapist does NOT hold it - a therapist who could
     // assign themselves would be granting themselves the history.
     "care_team:manage",
+    // SAT-01 (S7): the survey list, for appointments at reception's clinics
+    // (0102's policies).
+    "surveys:read",
   ]),
 };
 

@@ -829,7 +829,10 @@ export type SurveyEmailContext = {
   appointmentDateLong: string;
   /** The whole link, scheme included. */
   surveyLink: string;
-  /** Last day the link works, long form: the send date plus 14 days. */
+  /**
+   * The last day the link works from start to end, long form: the day before
+   * the Lisbon day it dies on (survey-body.ts, `surveyValidUntilDateLong`).
+   */
   surveyExpiryDateLong: string;
   clinicPhone: string;
 };

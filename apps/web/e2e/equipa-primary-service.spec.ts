@@ -22,6 +22,17 @@ function card(page: Page, name: string) {
 function manageModal(page: Page) {
   return page.getByRole("dialog", { name: /Gerir/i });
 }
+/**
+ * Wait for a save in the Gerir modal to LAND. Every save is a server action that
+ * redirects to /admin/staff?m=..., and the redirect re-renders the page, which
+ * closes the modal. `waitForURL(/admin\/staff/)` cannot see that: the URL already
+ * matches before the click, so it resolves at once (PR #1621, run 39447560037:
+ * the next step found the OLD modal still open, then lost it to the re-render).
+ * The modal going away is the event that says the new state is on screen.
+ */
+async function savedAndReloaded(page: Page) {
+  await expect(manageModal(page)).toBeHidden({ timeout: 15_000 });
+}
 /** Open the Gerir modal for `name` and switch to a named section. */
 async function openSection(page: Page, name: string, section: string) {
   const modal = manageModal(page);
@@ -52,9 +63,38 @@ test("Equipa: assign a primary to a zero-mapping therapist from the Gerir modal 
   await select.selectOption({ label: "Osteopatia" });
   await modal.getByRole("button", { name: "Definir" }).click();
   await page.waitForURL(/admin\/staff/);
+  await savedAndReloaded(page);
   await expect(card(page, THER)).toContainText("Osteopatia");
 
+  // Q-M (owner ruling, 2026-10-20): an admin (users:manage) ticks SEVERAL
+  // services the therapist does, below the primary. The primary is shown
+  // ticked and cannot be unticked here; two more are ticked and saved, and
+  // both stay ticked. `.check()` is idempotent, so a retry that finds them
+  // already ticked by an earlier attempt still passes for the right reason.
+  const services = (await openSection(page, THER, "Serviço principal")).getByTestId(
+    "therapist-services-form",
+  );
+  await expect(services).toContainText(
+    "No portal, este terapeuta só é oferecido aos pacientes para os serviços assinalados.",
+  );
+  const primaryBox = services.getByRole("checkbox", { name: "Osteopatia" });
+  await expect(primaryBox).toBeChecked();
+  await expect(primaryBox).toBeDisabled();
+  await services.getByRole("checkbox", { name: "Drenagem Linfática" }).check();
+  await services.getByRole("checkbox", { name: "NESA (sensível)" }).check();
+  await services.getByRole("button", { name: "Guardar" }).click();
+  await savedAndReloaded(page);
+  const reopened = (await openSection(page, THER, "Serviço principal")).getByTestId(
+    "therapist-services-form",
+  );
+  await expect(reopened.getByRole("checkbox", { name: "Drenagem Linfática" })).toBeChecked();
+  await expect(reopened.getByRole("checkbox", { name: "NESA (sensível)" })).toBeChecked();
+  await page.keyboard.press("Escape");
+  await expect(manageModal(page)).toBeHidden();
+
   // Nova marcação now auto-fills that primary when the therapist is chosen.
+  // AFTER the extra services: the staff preselection is still the primary
+  // (Q-M leaves the staff agenda on PL-06a).
   const date = futureDate(RUN_DAY_BASE + 23);
   const dialog = await openNewAppointment(page, date);
   await dialog.getByLabel(/Terapeuta/i).selectOption({ label: THER });

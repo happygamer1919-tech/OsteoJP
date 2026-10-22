@@ -128,6 +128,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/01-marcar-consulta.md",
       "goal": null,
       "id": "perguntas.marcar-consulta",
@@ -265,6 +266,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/02-marcar-em-lote.md",
       "goal": null,
       "id": "perguntas.marcar-em-lote",
@@ -402,6 +404,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/03-adicionar-paciente.md",
       "goal": null,
       "id": "perguntas.adicionar-paciente",
@@ -548,6 +551,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/04-atribuir-pacote.md",
       "goal": null,
       "id": "perguntas.atribuir-pacote",
@@ -699,6 +703,7 @@
       ],
       "capability": "schedule:manage",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/05-bloquear-horario.md",
       "goal": null,
       "id": "perguntas.bloquear-horario",
@@ -858,6 +863,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/06-concluir-consulta.md",
       "goal": null,
       "id": "perguntas.concluir-consulta",
@@ -966,6 +972,7 @@
       ],
       "capability": "clinical_records:sign",
       "faq": [],
+      "feature": null,
       "file": "00-perguntas/07-assinar-registo.md",
       "goal": null,
       "id": "perguntas.assinar-registo",
@@ -1195,6 +1202,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "01-inicio/01-resumo-do-dia.md",
       "goal": "Ler os números do topo, os acessos rápidos, o resumo semanal e as próximas marcações.",
       "id": "inicio.resumo-do-dia",
@@ -1355,6 +1363,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "01-inicio/02-ver-outro-dia.md",
       "goal": "Mudar o dia do resumo e voltar a hoje.",
       "id": "inicio.ver-outro-dia",
@@ -1476,6 +1485,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
+      "feature": null,
       "file": "01-inicio/03-nota-rapida.md",
       "goal": "Escrever uma nota sobre um paciente sem abrir a ficha.",
       "id": "inicio.nota-rapida",
@@ -1843,6 +1853,7 @@
       ],
       "capability": null,
       "faq": [],
+      "feature": null,
       "file": "01-inicio/04-menu-e-sessao.md",
       "goal": "Encontrar cada ecrã no computador e no telemóvel e terminar a sessão num computador partilhado.",
       "id": "inicio.menu-e-sessao",
@@ -2040,6 +2051,7 @@
       ],
       "capability": null,
       "faq": [],
+      "feature": null,
       "file": "01-inicio/05-mudar-nome-ou-palavra-passe.md",
       "goal": "Atualizar os dados da própria conta.",
       "id": "inicio.mudar-nome-ou-palavra-passe",
@@ -2244,6 +2256,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "02-agenda/01-ler-a-agenda.md",
       "goal": "Mudar entre dia e semana, filtrar e reconhecer o estado de cada marcação pelo símbolo.",
       "id": "agenda.ler-a-agenda",
@@ -2466,6 +2479,7 @@
       "faq": [
         "marcar-consulta"
       ],
+      "feature": null,
       "file": "02-agenda/02-marcar-consulta.md",
       "goal": "Criar uma marcação para um paciente que já tem ficha.",
       "id": "agenda.marcar-consulta",
@@ -2632,6 +2646,7 @@
       "faq": [
         "marcar-em-lote"
       ],
+      "feature": null,
       "file": "02-agenda/03-marcar-varias-sessoes.md",
       "goal": "Usar Agendar lote para criar uma série e ver o que ficou por marcar.",
       "id": "agenda.marcar-varias-sessoes",
@@ -2886,6 +2901,7 @@
       "faq": [
         "concluir-consulta"
       ],
+      "feature": null,
       "file": "02-agenda/04-registar-o-estado.md",
       "goal": "Registar o que aconteceu a uma consulta, numa marcação ou numa série.",
       "id": "agenda.registar-o-estado",
@@ -3061,6 +3077,7 @@
       "faq": [
         "bloquear-horario"
       ],
+      "feature": null,
       "file": "02-agenda/05-bloquear-horario.md",
       "goal": "Tirar umas horas de um terapeuta da agenda, com o motivo.",
       "id": "agenda.bloquear-horario",
@@ -3240,6 +3257,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "02-agenda/06-encontrar-marcacoes.md",
       "goal": "Procurar por datas, paciente, estado, serviço ou terapeuta e abrir a marcação.",
       "id": "agenda.encontrar-marcacoes",
@@ -3346,6 +3364,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
+      "feature": null,
       "file": "02-agenda/07-nota-na-marcacao.md",
       "goal": "Passar informação entre a receção e o terapeuta sobre uma consulta.",
       "id": "agenda.nota-na-marcacao",
@@ -3486,6 +3505,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "02-agenda/08-pedido-de-remarcacao.md",
       "goal": "Remarcar na agenda e dar o pedido por tratado.",
       "id": "agenda.pedido-de-remarcacao",
@@ -3706,6 +3726,7 @@
       ],
       "capability": "patients:read",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/01-encontrar-paciente.md",
       "goal": "Pesquisar por nome, NIF, telemóvel ou nº de utente e abrir a ficha.",
       "id": "pacientes.encontrar-paciente",
@@ -3929,6 +3950,7 @@
       "faq": [
         "adicionar-paciente"
       ],
+      "feature": null,
       "file": "03-pacientes/02-registar-paciente.md",
       "goal": "Criar a ficha de quem vem pela primeira vez, sem duplicar.",
       "id": "pacientes.registar-paciente",
@@ -4157,6 +4179,7 @@
       ],
       "capability": "patients:read",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/03-ficha-do-paciente.md",
       "goal": "Saber o que está em cada separador e o que dizem os avisos.",
       "id": "pacientes.ficha-do-paciente",
@@ -4284,6 +4307,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/04-atualizar-dados.md",
       "goal": "Corrigir os dados pessoais, os contactos ou a clínica de um paciente.",
       "id": "pacientes.atualizar-dados",
@@ -4385,6 +4409,7 @@
       ],
       "capability": "care_team:manage",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/05-atribuir-terapeutas.md",
       "goal": "Dizer quem acompanha o paciente.",
       "id": "pacientes.atribuir-terapeutas",
@@ -4601,37 +4626,13 @@
             {
               "spans": [
                 {
-                  "text": "Para passar uma marcação "
-                },
-                {
-                  "strong": "Agendada"
-                },
-                {
-                  "text": " ou "
-                },
-                {
-                  "strong": "Confirmada"
-                },
-                {
-                  "text": " para outro terapeuta, em "
-                },
-                {
-                  "strong": "Gerir marcação"
-                },
-                {
-                  "text": " escolha o nome em "
-                },
-                {
-                  "strong": "Terapeuta"
-                },
-                {
-                  "text": " e clique em "
+                  "text": "Para passar uma marcação para outro terapeuta, use "
                 },
                 {
                   "strong": "Alterar terapeuta"
                 },
                 {
-                  "text": ". A hora, a clínica e o pacote não mudam. Se esse terapeuta não trabalhar a essa hora, ou já tiver outra marcação, a alteração é recusada e o motivo aparece por baixo do campo."
+                  "text": ", como explica a lição Alterar o terapeuta de uma marcação na ficha."
                 }
               ],
               "type": "para"
@@ -4687,6 +4688,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/06-marcacoes-na-ficha.md",
       "goal": "Gerir as marcações de um paciente sem passar pela agenda.",
       "id": "pacientes.marcacoes-na-ficha",
@@ -4719,7 +4721,7 @@
       "see": [],
       "shots": "pacientes.marcacoes-na-ficha",
       "title": "Marcar, cancelar ou corrigir um estado a partir da ficha",
-      "words": 195
+      "words": 160
     },
     {
       "answers": [],
@@ -4930,6 +4932,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/07-declaracao-e-documentos.md",
       "goal": "Imprimir uma declaração e carregar ou retirar um documento.",
       "id": "pacientes.declaracao-e-documentos",
@@ -5153,6 +5156,7 @@
       ],
       "capability": "followup:read",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/08-recuperacao.md",
       "goal": "Usar a lista Recuperação para ligar, escrever ou adiar.",
       "id": "pacientes.recuperacao",
@@ -5276,6 +5280,7 @@
       ],
       "capability": "patients:delete",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/09-juntar-ficha-duplicada.md",
       "goal": "Passar o histórico para a ficha que fica.",
       "id": "pacientes.juntar-ficha-duplicada",
@@ -5435,6 +5440,7 @@
       ],
       "capability": "patients:recover",
       "faq": [],
+      "feature": null,
       "file": "03-pacientes/10-pacientes-eliminados.md",
       "goal": "Restaurar, ou eliminar de vez quando é possível.",
       "id": "pacientes.pacientes-eliminados",
@@ -5455,6 +5461,172 @@
       "shots": null,
       "title": "Recuperar um paciente eliminado",
       "words": 135
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "items": [
+            [
+              {
+                "text": "Na ficha do paciente, abra o separador "
+              },
+              {
+                "strong": "Marcações"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Numa marcação "
+              },
+              {
+                "strong": "Agendada"
+              },
+              {
+                "text": " ou "
+              },
+              {
+                "strong": "Confirmada"
+              },
+              {
+                "text": ", clique em "
+              },
+              {
+                "strong": "Gerir marcação"
+              },
+              {
+                "text": "."
+              }
+            ],
+            [
+              {
+                "text": "Em "
+              },
+              {
+                "strong": "Terapeuta"
+              },
+              {
+                "text": ", escolha o novo nome. A lista mostra quem pode ser marcado na clínica dessa marcação, e o terapeuta atual."
+              }
+            ],
+            [
+              {
+                "text": "Clique em "
+              },
+              {
+                "strong": "Alterar terapeuta"
+              },
+              {
+                "text": ". Guardada a alteração, aparece "
+              },
+              {
+                "strong": "Terapeuta alterado."
+              }
+            ]
+          ],
+          "kind": "ol",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "A hora, a clínica e o pacote da marcação não mudam. A alteração fica no registo de auditoria. Numa marcação do portal já confirmada, o paciente pode receber outra mensagem de confirmação."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "A plataforma faz as mesmas verificações que a "
+            },
+            {
+              "strong": "Agenda"
+            },
+            {
+              "text": " e recusa a alteração quando:"
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "text": "o terapeuta tem horário nessa clínica e não trabalha a essa hora: por baixo do campo aparece o horário desse terapeuta nesse dia;"
+              }
+            ],
+            [
+              {
+                "text": "outra marcação do terapeuta ou da sala, ou uma ausência do terapeuta, choca com esta: aparece o aviso da agenda, por exemplo "
+              },
+              {
+                "strong": "Conflito de terapeuta"
+              },
+              {
+                "text": ", com a hora em causa;"
+              }
+            ],
+            [
+              {
+                "text": "a hora fica fora do horário de marcação da clínica (o último início é uma hora antes do fecho) ou dentro do fecho ao almoço."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Aqui não há "
+            },
+            {
+              "strong": "Guardar mesmo assim"
+            },
+            {
+              "text": ": um conflito recusa a alteração. Para mudar também a hora, use "
+            },
+            {
+              "strong": "Reagendar"
+            },
+            {
+              "text": "."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:delete",
+      "faq": [],
+      "feature": null,
+      "file": "03-pacientes/11-alterar-terapeuta.md",
+      "goal": "Passar uma marcação para outro terapeuta sem mudar a hora.",
+      "id": "pacientes.alterar-terapeuta",
+      "images": null,
+      "order": {
+        "proprietario": 11,
+        "rececao": 9
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "rececao",
+        "proprietario"
+      ],
+      "screens": [
+        "ficha-paciente"
+      ],
+      "section": "pacientes",
+      "see": [],
+      "shots": null,
+      "title": "Alterar o terapeuta de uma marcação na ficha",
+      "words": 198
     },
     {
       "answers": [],
@@ -5628,6 +5800,7 @@
       ],
       "capability": "clinical_records:author",
       "faq": [],
+      "feature": null,
       "file": "04-registos/01-criar-registo.md",
       "goal": "Abrir uma ficha clínica nova, preencher e guardar.",
       "id": "registos.criar-registo",
@@ -5800,6 +5973,7 @@
       "faq": [
         "assinar-registo"
       ],
+      "feature": null,
       "file": "04-registos/02-assinar-registo.md",
       "goal": "Fechar o registo e, depois disso, corrigir só com uma adenda.",
       "id": "registos.assinar-registo",
@@ -6002,6 +6176,7 @@
       ],
       "capability": "clinical_records:author",
       "faq": [],
+      "feature": null,
       "file": "04-registos/03-gravar-consulta.md",
       "goal": "Gravar com consentimento para receber um registo por rever.",
       "id": "registos.gravar-consulta",
@@ -6220,6 +6395,7 @@
       ],
       "capability": "clinical_records:review",
       "faq": [],
+      "feature": null,
       "file": "04-registos/04-revisao-consulta.md",
       "goal": "Corrigir o que veio da gravação ou do formulário e finalizar.",
       "id": "registos.revisao-consulta",
@@ -6417,6 +6593,7 @@
       ],
       "capability": "clinical_records:author",
       "faq": [],
+      "feature": null,
       "file": "04-registos/05-episodios.md",
       "goal": "Juntar os registos de um mesmo problema num episódio.",
       "id": "registos.episodios",
@@ -6514,6 +6691,7 @@
       ],
       "capability": "clinical_records:author",
       "faq": [],
+      "feature": null,
       "file": "04-registos/06-gravacao-nao-processada.md",
       "goal": "Saber que a gravação se perdeu e escrever o registo à mão.",
       "id": "registos.gravacao-nao-processada",
@@ -6683,6 +6861,7 @@
       ],
       "capability": "clinical_records:read",
       "faq": [],
+      "feature": null,
       "file": "04-registos/07-exportar-pdf.md",
       "goal": "Saber onde estão os três botões de PDF e o que cada ficheiro contém.",
       "id": "registos.exportar-pdf",
@@ -6871,6 +7050,7 @@
       "faq": [
         "atribuir-pacote"
       ],
+      "feature": null,
       "file": "05-pacotes/01-atribuir-pacote.md",
       "goal": "Escolher o pacote na nova marcação e marcar já as sessões que o paciente quer.",
       "id": "pacotes.atribuir-pacote",
@@ -7045,6 +7225,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "05-pacotes/02-marcar-com-pacote.md",
       "goal": "Descontar a sessão do pacote certo quando aparece o aviso.",
       "id": "pacotes.marcar-com-pacote",
@@ -7185,6 +7366,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "05-pacotes/03-associar-a-pacote.md",
       "goal": "Fazer uma marcação existente consumir uma sessão.",
       "id": "pacotes.associar-a-pacote",
@@ -7296,6 +7478,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "05-pacotes/04-saldo-de-sessoes.md",
       "goal": "Saber quantas sessões foram usadas e quantas faltam.",
       "id": "pacotes.saldo-de-sessoes",
@@ -7479,6 +7662,7 @@
       ],
       "capability": "services:write",
       "faq": [],
+      "feature": null,
       "file": "05-pacotes/05-criar-pacote.md",
       "goal": "Definir o serviço base, o número de sessões, o preço e o local.",
       "id": "pacotes.criar-pacote",
@@ -7654,6 +7838,7 @@
       ],
       "capability": "invoices:issue",
       "faq": [],
+      "feature": null,
       "file": "06-faturacao/01-faturas-de-um-periodo.md",
       "goal": "Filtrar por datas, estado e local e abrir uma fatura.",
       "id": "faturacao.faturas-de-um-periodo",
@@ -7754,6 +7939,7 @@
       ],
       "capability": "invoices:read",
       "faq": [],
+      "feature": null,
       "file": "06-faturacao/02-faturas-de-um-paciente.md",
       "goal": "Abrir o separador Faturação da ficha.",
       "id": "faturacao.faturas-de-um-paciente",
@@ -7946,6 +8132,7 @@
       ],
       "capability": "statistics:read",
       "faq": [],
+      "feature": null,
       "file": "06-faturacao/03-estatisticas-painel.md",
       "goal": "Ler o painel e filtrar por período, terapeuta, local ou serviço.",
       "id": "faturacao.estatisticas-painel",
@@ -8130,6 +8317,7 @@
       ],
       "capability": "statistics:read",
       "faq": [],
+      "feature": null,
       "file": "06-faturacao/04-indicadores.md",
       "goal": "Escolher o período e mudar de relatório.",
       "id": "faturacao.indicadores",
@@ -8369,6 +8557,7 @@
       ],
       "capability": "schedule:read",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/01-inspetor-de-horarios.md",
       "goal": "Usar o Inspetor de horários para ver o horário que a agenda usa.",
       "id": "equipa-e-horarios.inspetor-de-horarios",
@@ -8540,6 +8729,7 @@
       ],
       "capability": "schedule:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/02-horario-semanal.md",
       "goal": "Definir os dias, as horas e o local de uma semana normal.",
       "id": "equipa-e-horarios.horario-semanal",
@@ -8708,6 +8898,7 @@
       ],
       "capability": "schedule:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/03-semanas-alternadas-e-dia-a-dia.md",
       "goal": "Definir um período que não segue o horário habitual.",
       "id": "equipa-e-horarios.semanas-alternadas-e-dia-a-dia",
@@ -8879,6 +9070,7 @@
       ],
       "capability": "schedule:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/04-registar-ausencia.md",
       "goal": "Bloquear horas, um bloqueio repetido ou dias inteiros.",
       "id": "equipa-e-horarios.registar-ausencia",
@@ -9058,6 +9250,7 @@
       ],
       "capability": "users:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/05-convidar-pessoa.md",
       "goal": "Criar o acesso de alguém novo com a função certa.",
       "id": "equipa-e-horarios.convidar-pessoa",
@@ -9267,6 +9460,7 @@
       ],
       "capability": "users:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/06-gerir-pessoa.md",
       "goal": "Usar Gerir em cada cartão.",
       "id": "equipa-e-horarios.gerir-pessoa",
@@ -9389,6 +9583,7 @@
       ],
       "capability": "users:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/07-saida-da-clinica.md",
       "goal": "Desativar sem perder o histórico.",
       "id": "equipa-e-horarios.saida-da-clinica",
@@ -9621,6 +9816,7 @@
       ],
       "capability": "settings:manage",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/08-definicoes-da-clinica.md",
       "goal": "Alterar os dados da clínica, os lembretes e a palavra-passe de eliminação.",
       "id": "equipa-e-horarios.definicoes-da-clinica",
@@ -9816,6 +10012,7 @@
       ],
       "capability": "locations:write",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/09-locais.md",
       "goal": "Acrescentar, alterar ou arquivar um local.",
       "id": "equipa-e-horarios.locais",
@@ -10010,6 +10207,7 @@
       ],
       "capability": "services:write",
       "faq": [],
+      "feature": null,
       "file": "07-equipa-e-horarios/10-servicos-e-precos.md",
       "goal": "Criar um serviço, mudar o preço num local ou arquivá-lo.",
       "id": "equipa-e-horarios.servicos-e-precos",
@@ -10093,6 +10291,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "08-portal/01-o-que-o-paciente-ve.md",
       "goal": "Conhecer o portal para orientar um paciente ao telefone.",
       "id": "portal.o-que-o-paciente-ve",
@@ -10207,6 +10406,7 @@
       ],
       "capability": "appointments:write",
       "faq": [],
+      "feature": null,
       "file": "08-portal/02-confirmar-pedido-de-marcacao.md",
       "goal": "Reservar o horário que o paciente pediu, ou propor outro.",
       "id": "portal.confirmar-pedido-de-marcacao",
@@ -10375,6 +10575,7 @@
       ],
       "capability": "appointments:read",
       "faq": [],
+      "feature": null,
       "file": "08-portal/03-alteracoes-dos-pacientes.md",
       "goal": "Ler as marcações feitas, canceladas, remarcadas ou confirmadas pelos pacientes.",
       "id": "portal.alteracoes-dos-pacientes",
@@ -10544,6 +10745,7 @@
       ],
       "capability": "reminders:log_read",
       "faq": [],
+      "feature": null,
       "file": "08-portal/04-lembretes-sms.md",
       "goal": "Ver as falhas e ligar a quem não recebeu o lembrete.",
       "id": "portal.lembretes-sms",
@@ -10669,6 +10871,7 @@
       ],
       "capability": "patients:write",
       "faq": [],
+      "feature": null,
       "file": "08-portal/05-pacientes-sem-sms.md",
       "goal": "Pedir um telemóvel a quem tem só um número fixo.",
       "id": "portal.pacientes-sem-sms",
@@ -10772,6 +10975,7 @@
       ],
       "capability": "services:write",
       "faq": [],
+      "feature": null,
       "file": "08-portal/06-servicos-no-portal.md",
       "goal": "Abrir ou fechar um serviço à marcação no portal.",
       "id": "portal.servicos-no-portal",
@@ -10870,6 +11074,7 @@
       ],
       "capability": "roles:manage",
       "faq": [],
+      "feature": null,
       "file": "08-portal/07-mensagem-de-teste.md",
       "goal": "Ver no telemóvel o que o paciente recebe.",
       "id": "portal.mensagem-de-teste",
@@ -10890,6 +11095,280 @@
       "shots": null,
       "title": "Enviar uma mensagem de teste",
       "words": 155
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "spans": [
+            {
+              "text": "Quando confirma um pedido do portal, ou marca um pedido de novo cliente com "
+            },
+            {
+              "strong": "Criar paciente e marcar"
+            },
+            {
+              "text": ", o paciente recebe uma única mensagem:"
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "text": "por email, se a ficha tiver "
+              },
+              {
+                "strong": "Email"
+              },
+              {
+                "text": ": a data, a hora, o serviço, o terapeuta, o local, a morada e o telefone do local;"
+              }
+            ],
+            [
+              {
+                "text": "por SMS, só quando a ficha não tem email: a data, a hora, o local e o telefone do local."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir, quem confirmou vê um aviso: em "
+            },
+            {
+              "strong": "Notificações"
+            },
+            {
+              "text": " e em "
+            },
+            {
+              "strong": "Respostas SMS"
+            },
+            {
+              "text": ", por cima da lista; na "
+            },
+            {
+              "strong": "Agenda"
+            },
+            {
+              "text": " e na ficha, numa mensagem breve."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "items": [
+            [
+              {
+                "strong": "Paciente sem email: avise por telefone"
+              },
+              {
+                "text": ": sem email, e sem telemóvel português válido ou com os SMS desligados para a clínica ou para o paciente."
+              }
+            ],
+            [
+              {
+                "strong": "Confirmação não enviada: o local não tem morada ou telefone. Avise o paciente por telefone."
+              }
+            ],
+            [
+              {
+                "strong": "Confirmação não enviada: a marcação não tem serviço. Avise o paciente por telefone."
+              },
+              {
+                "text": " Só acontece quando a mensagem seguiria por email."
+              }
+            ]
+          ],
+          "kind": "ul",
+          "start": 1,
+          "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Uma falha no envio não mostra aviso: sem aviso, a mensagem pode não ter chegado."
+            }
+          ],
+          "type": "para"
+        }
+      ],
+      "capability": "appointments:write",
+      "faq": [],
+      "feature": null,
+      "file": "08-portal/08-confirmacao-ao-paciente.md",
+      "goal": "Saber que mensagem segue quando um pedido é confirmado, e o que fazer quando nenhuma pode seguir.",
+      "id": "portal.confirmacao-ao-paciente",
+      "images": null,
+      "order": {
+        "proprietario": 8,
+        "rececao": 6
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "rececao",
+        "proprietario"
+      ],
+      "screens": [
+        "notificacoes"
+      ],
+      "section": "portal",
+      "see": [],
+      "shots": null,
+      "title": "A confirmação que o paciente recebe",
+      "words": 184
+    },
+    {
+      "answers": [],
+      "blocks": [
+        {
+          "spans": [
+            {
+              "text": "Quando uma consulta é marcada como "
+            },
+            {
+              "strong": "Concluída"
+            },
+            {
+              "text": " em "
+            },
+            {
+              "strong": "Estado"
+            },
+            {
+              "text": ", o paciente pode receber uma avaliação 24 horas depois do fim da consulta, ou logo, se for marcada como Concluída mais tarde. Corrigir o estado para Concluída não envia avaliação. Enquanto a avaliação está em teste, só alguns pacientes a recebem."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "O paciente recebe no máximo uma avaliação a cada 60 dias. Não é enviada se a consulta já não estiver "
+            },
+            {
+              "strong": "Concluída"
+            },
+            {
+              "text": " nessa altura, nem se o paciente tiver recusado as avaliações, na própria ligação ou no portal, em Conta."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "Em "
+            },
+            {
+              "strong": "Comunicações"
+            },
+            {
+              "text": ", o separador "
+            },
+            {
+              "strong": "Avaliações de satisfação"
+            },
+            {
+              "text": " lista as avaliações enviadas que pode ver, com a coluna "
+            },
+            {
+              "strong": "Resposta"
+            },
+            {
+              "text": " ("
+            },
+            {
+              "strong": "Com resposta"
+            },
+            {
+              "text": " ou "
+            },
+            {
+              "strong": "Sem resposta"
+            },
+            {
+              "text": "). Cada resposta é visível para o terapeuta que realizou a consulta, se decorreu numa das suas clínicas, para a receção e os administradores dessa clínica e para o proprietário."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "Na ficha do paciente, no separador "
+            },
+            {
+              "strong": "Resumo"
+            },
+            {
+              "text": ", a secção "
+            },
+            {
+              "strong": "Avaliações de satisfação"
+            },
+            {
+              "text": " mostra as avaliações enviadas a esse paciente que pode ver."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "blocks": [
+            {
+              "spans": [
+                {
+                  "text": "Na mesma secção, o interruptor "
+                },
+                {
+                  "strong": "Enviar avaliação de satisfação depois das consultas"
+                },
+                {
+                  "text": " está ligado por omissão. Desligado, não é enviada nenhuma avaliação a esse paciente. Desligar não afeta os lembretes de consulta."
+                }
+              ],
+              "type": "para"
+            }
+          ],
+          "roles": [
+            "rececao",
+            "proprietario"
+          ],
+          "type": "role"
+        }
+      ],
+      "capability": "surveys:read",
+      "faq": [],
+      "feature": "survey",
+      "file": "08-portal/09-avaliacao-de-satisfacao.md",
+      "goal": "Saber quando o paciente recebe a avaliação de satisfação e onde ler as respostas.",
+      "id": "portal.avaliacao-de-satisfacao",
+      "images": null,
+      "order": {
+        "proprietario": 9,
+        "rececao": 7,
+        "terapeuta": 4
+      },
+      "question": null,
+      "review": null,
+      "roles": [
+        "rececao",
+        "terapeuta",
+        "proprietario"
+      ],
+      "screens": [],
+      "section": "portal",
+      "see": [],
+      "shots": null,
+      "title": "Avaliação de satisfação",
+      "words": 198
     },
     {
       "answers": [],
@@ -11016,6 +11495,7 @@
       ],
       "capability": "guest_requests:read",
       "faq": [],
+      "feature": null,
       "file": "09-marcacao-online/02-tratar-pedido-novo-cliente.md",
       "goal": "Criar a ficha, ou reconhecer quem já existe, e marcar.",
       "id": "marcacao-online.tratar-pedido-novo-cliente",
@@ -11126,6 +11606,7 @@
       ],
       "capability": "locations:write",
       "faq": [],
+      "feature": null,
       "file": "09-marcacao-online/03-horarios-do-portal.md",
       "goal": "Escolher de 30 em 30 minutos ou de hora a hora, por local.",
       "id": "marcacao-online.horarios-do-portal",
@@ -11183,6 +11664,7 @@
         "pacientes.recuperacao",
         "pacientes.juntar-ficha-duplicada",
         "pacientes.pacientes-eliminados",
+        "pacientes.alterar-terapeuta",
         "equipa-e-horarios.inspetor-de-horarios",
         "equipa-e-horarios.horario-semanal",
         "equipa-e-horarios.semanas-alternadas-e-dia-a-dia",
@@ -11209,6 +11691,8 @@
         "portal.pacientes-sem-sms",
         "portal.servicos-no-portal",
         "portal.mensagem-de-teste",
+        "portal.confirmacao-ao-paciente",
+        "portal.avaliacao-de-satisfacao",
         "marcacao-online.tratar-pedido-novo-cliente",
         "marcacao-online.horarios-do-portal",
         "registos.revisao-consulta",
@@ -11262,6 +11746,7 @@
         "pacientes.declaracao-e-documentos",
         "pacientes.recuperacao",
         "pacientes.ficha-do-paciente",
+        "pacientes.alterar-terapeuta",
         "pacotes.atribuir-pacote",
         "pacotes.marcar-com-pacote",
         "pacotes.saldo-de-sessoes",
@@ -11272,6 +11757,8 @@
         "portal.lembretes-sms",
         "portal.pacientes-sem-sms",
         "portal.o-que-o-paciente-ve",
+        "portal.confirmacao-ao-paciente",
+        "portal.avaliacao-de-satisfacao",
         "faturacao.faturas-de-um-periodo",
         "faturacao.faturas-de-um-paciente",
         "equipa-e-horarios.registar-ausencia",
@@ -11338,6 +11825,7 @@
         "portal.alteracoes-dos-pacientes",
         "portal.pacientes-sem-sms",
         "portal.o-que-o-paciente-ve",
+        "portal.avaliacao-de-satisfacao",
         "faturacao.faturas-de-um-paciente"
       ],
       "sections": [

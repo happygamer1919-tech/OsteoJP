@@ -32,6 +32,7 @@ import {
   uniqueIndex,
   unique,
   check,
+  foreignKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -1247,6 +1248,10 @@ export const clinicalEpisodes = pgTable(
   (t) => [
     index("clinical_episodes_tenant_idx").on(t.tenantId),
     index("clinical_episodes_patient_idx").on(t.patientId),
+    // What the registo key below points at. `id` is the primary key, so the
+    // three columns are unique for every row; the index is there so that a
+    // foreign key can reference the three together.
+    uniqueIndex("clinical_episodes_id_patient_tenant_uq").on(t.id, t.patientId, t.tenantId),
   ],
 );
 
@@ -1288,6 +1293,19 @@ export const clinicalRecords = pgTable(
     index("clinical_records_episode_idx").on(t.episodeId),
     index("clinical_records_ai_review_idx").on(t.tenantId, t.aiReviewState),
     index("clinical_records_supersedes_idx").on(t.supersedesId),
+    // A registo filed in an episode names that episode's patient and tenant.
+    // MATCH SIMPLE: a registo with no episode (episode_id NULL) is not checked.
+    // The migration declares the key DEFERRABLE INITIALLY IMMEDIATE, which this
+    // builder cannot say: it is checked at the end of every statement, and
+    // public.merge_patients alone defers it, around the two UPDATEs that move
+    // an episode and its registos to the surviving patient. The older key from
+    // episode_id to clinical_episodes.id (the column's own reference above)
+    // stays.
+    foreignKey({
+      name: "clinical_records_episode_patient_tenant_fk",
+      columns: [t.episodeId, t.patientId, t.tenantId],
+      foreignColumns: [clinicalEpisodes.id, clinicalEpisodes.patientId, clinicalEpisodes.tenantId],
+    }),
   ],
 );
 
@@ -2791,19 +2809,19 @@ export const appointmentSurveyResponses = pgTable("appointment_survey_responses"
 });
 
 /* ================================================================== */
-/* THE REMINDER SWEEP'S OWN TABLES (pending; ruled number 0106).      */
+/* THE REMINDER SWEEP'S OWN TABLES (migration 0106).                  */
 /* ================================================================== */
 
 /**
  * `reminder_claims` and `reminder_sweep_passes`: the reminder sweep's claim
  * store and its heartbeat, ruled off `audit_log` by strategy on 2026-10-12.
  *
- * TYPES ONLY, AND UNTIL THE MIGRATION IS PROMOTED AND APPLIED THE TABLES ARE
- * IN NO DATABASE. Their migration is
- * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql`
- * (strategy ruled its number on 2026-10-13: 0106). Nothing applies a pending
- * file, so a database built from the numbered migrations does not have them.
- * Code that queries them must not reach production before the apply.
+ * TYPES ONLY. Their migration is `packages/db/migrations/0106_reminder_claims.sql`
+ * (strategy ruled its number on 2026-10-13; promoted 2026-10-19 from
+ * `packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql` with no
+ * byte changed). It merges before it is applied to production, so for a while
+ * main has the tables and production does not: code that queries them must not
+ * reach production before the apply.
  *
  * APPEND ONLY, AND ONLY THE REMINDER JOB WRITES. `authenticated` holds SELECT
  * and INSERT and nothing else, `service_role` holds nothing, and the INSERT

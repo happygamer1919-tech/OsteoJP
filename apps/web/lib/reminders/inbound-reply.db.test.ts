@@ -211,10 +211,15 @@ d("applyInboundReply against a real database", () => {
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const [tenantArg, targets] = enqueueSpy.mock.calls[0]!;
     expect(tenantArg).toBe(tenantId);
+    // Q-K: the target carries the row's own therapist. This fixture gives each
+    // appointment a therapist of its own, so it is read back.
+    const [own] = (await sql.execute(
+      raw`select practitioner_id::text as practitioner_id from appointments where id = ${apptId}`,
+    )) as unknown as { practitioner_id: string }[];
     // BOOK-CONFIRM: the patient's own SIM is an ACCEPTANCE, so its target
     // carries the marker the confirmation dispatch reads.
     expect(targets).toEqual([
-      { appointmentId: apptId, startsAt: expect.any(Date), acceptedPedido: true },
+      { appointmentId: apptId, startsAt: expect.any(Date), practitionerId: own!.practitioner_id, acceptedPedido: true },
     ]);
   });
 

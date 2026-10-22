@@ -20,6 +20,7 @@ function code(src: string): string {
 }
 const dispatchSrc = code(readFileSync(new URL("./dispatch.ts", import.meta.url), "utf8"));
 const functionsSrc = code(readFileSync(new URL("./inngest/functions.ts", import.meta.url), "utf8"));
+const surveyStoreSrc = code(readFileSync(new URL("../surveys/survey-store.ts", import.meta.url), "utf8"));
 /**
  * The notify gate's suppression reasons, read from the union that owns them
  * (packages/notify/src/types.ts), so a fifth one added there is a reason this
@@ -41,6 +42,10 @@ describe("kindOf - the kind is derived from template_id (0075 ruling 1)", () => 
     ["confirmation.sms", "confirmation"],
     ["follow_up.sms", "follow_up"],
     ["no_show.sms", "no_show"],
+    // SAT-01: the satisfaction survey is a kind of its own.
+    ["survey.email", "survey"],
+    ["survey.sms", "survey"],
+    ["survey.whatsapp", "unknown"],
     // BOOK-CONFIRM: the booking-approved pair is a confirmation.
     ["booking_approved.email", "confirmation"],
     ["booking_approved.sms", "confirmation"],
@@ -57,7 +62,13 @@ describe("kindOf - the kind is derived from template_id (0075 ruling 1)", () => 
 
   it("EVERY template id the dispatcher writes is a recognised kind", () => {
     const literal = [...dispatchSrc.matchAll(/templateId: "([a-z_0-9.]+)"/g)].map((m) => m[1]!);
-    const ids = [...new Set([...literal, "reminder.24h.sms", "reminder.48h.email", "reminder.24h.sms.fee_notice"])];
+    // The survey's two ids are constants in dispatch.ts, not `templateId: "..."`
+    // literals, so they are read from where they are declared.
+    const surveyIds = [...dispatchSrc.matchAll(/SURVEY_(?:EMAIL|SMS)_TEMPLATE_ID = "([a-z_.]+)"/g)].map((m) => m[1]!);
+    expect(surveyIds.sort()).toEqual(["survey.email", "survey.sms"]);
+    const ids = [
+      ...new Set([...literal, ...surveyIds, "reminder.24h.sms", "reminder.48h.email", "reminder.24h.sms.fee_notice"]),
+    ];
     // Positive control: the scan found the confirmation, follow-up and no-show ids.
     expect(literal.length).toBeGreaterThanOrEqual(6);
     expect(ids.filter((id) => kindOf(id) === "unknown")).toEqual([]);
@@ -80,6 +91,11 @@ describe("scheduledFor - DERIVED from the appointment, per kind", () => {
 
   it("follow-up: END plus 24 hours", () => {
     expect(scheduledFor("follow_up", { startsAt, endsAt })).toEqual({ kind: "at", at: new Date(endsAt.getTime() + 24 * H) });
+  });
+
+  it("the automatic survey: END plus 24 hours, as the follow-up it rides", () => {
+    expect(scheduledFor("survey", { startsAt, endsAt })).toEqual({ kind: "at", at: new Date(endsAt.getTime() + 24 * H) });
+    expect(kindLabel("survey", "survey.sms")).toBe("Avaliação de satisfação");
   });
 
   it("confirmation and no-show go at once; an unknown kind has no due time", () => {
@@ -131,8 +147,28 @@ describe("statusOf - Estado in pt-PT", () => {
     // The notify gate's reasons arrive as a VALUE (`gateSuppressionReason`), not
     // as a literal in dispatch.ts, so they are read from the type that owns them.
     const gateReasons = [...GATE_REASONS];
+    // SAT-01 ADDED TWO MORE. The survey's own two reasons are constants, and
+    // the database's answers arrive as a VALUE (`survey_` plus the answer), so
+    // they are read from the list that owns them (survey-store.ts).
+    const surveyConstants = [...dispatchSrc.matchAll(/^export const SURVEY_[A-Z_]+ = "(survey_[a-z_]+)";/gm)].map((m) => m[1]!);
+    const surveyAnswers = (
+      /const SURVEY_ISSUE_RESULTS: readonly string\[\] = \[([^\]]+)\]/.exec(surveyStoreSrc)?.[1] ?? ""
+    )
+      .split(",")
+      .map((a) => a.trim().replace(/"/g, ""))
+      .filter((a) => a !== "" && a !== "issued")
+      .map((a) => `survey_${a}`);
     const written = [
-      ...new Set([...outcomes, ...skips, ...suppressed, ...rowReasons, ...gateReasons, "sandbox"]),
+      ...new Set([
+        ...outcomes,
+        ...skips,
+        ...suppressed,
+        ...rowReasons,
+        ...gateReasons,
+        ...surveyConstants,
+        ...surveyAnswers,
+        "sandbox",
+      ]),
     ];
     // Positive controls: every scan found something, so the check below is not
     // an empty list agreeing with itself.
@@ -145,6 +181,8 @@ describe("statusOf - Estado in pt-PT", () => {
     expect(gateReasons.sort()).toEqual(
       ["invalid_recipient", "live_send_disabled", "missing_provider_config", "template_unapproved"],
     );
+    expect(surveyConstants.sort()).toEqual(["survey_canary_not_listed", "survey_issue_error"]);
+    expect(surveyAnswers.sort()).toEqual(["survey_cooldown", "survey_not_allowed", "survey_not_eligible"]);
     expect(written.filter((r) => !KNOWN_SUPPRESSION_REASONS.includes(r))).toEqual([]);
   });
 
@@ -172,7 +210,16 @@ describe("statusOf - Estado in pt-PT", () => {
     ["template_unapproved", "texto da mensagem não aprovado"],
     ["missing_provider_config", "fornecedor de envio não configurado"],
     ["invalid_recipient", "destinatário em falta"],
-  ])("BOOK-CONFIRM reason %s has its own sentence", (code, label) => {
+    // SAT-01: the satisfaction survey's reasons.
+    ["survey_canary_not_listed", "avaliação em fase de teste, paciente fora da lista"],
+    ["survey_cooldown", "já foi enviada uma avaliação a este paciente nos últimos 60 dias"],
+    [
+      "survey_not_eligible",
+      "o paciente não quer receber avaliações, ou a consulta já tem resposta ou deixou de estar concluída",
+    ],
+    ["survey_not_allowed", "envio recusado pela base de dados"],
+    ["survey_issue_error", "erro ao registar o envio"],
+  ])("BOOK-CONFIRM or SAT-01 reason %s has its own sentence", (code, label) => {
     expect(reasonLabel(code)).toBe(label);
     expect(statusOf({ outcome: "suppressed", providerStatus: null, suppressionReason: code }).label).toContain(label);
   });

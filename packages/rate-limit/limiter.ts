@@ -312,7 +312,9 @@ export const RULES = {
   tokenRedeem: { limit: 10, windowMs: 60_000 },
 
   /**
-   * The satisfaction survey's answer POST, `apps/web`'s `/s/[code]` (SAT-01).
+   * The satisfaction survey's two POSTs, `apps/web`'s `/s/[code]` (SAT-01):
+   * the answer and the opt-out. ONE BUDGET FOR BOTH: an address has one
+   * allowance on that page, whichever button it presses.
    *
    * THE SHAPE OF `tokenRedeem`, AND ITS NUMBER, for the same reason: each one
    * that gets through reaches the database from an unauthenticated page, and a

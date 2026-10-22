@@ -28,7 +28,13 @@ const db = {
     const chain: Record<string, unknown> = {
       from: () => chain,
       innerJoin: () => chain,
-      where: async () => selectResults.shift() ?? [],
+      // LAZY: a result is taken only when the query is awaited. The reception
+      // query carries two staff_locations sub-queries (the clinic rule), which
+      // are built but never awaited, so they must not take a result.
+      where: () => ({
+        then: (ok: (v: { id: string }[]) => unknown, ko: (e: unknown) => unknown) =>
+          Promise.resolve(selectResults.shift() ?? []).then(ok, ko),
+      }),
     };
     return chain;
   },
@@ -48,6 +54,7 @@ vi.mock("@osteojp/db", () => ({
   appointments: {},
   patients: {},
   roles: {},
+  staffLocations: { userId: "user_id", tenantId: "tenant_id", locationId: "location_id" },
   staffNotifications: {},
   users: { id: "id", tenantId: "tenant_id", isActive: "is_active", roleId: "role_id" },
 }));

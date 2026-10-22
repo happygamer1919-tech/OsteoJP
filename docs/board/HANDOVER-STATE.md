@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**543 cards on the board. 370 shipped, 173 open. Launch readiness 9/9, every launch gate passes.**
+**554 cards on the board. 380 shipped, 174 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,80 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-15, after 0105
+>
+> **Migration 0105 is applied.** Its sitting ran on Thursday 2026-10-15, from
+> 21:30 to 21:32 Lisbon, and closed clean. A registo can now only be filed in an
+> episode of the same patient. Nothing on any screen changes, and not one
+> existing registo was refused. Two of the three sittings strategy set are done;
+> the reminder sweep's table (0106) is next, on Monday 2026-10-19 or Tuesday
+> 2026-10-20.
+>
+> **The guide has two new lessons:** changing a visit's therapist from the
+> patient's ficha, and the confirmation a patient gets when an online request
+> is approved.
+>
+> **The survey texts are approved by JP**, all of them. The survey is still
+> switched off; a one-patient test is proposed for Monday 2026-10-19.
+>
+> **Monitoring** now drops the values a failed database query carried, and the
+> public link pages send less to other sites (OBS-08, OBS-09).
+>
+> **Next:** Montemor opens on Saturday 2026-10-17. No sitting from Friday to
+> Sunday.
+
+> ### Where things stand, 2026-10-15
+>
+> **Migration 0104 is applied.** Its sitting ran on Thursday 2026-10-15, from
+> 00:40 to 00:45 Lisbon, and closed clean. What changes from 08:00: the episode
+> list on a patient's ficha follows the role. The owner still sees every
+> episode; an admin and reception see the episodes of their clinics' patients,
+> and no longer open or change one; a therapist sees the episodes of the
+> patients they treat, registered or are on the care team of, and opens or
+> changes one only for a patient they treat or registered. No member of staff
+> can delete an episode any more. Registos are unchanged.
+>
+> **The satisfaction survey is still switched off.** Since the last block its
+> list in Comunicações, the switch in the patient portal, the rows on the
+> patient's ficha and the staff sentences strategy wrote are merged. While it is
+> off, nobody sees any of them. Not built: the manual send, the migration for
+> the patient merge, the guide lesson, and the canary before it goes on.
+>
+> **Monitoring keeps less of each request** since 2026-10-14 (OBS-07). Two small
+> follow-ups have their own cards (OBS-08, OBS-09).
+>
+> **Next:** 0105 on Thursday night 2026-10-15, after your publish word.
+
+> ### Where things stand, 2026-10-14
+>
+> **Migration 0103 is applied.** Its sitting ran on Tuesday 2026-10-13, from 21:35
+> to 21:45 Lisbon, and closed clean. Nothing changes on any screen.
+>
+> **The booking confirmation is on.** You switched it on in production on
+> 2026-10-13 at 21:40 Lisbon: a patient whose online request reception approves
+> now gets one confirmation, by email first, by SMS only without an email. One
+> thing is owed to the record: the first real approval's email in Resend Logs,
+> when you see it.
+>
+> **The satisfaction survey is still switched off, and five of its twelve pieces
+> are merged.** Merged on 2026-10-13: its switch and two messages, the page a
+> patient answers on, stopping it (by the patient from that page, by staff per
+> patient), and the automatic send 24 hours after a concluded visit. While it is
+> off, nobody sees or receives anything. Not built: the manual send, the list,
+> the rows on the patient's profile, the switch in the patient portal, the
+> migration for the patient merge, the guide lesson, and the canary before it
+> goes on.
+>
+> **The calendar of sittings strategy set on 2026-10-13:** 0104 on Wednesday
+> 2026-10-14, 0105 on Thursday 2026-10-15, no sitting on Friday, Saturday or
+> Sunday, and the reminder sweep's table (0106) on Monday 2026-10-19 or Tuesday
+> 2026-10-20. The sweep must be live, have run **and be sending before Friday
+> 2026-11-06**. It is still local work and ships switched off. Your choice of A
+> is on its card.
+>
+> **Also closed:** signing, annulling, deleting a draft and the review edits now
+> show the "try again" sentence when two changes to one patient collide.
 
 > ### Where things stand, 2026-10-13
 >

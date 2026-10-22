@@ -25,6 +25,11 @@
  *      note A1). The database refuses any session that carries a user, so a
  *      page that passed the visitor's own session on would show "link not
  *      valid" to every signed-in visitor.
+ *   3. OPT OUT (S8, spec 9.3). "Não quero receber mais avaliações" under the
+ *      submit button: pressed, it shows the opt-out page, the patient's survey
+ *      switch reads off and both reminder switches read as before, the send is
+ *      spent with no answer stored (not even the one half typed), and the link
+ *      is then the page an unknown link gets.
  *
  * ============================================================================
  * IT RUNS WITH NO SESSION, DELIBERATELY
@@ -36,6 +41,8 @@
  * Chromium only, listed in the Firefox and WebKit `testIgnore` sets in
  * playwright.config.ts, as the other write-heavy specs are: this file WRITES
  * appointments, survey sends and an answer into one shared, non-reset database.
+ * Test 3 turns the fixture patient's survey switch off; `beforeEach` puts it
+ * back on, so no test starts from another's opt-out.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -52,7 +59,7 @@ import {
   surveyAnswers,
   surveySend,
 } from "./helpers/survey-code";
-import { LOCATION, SERVICE, SURVEY_PATIENT, THERAPIST_NAME } from "./fixtures";
+import { LOCATION, SERVICE, SURVEY_PATIENT, TENANT_A, THERAPIST_NAME } from "./fixtures";
 
 // The page has no session and must not need one. See the header.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -85,6 +92,8 @@ test.beforeEach(async ({ page }, testInfo) => {
   // An unanswered link from an earlier test or an interrupted run would make
   // the manual door refuse the next one.
   await clearOpenSurveyLinks(db, owner);
+  // Test 3 opts the fixture patient out; every test starts with surveys on.
+  await ensureSurveyPatient(db);
 });
 
 const INVALID_TITLE = "Ligação inválida ou expirada";
@@ -163,9 +172,12 @@ test("a live link is answered once: the form, the thank-you page, one answer in 
   for (const leak of [SURVEY_PATIENT.name, SURVEY_PATIENT.email, THERAPIST_NAME, SERVICE.name, LOCATION.name]) {
     expect(shown, `the page leaked ${leak}`).not.toContain(leak);
   }
-  // No opt-out control in this pull request: the page's one button is the
-  // submit. (Scoped to the page's own content; the dev server adds a button.)
-  await expect(page.locator("main").getByRole("button")).toHaveCount(1);
+  // The page's two buttons, and no third: the submit, then the opt-out (S8).
+  // (Scoped to the page's own content; the dev server adds a button.)
+  await expect(page.locator("main").getByRole("button")).toHaveText([
+    "Enviar respostas",
+    "Não quero receber mais avaliações",
+  ]);
 
   // A SUBMIT WITH A REQUIRED ANSWER MISSING SAVES NOTHING, says so in the
   // approved words, and keeps what was typed.
@@ -244,6 +256,122 @@ test("a live link is answered once: the form, the thank-you page, one answer in 
 
   // Still one answer: opening the spent link three more times wrote nothing.
   expect(await surveyAnswers(owner, appointmentId)).toHaveLength(1);
+});
+
+// ---------------------------------------------------------------------------
+// 3. Opt out.
+// ---------------------------------------------------------------------------
+
+/** The fixture patient's three switches, read from the ordinary table. */
+async function patientSwitches(): Promise<{
+  survey_enabled: boolean;
+  reminder_sms_enabled: boolean;
+  reminder_email_enabled: boolean;
+}> {
+  const { data, error } = await db
+    .from("patients")
+    .select("survey_enabled, reminder_sms_enabled, reminder_email_enabled")
+    .eq("id", SURVEY_PATIENT.id)
+    .single();
+  if (error) throw new Error(`patients read failed: ${error.message}`);
+  return data as { survey_enabled: boolean; reminder_sms_enabled: boolean; reminder_email_enabled: boolean };
+}
+
+/** How many times the fixture patient's survey switch has been changed, by anyone. */
+async function switchChanges(): Promise<number> {
+  const { count, error } = await db
+    .from("audit_log")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", TENANT_A)
+    .eq("entity_type", "patient")
+    .eq("entity_id", SURVEY_PATIENT.id)
+    .eq("action", "survey.switch_changed");
+  if (error) throw new Error(`audit_log read failed: ${error.message}`);
+  return count ?? 0;
+}
+
+test("the opt-out: one press, the opt-out page, the survey switch off and nothing else, then the generic page", async ({
+  page,
+}) => {
+  const { appointmentId, code } = await liveLink();
+  const before = await patientSwitches();
+  // PREMISE: the patient receives surveys, so "off" below is a change.
+  expect(before.survey_enabled).toBe(true);
+  const changesBefore = await switchChanges();
+
+  await openLiveLink(page, code);
+  const shown = await visibleText(page);
+
+  // Texts 19 and 20, under the submit button.
+  const optOut = page.getByRole("button", { name: "Não quero receber mais avaliações" });
+  await expect(optOut).toBeVisible();
+  await expect(page.getByText("Os lembretes de consulta não são afetados.")).toBeVisible();
+  const submitBox = await page.getByRole("button", { name: "Enviar respostas" }).boundingBox();
+  const optOutBox = await optOut.boundingBox();
+  expect(optOutBox!.y).toBeGreaterThan(submitBox!.y + submitBox!.height - 1);
+
+  // HALF AN ANSWER IS TYPED FIRST. The opt-out must not store it, and must not
+  // ask for the rest.
+  const comment = `Comentario que nao e resposta ${Date.now()}`;
+  await page
+    .getByRole("radiogroup", { name: /^1\. Numa escala de 0 a 10/ })
+    .getByRole("radio", { name: "9", exact: true })
+    .check();
+  await page.getByRole("textbox").fill(comment);
+
+  await optOut.click();
+
+  await expect(page).toHaveURL(new RegExp(`/s/${code}\\?r=optedout&l=pt$`));
+  await expect(page.getByRole("heading", { name: "Pedido registado" })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Não voltará a receber avaliações de satisfação da OsteoJP. Os lembretes de consulta não são afetados.",
+    ),
+  ).toBeVisible();
+  // Nothing left to press, and nothing typed travels in the address.
+  await expect(page.locator("main").getByRole("button")).toHaveCount(0);
+  expect(page.url()).not.toContain("Comentario");
+
+  // THE OUTPUT, READ BACK OUT OF THE DATABASE. The survey switch is off and
+  // the two reminder switches are exactly as they were.
+  expect(await patientSwitches()).toEqual({ ...before, survey_enabled: false });
+  // The send is spent as an opt-out, and no answer exists.
+  const send = await surveySend(owner, appointmentId);
+  expect(send.outcome).toBe("opted_out");
+  expect(send.consumed_at).not.toBeNull();
+  expect(await surveyAnswers(owner, appointmentId)).toEqual([]);
+  // One audit row for the opt-out, from nobody's session, with the channel
+  // only; and the switch's own row beside it.
+  const audits = await auditRows(db, appointmentId, "survey.opt_out");
+  expect(audits).toHaveLength(1);
+  expect(audits[0]!.actor_user_id).toBeNull();
+  expect(audits[0]!.metadata).toEqual({ channel: "email" });
+  expect(await auditRows(db, appointmentId, "survey.submitted")).toEqual([]);
+  expect(await switchChanges()).toBe(changesBefore + 1);
+
+  // NO SEND PATH OVERRIDES IT: the staff button's own state reads the opt-out.
+  const { data: state, error: stateError } = await owner.rpc("survey_send_state", {
+    p_tenant_id: TENANT_A,
+    p_patient_id: SURVEY_PATIENT.id,
+  });
+  expect(stateError).toBeNull();
+  expect((state as Array<{ state: string; reason: string | null }>)[0]).toMatchObject({
+    state: "disabled",
+    reason: "opted_out",
+  });
+
+  // REOPEN THE LINK: it is spent, and it is the page a link nobody issued
+  // gets, with no opt-out on it.
+  await page.goto(`/s/${code}`);
+  await expect(page.getByRole("heading", { name: INVALID_TITLE })).toBeVisible();
+  const spentText = await visibleText(page);
+  await expect(page.locator("main").getByRole("button")).toHaveCount(0);
+  await page.goto(`/s/${generateSurveyCode()}`);
+  await expect(page.getByRole("heading", { name: INVALID_TITLE })).toBeVisible();
+  expect(await visibleText(page)).toBe(spentText);
+  // NEGATIVE ARM: the comparison can see a difference.
+  expect(spentText).not.toBe(shown);
+  expect(spentText).not.toContain("Não quero receber mais avaliações");
 });
 
 // ---------------------------------------------------------------------------

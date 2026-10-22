@@ -73,6 +73,7 @@ import {
   type ReminderEnqueueTarget,
   type StatusNotificationTarget,
 } from "./reminders";
+import { moveConfirmation } from "./move-confirmation";
 import { acceptedPedidoTarget, unconfirmedPedidoIdsAmong } from "./pedido-acceptance";
 import { acceptedGuestRequestTarget, guestLinkOccurrence, linkGuestRequestTx } from "./guest-link";
 import { approvalNoticeAfterAccept, type ApprovalNotice } from "./book-confirm-notice";
@@ -1031,8 +1032,8 @@ export async function createAppointment(
           // The LINKED occurrence carries the marker, and only it. The marker
           // asks the dispatch to read the link row; it decides nothing itself.
           c.id === guestLinked.appointmentId
-            ? acceptedGuestRequestTarget(c.id, c.startsAt)
-            : { appointmentId: c.id, startsAt: c.startsAt },
+            ? acceptedGuestRequestTarget(c.id, c.startsAt, input.practitionerId)
+            : { appointmentId: c.id, startsAt: c.startsAt, practitionerId: input.practitionerId },
         );
         return { ok: true, data: { id: parent.id } };
       },
@@ -1158,8 +1159,12 @@ export async function batchScheduleAppointments(
           // BOOK-CONFIRM: the ONE occurrence a guest request was linked to
           // carries the marker; every other target is what it always was.
           b.appointmentId === guestLink.linkedAppointmentId
-            ? acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt))
-            : { appointmentId: b.appointmentId, startsAt: new Date(b.startsAt) },
+            ? acceptedGuestRequestTarget(b.appointmentId, new Date(b.startsAt), input.practitionerId)
+            : {
+                appointmentId: b.appointmentId,
+                startsAt: new Date(b.startsAt),
+                practitionerId: input.practitionerId,
+              },
         ),
       );
       if (guestLink.linkedAppointmentId) revalidatePath("/notificacoes");
@@ -1456,7 +1461,9 @@ export async function cloneAppointment(
         // added them; it is not one for a source older than this feature.
         careTeamAdded = await addBookedTherapistsToCareTeam(tx, actor, [created.id]);
 
-        reminderTargets = [{ appointmentId: created.id, startsAt: values.startsAt }];
+        reminderTargets = [
+          { appointmentId: created.id, startsAt: values.startsAt, practitionerId: values.practitionerId },
+        ];
         return { ok: true, data: { id: created.id } };
       },
     );
@@ -2015,11 +2022,18 @@ export async function updateAppointment(
         reminderTargets = [
           // BOOK-CONFIRM: an ACCEPTANCE carries the marker. The rows brought
           // back from Cancelada below do not, and keep today's confirmation.
-          ...acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt)),
+          ...acceptedPedidos.map((a) => acceptedPedidoTarget(a.id, a.startsAt, a.practitionerId)),
+          // Q-K rule 3: brought back to Confirmada keeps today's confirmation,
+          // so these carry no `confirmation` field.
           ...uncancelling
             .filter((a) => a.startsAt.getTime() > nowMs)
             .filter((a) => !backAsPedido.has(a.id))
-            .map((a) => ({ appointmentId: a.id, startsAt: a.startsAt })),
+            .map((a) => ({
+              appointmentId: a.id,
+              startsAt: a.startsAt,
+              practitionerId: a.practitionerId,
+              ...(patch.status ? { status: patch.status } : {}),
+            })),
         ];
         return { ok: true, data: { id } };
       },
@@ -2291,12 +2305,33 @@ export async function rescheduleAppointment(
         //
         // An ACCEPTED appointment is not in that set: its move re-emits exactly
         // as before, and that event is what supersedes its sleeping reminders.
+        //
+        // Q-K (strategy's ruling): WHAT THE MOVE OWES THE CONFIRMATION, per
+        // row, from `affected` (the row BEFORE this save) against what it
+        // became. A new start or a new clinic: today's confirmation. The
+        // Terapeuta only: the email alone. None of those: none, though the
+        // event still goes out for the reminders. See `moveConfirmation` in
+        // ./move-confirmation.ts.
+        const beforeById = new Map(affected.map((a) => [a.id, a]));
         reminderTargets = targets
           .filter((t) => !unacceptedPedidoIds.has(t.id))
-          .map((t) => ({
-            appointmentId: t.id,
-            startsAt: t.startsAt,
-          }));
+          .map((t) => {
+            const before = beforeById.get(t.id);
+            const confirmation = moveConfirmation(before, {
+              startsAt: t.startsAt,
+              practitionerId: input.practitionerId,
+              locationId: input.locationId,
+            });
+            return {
+              appointmentId: t.id,
+              startsAt: t.startsAt,
+              practitionerId: input.practitionerId,
+              ...(confirmation ? { confirmation } : {}),
+              // A move does not change the status: a cancelled occurrence
+              // moved with its series stays cancelled and cannot confirm.
+              ...(before ? { status: before.status } : {}),
+            };
+          });
         // THE OLD INSTANTS, matched to the new ones by id. This is the only kind
         // where the two differ, and it is why staff_notifications carries the
         // column pair at all: a reader needs to know what it moved FROM.
@@ -2507,7 +2542,7 @@ export async function confirmAppointmentRequest(
         };
         // BOOK-CONFIRM: the target carries the acceptance marker, so the
         // dispatch can tell this event from a reschedule of the same row.
-        reminderTargets = [acceptedPedidoTarget(pedido.id, pedido.startsAt)];
+        reminderTargets = [acceptedPedidoTarget(pedido.id, pedido.startsAt, pedido.practitionerId)];
         return { ok: true, data: { id: pedido.id } };
       },
     );

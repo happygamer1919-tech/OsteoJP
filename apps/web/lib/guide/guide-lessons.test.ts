@@ -91,8 +91,8 @@ const files = lessonFiles();
 
 describe("the lesson source is there to check", () => {
   // Zero files would pass every check below for the wrong reason.
-  it("reads the 75 files: 59 lessons and nine _seccao.md in the nine sections, and seven FAQ entries in 00-perguntas", () => {
-    expect(files).toHaveLength(75);
+  it("reads the 78 files: 62 lessons and nine _seccao.md in the nine sections, and seven FAQ entries in 00-perguntas", () => {
+    expect(files).toHaveLength(78);
     expect(files.filter(({ rel }) => rel.startsWith("00-perguntas/"))).toHaveLength(7);
   });
 });
@@ -104,7 +104,7 @@ describe("every lesson is under 200 words (G1-7)", () => {
     const over = [...guide.sections, ...guide.lessons, ...guide.faq]
       .filter((item) => item.words >= WORD_LIMIT)
       .map((item) => `${item.file}: ${item.words} words`);
-    expect(guide.lessons.length).toBe(59);
+    expect(guide.lessons.length).toBe(62);
     expect(guide.faq.length).toBe(7);
     expect(over).toEqual([]);
     expect(WORD_LIMIT).toBe(200);

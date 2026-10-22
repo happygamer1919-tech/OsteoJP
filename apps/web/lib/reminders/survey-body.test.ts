@@ -19,9 +19,15 @@
 import { describe, expect, it } from "vitest";
 
 import { CONFIRM_CODE_LENGTH, CONFIRM_LINK_BASE_VAR } from "./confirm-code";
-import { formatDateShort } from "./locale";
+import { formatDateLong, formatDateShort } from "./locale";
 import { REMINDER_TEMPLATES } from "./notification-registry";
-import { renderSurveyEmailBody, renderSurveySmsBody, surveyLinks } from "./survey-body";
+import {
+  SURVEY_LINK_DAYS,
+  renderSurveyEmailBody,
+  renderSurveySmsBody,
+  surveyLinks,
+  surveyValidUntilDateLong,
+} from "./survey-body";
 import {
   SMS_SEGMENT_LIMIT,
   SURVEY_EMAIL,
@@ -181,13 +187,114 @@ describe("the link: one origin, two forms", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* The "valid until" date                                               */
+/* ------------------------------------------------------------------ */
+
+/** A UTC instant, written as its UTC wall clock. */
+function utc(y: number, month: number, d: number, h: number, min: number): Date {
+  return new Date(Date.UTC(y, month - 1, d, h, min, 0));
+}
+
+const DAY_KEY = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Lisbon",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/**
+ * The same answer by another road, with no calendar arithmetic in it: walk
+ * back from the instant the link dies, a quarter of an hour at a time, until
+ * the Lisbon date changes. That instant is inside the day before.
+ */
+function dayBeforeByWalking(sentAt: Date): Date {
+  const diesAt = sentAt.getTime() + SURVEY_LINK_DAYS * 24 * 60 * 60_000;
+  const diesOn = DAY_KEY.format(diesAt);
+  for (let back = 1; back <= 26 * 4; back += 1) {
+    const at = diesAt - back * 15 * 60_000;
+    if (DAY_KEY.format(at) !== diesOn) return new Date(at);
+  }
+  throw new Error("no earlier Lisbon day within 26 hours");
+}
+
+describe("the valid-until date: the day before the Lisbon day the link dies on (ruling of 2026-10-13)", () => {
+  it("the copy file's worked example: sent 24 May, dies 7 June, prints 6 June", () => {
+    const sent = utc(2026, 5, 24, 10, 0);
+    expect(surveyValidUntilDateLong(sent, "pt")).toBe("6 de junho de 2026");
+    expect(surveyValidUntilDateLong(sent, "en")).toBe("6 June 2026");
+  });
+
+  // Lisbon is UTC+1 in summer and UTC in winter, so each row names the UTC
+  // instant and, beside it, what a clock in Lisbon shows.
+  it.each([
+    // Either side of Lisbon midnight, in summer: 23:59 and 00:01 Lisbon.
+    ["summer, a minute before Lisbon midnight", utc(2026, 5, 24, 22, 59), "6 de junho de 2026"],
+    ["summer, a minute after Lisbon midnight", utc(2026, 5, 24, 23, 1), "7 de junho de 2026"],
+    // The same pair in winter, where Lisbon midnight is UTC midnight.
+    ["winter, a minute before Lisbon midnight", utc(2027, 1, 10, 23, 59), "23 de janeiro de 2027"],
+    ["winter, a minute after Lisbon midnight", utc(2027, 1, 11, 0, 1), "24 de janeiro de 2027"],
+    // Across the end of summer time, Sunday 25 October 2026. Sent in summer
+    // time, the link dies in winter time, an hour earlier on the Lisbon clock.
+    ["sent 12/10 23:30 Lisbon, dies 26/10 22:30", utc(2026, 10, 12, 22, 30), "25 de outubro de 2026"],
+    // Sent on the 13th in Lisbon, and it still dies on the 26th, at 23:30. A
+    // count from the send's own Lisbon date would print the 26th here.
+    ["sent 13/10 00:30 Lisbon, dies 26/10 23:30", utc(2026, 10, 12, 23, 30), "25 de outubro de 2026"],
+    ["sent 13/10 01:30 Lisbon, dies 27/10 00:30", utc(2026, 10, 13, 0, 30), "26 de outubro de 2026"],
+    // Dies on the night the clocks go back: 25/10 at 00:30 Lisbon, summer time.
+    ["sent 11/10 00:30 Lisbon, dies 25/10 00:30", utc(2026, 10, 10, 23, 30), "24 de outubro de 2026"],
+    // Across the start of summer time, Sunday 28 March 2027. Sent 14/03 at
+    // 23:30 Lisbon, it dies 29/03 at 00:30. Taking 24 hours off prints the 27th.
+    ["sent 14/03 23:30 Lisbon, dies 29/03 00:30", utc(2027, 3, 14, 23, 30), "28 de março de 2027"],
+    // Across a month end, a leap day and a year end.
+    ["dies 1 June", utc(2026, 5, 18, 12, 0), "31 de maio de 2026"],
+    ["dies 1 March, 28 days in February", utc(2027, 2, 15, 12, 0), "28 de fevereiro de 2027"],
+    ["dies 1 March, 29 days in February", utc(2028, 2, 16, 12, 0), "29 de fevereiro de 2028"],
+    ["dies 1 January", utc(2026, 12, 18, 12, 0), "31 de dezembro de 2026"],
+    // A month end and Lisbon midnight at once: 17/05 23:30 and 18/05 00:30 Lisbon.
+    ["dies 31 May at 23:30 Lisbon", utc(2026, 5, 17, 22, 30), "30 de maio de 2026"],
+    ["dies 1 June at 00:30 Lisbon", utc(2026, 5, 17, 23, 30), "31 de maio de 2026"],
+  ])("%s", (_name, sent, printed) => {
+    expect(surveyValidUntilDateLong(sent, "pt")).toBe(printed);
+  });
+
+  // One formatter for the whole sweep, with formatDateLong's own options: the
+  // sweep asks for two dates per send, and building a formatter is the slow part.
+  const LONG_PT = new Intl.DateTimeFormat("pt-PT", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Lisbon",
+  });
+
+  it("every hour of 2026 and 2027: the printed day is whole, and the next one is not", () => {
+    const probe = utc(2026, 5, 23, 12, 0);
+    expect(LONG_PT.format(probe)).toBe(formatDateLong(probe, "pt"));
+
+    const first = Date.UTC(2026, 0, 1, 0, 30);
+    const last = Date.UTC(2028, 0, 1, 0, 0);
+    let checked = 0;
+    for (let at = first; at < last; at += 60 * 60_000) {
+      const sent = new Date(at);
+      const want = LONG_PT.format(dayBeforeByWalking(sent));
+      const got = surveyValidUntilDateLong(sent, "pt");
+      if (got !== want) throw new Error(`sent ${sent.toISOString()}: printed ${got}, expected ${want}`);
+      // And it is never the day the link dies on.
+      const diesOn = LONG_PT.format(at + SURVEY_LINK_DAYS * 24 * 60 * 60_000);
+      if (got === diesOn) throw new Error(`sent ${sent.toISOString()}: printed the day the link dies on`);
+      checked += 1;
+    }
+    expect(checked).toBe(2 * 365 * 24);
+  }, 30_000);
+});
+
+/* ------------------------------------------------------------------ */
 /* The email                                                            */
 /* ------------------------------------------------------------------ */
 
 const EMAIL_CTX = {
   patientFirstName: "Madalena",
   appointmentDateLong: "23 de maio de 2026",
-  surveyExpiryDateLong: "7 de junho de 2026",
+  surveyExpiryDateLong: "6 de junho de 2026",
   clinicPhone: "+351 272 000 000",
 };
 
@@ -204,7 +311,7 @@ describe("the email", () => {
         "",
         `Responder: https://${HOST}/s/${CODE}`,
         "",
-        "A ligação é pessoal, só pode ser usada uma vez e é válida até 7 de junho de 2026.",
+        "A ligação é pessoal, só pode ser usada uma vez e é válida até 6 de junho de 2026.",
         "",
         "Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: +351 272 000 000",
         "",

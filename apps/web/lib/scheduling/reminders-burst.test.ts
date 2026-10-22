@@ -39,13 +39,15 @@ import {
 } from "./reminders";
 
 const TENANT = "3a2d0711-0000-0000-0000-000000000000";
-const BASE = Date.UTC(2026, 8, 1, 9, 0, 0);
+// In the FUTURE: since Q-K a past occurrence never carries the confirmation.
+const BASE = Date.UTC(2031, 8, 1, 9, 0, 0);
 
 /** A weekly series of `n` occurrences, earliest first. */
 function series(n: number): ReminderEnqueueTarget[] {
   return Array.from({ length: n }, (_, i) => ({
     appointmentId: `appt-${i}`,
     startsAt: new Date(BASE + i * 7 * 24 * 3600_000),
+    practitionerId: "therapist-1",
   }));
 }
 
@@ -86,6 +88,83 @@ describe("recurring series emits exactly one confirmation", () => {
 
   it("confirmationEligibleIndex returns -1 for an empty list", () => {
     expect(confirmationEligibleIndex([])).toBe(-1);
+  });
+});
+
+/**
+ * Q-K: a MOVE marks each target with what it owes the confirmation
+ * (./move-confirmation.ts). The burst guard still picks ONE occurrence, but
+ * never one that owes nothing, and a start change before a therapist change.
+ */
+describe("Q-K: which occurrence of a move carries the confirmation", () => {
+  const at = (i: number) => new Date(BASE + i * 7 * 24 * 3600_000);
+  const target = (i: number, confirmation?: "therapist_only" | "none"): ReminderEnqueueTarget => ({
+    appointmentId: `appt-${i}`,
+    startsAt: at(i),
+    practitionerId: "therapist-1",
+    ...(confirmation ? { confirmation } : {}),
+  });
+
+  it("an identical re-save of a whole series: every event goes out, none carries the confirmation", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(0, "none"), target(1, "none"), target(2, "none")]);
+    expect(sent).toHaveLength(3);
+    expect(sent.filter((e) => e.data.confirmationEligible === true)).toEqual([]);
+    expect(confirmationEligibleIndex([target(0, "none")])).toBe(-1);
+  });
+
+  it("a therapist change on a series: ONE confirmation, the earliest, marked therapist-only", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(2, "therapist_only"), target(0, "therapist_only")]);
+    const eligible = sent.filter((e) => e.data.confirmationEligible === true);
+    expect(eligible).toHaveLength(1);
+    expect(eligible[0]!.data).toMatchObject({ appointmentId: "appt-0", therapistChangeOnly: true });
+  });
+
+  it("a start change beats an EARLIER therapist-only change: the patient hears about the new hour, both legs", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(0, "therapist_only"), target(1)]);
+    const eligible = sent.filter((e) => e.data.confirmationEligible === true);
+    expect(eligible).toHaveLength(1);
+    expect(eligible[0]!.data.appointmentId).toBe("appt-1");
+    expect("therapistChangeOnly" in eligible[0]!.data).toBe(false);
+  });
+
+  it("a row that owes nothing never takes the confirmation from one that does", () => {
+    expect(confirmationEligibleIndex([target(0, "none"), target(1, "therapist_only")])).toBe(1);
+    expect(confirmationEligibleIndex([target(0, "none"), target(1)])).toBe(1);
+  });
+
+  it("a CANCELLED occurrence moved with its series never takes the confirmation, even with the better rank", async () => {
+    const cancelled = { ...target(0), status: "cancelled" };
+    const live = { ...target(1, "therapist_only"), status: "confirmed" };
+    expect(confirmationEligibleIndex([cancelled, live], BASE - 1)).toBe(1);
+    await enqueueRemindersAfterCommit(TENANT, [cancelled, live]);
+    expect(sent.filter((e) => e.data.confirmationEligible === true).map((e) => e.data.appointmentId)).toEqual([
+      "appt-1",
+    ]);
+  });
+
+  it("a PAST occurrence never takes the confirmation, even with the better rank and the earlier start", () => {
+    // `now` sits between the two starts: appt-0 is past, appt-1 is ahead.
+    const now = at(0).getTime() + 1;
+    expect(confirmationEligibleIndex([target(0), target(1, "therapist_only")], now)).toBe(1);
+    // A start exactly at `now` is not ahead either.
+    expect(confirmationEligibleIndex([target(0)], at(0).getTime())).toBe(-1);
+  });
+
+  it("only unconfirmable occurrences: nobody carries the confirmation", () => {
+    const now = at(1).getTime() + 1;
+    expect(
+      confirmationEligibleIndex([target(0), { ...target(2), status: "cancelled" }, { ...target(3), status: "no_show" }], now),
+    ).toBe(-1);
+  });
+
+  it("a known CONFIRMABLE status is no obstacle: scheduled and confirmed both carry it", () => {
+    expect(confirmationEligibleIndex([{ ...target(0), status: "scheduled" }], BASE - 1)).toBe(0);
+    expect(confirmationEligibleIndex([{ ...target(0), status: "confirmed" }], BASE - 1)).toBe(0);
+  });
+
+  it("every event carries the therapist, the confirmation key's second half", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [target(0), target(1, "none")]);
+    expect(sent.map((e) => e.data.practitionerId)).toEqual(["therapist-1", "therapist-1"]);
   });
 });
 

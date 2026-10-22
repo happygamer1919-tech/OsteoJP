@@ -12,13 +12,14 @@
  *
  * WHAT IS REAL HERE AND WHAT IS NOT. Every dispatch function and everything it
  * decides is the real code: the routing, the context, the templates, the SMS
- * body assembly and its one-segment rule. Four seams are replaced, each with
+ * body assembly and its one-segment rule. Five seams are replaced, each with
  * something that RECORDS rather than something that agrees:
  *
  *   ./data                the appointment row the dispatch reads (one fixture)
  *   ./clients             the two send functions, which capture the whole message
  *   ./dispatch-ledger     an in-memory ledger
  *   ./confirm-code-store  the confirm code's row (a database write)
+ *   @/lib/surveys/survey-store  the survey send's row (a database write)
  *
  * The fixture is ONE appointment at a synthetic third location. The clinic's
  * two existing locations appear nowhere in it, and the tenant-level phone is a
@@ -86,6 +87,7 @@ const h = vi.hoisted(() => ({
   ledger: [] as { channel: string; templateId: string; outcome: string; suppressionReason?: string | null }[],
   handOvers: [] as { appointmentId: string; startsAt: string }[],
   issuedCodes: [] as string[],
+  surveyIssues: [] as { channel: string; code: string }[],
 }));
 
 vi.mock("server-only", () => ({}));
@@ -136,6 +138,12 @@ vi.mock("./reminder-claim", () => ({
   takeReminderClaim: vi.fn(async () => ({ held: false, claimId: null })),
   releaseReminderClaim: vi.fn(async () => {}),
 }));
+vi.mock("@/lib/surveys/survey-store", () => ({
+  issueSurveyAutomatic: vi.fn(async (args: { channel: string; code: string }) => {
+    h.surveyIssues.push({ channel: args.channel, code: args.code });
+    return "issued";
+  }),
+}));
 
 import { OSTEOJP_LOCATION_CONTACTS } from "../clinical/report/location-contacts";
 import {
@@ -143,6 +151,7 @@ import {
   dispatchFollowUp,
   dispatchNoShow,
   dispatchReminder,
+  dispatchSurvey,
 } from "./dispatch";
 import { REMINDER_TEMPLATES } from "./notification-registry";
 import {
@@ -159,7 +168,6 @@ import {
   SMS_SEGMENT_LIMIT,
   SURVEY_EMAIL,
   SURVEY_SMS,
-  renderSurveyEmail,
 } from "./templates";
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
@@ -309,6 +317,8 @@ const ENV_KEYS = [
   "REMINDERS_CONFIRM_CODE_SECRET",
   "REMINDERS_FEE_NOTICE_ENABLED",
   "REMINDERS_REPLY_CAPABLE",
+  "SURVEY_SEND_MODE",
+  "SURVEY_CANARY_PATIENT_IDS",
   "TWILIO_SMS_FROM",
   "TWILIO_MESSAGING_SERVICE_SID",
 ] as const;
@@ -327,6 +337,7 @@ beforeEach(() => {
   h.ledger.length = 0;
   h.handOvers.length = 0;
   h.issuedCodes.length = 0;
+  h.surveyIssues.length = 0;
   // The emails sign a reschedule link. A reserved host of 14 characters: the
   // length of the host confirm-code.ts records as serving the patient-facing
   // links, so every measured length below is the deployed one. Never the real
@@ -925,14 +936,10 @@ describe("the reply acknowledgements name no clinic at all", () => {
   });
 });
 
-describe("the satisfaction survey names no clinic, and nothing sends it yet (SAT-01)", () => {
-  // The two survey bodies are registered and no dispatch sends them, so there
-  // is no message to collect for a third location. What can be proved today is
-  // proved here, on the texts. WHAT IS OWED: the email prints one phone, the
-  // one its sender hands it. When the pull request that adds the send lands,
-  // it sends the survey for this file's appointment, shows that phone is the
-  // location's and not the tenant's, and takes the two ids out of the
-  // `notSentHere` list below.
+describe("the satisfaction survey names no clinic, and its email prints the location's phone (SAT-01)", () => {
+  // The survey names no clinic in either text. Its email prints ONE phone, and
+  // the send hands it the appointment's own location's: never the tenant's,
+  // and nothing at all when that location has none (third-location ruling).
   it.each(["pt", "en"] as const)("%s: neither text names a clinic or a place", (locale) => {
     for (const text of [SURVEY_EMAIL[locale].subject, SURVEY_EMAIL[locale].body, SURVEY_SMS[locale]]) {
       expectNoOtherClinic(text, `survey (${locale})`);
@@ -941,20 +948,67 @@ describe("the satisfaction survey names no clinic, and nothing sends it yet (SAT
     }
   });
 
-  it("the SMS prints no phone, and the email prints the one it is handed, once", () => {
+  it("the SMS template prints no phone, and the email template prints one, once", () => {
     expect(SURVEY_SMS.pt).not.toMatch(/phone|telefone/);
     expect(SURVEY_EMAIL.pt.body.split("{{clinic_phone}}")).toHaveLength(2);
+  });
 
-    const { subject, body } = renderSurveyEmail("pt", {
-      patientFirstName: "Madalena",
-      appointmentDateLong: "14 de maio de 2026",
-      surveyLink: "https://app.clinica-teste.invalid/s/Ab3-Xy_9",
-      surveyExpiryDateLong: "29 de maio de 2026",
-      clinicPhone: PHONE,
+  it.each(THREE)("survey EMAIL at $name: that location's phone, once, and no other's", async (place) => {
+    process.env.SURVEY_SEND_MODE = "on";
+    h.loadReminderData.mockResolvedValue(
+      row({ status: "completed", locationName: place.name, locationPhone: place.phone }),
+    );
+
+    expect((await dispatchSurvey(TENANT, APPT)).dispatched).toBe(true);
+
+    const mail = only(h.email);
+    expect(h.sms).toEqual([]);
+    expect(mail.templateId).toBe("survey.email");
+    expect(mail.subject).toBe("Avaliação da sua consulta de 14 de maio de 2031");
+    expect(mail.body).toContain(`ou contacte a clínica: ${place.phone}\n`);
+    expect(mail.body.split(place.phone)).toHaveLength(2);
+    expect(mail.body).toContain(`\nResponder: https://app.jp.invalid/s/${only(h.surveyIssues).code}\n`);
+    // The text names no clinic, so the name is not in it; the phone is how the
+    // patient tells which clinic wrote.
+    expect(mail.body).not.toContain(place.name);
+    expectNoOtherOfTheThree(mail.body, place);
+    expectNoOtherClinic(`${mail.subject}\n${mail.body}`, "survey email");
+  });
+
+  it("the third location has no phone: no email, no fall-back to the tenant's number", async () => {
+    process.env.SURVEY_SEND_MODE = "on";
+    h.loadReminderData.mockResolvedValue(row({ status: "completed", locationPhone: null }));
+
+    expect(await dispatchSurvey(TENANT, APPT)).toEqual({
+      dispatched: false,
+      reason: "location_contact_missing",
     });
-    expect(body.split(PHONE)).toHaveLength(2);
-    expectNoOtherClinic(subject, "survey email subject");
-    expectNoOtherClinic(body, "survey email body");
+
+    expect(h.email).toEqual([]);
+    expect(h.sms).toEqual([]);
+    expect(h.surveyIssues).toEqual([]);
+    expect(h.ledger.map((r) => [r.templateId, r.outcome, r.suppressionReason])).toEqual([
+      ["survey.email", "suppressed", "location_contact_missing"],
+    ]);
+  });
+
+  it("survey SMS at the third location: three lines, no clinic, no phone, ONE segment, 131 characters", async () => {
+    process.env.SURVEY_SEND_MODE = "on";
+    h.loadReminderData.mockResolvedValue(row({ status: "completed", patientEmail: null }));
+
+    expect((await dispatchSurvey(TENANT, APPT)).dispatched).toBe(true);
+
+    const sms = only(h.sms);
+    expect(h.email).toEqual([]);
+    expect(sms.templateId).toBe("survey.sms");
+    expect(sms.body).toBe(
+      `OsteoJP: avaliacao da consulta de 14/05\nResponder: app.jp.invalid/s/${only(h.surveyIssues).code}\nPara nao receber mais avaliacoes, use a mesma ligacao.`,
+    );
+    expect(sms.body).not.toContain(PHONE);
+    expect(sms.body).not.toContain("Montemor");
+    expect(sms.body).not.toContain("Nao lemos respostas");
+    expectNoOtherClinic(sms.body, "survey sms");
+    expectOneSegment(sms.body, 131);
   });
 });
 
@@ -987,6 +1041,14 @@ describe("every registered appointment message is one this file sent", () => {
     h.loadReminderData.mockResolvedValue(row({ status: "no_show" }));
     await dispatchNoShow(TENANT, APPT);
     collect();
+    // SAT-01: the survey, in the follow-up's place while its switch is on.
+    process.env.SURVEY_SEND_MODE = "on";
+    h.loadReminderData.mockResolvedValue(row({ status: "completed" }));
+    await dispatchSurvey(TENANT, APPT);
+    collect();
+    h.loadReminderData.mockResolvedValue(row({ status: "completed", patientEmail: null }));
+    await dispatchSurvey(TENANT, APPT);
+    collect();
 
     // Not sendable from a dispatch of this file, each for a stated reason:
     const notSentHere = new Set<string>([
@@ -999,11 +1061,6 @@ describe("every registered appointment message is one this file sent", () => {
       FEE_NOTICE_TEMPLATE_ID,
       // fixed sentences, asserted above.
       ...Object.values(REPLY_ACK_TEMPLATE_IDS),
-      // SAT-01: registered, and no dispatch sends them yet. Their texts are
-      // asserted above; the send's own proof is owed by the pull request that
-      // adds the send, which removes these two lines.
-      "survey.email",
-      "survey.sms",
     ]);
 
     const registered = REMINDER_TEMPLATES.map((t) => t.id);

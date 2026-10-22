@@ -1,13 +1,15 @@
 -- 0106 PRE-CHECK: the reminder sweep's two tables. The number is strategy's ruling
--- of 2026-10-13; the migration is still PENDING, because 0104 and 0105 are not on
--- main. READ ONLY. Every verdict must read OK (10 expected); nine CARRY rows feed
+-- of 2026-10-13 (W-8). The migration is promoted: 0104 and 0105 are applied and on
+-- main, and 0106 follows 0105 (journal idx 103). READ ONLY. Every verdict must read
+-- OK (13 expected); nine CARRY rows and verdict 12's row (journal_rows_before) feed
 -- the post-check, and three INFO rows print a profile and are never counted.
--- Catalogue facts only: no row of any table is read.
+-- Catalogue facts and the drizzle journal only: no row of any other table is read.
 --
 -- WHAT THE MIGRATION DOES
--- (packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql, sha256
+-- (packages/db/migrations/0106_reminder_claims.sql, sha256
 -- 2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9,
--- to be promoted with no byte changed): three SET LOCAL lines, then two CREATE TABLE
+-- promoted from packages/db/migrations-pending/NEXT-AFTER-0105_reminder_claims.sql
+-- with no byte changed): three SET LOCAL lines, then two CREATE TABLE
 -- (public.reminder_claims, public.reminder_sweep_passes), five indexes, two table
 -- comments, ENABLE ROW LEVEL SECURITY on both, a REVOKE ALL on each from PUBLIC,
 -- anon, authenticated, patient AND service_role, a GRANT SELECT, INSERT on each to
@@ -16,10 +18,12 @@
 -- of reminder_claims reads public.appointments in a sub-select. No function, no
 -- sequence, no trigger, no row.
 --
--- NOT IN THIS DRAFT, ON PURPOSE: the journal verdicts (the migration absent by
--- hash, its predecessor the newest row, the row count). They pin a number, a
--- predecessor's hash and a journal position, and none of the three is fixed
--- while the number is provisional. They are added when the file is promoted.
+-- THE JOURNAL VERDICTS, 10 TO 12, added at the promotion (2026-10-19), pin 0105 as
+-- the predecessor: sha256 980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441,
+-- journal when 1788502600000, and 103 rows (0000 to 0105; the numbering has gaps).
+-- The journal is read by a DO block, by name, so on a database with no drizzle
+-- journal verdicts 10 to 12 read FAIL with "no journal table" and every other
+-- verdict still prints. No journal is never a pass.
 --
 -- EVERY VERDICT CARRIES A CONTROL, so a zero is never a pass by default:
 --   0      the transaction is READ ONLY (the server refuses writes);
@@ -61,6 +65,14 @@
 --          everywhere, would keep its grant, and the post-check would then FAIL
 --          AFTER the commit. This reads it before. CONTROL: the defaults name
 --          at least one role, so the reading is not of an empty list;
+--   10     0106 IS ABSENT FROM THE JOURNAL, BY HASH. CONTROL: the same count over
+--          the same rows finds 0105's hash exactly once, so a zero is not the
+--          count of an empty or unreadable journal;
+--   11     0105 IS THE NEWEST ROW (the highest id), by hash, at its journal when
+--          1788502600000: production is at the position this migration follows;
+--   12     journal_rows_before: exactly 103. Its row is named for the carry, so
+--          stage 2 reads it like the CARRY rows and the post-check's verdict 25
+--          wants one more;
 --   CARRY  tables_before: ordinary and partitioned tables in `public`;
 --   CARRY  sequences_before: sequences in `public`. The migration creates none,
 --          and the post-check proves it by reading the count again;
@@ -88,8 +100,42 @@
 \timing off
 \set ON_ERROR_STOP on
 
+-- THE JOURNAL, read by name so that a database without one prints a FAIL in
+-- verdicts 10 to 12 instead of ending the file before any other verdict.
+-- set_config(..., true) is transaction-local and is allowed in a READ ONLY
+-- transaction.
+DO $journal$
+DECLARE
+  v_rows   integer;
+  v_new    integer;
+  v_prev   integer;
+  v_hash   text;
+  v_when   text;
+BEGIN
+  IF to_regclass('drizzle.__drizzle_migrations') IS NULL THEN
+    PERFORM set_config('rc0106.journal', 'absent', true);
+    RETURN;
+  END IF;
+  EXECUTE 'SELECT count(*)::int,
+                  (count(*) FILTER (WHERE hash = $1))::int,
+                  (count(*) FILTER (WHERE hash = $2))::int
+             FROM drizzle.__drizzle_migrations'
+    INTO v_rows, v_new, v_prev
+    USING '2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9',
+          '980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441';
+  EXECUTE 'SELECT hash, created_at::text FROM drizzle.__drizzle_migrations ORDER BY id DESC LIMIT 1'
+    INTO v_hash, v_when;
+  PERFORM set_config('rc0106.journal', 'read', true);
+  PERFORM set_config('rc0106.journal_rows', v_rows::text, true);
+  PERFORM set_config('rc0106.has_new', v_new::text, true);
+  PERFORM set_config('rc0106.has_prev', v_prev::text, true);
+  PERFORM set_config('rc0106.newest_hash', coalesce(v_hash, ''), true);
+  PERFORM set_config('rc0106.newest_when', coalesce(v_when, ''), true);
+END
+$journal$;
+
 \echo ''
-\echo '=== 0106 REMINDER CLAIMS PRE-CHECK: every verdict must read OK (10 expected) ==='
+\echo '=== 0106 REMINDER CLAIMS PRE-CHECK: every verdict must read OK (13 expected) ==='
 
 WITH names(n) AS (
   VALUES ('reminder_claims'), ('reminder_sweep_passes'),
@@ -127,6 +173,12 @@ WITH names(n) AS (
      AND defaclnamespace IN (0, 'public'::regnamespace)
 ), j AS (
   SELECT
+    coalesce(current_setting('rc0106.journal', true), 'not read')                              AS journal_state,
+    nullif(current_setting('rc0106.journal_rows', true), '')::int                               AS journal_rows,
+    nullif(current_setting('rc0106.has_new', true), '')::int                                    AS has_0106,
+    nullif(current_setting('rc0106.has_prev', true), '')::int                                   AS has_0105,
+    current_setting('rc0106.newest_hash', true)                                                 AS newest_hash,
+    current_setting('rc0106.newest_when', true)                                                 AS newest_when,
     has_table_privilege('authenticated', 'public.appointments', 'SELECT')                         AS auth_reads_appts,
     (SELECT count(*)::int FROM appt_fns WHERE for_auth)                                           AS appt_fns_n,
     (SELECT count(*)::int FROM appt_fns WHERE for_auth
@@ -251,6 +303,21 @@ UNION ALL SELECT '8. what the claims INSERT policy rests on: authenticated reads
 UNION ALL SELECT '9. the default privileges hand a new table to no role the migration does not revoke by name (control: they name at least one role)',
        default_unnamed || '; control ' || (default_grantees_n > 0)::text, 'none; control true',
        CASE WHEN default_unnamed = 'none' AND default_grantees_n > 0 THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '10. 0106 is absent from the journal, by hash (control: the same count finds 0105 once)',
+       CASE WHEN journal_state = 'read' THEN has_0106::text || '; control ' || has_0105::text ELSE 'no journal table (' || journal_state || ')' END,
+       '0; control 1',
+       CASE WHEN journal_state = 'read' AND has_0106 = 0 AND has_0105 = 1 THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '11. 0105 is the newest row of the journal, by hash, at its journal when',
+       CASE WHEN journal_state = 'read'
+            THEN 'newest ' || CASE WHEN newest_hash = '980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441' THEN 'is 0105' ELSE 'is NOT 0105' END
+                 || ', when ' || coalesce(nullif(newest_when, ''), 'none')
+            ELSE 'no journal table (' || journal_state || ')' END,
+       'newest is 0105, when 1788502600000',
+       CASE WHEN journal_state = 'read' AND newest_hash = '980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441'
+                 AND newest_when = '1788502600000' THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT 'journal_rows_before',
+       CASE WHEN journal_state = 'read' THEN journal_rows::text ELSE 'no journal table (' || journal_state || ')' END, '103 (verdict 12)',
+       CASE WHEN journal_state = 'read' AND journal_rows = 103 THEN 'OK' ELSE 'FAIL' END FROM j
 UNION ALL SELECT 'tables_before', n_tables::text, 'a count', 'CARRY' FROM j
 UNION ALL SELECT 'sequences_before', n_sequences::text, 'a count', 'CARRY' FROM j
 UNION ALL SELECT 'secdef_before', secdef::text, 'a count', 'CARRY' FROM j

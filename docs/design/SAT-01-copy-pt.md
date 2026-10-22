@@ -23,6 +23,23 @@ avaliação de satisfação. Nada está construído.
 * **Textos 82 e 83, novos para a equipa:** escritos a 8 de outubro de 2026, no
   mesmo estilo, para a eliminação definitiva de um paciente (secção L). Não são
   lidos por pacientes.
+* **Alterado a 13 de outubro de 2026 por decisão do proprietário: a data
+  "válida até".** A ligação deixa de funcionar exatamente 14 dias depois do
+  envio, ao minuto, por isso deixa de funcionar a meio de um dia. A data que
+  uma pessoa lê em "válida até" é o dia anterior a esse, contado pelo
+  calendário de Lisboa: o último dia em que a ligação funciona o dia inteiro.
+  Exemplo: envio a 24 de maio, a ligação deixa de funcionar a 7 de junho e a
+  mensagem diz "6 de junho de 2026". Aplica-se a `{{survey_expiry_date}}`
+  (texto 2) e a `{data_fim}` (texto 73). Os textos não mudam, muda só a data
+  que os preenche. O prazo de 14 dias não muda.
+* **Textos 84 a 88, novos, escritos pela estratégia a 14 de outubro de 2026**
+  (secção M). Os textos 84 e 85 são lidos por pacientes e os textos 86 a 88
+  pela equipa.
+* **Aprovado pelo JP a 15 de outubro de 2026: todos os textos da avaliação, tal
+  como estão construídos, e as frases a) a d) tal como escritas (textos 84 a
+  88).** Transmitido pela estratégia. Não é precisa uma segunda ronda do JP.
+  "Todos os textos para o paciente estão aprovados" vale agora também para os
+  textos 84 e 85.
 * **Inglês:** a secção "English" no fim deste ficheiro é traduzida dos textos
   em português; não foi revista em separado (S10).
 
@@ -34,10 +51,14 @@ avaliação de satisfação. Nada está construído.
   a data da consulta por extenso (por exemplo "23 de maio de 2026"),
   `{data}` a data curta (por exemplo "23/05"), `{{survey_link}}` a ligação
   pessoal, `{{survey_expiry_date}}` o último dia em que a ligação funciona
-  (14 dias depois do envio) e `{{clinic_phone}}` o telefone da clínica.
+  o dia inteiro e `{{clinic_phone}}` o telefone da clínica. A ligação deixa de
+  funcionar 14 dias depois do envio, ao minuto; `{{survey_expiry_date}}` é o
+  dia anterior a esse, no calendário de Lisboa (decisão do proprietário de 13
+  de outubro de 2026).
   Nos textos da equipa (61 a 81), `{data}`, `{data_envio}` e `{data_fim}` são
   datas no formato 23/05/2026 e `{nome}` é o nome do membro da equipa que
-  enviou.
+  enviou. `{data_fim}` segue a mesma regra de `{{survey_expiry_date}}`: é o
+  dia anterior àquele em que a ligação deixa de funcionar.
 * `[endereço]` é o endereço do site onde a página fica alojada; é o mesmo que já
   aparece na ligação "Confirmar" dos lembretes por SMS.
 * O1 está ligado (S8): o paciente pode recusar novas avaliações na própria
@@ -58,7 +79,10 @@ paciente, pelo mesmo canal (S6). Não está sujeito à regra dos 60 dias. Não e
 se o paciente tiver recusado as avaliações, se não houver canal autorizado, ou
 enquanto uma ligação enviada antes ainda for válida e não tiver resposta.
 
-A ligação funciona uma vez e durante 14 dias depois do envio. Esta mensagem
+A ligação funciona uma vez e durante 14 dias depois do envio. A data "válida
+até" que a mensagem mostra é o último dia inteiro desse prazo, ou seja, o dia
+anterior àquele em que a ligação deixa de funcionar (decisão do proprietário de
+13 de outubro de 2026). Esta mensagem
 substitui a antiga mensagem "Obrigado pela sua visita / Marcar próxima
 consulta", que está desligada desde 4 de setembro.
 
@@ -103,8 +127,10 @@ indique-o na mesma ligação ou contacte a clínica: {{clinic_phone}}".
 questionários, contacte a clínica: {{clinic_phone}}".~~ Já não se aplica: O1
 está ligado (S8).
 
-Exemplo, com dados inventados (envio a 24 de maio, por isso a ligação vale até
-7 de junho):
+Exemplo, com dados inventados (envio a 24 de maio, por isso a ligação deixa de
+funcionar a 7 de junho, à hora do envio, e a mensagem diz 6 de junho, o último
+dia em que funciona o dia inteiro; decisão do proprietário de 13 de outubro de
+2026):
 
 > Olá Ana,
 >
@@ -112,7 +138,7 @@ Exemplo, com dados inventados (envio a 24 de maio, por isso a ligação vale at�
 >
 > Responder: https://[endereço]/s/AB12CD34
 >
-> A ligação é pessoal, só pode ser usada uma vez e é válida até 7 de junho de 2026.
+> A ligação é pessoal, só pode ser usada uma vez e é válida até 6 de junho de 2026.
 >
 > Se não pretender receber estas avaliações, indique-o na mesma ligação ou contacte a clínica: [telefone da clínica]
 >
@@ -271,6 +297,9 @@ Onde: topo do formulário, se a gravação falhar ou houver demasiadas tentativa
 
 > Não foi possível registar a resposta. Tente novamente dentro de alguns minutos.
 
+Se o que falhou foi o pedido do botão 19, o texto é o 84 (14 de outubro de
+2026).
+
 ## D. Páginas de resultado
 
 **26. Título depois de responder**
@@ -340,6 +369,9 @@ no máximo uma vez a cada 60 dias."
 Onde: por baixo do interruptor 33, quando está desligado.
 
 > Desligar não afeta os lembretes de consulta.
+
+Se a alteração do interruptor 33 não ficar guardada, o texto é o 85 (14 de
+outubro de 2026).
 
 ## F. Lista de respostas (equipa: o terapeuta que realizou a consulta, a receção e os administradores dessa clínica, e o proprietário)
 
@@ -458,6 +490,9 @@ Onde: no lugar da tabela, quando não há envios.
 Antes (S5: a lista passa a mostrar os envios, não só as respostas): "Ainda não
 há respostas."
 
+Não aparece quando está escolhido um mês (texto 86) nem para um membro da
+receção ou um administrador sem clínica associada (texto 87).
+
 **55. Indicação da lista vazia**
 Onde: por baixo do texto 54.
 
@@ -574,6 +609,11 @@ Onde: junto do botão 61, que fica desativado. Aparece um motivo de cada vez.
 
 > Indisponível: a avaliação enviada a {data_envio} ainda não foi respondida. A ligação é válida até {data_fim}.
 
+`{data_fim}` é o dia anterior àquele em que a ligação deixa de funcionar, no
+calendário de Lisboa, como no email (decisão do proprietário de 13 de outubro
+de 2026). Exemplo: enviada a 24/05/2026, a ligação deixa de funcionar a
+07/06/2026 e a linha diz 06/06/2026.
+
 ## J. Estado do envio (novo, S5)
 
 Onde: junto do botão 61, na ficha e na lista. A linha junta as partes assim:
@@ -607,6 +647,9 @@ Onde: no lugar da linha de estado, e da lista da ficha, quando nunca houve
 envio.
 
 > Nenhuma avaliação de satisfação enviada.
+
+Na lista da ficha, só o proprietário lê este texto. Qualquer outra pessoa lê o
+texto 88 (14 de outubro de 2026).
 
 ## K. Lista de envios: colunas novas (novo, S5, S7 e S11)
 
@@ -646,6 +689,53 @@ Exemplo: "Avaliações de satisfação (envios): 1"
 **83. Respostas de avaliação**
 
 > Avaliações de satisfação (respostas)
+
+## M. Textos novos de 14 de outubro de 2026
+
+Escritos pela estratégia a 14 de outubro de 2026. Aprovados pelo JP a 15 de
+outubro de 2026, tal como escritos (textos 84 a 88).
+
+**84. Erro ao registar o pedido (paciente)**
+Onde: página da avaliação, no lugar do texto 25, quando o pedido do botão 19
+("Não quero receber mais avaliações") não fica registado. Antes aparecia o texto
+25, que fala de "resposta".
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
+
+> Não foi possível registar o pedido. Tente novamente dentro de alguns minutos.
+
+**85. Erro ao guardar o interruptor (paciente)**
+Onde: área de paciente, página da conta, por baixo do interruptor 33, quando a
+alteração não fica guardada. O interruptor volta à posição anterior. Antes não
+aparecia nenhuma frase. Sai ao carregar de novo no interruptor.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
+
+> Não foi possível guardar a alteração. Tente novamente dentro de alguns minutos.
+
+**86. Nenhum envio no mês escolhido (equipa)**
+Onde: lista do separador 36, no lugar da tabela, quando está escolhido um mês
+sem nenhum envio. Antes a lista ficava só com os cabeçalhos.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
+
+> Nenhuma avaliação enviada neste mês.
+
+**87. Sem clínica associada (equipa)**
+Onde: lista do separador 36, no lugar da tabela, para um membro da receção ou
+um administrador sem nenhuma clínica associada, com ou sem mês escolhido. Estas
+pessoas só leem os envios das suas clínicas, por isso a lista está sempre
+vazia. Antes liam o texto 54, que pode não ser verdade. Não aparece ao
+terapeuta nem ao proprietário.
+Escrito pela estratégia a 14 de outubro de 2026, aprovado pelo JP a 15 de outubro de 2026.
+
+> Sem clínica associada. Peça a um administrador para o associar a uma clínica.
+
+**88. Nenhum envio visível (equipa)**
+Onde: ficha do paciente, secção 58, no lugar da lista dos envios, quando não há
+nenhum envio que a pessoa possa ler. Para todos exceto o proprietário, que
+continua a ler o texto 78. Só o proprietário lê todos os envios; para os
+outros, uma lista vazia não quer dizer que nunca houve envio.
+Escrito pela estratégia a 14 de outubro de 2026, texto da equipa, aprovado pelo JP a 15 de outubro de 2026.
+
+> Nenhuma avaliação de satisfação visível para si.
 
 ## Perguntas para o JP, com as respostas de 2 de outubro de 2026
 
@@ -765,6 +855,11 @@ avaliações, and "review" is already Review Consultation.
 | 81 | Answer visible only to the therapist who carried out the appointment, to reception and the administrators of that clinic, and to the owner. |
 | 82 | Satisfaction surveys (sends) |
 | 83 | Satisfaction surveys (answers) |
+| 84 | Your request could not be saved. Please try again in a few minutes. |
+| 85 | The change could not be saved. Please try again in a few minutes. |
+| 86 | No survey sent this month. |
+| 87 | No clinic assigned. Ask an administrator to assign you to a clinic. |
+| 88 | No satisfaction survey visible to you. |
 
 The English SMS (3) is ASCII only, as the house rule asks of every SMS. Its
 fixed text is 100 characters, plus the date (5), the code (8) and the

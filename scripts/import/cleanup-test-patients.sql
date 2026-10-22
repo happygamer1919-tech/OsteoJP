@@ -468,6 +468,18 @@ delete from appointment_survey_codes
 delete from appointment_survey_sends
  where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560');
 
+-- 0106 (the reminder sweep) - a claim, a release and a shadow row each name an
+-- appointment and carry no patient id of their own, so they are deleted by their
+-- appointment. Their foreign key to it is ON DELETE CASCADE, and they are still
+-- deleted explicitly and before appointments, as the cascading tables above are.
+-- A release names its claim in the same table (ON DELETE CASCADE too), and both
+-- go in this one statement.
+delete from reminder_claims
+ where appointment_id in (
+   select id from appointments
+    where patient_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560')
+       or patient_2_id in (select id from patients where tenant_id = '3a2d0711-fbdb-4ce9-b940-b6a87e3d3560'));
+
 -- depth 2 - appointments reference patient_pack_instances (migration 0067),
 -- so they MUST go before the pack instances below.
 delete from appointments

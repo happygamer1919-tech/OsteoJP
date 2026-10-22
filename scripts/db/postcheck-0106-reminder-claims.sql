@@ -1,10 +1,13 @@
 -- 0106 POST-CHECK: the reminder sweep's two tables. The number is strategy's
--- ruling of 2026-10-13; the migration is still PENDING. READ ONLY. Every verdict
--- must read OK (24 expected). A verdict reads OK, FAIL or, for 22 and 23 only,
+-- ruling of 2026-10-13 (W-8); the migration is packages/db/migrations/
+-- 0106_reminder_claims.sql, sha256
+-- 2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9, journal
+-- idx 103, when 1788502700000. READ ONLY. Every verdict
+-- must read OK (26 expected). A verdict reads OK, FAIL or, for 22 and 23 only,
 -- VACUOUS: a read that found nothing to compare (a table or the role missing) is
 -- VACUOUS, never OK, and VACUOUS is a STOP like FAIL. Run inside the block's own
 -- `begin read only`, so the server refuses any write this file could contain.
--- Catalogue facts and two row counts only.
+-- Catalogue facts, two row counts and the drizzle journal only.
 --
 -- EVERY CHANGE THE MIGRATION MAKES IS ASSERTED, AND EVERYTHING ELSE IS ASSERTED
 -- UNCHANGED:
@@ -78,11 +81,14 @@
 --          each of the 28 columns, and has_any_column_privilege per table.
 --          VACUOUS, not OK, unless both tables, the role and the columns were
 --          found.
+--   24     0106 IS IN THE JOURNAL ONCE, BY HASH, AS THE NEWEST ROW (the highest
+--          id), at its journal when 1788502700000. CONTROL: the same count finds
+--          0105's hash once. The journal is read by a DO block, by name: a
+--          database without one reads FAIL here and every other verdict prints;
+--   25     THE JOURNAL MOVED BY EXACTLY ONE: its rows are the pre-check's
+--          journal_rows_before plus one.
 --
--- NOT IN THIS DRAFT, ON PURPOSE: the journal verdicts (the journal moved by one,
--- the migration is the newest row by hash). See the pre-check's header.
---
--- NOT A STANDING INVARIANT for 15 to 20: the next migration moves them. It is an
+-- NOT A STANDING INVARIANT for 15 to 20 and 24 to 25: the next migration moves them. It is an
 -- assertion about this apply.
 --
 -- The carries come from THIS sitting's pre-check transcript; the block passes
@@ -90,6 +96,7 @@
 --
 -- Run:
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
+--        -v journal_rows_before=<n>
 --        -v tables_before=<n> -v sequences_before=<n> -v secdef_before=<n>
 --        -v policies_md5=<md5> -v functions_md5=<md5> -v relation_acl_md5=<md5>
 --        -v column_acl_md5=<md5> -v default_acl_md5=<md5> -v triggers_md5=<md5>
@@ -99,6 +106,10 @@
 \timing off
 \set ON_ERROR_STOP on
 
+\if :{?journal_rows_before}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v journal_rows_before is missing. This file refuses to guess.'; END $missing$;
+\endif
 \if :{?tables_before}
 \else
   DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v tables_before is missing. This file refuses to guess.'; END $missing$;
@@ -136,8 +147,39 @@
   DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v triggers_md5 is missing. This file refuses to guess.'; END $missing$;
 \endif
 
+-- THE JOURNAL, read by name, as the pre-check reads it.
+DO $journal$
+DECLARE
+  v_rows   integer;
+  v_new    integer;
+  v_prev   integer;
+  v_hash   text;
+  v_when   text;
+BEGIN
+  IF to_regclass('drizzle.__drizzle_migrations') IS NULL THEN
+    PERFORM set_config('rc0106.journal', 'absent', true);
+    RETURN;
+  END IF;
+  EXECUTE 'SELECT count(*)::int,
+                  (count(*) FILTER (WHERE hash = $1))::int,
+                  (count(*) FILTER (WHERE hash = $2))::int
+             FROM drizzle.__drizzle_migrations'
+    INTO v_rows, v_new, v_prev
+    USING '2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9',
+          '980c6f24006a2b4fe16b3e963c1482613c5ecab1e65b8287e0a6a8ea9f7eb441';
+  EXECUTE 'SELECT hash, created_at::text FROM drizzle.__drizzle_migrations ORDER BY id DESC LIMIT 1'
+    INTO v_hash, v_when;
+  PERFORM set_config('rc0106.journal', 'read', true);
+  PERFORM set_config('rc0106.journal_rows', v_rows::text, true);
+  PERFORM set_config('rc0106.has_new', v_new::text, true);
+  PERFORM set_config('rc0106.has_prev', v_prev::text, true);
+  PERFORM set_config('rc0106.newest_hash', coalesce(v_hash, ''), true);
+  PERFORM set_config('rc0106.newest_when', coalesce(v_when, ''), true);
+END
+$journal$;
+
 \echo ''
-\echo '=== 0106 REMINDER CLAIMS POST-CHECK: every verdict must read OK (24 expected); VACUOUS is a STOP ==='
+\echo '=== 0106 REMINDER CLAIMS POST-CHECK: every verdict must read OK (26 expected); VACUOUS is a STOP ==='
 
 WITH t AS (
   SELECT c.oid, c.relname, c.relkind::text AS kind, pg_get_userbyid(c.relowner) AS owner,
@@ -219,6 +261,12 @@ WITH t AS (
     FROM t CROSS JOIN sr_role r
 ), j AS (
   SELECT
+    coalesce(current_setting('rc0106.journal', true), 'not read')                              AS journal_state,
+    nullif(current_setting('rc0106.journal_rows', true), '')::int                               AS journal_rows,
+    nullif(current_setting('rc0106.has_new', true), '')::int                                    AS has_0106,
+    nullif(current_setting('rc0106.has_prev', true), '')::int                                   AS has_0105,
+    current_setting('rc0106.newest_hash', true)                                                 AS newest_hash,
+    current_setting('rc0106.newest_when', true)                                                 AS newest_when,
     (SELECT count(*)::int FROM t)                                                                 AS sr_tables,
     EXISTS (SELECT 1 FROM sr_role)                                                                AS sr_role_exists,
     (SELECT count(*)::int FROM sr_verbs)                                                          AS sr_verbs_n,
@@ -384,4 +432,17 @@ UNION ALL SELECT '23. service_role holds no column privilege on any column of ei
        '0 of 112 column cells held, 0 of 2 tables with any; 28 columns; tables 2, role true',
        CASE WHEN sr_tables <> 2 OR NOT sr_role_exists OR sr_cols_n = 0 THEN 'VACUOUS'
             WHEN sr_col_cells_held = 0 AND sr_any_held = 0 AND sr_any_n = 2 AND sr_cols_n = 28 AND sr_col_cells_n = 112 THEN 'OK'
-            ELSE 'FAIL' END FROM j;
+            ELSE 'FAIL' END FROM j
+UNION ALL SELECT '24. 0106 is in the journal once, by hash, as the newest row, at its journal when (control: the same count finds 0105 once)',
+       CASE WHEN journal_state = 'read'
+            THEN has_0106::text || ' row, newest ' || CASE WHEN newest_hash = '2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9' THEN 'is 0106' ELSE 'is NOT 0106' END
+                 || ', when ' || coalesce(nullif(newest_when, ''), 'none') || '; control ' || has_0105::text
+            ELSE 'no journal table (' || journal_state || ')' END,
+       '1 row, newest is 0106, when 1788502700000; control 1',
+       CASE WHEN journal_state = 'read' AND has_0106 = 1 AND has_0105 = 1
+                 AND newest_hash = '2f309b8a8b9427ece251d3e7eefc1db6d90ee4f89ea417a1fa5a46af7892a3d9'
+                 AND newest_when = '1788502700000' THEN 'OK' ELSE 'FAIL' END FROM j
+UNION ALL SELECT '25. the journal moved by exactly one: its rows are the pre-check''s plus one',
+       CASE WHEN journal_state = 'read' THEN journal_rows::text ELSE 'no journal table (' || journal_state || ')' END,
+       (:journal_rows_before + 1)::text,
+       CASE WHEN journal_state = 'read' AND journal_rows = :journal_rows_before + 1 THEN 'OK' ELSE 'FAIL' END FROM j;

@@ -1,7 +1,7 @@
 import { can, type Role, type Capability } from "@osteojp/auth";
 import { s } from "../i18n";
 
-import { COMMS_SECTIONS } from "./comms-sections";
+import { commsSectionsThatExist } from "./comms-sections";
 
 export type NavItem = {
   href: string;
@@ -41,7 +41,11 @@ export type NavItem = {
  * is usable when the role may open any of its sections. Every ordinary entry
  * still names one capability.
  */
-const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
+// A FUNCTION, NOT A CONSTANT, since SAT-01: the Comunicações entry is built
+// from the sections that exist when the nav is asked for, and one of them is
+// behind a deployment switch (comms-sections.ts). Built once at load, the entry
+// would keep whatever the switch read on the first request.
+const all = (): (NavItem & { capability?: Capability | readonly Capability[] })[] => [
   { href: "/dashboard", label: s["nav.dashboard"] },
   { href: "/agenda", label: s["nav.agenda"] },
   { href: "/patients", label: s["nav.patients"] },
@@ -87,8 +91,8 @@ const ALL: (NavItem & { capability?: Capability | readonly Capability[] })[] = [
   {
     href: "/comunicacoes",
     label: s["nav.comms"],
-    capability: COMMS_SECTIONS.map((c) => c.capability),
-    activePrefixes: COMMS_SECTIONS.map((c) => c.href),
+    capability: commsSectionsThatExist().map((c) => c.capability),
+    activePrefixes: commsSectionsThatExist().map((c) => c.href),
   },
   { href: "/invoicing", label: s["nav.invoicing"], capability: "invoices:issue" },
   { href: "/clinical/review", label: s["nav.review"], capability: "clinical_records:review" },
@@ -150,7 +154,7 @@ function roleMayUse(role: Role, capability: Capability | readonly Capability[] |
 }
 
 export function navItemsForRole(role: Role): NavItem[] {
-  return ALL.filter((i) => roleMayUse(role, i.capability)).map(({ href, label, activePrefixes }) =>
+  return all().filter((i) => roleMayUse(role, i.capability)).map(({ href, label, activePrefixes }) =>
     activePrefixes ? { href, label, activePrefixes: [...activePrefixes] } : { href, label },
   );
 }

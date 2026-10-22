@@ -7,7 +7,7 @@
  * in lib/guide/guide-roles.test.ts, against the helper. This file proves the
  * PAGES draw exactly that list: every lesson link on the index, in order, is
  * the helper's list for that role, the counts are the ruled ones (reception
- * 37, therapist 38, admin 49, owner 58), the section order per role is written
+ * 39, therapist 38, admin 51, owner 60), the section order per role is written
  * out by hand below, and the named cases the owner's spec asks for are
  * asserted by id.
  *
@@ -15,6 +15,11 @@
  * does not get lesson X" below first checks that X is a published lesson (the
  * owner opens it), so renaming or splitting X in the lesson source turns the
  * assertion red instead of leaving it true of nothing.
+ *
+ * THE SURVEY IS SWITCHED OFF HERE (SURVEY_SEND_MODE stubbed to "off"), as
+ * production runs it today, so the survey lesson (feature: survey) is in no
+ * role's guide and every count above leaves it out. lib/guide/
+ * guide-features.test.ts renders it for canary and on.
  *
  * NOT FOUND IS A THROW. notFound() and redirect() throw in Next, and they are
  * stubbed to throw here too, so a page that went on to render after them
@@ -33,7 +38,7 @@ import { join } from "node:path";
 import type { Role } from "@osteojp/auth";
 import { getStrings } from "@osteojp/i18n";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   ctx: null as null | { tenantId: string; role: string; userId: string },
@@ -167,7 +172,12 @@ function headingProblems(html: string): string[] {
   return out;
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 beforeEach(() => {
+  vi.stubEnv("SURVEY_SEND_MODE", "off");
   as(null);
   h.authDown = false;
   vi.mocked(redirect).mockClear();
@@ -176,10 +186,10 @@ beforeEach(() => {
 });
 
 describe("the index lists exactly the viewer's lessons, in the viewer's order (G1-3, one test per role)", () => {
-  it("reception: its 37 lessons in order, and nothing from Registos", async () => {
+  it("reception: its 39 lessons in order, and nothing from Registos", async () => {
     const html = await indexHtml("reception");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("reception")));
-    expect(lessonLinks(html)).toHaveLength(37);
+    expect(lessonLinks(html)).toHaveLength(39);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -220,12 +230,16 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     // Neither half of P4 is written for the Terapeuta guide.
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atualizar-dados");
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
+    // MARC-THERAPIST-01: the ficha offers a therapist no Terapeuta field.
+    absentButPublished(lessonLinks(html), "/ajuda/pacientes/alterar-terapeuta");
+    // BOOK-CONFIRM: the lesson sits beside Confirmar um pedido, which is not the therapist's either.
+    absentButPublished(lessonLinks(html), "/ajuda/portal/confirmacao-ao-paciente");
   });
 
-  it("admin: the 49 Proprietário lessons whose capability the admin role holds, and of Registos only the PDF export", async () => {
+  it("admin: the 51 Proprietário lessons whose capability the admin role holds, and of Registos only the PDF export", async () => {
     const html = await indexHtml("admin");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("admin")));
-    expect(lessonLinks(html)).toHaveLength(49);
+    expect(lessonLinks(html)).toHaveLength(51);
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -249,11 +263,12 @@ describe("the index lists exactly the viewer's lessons, in the viewer's order (G
     absentButPublished(lessonLinks(html), "/ajuda/pacientes/atribuir-terapeutas");
   });
 
-  it("owner: every published lesson (58), in the Proprietário order, and not the held one", async () => {
+  it("owner: every published lesson (60), in the Proprietário order, and not the held one", async () => {
     const html = await indexHtml("owner");
     expect(lessonLinks(html)).toEqual(hrefs(guideLessonsFor("owner")));
-    expect(lessonLinks(html)).toHaveLength(58);
-    expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons).sort());
+    expect(lessonLinks(html)).toHaveLength(60);
+    // Every published lesson that waits on no feature: the survey is off here.
+    expect([...lessonLinks(html)].sort()).toEqual(hrefs(GUIDE_DATA.lessons.filter((l) => l.feature === null)).sort());
     expect(sectionLinks(html)).toEqual([
       "inicio",
       "agenda",
@@ -461,7 +476,7 @@ describe("Perguntas frequentes (G1-2): the seven base tasks first, for the viewe
 
   it("an unknown ?tab= opens the guide", async () => {
     const html = await indexHtml("owner", "outra");
-    expect(lessonLinks(html)).toHaveLength(58);
+    expect(lessonLinks(html)).toHaveLength(60);
     expect(faqEntries(html)).toEqual([]);
   });
 });
@@ -538,6 +553,94 @@ describe("a lesson page: the viewer's lessons only, else notFound()", () => {
       expect(html, role).toContain("data-guide-no-image");
       expect(html, role).not.toContain("<img");
     }
+  });
+
+  // MARC-THERAPIST-01. The lesson quotes the field and its button by the labels
+  // the ficha draws (the same i18n keys), on the two rows that offer them, and
+  // the refusal the agenda's conflict warning names. A therapist is not handed
+  // the field (offersTherapistChange), so it has no lesson on it.
+  it("Alterar o terapeuta de uma marcação na ficha: reception, an administrator and the owner read it, a therapist does not", async () => {
+    const lesson = lessonById("pacientes.alterar-terapeuta");
+    expect(lesson.roles).toEqual(["rececao", "proprietario"]);
+    expect(lesson.images).toBeNull();
+    const labels = [
+      pt["patients.tabAppointments"],
+      pt["appointment.status.scheduled"],
+      pt["appointment.status.confirmed"],
+      pt["patients.appointmentManage"],
+      pt["appointment.therapist"],
+      pt["appointment.changeTherapist"],
+      pt["appointment.therapistChanged"],
+      pt["agenda.conflictTherapist"],
+      pt["appointment.saveAnyway"],
+    ];
+    expect(labels).toEqual([
+      "Marcações",
+      "Agendada",
+      "Confirmada",
+      "Gerir marcação",
+      "Terapeuta",
+      "Alterar terapeuta",
+      "Terapeuta alterado.",
+      "Conflito de terapeuta",
+      "Guardar mesmo assim",
+    ]);
+    for (const role of ["reception", "admin", "owner"] as const) {
+      const html = await lessonHtml(role, "pacientes", "alterar-terapeuta");
+      expect(html, role).toContain(`${lesson.title}</h1>`);
+      for (const label of labels) expect(html, `${role} ${label}`).toContain(`<strong class="font-semibold">${label}</strong>`);
+      expect(html, role).toContain("A hora, a clínica e o pacote da marcação não mudam.");
+      expect(html, role).toContain("o horário desse terapeuta nesse dia");
+      expect(html, role).toContain("o paciente pode receber outra mensagem de confirmação");
+      expect(html, role).toContain("o último início é uma hora antes do fecho");
+      // A person in Terapeuta 2 holds no slot, so the lesson must not say their bookings refuse it.
+      expect(html, role).not.toContain("do segundo terapeuta");
+      expect(html, role).toContain("data-guide-no-image");
+    }
+    await refusedButReal("therapist", "pacientes", "alterar-terapeuta");
+    // The lesson the paragraph moved out of now names this one, for the roles that read both.
+    const ficha = await lessonHtml("reception", "pacientes", "marcacoes-na-ficha");
+    expect(ficha).toContain(`como explica a lição ${lesson.title}.`);
+    expect(ficha).not.toContain("o motivo aparece por baixo do campo");
+  });
+
+  // BOOK-CONFIRM. The lesson names the three notices by the sentences the
+  // approver's screens draw (requests.notice.*, approval-notices.tsx), and the
+  // one rule a reader must not get wrong: one message, email first.
+  it("A confirmação que o paciente recebe: reception, an administrator and the owner read it, with the three notices", async () => {
+    const lesson = lessonById("portal.confirmacao-ao-paciente");
+    expect(lesson.capability).toBe("appointments:write");
+    expect(lesson.roles).toEqual(["rececao", "proprietario"]);
+    expect(lesson.images).toBeNull();
+    const notices = [
+      pt["requests.notice.patientNoEmail"],
+      pt["requests.notice.locationContactMissing"],
+      pt["requests.notice.serviceMissing"],
+    ];
+    expect(notices).toEqual([
+      "Paciente sem email: avise por telefone",
+      "Confirmação não enviada: o local não tem morada ou telefone. Avise o paciente por telefone.",
+      "Confirmação não enviada: a marcação não tem serviço. Avise o paciente por telefone.",
+    ]);
+    for (const role of ["reception", "admin", "owner"] as const) {
+      const html = await lessonHtml(role, "portal", "confirmacao-ao-paciente");
+      expect(html, role).toContain(`${lesson.title}</h1>`);
+      for (const notice of notices) expect(html, `${role} ${notice}`).toContain(`<strong class="font-semibold">${notice}</strong>`);
+      expect(html, role).toContain(`<strong class="font-semibold">${pt["guest.convert"]}</strong>`);
+      expect(html, role).toContain("uma única mensagem");
+      // A cancelled row brought back to Confirmada sends today's confirmation again: no "no second confirmation" claim.
+      expect(html, role).not.toContain("não envia segunda confirmação");
+      expect(html, role).toContain("Quando, ao confirmar, já se sabe que nenhuma mensagem pode seguir");
+      expect(html, role).toContain("Uma falha no envio não mostra aviso: sem aviso, a mensagem pode não ter chegado.");
+      // A later change to the appointment can send another confirmation, and a send-time
+      // failure shows no notice: neither absolute claim may come back.
+      expect(html, role).not.toContain("Nunca recebe as duas");
+      expect(html, role).not.toContain("só recebe uma confirmação");
+      expect(html, role).not.toContain("Quando nenhuma mensagem pode seguir");
+      expect(html, role).toContain("por SMS, só quando a ficha não tem email");
+      expect(html, role).toContain("data-guide-no-image");
+    }
+    await refusedButReal("therapist", "portal", "confirmacao-ao-paciente");
   });
 
   it("a therapist opening F1 (faturas de um período) is not found, and F2 renders", async () => {
@@ -777,4 +880,42 @@ describe("the lesson renderer (seeded lessons, invented text)", () => {
       expect(html).not.toContain("Só para alguns.");
     }
   });
+});
+
+// Q-J (a): THE SURVEY LESSON ON THE PAGES. lib/guide/guide-features.test.ts
+// proves the helpers; this proves what the three pages draw. With the survey
+// off the lesson is on no index, on no Portal section page, and its address is
+// not found for every role, the owner included; with canary or on it is linked
+// and opens.
+describe("the survey lesson follows the survey's switch on the pages (feature: survey)", () => {
+  const HREF = "/ajuda/portal/avaliacao-de-satisfacao";
+
+  it("is a published lesson, so every absence below is about the switch", () => {
+    expect(PUBLISHED.has(HREF)).toBe(true);
+    expect(lessonById("portal.avaliacao-de-satisfacao").feature).toBe("survey");
+  });
+
+  for (const value of ["off", undefined]) {
+    for (const role of ROLES) {
+      it(`SURVEY_SEND_MODE=${JSON.stringify(value)}, ${role}: not on the index, not on the Portal page, and its address is not found`, async () => {
+        vi.stubEnv("SURVEY_SEND_MODE", value);
+        expect(lessonLinks(await indexHtml(role))).not.toContain(HREF);
+        expect(lessonLinks(await sectionHtml(role, "portal"))).not.toContain(HREF);
+        await expect(lessonHtml(role, "portal", "avaliacao-de-satisfacao")).rejects.toThrow("NOT_FOUND");
+      });
+    }
+  }
+
+  for (const value of ["canary", "on"]) {
+    for (const role of ROLES) {
+      it(`SURVEY_SEND_MODE=${value}, ${role}: on the index and the Portal page, and its page opens with its title`, async () => {
+        vi.stubEnv("SURVEY_SEND_MODE", value);
+        expect(lessonLinks(await indexHtml(role))).toContain(HREF);
+        expect(lessonLinks(await sectionHtml(role, "portal"))).toContain(HREF);
+        const html = await lessonHtml(role, "portal", "avaliacao-de-satisfacao");
+        expect(html).toMatch(/<h1[^>]*>Avaliação de satisfação<\/h1>/);
+        expect(headingProblems(html)).toEqual([]);
+      });
+    }
+  }
 });

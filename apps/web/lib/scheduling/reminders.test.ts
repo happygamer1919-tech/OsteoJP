@@ -10,8 +10,10 @@ import { enqueueRemindersAfterCommit } from "./reminders";
 import { liveSendEnabled } from "@/lib/reminders/clients";
 
 const TENANT = "22222222-2222-2222-2222-222222222222";
-const T1 = new Date("2026-07-01T09:00:00.000Z");
-const T2 = new Date("2026-07-08T09:00:00.000Z");
+// In the FUTURE: since Q-K a past occurrence never carries the confirmation.
+const T1 = new Date("2031-07-01T09:00:00.000Z");
+const T2 = new Date("2031-07-08T09:00:00.000Z");
+const PRAC = "therapist-1";
 
 let savedFlag: string | undefined;
 beforeEach(() => {
@@ -29,8 +31,8 @@ afterEach(() => {
 describe("enqueueRemindersAfterCommit", () => {
   it("create: enqueues one schedule event per occurrence with tenant + startsAt", async () => {
     await enqueueRemindersAfterCommit(TENANT, [
-      { appointmentId: "appt-1", startsAt: T1 },
-      { appointmentId: "appt-2", startsAt: T2 }, // e.g. a recurring series
+      { appointmentId: "appt-1", startsAt: T1, practitionerId: PRAC },
+      { appointmentId: "appt-2", startsAt: T2, practitionerId: PRAC }, // e.g. a recurring series
     ]);
 
     expect(enqueue).toHaveBeenCalledTimes(2);
@@ -40,12 +42,14 @@ describe("enqueueRemindersAfterCommit", () => {
       appointmentId: "appt-1",
       tenantId: TENANT,
       startsAt: T1,
+      practitionerId: PRAC,
       confirmationEligible: true,
     });
     expect(enqueue).toHaveBeenNthCalledWith(2, {
       appointmentId: "appt-2",
       tenantId: TENANT,
       startsAt: T2,
+      practitionerId: PRAC,
       confirmationEligible: false,
     });
   });
@@ -53,13 +57,14 @@ describe("enqueueRemindersAfterCommit", () => {
   it("reschedule: re-enqueues with the NEW start instant (drives supersession)", async () => {
     // Reschedule passes the moved occurrence carrying its new startsAt; the new
     // appointment/scheduled event is what supersedes the prior sleeping run.
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: "appt-1", startsAt: T2 }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: "appt-1", startsAt: T2, practitionerId: PRAC }]);
 
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledWith({
       appointmentId: "appt-1",
       tenantId: TENANT,
       startsAt: T2,
+      practitionerId: PRAC,
       confirmationEligible: true,
     });
   });
@@ -76,8 +81,8 @@ describe("enqueueRemindersAfterCommit", () => {
     // Must not reject — the appointment is already committed.
     await expect(
       enqueueRemindersAfterCommit(TENANT, [
-        { appointmentId: "appt-1", startsAt: T1 },
-        { appointmentId: "appt-2", startsAt: T2 },
+        { appointmentId: "appt-1", startsAt: T1, practitionerId: PRAC },
+        { appointmentId: "appt-2", startsAt: T2, practitionerId: PRAC },
       ]),
     ).resolves.toBeUndefined();
 
@@ -91,7 +96,7 @@ describe("enqueueRemindersAfterCommit", () => {
 
   it("dry-run safe: enqueuing emits the event but does NOT enable live sends", async () => {
     expect(liveSendEnabled()).toBe(false); // flag off
-    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: "appt-1", startsAt: T1 }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: "appt-1", startsAt: T1, practitionerId: PRAC }]);
     // The event is emitted; the real email/SMS stays sandbox-gated downstream, so
     // wiring this in does not send anything until REMINDERS_LIVE_SEND is flipped.
     expect(enqueue).toHaveBeenCalledTimes(1);
