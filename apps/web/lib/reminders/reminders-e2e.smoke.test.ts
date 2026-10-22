@@ -345,6 +345,7 @@ describe("Inngest scheduler wiring", () => {
       tenantId: TENANT_ID,
       startsAt: STARTS_AT,
       practitionerId: "therapist-1",
+      saveId: "save-1",
       confirmationEligible: true,
     });
 
@@ -356,6 +357,7 @@ describe("Inngest scheduler wiring", () => {
         tenantId: TENANT_ID,
         startsAt: STARTS_AT.toISOString(),
         practitionerId: "therapist-1",
+        saveId: "save-1",
         confirmationEligible: true,
       },
     });

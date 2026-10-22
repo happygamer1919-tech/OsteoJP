@@ -40,10 +40,11 @@ export type MoveSide = { startsAt: Date; practitionerId: string; locationId: str
  *                                   there is no usable email (rule 2)
  *   none of the three changed    -> "none": an identical re-save sends nothing
  *
- * THIS IS THE DUPLICATE CHECK THAT DOES NOT EXPIRE. The Inngest key on the
- * confirmation (appointment + start + therapist) is forgotten after 24 hours;
- * this compares the values across the save itself, so a re-save a week later
- * sends nothing too.
+ * THIS IS THE ONLY DUPLICATE CHECK BETWEEN TWO SAVES. Since Q-N the Inngest
+ * key on the confirmation is appointment + the save's own marker, so it drops
+ * a second delivery of one event and never a second save; and any Inngest key
+ * is forgotten after 24 hours. This compares the values across the save
+ * itself, so an identical re-save sends nothing, a minute or a week later.
  *
  * A change of duration (or of anything else this does not read) at the same
  * start, clinic and Terapeuta counts as "none".
