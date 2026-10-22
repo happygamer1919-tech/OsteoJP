@@ -259,7 +259,7 @@ describe("the 24-hour function is the one Inngest already has (SAT-01)", () => {
 
   // The sixth function is the reminder sweep (SWEEP-03, ./sweep.ts), not the
   // survey: SAT-01 added none, and the five it found keep their ids and order.
-  it("no function was added, and the other four keep their ids", () => {
+  it("the survey added no function: the five keep their ids and order, and the sweep is the sixth", () => {
     expect(functions).toHaveLength(6);
     expect(functions.map((f) => f.id())).toEqual([
       "schedule-appointment-reminders",
