@@ -81,6 +81,7 @@
     "therapist_any_hint": "A clínica atribui o terapeuta disponível",
     "confirm_therapist": "Terapeuta",
     "no_therapists": "Não há terapeutas disponíveis nesta clínica. Contacte a clínica.",
+    "no_services": "Não há serviços disponíveis para marcação online nesta clínica. Contacte a clínica.",
     "usual_service": "O seu serviço habitual",
     "step_datetime": "Escolha a data e hora",
     "step_confirm": "Confirmar marcação",
