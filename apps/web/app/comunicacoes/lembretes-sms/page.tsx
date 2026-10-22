@@ -6,6 +6,7 @@ import { getRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
 import { commsSectionsForRole } from "@/lib/nav/comms-sections";
 import { listReminderLog } from "@/lib/reminders/reminder-log";
+import { readReminderNumbers, type ReminderNumbers } from "@/lib/reminders/reminder-numbers";
 import {
   kindLabel,
   kindOf,
@@ -17,6 +18,7 @@ import {
 import { Pager } from "@/components/pager.client";
 import { CommsNav } from "../comms-nav.client";
 import { ReminderLogSearch } from "./reminder-log-search.client";
+import { ReminderNumbersBlock } from "./reminder-numbers-block";
 import { ReminderLogTable, type ReminderLogRowView } from "./reminder-log-table";
 
 export const metadata = { title: s["remindersLog.title"] };
@@ -94,7 +96,19 @@ export default async function LembretesSmsPage({
   const pageRaw = Number(firstParam(sp.page) ?? "1");
   const requestedPage = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
 
-  const log = await listReminderLog(ctx, { page: requestedPage, onlyFailures, search: q });
+  // THE TWO COUNTS ARE READ BESIDE THE LIST AND CAN NEVER TAKE IT DOWN. They
+  // are a second read; if it fails the list still renders and the block below
+  // says the counts could not be worked out, rather than showing a zero nobody
+  // counted. Logged with the error's name only (rule 7).
+  const [log, numbers] = await Promise.all([
+    listReminderLog(ctx, { page: requestedPage, onlyFailures, search: q }),
+    readReminderNumbers(ctx).catch((e: unknown): ReminderNumbers | null => {
+      console.error(
+        `[reminders] the Lembretes SMS counts could not be read: ${e instanceof Error ? e.name : "unknown"}`,
+      );
+      return null;
+    }),
+  ]);
 
   const rows: ReminderLogRowView[] = log.rows.map((r) => {
     const kind = kindOf(r.templateId);
@@ -135,6 +149,8 @@ export default async function LembretesSmsPage({
           <p className="mt-1 max-w-3xl text-sm text-v2-text-secondary">{s["remindersLog.subtitle"]}</p>
           <p className="mt-1 max-w-3xl text-xs text-v2-text-secondary">{s["remindersLog.gapNote"]}</p>
         </div>
+
+        <ReminderNumbersBlock numbers={numbers} />
 
         <div className="flex flex-wrap items-center gap-2">
           <ReminderLogSearch initialQuery={q} />

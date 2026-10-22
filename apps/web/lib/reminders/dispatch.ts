@@ -39,6 +39,16 @@ import {
   recordBookingApprovedHandOver,
   recordDispatch,
 } from "./dispatch-ledger";
+import {
+  EARLY_CLAIM_MS,
+  releaseReminderClaim,
+  reminderMark,
+  takeReminderClaim,
+  takeReminderClaimClosed,
+  type ReminderClaimTaker,
+} from "./reminder-claim";
+import { sweepLookAheadLimit } from "./sweep";
+import { sweepSends } from "./sweep-mode";
 import { bookConfirmAppliesTo } from "./book-confirm-mode";
 import { surveyAppliesTo, surveySendMode } from "./survey-mode";
 import {
@@ -203,6 +213,49 @@ export type DispatchOutcome =
          */
         | "already_sent"
         /**
+         * Reminders only. This reminder, for the start the visit has now, was
+         * already handed to the provider: an earlier sender's claim is live and
+         * a `sent` ledger row followed it (./reminder-claim.ts). Nothing is
+         * sent, and NO LEDGER ROW IS WRITTEN: the send is already on record,
+         * and a second row would read as a second attempt.
+         *
+         * While the sweep is the sender (SWEEP-47) it is also the answer for a
+         * reminder another sender holds right now, and for one whose outcome
+         * is unknown: a live claim of this reminder exists for this start.
+         */
+        | "claim_held"
+        /**
+         * Reminders only. HELD BY A DUPLICATE: the table refused this call's
+         * claim because another taker holds the same attempt of this reminder
+         * for this start (0106, `reminder_claims_claim_attempt_key`). Nothing
+         * is sent, and, as for `claim_held`, NO LEDGER ROW IS WRITTEN: the
+         * taker that holds the attempt writes the row for it. Strategy, Q-A
+         * of 2026-10-15.
+         */
+        | "claim_held_by_duplicate"
+        /**
+         * Reminders only, and only while the sweep is the sender (SWEEP-47).
+         * THE REMINDER'S TIME PASSED TOO LONG AGO: more than 3 hours for an
+         * SMS, more than 12 for an email (`REMINDER_LATE_LIMIT_MS`). It is
+         * recorded as too late and not sent, and it is final for this start:
+         * the claim taken for it is kept.
+         */
+        | "mark_missed"
+        /**
+         * Reminders only, and only while the sweep is the sender. THE VISIT
+         * HAS ALREADY BEGUN, by the dispatcher's own clock at the moment of
+         * the send. Nothing is sent, whatever its offset and its channel
+         * allow, and it is final for this start: the claim is kept.
+         */
+        | "start_passed"
+        /**
+         * Reminders only, and only while the sweep is the sender. The call
+         * came over ten minutes BEFORE the reminder's time: a sleeping job
+         * that woke at the old time of a visit since moved later. Nothing is
+         * sent and no claim is taken; `dueAt` says when the reminder is due.
+         */
+        | "not_due"
+        /**
          * Today's confirmation only. Building the reschedule link threw (its
          * base URL or its signing secret is not configured), so neither the
          * email nor the SMS was attempted. The error still propagates; this is
@@ -233,6 +286,8 @@ export type DispatchOutcome =
        * a length and a rule, never a recipient, a patient field or a code.
        */
       detail?: string;
+      /** For `not_due`: the instant the reminder falls due, as ISO text. */
+      dueAt?: string;
     }
   | { dispatched: true; channels: SendResult[] };
 
@@ -346,6 +401,8 @@ async function sendPatientSms(args: {
   phone: string;
   body: string;
   templateId: string;
+  /** SWEEP-47: passed by the reminder dispatch only. */
+  attempt?: SendAttempt;
 }): Promise<SendResult | SmsSkip> {
   // ONE VERDICT, SHARED. `smsNumberVerdict` is the two questions this function
   // has always asked (does it normalise; is it a line that can receive SMS), in
@@ -408,6 +465,7 @@ async function sendPatientSms(args: {
         templateId: args.templateId,
         appointmentId: args.appointmentId,
       }),
+    args.attempt,
   );
 }
 
@@ -453,13 +511,284 @@ function tenantPhone(settings: unknown): string {
 async function sendRecordingProviderError(
   row: { tenantId: string; appointmentId: string; channel: "sms" | "email"; templateId: string },
   send: () => Promise<SendResult>,
+  /** The reminder dispatch's note of how far this call got. Absent for every other caller. */
+  attempt?: SendAttempt,
 ): Promise<SendResult> {
   try {
+    if (attempt) attempt.handOverStarted = true;
     return await send();
   } catch (e) {
-    await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: providerErrorCode(e) });
+    const code = providerErrorCode(e);
+    if (attempt) attempt.refusal = { channel: row.channel, code };
+    await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: code });
     throw e;
   }
+}
+
+/**
+ * SWEEP-47. What a caller knows about the hand-over it asks for, for the
+ * dispatch while the sweep is the sender.
+ */
+export type ReminderHandOver = {
+  /**
+   * The caller's clock: the instant the pass SELECTED at. A sleeping job hands
+   * none. IT ANSWERS ONE QUESTION ONLY, whether the call came too early
+   * (`not_due`), where a clock that is behind can only hold a reminder back.
+   * It is NEVER what "too late" or "the visit has begun" is judged against: a
+   * pass stores this instant with its selection, and a run that stalls
+   * between selecting and sending would be judged as if no time had passed.
+   * Those two are judged on the dispatcher's own clock (`clockOfTheSend`).
+   */
+  now?: Date;
+  /**
+   * The day's last pass took this mark before it fell due (the next pass is in
+   * the morning). Its claim is then not recorded as early, so it holds.
+   *
+   * IT IS A REQUEST, NOT A FACT. The pass says it of the mark it selected; the
+   * dispatcher grants it only for the mark of the start it has just loaded,
+   * and only while that mark is before the limit the day's last pass may take
+   * (`reminderIsTakenAhead`). A visit moved later since the selection is not
+   * due, whatever the pass said.
+   */
+  takenAhead?: boolean;
+};
+
+/**
+ * SWEEP-47. HOW LATE A REMINDER MAY STILL GO OUT, by channel. Owner, answer 8a
+ * of 2026-10-12: an SMS up to 3 hours after its time, an email up to 12; later
+ * than that it is recorded as too late and not sent. Pinned by a test.
+ *
+ * Applied only while the sweep is the sender, to either taker, in the one
+ * place a reminder is sent from (`dispatchReminderClosed`), AGAINST THE CLOCK
+ * OF THE SEND (`clockOfTheSend`), never against a clock the caller hands in.
+ */
+export const REMINDER_LATE_LIMIT_MS: Readonly<Record<"sms" | "email", number>> = {
+  sms: 3 * 60 * 60_000,
+  email: 12 * 60 * 60_000,
+};
+
+/**
+ * Is a reminder whose time was `mark` too late to send at `now`? More than the
+ * channel's limit after the mark. Exactly the limit is NOT too late.
+ *
+ * Pure: `now` is passed in.
+ */
+export function reminderIsTooLate(mark: Date, channel: "sms" | "email", now: Date): boolean {
+  return now.getTime() - mark.getTime() > REMINDER_LATE_LIMIT_MS[channel];
+}
+
+/**
+ * SWEEP-47. THE CLOCK OF THE SEND: read by the dispatcher, at the moment it is
+ * about to send, and by nothing else. It takes no argument and no caller can
+ * hand one in, so nothing a pass stored at its selection can stand in for it.
+ */
+function clockOfTheSend(): Date {
+  return new Date();
+}
+
+/**
+ * SWEEP-47. WHAT THE CLOCK REFUSES, at the instant `now`:
+ *
+ *   start_passed   THE FLOOR. The visit has begun: its start is at or before
+ *                  `now`. Asked first, and of every reminder, an offset this
+ *                  build does not know included.
+ *   mark_missed    the late rule (`reminderIsTooLate`).
+ *
+ * Null when the reminder may still go out. Pure: `now` is passed in, and the
+ * one caller passes `clockOfTheSend()`.
+ *
+ * Exported for direct testing.
+ */
+export function reminderRefusedByTheClock(args: {
+  startsAt: Date;
+  /** The start minus the offset. Null for an offset this build does not know. */
+  mark: Date | null;
+  channel: "sms" | "email";
+  now: Date;
+}): "start_passed" | "mark_missed" | null {
+  if (args.startsAt.getTime() <= args.now.getTime()) return "start_passed";
+  if (args.mark !== null && reminderIsTooLate(args.mark, args.channel, args.now)) return "mark_missed";
+  return null;
+}
+
+/**
+ * SWEEP-47. MAY THIS MARK BE TAKEN AHEAD OF ITS TIME? Only by the day's last
+ * pass, and only a mark that falls due before that pass's limit (23:00 Lisbon,
+ * `sweepLookAheadLimit`). `mark` is the mark of the start the dispatcher
+ * loaded, never the one the pass selected. `now` is the pass's clock: outside
+ * the last pass's window the answer is no for every mark.
+ *
+ * Exported for direct testing.
+ */
+export function reminderIsTakenAhead(mark: Date, now: Date): boolean {
+  const limit = sweepLookAheadLimit(now);
+  return limit !== null && mark.getTime() < limit.getTime();
+}
+
+/**
+ * SWEEP-47. How far one reminder dispatch got, written by the two places that
+ * call a transport. Read by the closed dispatch, which decides from it what
+ * becomes of the claim (`dispatchReminderClosed`), and with the switch off by
+ * `dispatchReminderInner`, which reads its `refusal` for the alert alone and
+ * whose `refusedByTheClock` always answers null. Nothing else reads or writes it.
+ */
+type SendAttempt = {
+  /** A transport was called. From here on the message may have left. */
+  handOverStarted: boolean;
+  /** The transport threw, with the provider's reason class when it gave one. */
+  refusal?: { channel: "sms" | "email"; code: string | null };
+  /**
+   * WHAT THE CLOCK REFUSES NOW. Asked as the last thing before each transport
+   * is called (`refusedAtTheDoor`); it reads the clock of the send each time.
+   */
+  refusedByTheClock: () => "start_passed" | "mark_missed" | null;
+  /** The clock refused at the transport's door. Nothing was sent; the claim is kept. */
+  refusedAtTheDoor?: true;
+};
+
+/**
+ * SWEEP-47. THE LAST THING BEFORE A TRANSPORT IS CALLED, in the closed
+ * dispatch only: ask the clock once more. Between the claim and this line a
+ * reminder is rendered and rows are written, and each of those is a wait. Null
+ * for every other caller, for the dispatch with the switch off (its clock
+ * refuses nothing), and whenever the reminder may still go out.
+ */
+function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | null {
+  const reason = attempt?.refusedByTheClock() ?? null;
+  if (attempt === undefined || reason === null) return null;
+  attempt.refusedAtTheDoor = true;
+  return { dispatched: false, reason };
+}
+
+/**
+ * THE PROVIDER ANSWERS AFTER WHICH A CLAIM IS GIVEN UP, so the reminder can be
+ * taken again. ONE LIST PER CHANNEL, PINNED BY A TEST. Each name is here as an
+ * answer that says the message was NOT accepted. ANYTHING ELSE IS AN UNKNOWN
+ * OUTCOME: an answer that is not here, an error with no code, a call that never
+ * came back. The claim then stays live and the reminder is never sent again,
+ * because the message may have gone out.
+ *
+ * READ ONLY WHILE THE SWEEP IS THE SENDER (the switch on, `dispatchReminderClosed`).
+ * With the switch off this list is not read: every throw releases its claim,
+ * as before.
+ *
+ * EMAIL: Resend's own error names (`ProviderSendError.code`, ./clients.ts).
+ * `application_error` is NOT here: the SDK uses that name for a request whose
+ * answer it could not read, and such a request may have been accepted.
+ *
+ * SMS: Twilio's numeric codes, each taken as a refusal of the send itself,
+ * before Twilio accepted the message, so a second try cannot be a second copy.
+ * Ruled by strategy on 2026-10-15 (Q-C), after a check on 2026-10-14 that read
+ * Twilio's own error page for each code:
+ *
+ *   20003  not authenticated            21606  our sender cannot send messages
+ *   20429  too many requests            21611  our sender's queue is full
+ *   21408  destination region disabled 21612  this sender cannot reach this number
+ *                                       21617  our message body is too long
+ *
+ * WHAT THAT CHECK ESTABLISHED, AND WHAT IT DID NOT. Only 20429's page says
+ * outright that the request was not processed. The other pages do not say that
+ * the error is given by the send call itself rather than later: that is how
+ * Twilio's REST errors are known to behave, not what those pages were found to
+ * say, and for 21612 the check marked the point UNCLEAR.
+ *
+ * KEPT, NOT RELEASED, by the same ruling: 21211 (the number is not valid),
+ * 21610 (the patient opted out) and 21614 (the number is not a mobile). Each is
+ * about the patient's own number, and a retry fails the same way, so the claim
+ * stays live and the reminder is not tried again.
+ *
+ * NO 30xxx CODE, EVER. Those are delivery answers, given after Twilio accepted
+ * the message; they reach the status webhook, never this list, and a resend
+ * after one could be a second copy.
+ *
+ * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`), on
+ * either REMINDER path, the switch off included. The other SMS senders in this
+ * file (confirmation, booking approved, follow-up, no-show) raise none.
+ *
+ * A code missing from this list costs a reminder that is not retried; a code
+ * wrongly on it could cost a second copy.
+ */
+export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
+  email: [
+    "validation_error",
+    "invalid_from_address",
+    "missing_required_field",
+    "rate_limit_exceeded",
+    "daily_quota_exceeded",
+    "monthly_quota_exceeded",
+    "missing_api_key",
+    "restricted_api_key",
+    "invalid_api_key",
+  ],
+  sms: ["20003", "20429", "21408", "21606", "21611", "21612", "21617"],
+};
+
+/**
+ * THE REFUSALS THAT ARE OURS, NOT THE PATIENT'S: our sender (21606) or our
+ * message body (21617) is wrong, so every patient's SMS is refused the same
+ * way. Each also raises an alert (`alertSenderOrBodyRefusal`), on both
+ * reminder paths, the switch off included, besides giving the claim up. Strategy, Q-C of
+ * 2026-10-15. Pinned by a test, and every code here is on the list above.
+ */
+export const SENDER_OR_BODY_REFUSAL_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
+  email: [],
+  sms: ["21606", "21617"],
+};
+
+/**
+ * Raise the alert for a refusal on `SENDER_OR_BODY_REFUSAL_CODES`. A fixed
+ * title, tagged with the code and the channel and nothing else: no number, no
+ * body, no patient and no appointment.
+ *
+ * Sentry is imported LAZILY, inside the one branch that needs it, as
+ * lib/auth/context.ts and ./inbound-config.ts do. A warning, as the
+ * comparable configuration refusal in ./inbound-config.ts is.
+ *
+ * IT NEVER THROWS: the provider's error on its way out is the one the
+ * scheduler must see. A report that cannot be sent is printed instead.
+ */
+async function alertSenderOrBodyRefusal(refusal: { channel: "sms" | "email"; code: string | null }): Promise<void> {
+  if (refusal.code === null || !SENDER_OR_BODY_REFUSAL_CODES[refusal.channel].includes(refusal.code)) return;
+  try {
+    const Sentry = await import("@sentry/nextjs");
+    Sentry.captureMessage("reminders/dispatch: the provider refused our sender or our message body", {
+      level: "warning",
+      tags: { code: refusal.code, channel: refusal.channel },
+    });
+  } catch (cause) {
+    console.error(
+      `[reminders] could not report a sender or body refusal code=${refusal.code} channel=${refusal.channel}: ` +
+        `${cause instanceof Error ? cause.name : "unknown"}`,
+    );
+  }
+}
+
+/**
+ * After a throw: is the claim given up? Yes when no transport was called (the
+ * throw came before any hand-over), and yes when the provider's answer is on
+ * the list above. Otherwise no.
+ *
+ * Exported for direct testing.
+ */
+export function claimIsGivenUpAfterThrow(attempt: {
+  handOverStarted: boolean;
+  refusal?: { channel: "sms" | "email"; code: string | null };
+}): boolean {
+  if (!attempt.handOverStarted) return true;
+  const refusal = attempt.refusal;
+  if (!refusal || refusal.code === null) return false;
+  return CLAIM_RELEASING_PROVIDER_CODES[refusal.channel].includes(refusal.code);
+}
+
+/**
+ * Did this call hand a message to a provider? Only a real hand-over counts: a
+ * message the gate held back (`sandbox`), a number that cannot take an SMS and
+ * every outcome that is not a dispatch handed nothing over.
+ *
+ * Exported for direct testing.
+ */
+export function reminderWasHandedOver(outcome: DispatchOutcome): boolean {
+  return outcome.dispatched && outcome.channels.some((c) => !c.sandbox);
 }
 
 /**
@@ -623,8 +952,9 @@ export function buildReminderContext(
 type Dispatchable =
   | { ok: true; data: NonNullable<Awaited<ReturnType<typeof loadReminderData>>> }
   /** `patientId` is present when the row WAS read (a soft-deleted patient), and
-   *  absent for `not_found`. An id, never a name. */
-  | { ok: false; outcome: DispatchOutcome; patientId?: string };
+   *  absent for `not_found`. An id, never a name. `startsAt` travels with it,
+   *  for the reminder claim, which is keyed on the start. */
+  | { ok: false; outcome: DispatchOutcome; patientId?: string; startsAt?: Date };
 
 async function loadDispatchable(
   tenantId: string,
@@ -651,6 +981,7 @@ async function loadDispatchable(
       ok: false,
       outcome: { dispatched: false, reason: "patient_deleted" },
       patientId: data.patientId,
+      startsAt: data.startsAt,
     };
   }
 
@@ -675,15 +1006,34 @@ async function loadDispatchable(
  * function knows the provider id, the body length and the segment count. The
  * wrapper therefore records only the NOT-dispatched outcomes, and
  * `dispatched: true` falls through untouched.
+ *
+ * ONE EXCEPTION, AND IT IS NAMED: `claim_held` writes no row. It means this
+ * reminder's `sent` row is ALREADY in the ledger for this start, written by
+ * the sender that got there first. A row here would be a second record of one
+ * reminder, filed after that sender's claim as if it had tried twice.
+ * `claim_held_by_duplicate` is the same exception for the same reason: the
+ * taker that holds the attempt records what became of it. With no row, its
+ * record is one log line here, which names the reason, the offset and the
+ * channel and nothing else: no appointment, patient or tenant, no number, no
+ * body (strategy, Q-A of 2026-10-15).
  */
 export async function dispatchReminder(
   tenantId: string,
   appointmentId: string,
   offsetId: ReminderOffsetId,
   channel: Channel,
+  /** Who is asking, for the reminder claim. The sleeping job passes nothing;
+   *  the pass names itself. */
+  taker: ReminderClaimTaker = "run",
+  /** SWEEP-47: what the pass knows about this hand-over. Read only while the
+   *  sweep is the sender; with the send switch off nothing looks at it. */
+  handOver: ReminderHandOver = {},
 ): Promise<DispatchOutcome> {
-  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel);
-  if (!outcome.dispatched) {
+  const outcome = await dispatchReminderInner(tenantId, appointmentId, offsetId, channel, taker, handOver);
+  if (!outcome.dispatched && outcome.reason === "claim_held_by_duplicate") {
+    console.warn(`[reminders] reminder skipped: claim_held_by_duplicate offsetId=${offsetId} channel=${channel}`);
+  }
+  if (!outcome.dispatched && outcome.reason !== "claim_held" && outcome.reason !== "claim_held_by_duplicate") {
     await recordDispatch({
       tenantId,
       appointmentId,
@@ -704,8 +1054,189 @@ async function dispatchReminderInner(
   offsetId: ReminderOffsetId,
   /** The single channel this run is for. One run, one channel, one key. */
   channel: Channel,
+  taker: ReminderClaimTaker,
+  handOver: ReminderHandOver,
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "reminder");
+  // THE CLAIM (./reminder-claim.ts). Taken HERE, after the load and before
+  // every gate, because the claim is keyed on the start and only the loaded
+  // row knows it. `not_found` has no row and no start, so it takes none.
+  const claimStart = gate.ok ? gate.data.startsAt : gate.startsAt;
+  if (!claimStart) return dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate);
+  // SWEEP-47. WHILE THE SWEEP IS THE SENDER THE CLAIM IS CLOSED: a live claim
+  // blocks at any age and a claim that cannot be written stops the send. With
+  // the switch off (./sweep-mode.ts) this line is the only thing that ran, and
+  // everything below it is the dispatcher as it was, save the alert of Q-C.
+  if (sweepSends()) {
+    return dispatchReminderClosed(tenantId, appointmentId, offsetId, channel, taker, gate, claimStart, handOver);
+  }
+  const claim = await takeReminderClaim({ tenantId, appointmentId, offsetId, channel, startsAt: claimStart, taker });
+  // THE ONE ANSWER THAT STOPS A SEND: held. This reminder was already sent for
+  // this start, or the table refused this claim's attempt because another
+  // taker holds it. Every other answer, a claim that could not be read or
+  // written included, goes on exactly as before there were claims.
+  if (claim.held && claim.duplicate) return { dispatched: false, reason: "claim_held_by_duplicate" };
+  if (claim.held) return { dispatched: false, reason: "claim_held" };
+  // The note of the provider's answer, read here for the alert alone. Its
+  // clock refuses nothing: with the switch off no rule of time exists, so the
+  // transport's door never shuts on this path.
+  const attempt: SendAttempt = { handOverStarted: false, refusedByTheClock: () => null };
+  try {
+    return await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate, attempt);
+  } catch (e) {
+    // EVERY THROW RELEASES ITS CLAIM, and the error goes on unchanged: the run
+    // must still fail, because the scheduler's retry is the delivery
+    // behaviour. `releaseReminderClaim` never throws, so it cannot replace
+    // `e`. A claim that was never written has nothing to release.
+    if (claim.claimId !== null) {
+      await releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
+    }
+    // Q-C: our sender or our body refused raises the alert on this path too,
+    // after the release. `alertSenderOrBodyRefusal` never throws either.
+    if (attempt.refusal) await alertSenderOrBodyRefusal(attempt.refusal);
+    throw e;
+  }
+}
+
+/**
+ * SWEEP-47. THE DISPATCH WHILE THE SWEEP IS THE SENDER, for either taker: the
+ * pass, and a sleeping job that woke.
+ *
+ * ==========================================================================
+ * WHAT BECOMES OF THE CLAIM, FOR EVERY WAY THE CALL CAN END
+ * ==========================================================================
+ *   no claim     NOT DUE: the call came over ten minutes before the reminder's
+ *                time (`not_due`). Nothing is taken, so the pass can take it
+ *                when it is due. The day's last pass, which takes a mark up to
+ *                75 minutes ahead on purpose, says so and is let through, but
+ *                only for the mark of the start loaded HERE and only before
+ *                that pass's limit: a visit moved later since the pass
+ *                selected it is not due.
+ *   no claim     the claim could not be read or written: `takeReminderClaimClosed`
+ *                throws, nothing is sent and nothing is recorded. Fail closed.
+ *   held         a live claim of this reminder exists for this start: sent,
+ *                being sent, or of unknown outcome. `claim_held`, no row.
+ *   held         the table refused this claim's attempt, which another taker
+ *                holds (Q-A, 2026-10-15). `claim_held_by_duplicate`, no row.
+ *   KEPT         THE CLOCK REFUSED: the visit has begun (`start_passed`), or
+ *                the reminder's time passed longer ago than its channel allows
+ *                (`mark_missed`). Recorded, not sent, and final. A visit that
+ *                is ALSO cancelled, or whose patient was deleted, is recorded
+ *                under that reason instead (`status`, `patient_deleted`), and
+ *                is final all the same.
+ *   KEPT         a message was handed to the provider. Final for this start:
+ *                the claim is never released, so no sender takes it again.
+ *   KEPT         the transport threw and its answer is not on the list of
+ *                `CLAIM_RELEASING_PROVIDER_CODES`. The message may have gone
+ *                out. Never sent again.
+ *   GIVEN UP     nothing was handed over: a gate held the reminder back (the
+ *                status, an unaccepted request, a channel that is off, a
+ *                number that cannot take an SMS, live send off). The claim is
+ *                released, and the reminder is tried again while it may still
+ *                go out.
+ *   GIVEN UP     a throw before any transport was called, or a provider answer
+ *                that is on the list. Released; the same error goes on. An
+ *                answer that says our sender or our body is wrong
+ *                (`SENDER_OR_BODY_REFUSAL_CODES`) also raises an alert.
+ *
+ * A release that cannot be written leaves the claim live, and the reminder is
+ * then not tried again: the same side as every other failure here.
+ *
+ * ==========================================================================
+ * TWO CLOCKS, AND WHICH QUESTION EACH ANSWERS
+ * ==========================================================================
+ *   the caller's (`handOver.now`)   too EARLY only. A pass stores it with its
+ *                                   selection; behind, it holds a reminder back.
+ *   the dispatcher's own            TOO LATE and THE VISIT HAS BEGUN. Read
+ *   (`clockOfTheSend`)              here, after the claim, and once more at
+ *                                   the transport's door. A send step that
+ *                                   runs hours after its selection is judged
+ *                                   at the hour it runs.
+ *
+ * ==========================================================================
+ * A CLAIM WITH NOTHING AFTER IT
+ * ==========================================================================
+ * The claim is written before the send. A process that dies between the two
+ * leaves a live claim and no ledger row, and that reminder is not taken again
+ * by anyone: whether it left is not known, and an unknown outcome is never
+ * sent twice. It is not silent: every sending pass counts such claims and
+ * names their appointments (`readUnsettledClaims`, ./sweep-send.ts).
+ */
+async function dispatchReminderClosed(
+  tenantId: string,
+  appointmentId: string,
+  offsetId: ReminderOffsetId,
+  channel: Channel,
+  taker: ReminderClaimTaker,
+  gate: Dispatchable,
+  claimStart: Date,
+  handOver: ReminderHandOver,
+): Promise<DispatchOutcome> {
+  // THE CALLER'S CLOCK, for the one question it may answer: too early.
+  const now = handOver.now ?? new Date();
+  // Null for an offset this build does not know: no time, so neither rule of
+  // time applies, and the gates below refuse it as they always did.
+  const mark = reminderMark(claimStart, offsetId);
+  // Granted for the mark of the start loaded just now, never on the pass's word alone.
+  const takenAhead = handOver.takenAhead === true && mark !== null && reminderIsTakenAhead(mark, now);
+  if (mark !== null && !takenAhead && mark.getTime() - now.getTime() > EARLY_CLAIM_MS) {
+    return { dispatched: false, reason: "not_due", dueAt: mark.toISOString() };
+  }
+  const claim = await takeReminderClaimClosed({
+    tenantId,
+    appointmentId,
+    offsetId,
+    channel,
+    startsAt: claimStart,
+    taker,
+    ...(takenAhead ? { takenAhead: true } : {}),
+    ...(handOver.now ? { now: handOver.now } : {}),
+  });
+  if (claim.held && claim.duplicate) return { dispatched: false, reason: "claim_held_by_duplicate" };
+  if (claim.held) return { dispatched: false, reason: "claim_held" };
+  // THE CLOCK OF THE SEND, read now and handed in by nobody. After the claim
+  // and before every gate, so that a refusal is the claim's last word for
+  // this start: it is kept, and no pass and no sleeping job takes this
+  // reminder again.
+  const refusedByTheClock = () =>
+    reminderRefusedByTheClock({ startsAt: claimStart, mark, channel: channel as "sms" | "email", now: clockOfTheSend() });
+  const refused = refusedByTheClock();
+  if (refused !== null) {
+    // A visit that is cancelled, or whose patient was deleted, says so: the
+    // clock changes neither, and the row should name what a person did.
+    if (!gate.ok) return gate.outcome;
+    if (!REMINDABLE_STATUSES.has(gate.data.status)) return { dispatched: false, reason: "status" };
+    return { dispatched: false, reason: refused };
+  }
+  const release = () => releaseReminderClaim({ tenantId, appointmentId, offsetId, channel, claimId: claim.claimId });
+  const attempt: SendAttempt = { handOverStarted: false, refusedByTheClock };
+  let outcome: DispatchOutcome;
+  try {
+    outcome = await dispatchClaimedReminder(tenantId, appointmentId, offsetId, channel, gate, attempt);
+  } catch (e) {
+    if (claimIsGivenUpAfterThrow(attempt)) await release();
+    if (attempt.refusal) await alertSenderOrBodyRefusal(attempt.refusal);
+    throw e;
+  }
+  // Refused at the transport's door is the clock's refusal too: final, kept.
+  if (!reminderWasHandedOver(outcome) && attempt.refusedAtTheDoor !== true) await release();
+  return outcome;
+}
+
+/**
+ * The reminder itself, once its claim is settled: every gate, the render and
+ * the send. Whatever throws out of here is caught by the caller above, which
+ * releases the claim.
+ */
+async function dispatchClaimedReminder(
+  tenantId: string,
+  appointmentId: string,
+  offsetId: ReminderOffsetId,
+  channel: Channel,
+  gate: Dispatchable,
+  /** SWEEP-47: the reminder dispatch's note of how far the call got. */
+  attempt?: SendAttempt,
+): Promise<DispatchOutcome> {
   if (!gate.ok) return gate.outcome;
   const data = gate.data;
   if (!REMINDABLE_STATUSES.has(data.status)) {
@@ -751,6 +1282,8 @@ async function dispatchReminderInner(
   if (wantEmail && data.patientEmail) {
     const email = renderEmail(offsetId, locale, ctx);
     const emailTemplateId = `reminder.${offsetId}.email`;
+    const refusedEmail = refusedAtTheDoor(attempt);
+    if (refusedEmail) return refusedEmail;
     const result = await sendRecordingProviderError(
       { tenantId, appointmentId, channel: "email", templateId: emailTemplateId },
       () =>
@@ -761,6 +1294,7 @@ async function dispatchReminderInner(
           templateId: emailTemplateId,
           appointmentId,
         }),
+      attempt,
     );
     // THE 48h EMAIL'S ONLY RECORD. Until now this send produced nothing
     // anywhere queryable: `sendEmail` returns a SendResult that was pushed onto
@@ -864,23 +1398,8 @@ async function dispatchReminderInner(
       rendered = withoutLink;
     }
 
-    const sms = rendered.body;
-    const sent = await sendPatientSms({
-      tenantId,
-      appointmentId,
-      patientId: data.patientId,
-      phone: data.patientPhone,
-      body: sms,
-      templateId: smsTemplateIdFor(offsetId, feeNotice),
-    });
-    const handedOver = isSmsSkip(sent) ? null : sent;
-    // A CODE THAT WAS NEVER SENT IS WITHDRAWN, and this is not tidiness. The
-    // partial unique index means a stranded live code BLOCKS the retry from
-    // minting a fresh one, so the patient's second reminder would arrive
-    // without a link and nothing would say why. Withdrawing by the exact hash
-    // this call minted means it can never remove a code somebody is holding.
-    if (issued && !handedOver) {
-      const withdrawn = await withdrawConfirmCode({ tenantId, codeHash: issued.codeHash });
+    const withdrawUnsentCode = async (codeHash: string) => {
+      const withdrawn = await withdrawConfirmCode({ tenantId, codeHash });
       if (!withdrawn) {
         // Loud, and it names the consequence rather than the operation: the
         // next reminder for this appointment will carry no confirm link.
@@ -889,7 +1408,32 @@ async function dispatchReminderInner(
           { tenantId, appointmentId, offsetId },
         );
       }
+    };
+
+    const sms = rendered.body;
+    // SWEEP-47: the clock, asked once more with the code already issued. A
+    // refusal here withdraws that code, as a send that did not happen does below.
+    const refusedSms = refusedAtTheDoor(attempt);
+    if (refusedSms) {
+      if (issued) await withdrawUnsentCode(issued.codeHash);
+      return refusedSms;
     }
+    const sent = await sendPatientSms({
+      tenantId,
+      appointmentId,
+      patientId: data.patientId,
+      phone: data.patientPhone,
+      body: sms,
+      templateId: smsTemplateIdFor(offsetId, feeNotice),
+      attempt,
+    });
+    const handedOver = isSmsSkip(sent) ? null : sent;
+    // A CODE THAT WAS NEVER SENT IS WITHDRAWN, and this is not tidiness. The
+    // partial unique index means a stranded live code BLOCKS the retry from
+    // minting a fresh one, so the patient's second reminder would arrive
+    // without a link and nothing would say why. Withdrawing by the exact hash
+    // this call minted means it can never remove a code somebody is holding.
+    if (issued && !handedOver) await withdrawUnsentCode(issued.codeHash);
     // LENGTH COMES FROM THE RENDER THAT PRODUCED THIS BODY, so a historical row
     // says what was actually sent rather than what a re-render would produce.
     //
