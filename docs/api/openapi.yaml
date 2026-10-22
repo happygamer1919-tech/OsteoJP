@@ -1853,7 +1853,7 @@ components:
           description: ISO 4217 currency code for priceCents.
         locationIds:
           type: array
-          description: Location ids where bookable; empty for a null-location (all-location) service.
+          description: The clinics where the service can be booked online, never empty. A clinic is listed only when a therapist offered online there is ticked for the service (Q-R); a service with no such clinic is left out of the catalog.
           items:
             type: string
             format: uuid

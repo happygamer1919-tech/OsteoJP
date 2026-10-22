@@ -5232,16 +5232,24 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   step's own predicate for that service at that clinic. A service left with no
   clinic is left out of the response entirely, never sent with an empty
   `locationIds`, because the portal's booking flow reads an empty list as "every
-  clinic". The response shape is unchanged, so `docs/api/openapi.yaml` is not.
-- **One predicate, two readers.** The therapist step's WHERE moved into one
-  fragment, `onPortalRoster` in `store.ts`: an active, bookable user who is not a
-  shared resource, with an active schedule row at that clinic valid today in
-  Lisbon (Q-ROSTER), and ticked for that service (Q-M).
-  `listBookableTherapists` and `getCatalog` both call it, so the catalog and the
-  therapist step cannot disagree. The same scope follows from it: per clinic,
-  and "valid today", so a service whose only ticked therapist's hours start next
-  month is hidden until they start, exactly as that therapist is absent from the
-  therapist step until then.
+  clinic". The response shape is unchanged; `docs/api/openapi.yaml` only rewords the `locationIds` description.
+- **One predicate, two copies held equal.** The catalog asks the therapist
+  step's own question: an active, bookable user who is not a shared resource,
+  with an active schedule row at that clinic valid today in Lisbon (Q-ROSTER),
+  and ticked for that service (Q-M). The roster's SQL stays inline in
+  `listBookableTherapists`, byte-equal to before, because the frozen gate test
+  `scripts/staff-11-jp-one-clinic-check.test.mjs` reads it there; `getCatalog`
+  carries a copy. `apps/api/lib/appointments/catalog-roster-parity.test.ts`
+  fails if the two differ in anything but the clinic and service bindings, and
+  the DB-gated suite below compares their answers pair by pair. The same scope
+  follows: per clinic, and "valid today", so a service whose only ticked
+  therapist's hours start next month is hidden until they start, exactly as that
+  therapist is absent from the therapist step until then.
+- **A listed clinic can now have no service.** R45 lists a clinic when anybody
+  bookable has hours there, with no date, so a clinic can be listed while no
+  service is offered there. The portal's service step then says "Não há
+  serviços disponíveis para marcação online nesta clínica. Contacte a clínica."
+  (`booking.no_services`). Which clinics are listed is unchanged.
 - **The public guest form is unchanged.** It is a different catalog
   (`GET /api/v1/booking/guest/catalog`): it lists by the price grid (GUEST-08),
   shows no therapist and assigns nobody (reception does). Whether Q-R reaches it
