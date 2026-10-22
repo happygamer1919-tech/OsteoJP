@@ -761,7 +761,8 @@ means another run. The sends of the sitting are over when a dry run prints
 `ELIGIBLE: 0`.
 
 **Why 200.** One run then ends in a few minutes, inside the ten minutes a
-session allows a command. At about 2,500 appointments that is up to 14 runs.
+session allows a command. At the script's limit (769 appointments in scope,
+at 26 executions an event since ruling Q-F) that is up to 4 runs.
 The margin of every one of them is 690 s. The few minutes are reasoned from
 local runs: no send to the hosted scheduler was timed. The script's own stop
 comes later than ten minutes: its last send may start up to 615 s after the
