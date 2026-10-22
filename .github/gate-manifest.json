@@ -113,7 +113,7 @@
     "scripts/read-applied-migrations-target.test.mjs": "36bf852d991daa908c6c0ac23723f226e38337480c38a9a4a553df0a2087fa50",
     "scripts/registo-episode-key-0105.test.mjs": "7c46f3b59fc7013a6cf0d3d75c4474948a4dae7f5eeddcf17756a34a5c84b472",
     "scripts/registo-writes-0097.test.mjs": "066a843ab350612642229d8b9f2e172275b2ac87fba983643fca9131e0001944",
-    "scripts/reminder-claims-0106.test.mjs": "385c4fa6ae93f04ef93241c035c161b04089e15af59b06bc5e6d3929b0990076",
+    "scripts/reminder-claims-0106.test.mjs": "cfac2be3eb1cef0cca9556536f2d034d6731114de8d13a99036c5589670a0738",
     "scripts/required-checks-are-honest.test.mjs": "cc53c16929c324a8fb4acb27caae89359631753ed3f15c413d03589e2699da74",
     "scripts/sat01-tables-0102.test.mjs": "18e581584dbb7edf1988af7d791531b521915519bbe4c7e21e736d6c4b718b64",
     "scripts/secret-scan-runs-in-ci.test.mjs": "b6b37eacc805469319727d155e22f8d0bee9888ceedbe4c7fdc14e07630a721e",
