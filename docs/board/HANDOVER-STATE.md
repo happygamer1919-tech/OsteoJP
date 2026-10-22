@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**554 cards on the board. 380 shipped, 174 open. Launch readiness 9/9, every launch gate passes.**
+**566 cards on the board. 382 shipped, 184 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,27 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-22
+>
+> **Migration 0106: merged, not applied, sitting 2026-10-22 night.** It slipped
+> from Monday 2026-10-19 or Tuesday 2026-10-20. The reminder sweep must be
+> sending before Friday 2026-11-06, with Wednesday 2026-11-04 as the fallback.
+>
+> **The history rewrite is confirmed for Sunday 2026-10-25.** A freeze from
+> Saturday 2026-10-24 at 22:00 Lisbon; it starts after 10:00 Lisbon on Sunday,
+> on your typed go.
+>
+> **Merged since 2026-10-16:** notices of a visit reach only reception at that
+> visit's clinic; an old login tab reloads once instead of staying stuck; the
+> patient app offers only therapists ticked for the service, and Equipa lets an
+> admin tick several services per therapist; a staff move re-sends the booking
+> confirmation only for a real change (live after the reminder app is
+> resynced); the survey's guide lesson, hidden while the survey is off. Each
+> stays open until you have looked at it deployed.
+>
+> **New on the board:** strategy's rulings of 2026-10-22 (Q-N, Q-O, Q-P, Q-R and
+> Q-S), one card each, and one Equipa follow-up.
 
 > ### Where things stand, 2026-10-15, after 0105
 >
