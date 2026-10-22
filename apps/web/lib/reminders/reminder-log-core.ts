@@ -180,6 +180,9 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   survey_not_eligible: s["remindersLog.reason.survey_not_eligible"],
   survey_not_allowed: s["remindersLog.reason.survey_not_allowed"],
   survey_issue_error: s["remindersLog.reason.survey_issue_error"],
+  // Q-O. A return value only today (no row carries it), labelled so a row
+  // that ever does is read, not shown as unrecognised.
+  survey_only: s["remindersLog.reason.survey_only"],
 };
 
 export const KNOWN_SUPPRESSION_REASONS: readonly string[] = Object.keys(REASON_LABEL);

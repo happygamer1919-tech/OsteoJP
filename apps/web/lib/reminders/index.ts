@@ -89,6 +89,8 @@ export async function enqueueFollowUp(args: {
   appointmentId: string;
   tenantId: string;
   endsAt: Date;
+  /** Q-O: true only for a "Corrigir estado" into Concluida: the survey alone. */
+  surveyOnly?: boolean;
 }): Promise<void> {
   await inngest.send({
     name: EVENT_APPOINTMENT_COMPLETED,
@@ -96,6 +98,8 @@ export async function enqueueFollowUp(args: {
       appointmentId: args.appointmentId,
       tenantId: args.tenantId,
       endsAt: args.endsAt.toISOString(),
+      // ABSENT unless set, so the ordinary Estado path keeps its payload.
+      ...(args.surveyOnly === true ? { surveyOnly: true as const } : {}),
     } satisfies AppointmentStatusChangedData,
   });
 }

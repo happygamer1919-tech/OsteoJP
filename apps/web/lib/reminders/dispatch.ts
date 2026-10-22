@@ -227,7 +227,15 @@ export type DispatchOutcome =
          */
         | "survey_cooldown"
         | "survey_not_eligible"
-        | "survey_not_allowed";
+        | "survey_not_allowed"
+        /**
+         * Q-O. The run asked for the survey ALONE (a "Corrigir estado" into
+         * Concluida) and the survey does not go to this patient: the switch
+         * is off, or the canary list does not name them. Nothing is sent: the
+         * follow-up is never its fallback. Not a ledger reason; the canary
+         * case still leaves its own `survey_canary_not_listed` row.
+         */
+        | "survey_only";
       /**
        * The refusing sentence, for `body_refused`. Operator-facing and safe:
        * a length and a rule, never a recipient, a patient field or a code.
@@ -1706,13 +1714,24 @@ export function planSurveyChannel(args: {
  *
  * `off` is also what an unset or misspelt value reads as, so it is the state
  * every sleeping run wakes into until the owner sets the variable.
+ *
+ * Q-O, `surveyOnly`: the run of a "Corrigir estado" into Concluida. Where the
+ * table above says the follow-up, it gets NOTHING (`survey_only`): with the
+ * switch off no row is written, and an unlisted canary patient keeps the one
+ * row that says the list did not name them. Where it says the survey, it is
+ * the same survey, through the same issue door and its 60-day rule.
  */
 export async function dispatchSurvey(
   tenantId: string,
   appointmentId: string,
+  opts: { surveyOnly?: boolean } = {},
 ): Promise<DispatchOutcome> {
-  if (surveySendMode() === "off") return dispatchFollowUp(tenantId, appointmentId);
-  return await dispatchSurveyInner(tenantId, appointmentId);
+  const surveyOnly = opts.surveyOnly === true;
+  if (surveySendMode() === "off") {
+    if (surveyOnly) return { dispatched: false, reason: "survey_only" };
+    return dispatchFollowUp(tenantId, appointmentId);
+  }
+  return await dispatchSurveyInner(tenantId, appointmentId, surveyOnly);
 }
 
 /**
@@ -1736,6 +1755,7 @@ export async function dispatchSurvey(
 async function dispatchSurveyInner(
   tenantId: string,
   appointmentId: string,
+  surveyOnly: boolean,
 ): Promise<DispatchOutcome> {
   const gate = await loadDispatchable(tenantId, appointmentId, "survey");
 
@@ -1760,6 +1780,8 @@ async function dispatchSurveyInner(
   /** Canary, and the list does not name this patient: recorded, then as `off`. */
   const notListed = async (channel: "email" | "sms"): Promise<DispatchOutcome> => {
     await record(channel, SURVEY_CANARY_NOT_LISTED);
+    // Q-O: a survey-only run has no follow-up to fall back to.
+    if (surveyOnly) return { dispatched: false, reason: "survey_only" };
     return dispatchFollowUp(tenantId, appointmentId);
   };
 
