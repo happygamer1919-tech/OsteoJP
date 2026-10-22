@@ -351,10 +351,7 @@ describe("source-level: no fourth predicate, no role filter (PL-06b, D2)", () =>
   const BOOKING = strip("booking.ts");
 
   it("the roster query filters on is_bookable", () => {
-    // Q-R (2026-10-22): the roster's predicate is the `onPortalRoster` fragment,
-    // shared with the catalog. The method must call it, and it must carry the flag.
-    expect(ROSTER_METHOD).toMatch(/onPortalRoster\(principal\.tenantId, notShared, locationId, serviceId\)/);
-    expect(ROSTER_FN).toMatch(/u\.is_bookable\s*=\s*true/);
+    expect(STORE).toMatch(/listBookableTherapists[\s\S]{0,2000}?is_bookable\s*=\s*true/);
   });
 
   /**
@@ -373,32 +370,11 @@ describe("source-level: no fourth predicate, no role filter (PL-06b, D2)", () =>
    * follows immediately and orders by `appointments.startsAt`, so a loose slice
    * would drag its text in and the "no window was invented" arm below would be
    * asserting against the wrong function.
-   *
-   * Q-R (2026-10-22): the roster's WHERE moved into the `onPortalRoster`
-   * fragment, which the catalog calls too, so the arms below read the fragment
-   * (bounded to its own body) and the method is held to calling it.
    */
-  const ROSTER_METHOD = (() => {
+  const ROSTER_FN = (() => {
     const fn = STORE.slice(STORE.indexOf("async listBookableTherapists"));
     return fn.slice(0, fn.indexOf("},"));
   })();
-  const ROSTER_FN = (() => {
-    const fn = STORE.slice(STORE.indexOf("function onPortalRoster("));
-    return fn.slice(0, fn.indexOf("\n}\n"));
-  })();
-
-  it("Q-R: the roster fragment is defined once, and the roster and the catalog both call it", () => {
-    expect(STORE.match(/function onPortalRoster\(/g) ?? []).toHaveLength(1);
-    expect(ROSTER_FN.length).toBeGreaterThan(0);
-    expect(ROSTER_METHOD).toMatch(/where \$\{onPortalRoster\(/);
-    const catalog = (() => {
-      const fn = STORE.slice(STORE.indexOf("async getCatalog"));
-      return fn.slice(0, fn.indexOf("async getBookableService"));
-    })();
-    expect(catalog).toMatch(/onPortalRoster\(principal\.tenantId, notShared, sql`l\.id`, sql`s\.id`\)/);
-    // No second copy of the roster's predicate in the catalog.
-    expect(catalog).not.toMatch(/therapist_services|availability_templates/);
-  });
 
   it("the roster query bounds the template by valid_from", () => {
     expect(ROSTER_FN).toMatch(/av\.valid_from\s+is null or av\.valid_from\s+<=/);

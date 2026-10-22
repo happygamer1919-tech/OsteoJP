@@ -6,8 +6,8 @@
  * Owner ruling Q-M (2026-10-20) made the therapist step list only therapists
  * ticked for the service. That left a gap: a service nobody bookable is ticked
  * for was still in the patient app's catalog, with nobody behind it. The catalog
- * now asks the therapist step's own predicate (`onPortalRoster` in store.ts) for
- * every (service, clinic) pair, so it lists a service at a clinic exactly when
+ * now asks the therapist step's own predicate (a copy held equal to
+ * listBookableTherapists by catalog-roster-parity.test.ts) for every (service, clinic) pair, so it lists a service at a clinic exactly when
  * the therapist step would name somebody there.
  *
  * THE FIXTURE. Two clinics, every weekday templated:

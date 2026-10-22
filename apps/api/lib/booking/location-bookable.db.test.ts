@@ -246,7 +246,7 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
 
   it("door 1, with every user of this tenant ticked for it, a service is offered only at listed locations whose therapist step names somebody today", async () => {
     // Every user of this tenant, the inactive, non-bookable and shared ones
-    // included: the therapist step's own rule (onPortalRoster) must still keep
+    // included: the therapist step's own rule (its predicate, copied into getCatalog) must still keep
     // them out. Of the three listed locations only `staffed` has hours valid
     // today; `expiredHours` and `notStartedHours` are listed (R45 carries no
     // date) but their therapist step is empty (Q-ROSTER), so Q-R offers the

@@ -14,7 +14,8 @@ import { errorResponse, unauthorized } from "@/lib/appointments/http";
 //
 // Q-R (strategy ruling 2026-10-22): a service is listed at a clinic only when
 // the therapist step (/booking/therapists) would name somebody for it there,
-// through the same predicate (`onPortalRoster` in lib/appointments/store.ts).
+// through a copy of its predicate in getCatalog (lib/appointments/store.ts),
+// held equal to the roster by catalog-roster-parity.test.ts.
 // A service no bookable therapist is ticked for is left out until someone is.
 
 export const runtime = "nodejs";

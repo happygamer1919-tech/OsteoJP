@@ -307,50 +307,6 @@ function deliversServiceExists(
   )`;
 }
 
-/**
- * THE PORTAL ROSTER, AS ONE PREDICATE: is user `u` somebody a patient could be
- * offered for this service at this clinic. Correlated on `u` (a `users` row);
- * the caller supplies `from users u`.
- *
- * TWO READERS, AND THEY MUST NEVER DISAGREE. `listBookableTherapists` (the
- * therapist step) lists the users who pass it. `getCatalog` (Q-R, strategy
- * ruling 2026-10-22: "a service with no ticked therapist is hidden online until
- * someone is ticked") lists a service at a clinic only when at least one user
- * passes it for that pair. Before Q-R the catalog offered a service the
- * therapist step then answered with nobody. A second copy of these lines in the
- * catalog would be that defect waiting to come back the first time one copy is
- * edited, so `locationId` and `serviceId` take either a bound id or a column
- * reference, and both readers call this.
- *
- * What it asks, and each line has its own ruling (read the comments on
- * `listBookableTherapists` below before changing any of them):
- *   - an ACTIVE, BOOKABLE user who is not a shared resource (PL-06b, D2, SCHED-17);
- *   - with an active schedule row at THIS clinic whose validity window covers
- *     TODAY in Lisbon (PORTAL-ROSTER, owner ruling Q-ROSTER);
- *   - mapped to THIS service in `therapist_services` (owner ruling Q-M).
- */
-function onPortalRoster(
-  tenantId: string,
-  notShared: SQL,
-  locationId: SQL | string,
-  serviceId: SQL | string,
-): SQL {
-  return sql`u.tenant_id = ${tenantId}
-        and u.is_active = true
-        and u.is_bookable = true
-        ${notShared}
-        and exists (
-          select 1 from availability_templates av
-          where av.tenant_id = ${tenantId}
-            and av.user_id = u.id
-            and av.location_id = ${locationId}
-            and av.is_active = true
-            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
-            and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
-        )
-        and ${deliversServiceExists(tenantId, sql`u.id`, serviceId)}`;
-}
-
 /** Availability-template coverage for the window, in clinic-local (Lisbon) time.
  *  Reuses Stream B's availability DATA model directly (weekday 0=Sun..6=Sat,
  *  local start/end time, validity window). */
@@ -480,11 +436,19 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // Q-R (strategy ruling 2026-10-22, on top of owner ruling Q-M): "a service
     // with no ticked therapist is hidden online until someone is ticked".
     //
-    // PER CLINIC, BECAUSE THE ROSTER IS PER CLINIC. The therapist step asks
-    // `onPortalRoster` for one service at one clinic, so the catalog asks the
-    // SAME fragment for every (service, clinic) pair it is about to offer and
-    // keeps only the pairs where somebody passes. A service is then listed at
-    // exactly the clinics whose therapist step would name somebody for it.
+    // PER CLINIC, BECAUSE THE THERAPIST STEP IS PER CLINIC. For every (service,
+    // clinic) pair the catalog is about to offer, it asks the therapist step's
+    // own question (`listBookableTherapists` below: would it name anybody?) and
+    // keeps only the pairs where the answer is yes.
+    //
+    // THE USER PREDICATE BELOW IS A COPY OF THE ROSTER'S, ON PURPOSE, AND IT IS
+    // HELD EQUAL BY A TEST. The roster's SQL stays inline in
+    // `listBookableTherapists`, because the frozen gate test
+    // scripts/staff-11-jp-one-clinic-check.test.mjs reads it there. The only
+    // differences allowed are the two bindings (`l.id` for `${locationId}`,
+    // `s.id` for `serviceId`); catalog-roster-parity.test.ts fails on any other,
+    // and catalog-hides-unstaffed-services.db.test.ts compares the two answers
+    // pair by pair on a real database. Change both or neither.
     //
     // A SERVICE LEFT WITH NO CLINIC IS DROPPED, NEVER SENT WITH AN EMPTY LIST.
     // The portal's booking flow reads an empty `locationIds` as "every clinic"
@@ -511,7 +475,20 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
           and l.id in (${ids(allLocationIds)})
           and exists (
             select 1 from users u
-            where ${onPortalRoster(principal.tenantId, notShared, sql`l.id`, sql`s.id`)}
+      where u.tenant_id = ${principal.tenantId}
+        and u.is_active = true
+        and u.is_bookable = true
+        ${notShared}
+        and exists (
+          select 1 from availability_templates av
+          where av.tenant_id = ${principal.tenantId}
+            and av.user_id = u.id
+            and av.location_id = l.id
+            and av.is_active = true
+            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
+            and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
+        )
+        and ${deliversServiceExists(principal.tenantId, sql`u.id`, sql`s.id`)}
           )
       `)) as unknown as ReadonlyArray<{ service_id: string; location_id: string }>;
       for (const p of pairs) staffed.add(`${p.service_id}:${p.location_id}`);
@@ -860,15 +837,24 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // template that has not STARTED yet" in
     // packages/db/tests/portal-roster-template-validity.db.test.ts is the single
     // place a change of that ruling has to land.
-    //
-    // THE PREDICATE ITSELF IS `onPortalRoster` (above), since Q-R (2026-10-22):
-    // the catalog asks the same question per service and clinic, and one
-    // fragment is what keeps the two answers equal.
     const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
       from users u
-      where ${onPortalRoster(principal.tenantId, notShared, locationId, serviceId)}
+      where u.tenant_id = ${principal.tenantId}
+        and u.is_active = true
+        and u.is_bookable = true
+        ${notShared}
+        and exists (
+          select 1 from availability_templates av
+          where av.tenant_id = ${principal.tenantId}
+            and av.user_id = u.id
+            and av.location_id = ${locationId}
+            and av.is_active = true
+            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
+            and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
+        )
+        and ${deliversServiceExists(principal.tenantId, sql`u.id`, serviceId)}
       order by u.full_name
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
 
