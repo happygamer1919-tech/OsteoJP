@@ -5217,3 +5217,50 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   member in Equipa. (3) Only then does this branch (`booking/Q-M2-portal-filter`,
   the filter) merge. Anyone still without a mapping when (3) deploys disappears
   from the portal for every service.
+
+## 2026-10-22 - Q-R: a service no offered therapist is ticked for is hidden in the patient app until someone is ticked
+
+- **Strategy ruling Q-R (2026-10-22), verbatim:** "Q-R yes: a service with no
+  ticked therapist is hidden online until someone is ticked. Owner may override."
+- **The gap it closes.** Under Q-M (above) the therapist step lists only
+  therapists ticked for the chosen service, but the catalog still listed every
+  patient-bookable service. A service nobody bookable was ticked for was offered,
+  and the next step answered it with nobody and no slots.
+- **What the patient app does now.** The catalog (`getCatalog` in
+  `apps/api/lib/appointments/store.ts`, served by `GET /api/v1/booking/catalog`)
+  lists a service at a clinic only when at least one user passes the therapist
+  step's own predicate for that service at that clinic. A service left with no
+  clinic is left out of the response entirely, never sent with an empty
+  `locationIds`, because the portal's booking flow reads an empty list as "every
+  clinic". The response shape is unchanged, so `docs/api/openapi.yaml` is not.
+- **One predicate, two readers.** The therapist step's WHERE moved into one
+  fragment, `onPortalRoster` in `store.ts`: an active, bookable user who is not a
+  shared resource, with an active schedule row at that clinic valid today in
+  Lisbon (Q-ROSTER), and ticked for that service (Q-M).
+  `listBookableTherapists` and `getCatalog` both call it, so the catalog and the
+  therapist step cannot disagree. The same scope follows from it: per clinic,
+  and "valid today", so a service whose only ticked therapist's hours start next
+  month is hidden until they start, exactly as that therapist is absent from the
+  therapist step until then.
+- **The public guest form is unchanged.** It is a different catalog
+  (`GET /api/v1/booking/guest/catalog`): it lists by the price grid (GUEST-08),
+  shows no therapist and assigns nobody (reception does). Whether Q-R reaches it
+  is an open question for strategy.
+- **The staff agenda is unchanged** (PL-06a): staff book any service with any
+  therapist.
+- **How the owner overrides.** No switch in code. To bring a hidden service back
+  online, an admin ticks it for at least one bookable therapist with hours at
+  that clinic, in Equipa, Gerir, Servico principal; it reappears at that
+  therapist's clinics on the next catalog load. To keep a ticked service off the
+  portal, Administracao, Servicos, Gerir, "Fechar a marcacao por pacientes" still
+  applies. Showing a service online that nobody is ticked for would need a code
+  change, and the patient would then reach a therapist step with nobody in it.
+- **Proof.** `apps/api/lib/appointments/catalog-hides-unstaffed-services.db.test.ts`
+  (DB-gated, real store): shown with a ticked bookable therapist, at that
+  therapist's clinic only; hidden with none; hidden with only a non-bookable
+  therapist, only a therapist at another clinic, or only a therapist whose hours
+  have expired, each of the first two with a control that brings it back; and a
+  parity arm comparing every (service, clinic) pair with the therapist step. The
+  e2e spec `apps/web/e2e/portal-booking-request-mode.spec.ts` gains a Q-R arm,
+  and its Decision C arms tick a therapist for Drenagem Linfatica for their own
+  length, since the seed ticks nobody for it.
