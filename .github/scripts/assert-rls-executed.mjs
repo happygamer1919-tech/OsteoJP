@@ -314,6 +314,23 @@ const SUITES = [
   // here so that the ABSENCE of either is red too.
   { file: "clinical-episodes-role-matrix.db.test.ts", hard: true },
   { file: "episodes-role-matrix.db.test.ts", hard: true },
+  // The reminder sweep (SWEEP-02, SWEEP-03, SWEEP-47), added 2026-10-22. Four
+  // DB-gated suites of apps/web, each run as the reminder job against a real
+  // database: a second sender is held once a reminder was sent, and every
+  // throw releases its claim (reminder-claim); while the sweep is the sender,
+  // eight senders at once hand one message over and a held-back reminder is
+  // tried again (reminder-claim-closed); a shadow pass takes each due mark
+  // once, under its ceiling, and sends nothing (sweep); and a sending pass
+  // sends each due reminder once, with the switch off changing nothing and the
+  // late rule judged when the send step runs (sweep-send). An advisory lock
+  // and a read under the job's own claims are what hold a second sender, and
+  // a mock has neither. Named here so that the ABSENCE of any is red too.
+  // THIS ENTRY NEEDS THE SWEEP CODE ON MAIN: before it merges these files do
+  // not exist, and an absent suite here is red.
+  { file: "reminder-claim.db.test.ts", hard: true },
+  { file: "reminder-claim-closed.db.test.ts", hard: true },
+  { file: "sweep.db.test.ts", hard: true },
+  { file: "sweep-send.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
