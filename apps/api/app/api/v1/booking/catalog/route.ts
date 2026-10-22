@@ -11,6 +11,11 @@ import { errorResponse, unauthorized } from "@/lib/appointments/http";
 // the tenant's active locations. Prices are
 // display-only (no payment, no fiscal document); the patient cannot self-claim a
 // parceria — there is no price/discount field in any booking input.
+//
+// Q-R (strategy ruling 2026-10-22): a service is listed at a clinic only when
+// the therapist step (/booking/therapists) would name somebody for it there,
+// through the same predicate (`onPortalRoster` in lib/appointments/store.ts).
+// A service no bookable therapist is ticked for is left out until someone is.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

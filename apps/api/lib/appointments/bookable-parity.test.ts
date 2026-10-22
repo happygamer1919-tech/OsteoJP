@@ -87,9 +87,15 @@ describe("D2: the portal cannot assign anyone the staff dropdown would refuse", 
   });
 
   it("Q-M: the roster query carries the mapping fragment", () => {
+    // Q-R (2026-10-22): the roster's WHERE is the `onPortalRoster` fragment,
+    // which the catalog calls too. The method calls it, and it carries the mapping.
     const fn = STORE.slice(STORE.indexOf("async listBookableTherapists"));
     const body = fn.slice(0, fn.indexOf("},"));
-    expect(body).toMatch(/deliversServiceExists\(principal\.tenantId, sql`u\.id`, serviceId\)/);
+    expect(body).toMatch(/onPortalRoster\(principal\.tenantId, notShared, locationId, serviceId\)/);
+    const frag = STORE.slice(STORE.indexOf("function onPortalRoster("));
+    expect(frag.slice(0, frag.indexOf("\n}\n"))).toMatch(
+      /deliversServiceExists\(tenantId, sql`u\.id`, serviceId\)/,
+    );
   });
 
   it("Q-M: the slot sweep carries the mapping in BOTH halves (grid and exists)", () => {
