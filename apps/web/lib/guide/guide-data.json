@@ -1578,13 +1578,13 @@
                   "strong": "Horários"
                 },
                 {
-                  "text": ". Em "
+                  "text": ". Os separadores de "
                 },
                 {
                   "strong": "Comunicações"
                 },
                 {
-                  "text": " ficam três separadores: "
+                  "text": " incluem "
                 },
                 {
                   "strong": "Recuperação"
@@ -1766,13 +1766,13 @@
                   "strong": "Revisão Consulta"
                 },
                 {
-                  "text": ". Em "
+                  "text": ". Os separadores de "
                 },
                 {
                   "strong": "Comunicações"
                 },
                 {
-                  "text": " ficam três separadores: "
+                  "text": " incluem "
                 },
                 {
                   "strong": "Recuperação"
@@ -10921,7 +10921,37 @@
               "strong": "Portal"
             },
             {
-              "text": " numa linha indica que os pacientes podem marcar esse serviço sozinhos, no portal. Um serviço sem a etiqueta só pode ser marcado pela equipa."
+              "text": " numa linha indica que o serviço está aberto à marcação pelos pacientes, no portal. Um serviço sem a etiqueta só pode ser marcado pela equipa. O serviço só aparece no portal numa clínica se também estiver assinalado, em "
+            },
+            {
+              "strong": "Administração"
+            },
+            {
+              "text": ", "
+            },
+            {
+              "strong": "Equipa"
+            },
+            {
+              "text": ", "
+            },
+            {
+              "strong": "Gerir"
+            },
+            {
+              "text": ", "
+            },
+            {
+              "strong": "Serviço principal"
+            },
+            {
+              "text": ", para pelo menos um terapeuta "
+            },
+            {
+              "strong": "Disponível para marcações"
+            },
+            {
+              "text": " com horário nessa clínica."
             }
           ],
           "type": "para"
@@ -10947,13 +10977,13 @@
                 "strong": "Abrir a marcação por pacientes"
               },
               {
-                "text": " para o serviço passar a aparecer no portal, ou em "
+                "text": " para abrir o serviço à marcação no portal, ou em "
               },
               {
                 "strong": "Fechar a marcação por pacientes"
               },
               {
-                "text": " para deixar de aparecer."
+                "text": " para o fechar."
               }
             ],
             [
@@ -10995,7 +11025,7 @@
       "see": [],
       "shots": null,
       "title": "Que serviços os pacientes podem marcar",
-      "words": 79
+      "words": 109
     },
     {
       "answers": [],
