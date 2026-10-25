@@ -37,6 +37,12 @@ import { saveRecordAction, signRecordAction, versionRecordAction } from "./actio
 // locked → signed) and must serve a fresh render after signing (BUG-15).
 export const dynamic = "force-dynamic";
 
+// The time limit of this page's requests, its server actions included: they
+// build PDFs ("Transferir PDF" and the RGPD form). 300 s is the hosting platform's own default, written
+// down so the repository states the limit instead of a dashboard holding it;
+// it shortens nothing. Pinned by app/document-routes-max-duration.test.ts.
+export const maxDuration = 300;
+
 const RECORD_TONE: Record<RecordStatus, StatusTone> = {
   draft: "neutral",
   locked: "info",
