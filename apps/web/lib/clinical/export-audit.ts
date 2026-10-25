@@ -146,11 +146,20 @@ export async function recordImportedGroupExport(
  * "Exportar ficha": the whole patient. The registos in the file, in the file's
  * order, their number, the number of sections (heading pages) the file holds
  * and the number of registos left out. No section is named: a section's name
- * is an episode's title.
+ * is an episode's title. And how long the export took, in whole milliseconds
+ * (`durationMs`), so the platform records the time itself (batch item 11):
+ * a number, never text.
  */
 export async function recordPatientFichaExport(
   ctx: RequestContext,
-  exported: { patientId: string; recordIds: readonly string[]; sections: number; leftOut: number },
+  exported: {
+    patientId: string;
+    recordIds: readonly string[];
+    sections: number;
+    leftOut: number;
+    /** Milliseconds from the action's start to the signed URL (batch item 11). */
+    durationMs?: number;
+  },
 ): Promise<void> {
   const ip = await clientIp();
   await runScoped(
@@ -161,9 +170,15 @@ export async function recordPatientFichaExport(
         recordsIncluded: exported.recordIds.length,
         sectionsIncluded: exported.sections,
         recordsLeftOut: exported.leftOut,
+        ...(exported.durationMs === undefined ? {} : { durationMs: wholeMs(exported.durationMs) }),
       }),
     "clinical:ficha-export-audit",
   );
+}
+
+/** A duration as a whole, non-negative number of milliseconds. */
+function wholeMs(ms: number): number {
+  return Number.isFinite(ms) && ms > 0 ? Math.round(ms) : 0;
 }
 
 /**

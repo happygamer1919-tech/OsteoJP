@@ -184,7 +184,7 @@ describe("downloadPatientFichaUrlAction: an export, step by step", () => {
 
 describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () => {
   it.each(["owner", "admin", "therapist"] as const)(
-    "%s: asked for ONCE, as that caller, with the patient, the registos in the file and three counts, and nothing else",
+    "%s: asked for ONCE, as that caller, with the patient, the registos in the file, three counts and the export's time, and nothing else",
     async (role) => {
       allGood(role);
       await downloadPatientFichaUrlAction(PATIENT);
@@ -194,7 +194,10 @@ describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () =>
         recordIds: ["r1", "r2", "r3"],
         sections: 2,
         leftOut: 1,
+        durationMs: expect.any(Number),
       });
+      const durationMs = mockAudit.mock.calls[0]![1].durationMs!;
+      expect(durationMs).toBeGreaterThanOrEqual(0);
     },
   );
 
@@ -207,7 +210,13 @@ describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () =>
     // Selected: r1 and r2 in one section, r3 in another. The engine printed r3 only.
     mockRender.mockResolvedValue({ ...pdf, recordIds: ["r3"], sections: 1, leftOut: 3 });
     await downloadPatientFichaUrlAction(PATIENT);
-    expect(mockAudit.mock.calls[0]![1]).toEqual({ patientId: PATIENT, recordIds: ["r3"], sections: 1, leftOut: 3 });
+    expect(mockAudit.mock.calls[0]![1]).toEqual({
+      patientId: PATIENT,
+      recordIds: ["r3"],
+      sections: 1,
+      leftOut: 3,
+      durationMs: expect.any(Number),
+    });
   });
 
   it("two exports are two rows asked for: one per file handed out", async () => {
