@@ -182,6 +182,42 @@ describe("downloadPatientFichaUrlAction: an export, step by step", () => {
   });
 });
 
+describe("downloadPatientFichaUrlAction: the export's own time (batch item 11)", () => {
+  it("durationMs is the monotonic clock's distance from the action's start to the signed URL, the audit not included", async () => {
+    // An injected clock: performance.now() reads `now`, and each mocked step
+    // moves it on by its own amount. Nothing here waits or reads a real clock.
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const render = mockRender.getMockImplementation()!;
+      mockRender.mockImplementation(async (...args) => {
+        now += 700;
+        return render(...args);
+      });
+      const store = upload.getMockImplementation()!;
+      upload.mockImplementation(async (...args: unknown[]) => {
+        now += 200;
+        return store(...args);
+      });
+      const sign = createSignedUrl.getMockImplementation()!;
+      createSignedUrl.mockImplementation(async (...args: unknown[]) => {
+        now += 50;
+        return sign(...args);
+      });
+      // The audit write's own time is not counted.
+      mockAudit.mockImplementation(async () => {
+        now += 5_000;
+      });
+
+      expect(await downloadPatientFichaUrlAction(PATIENT)).toEqual({ url: SIGNED });
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+      expect(mockAudit.mock.calls[0]![1].durationMs).toBe(950);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
+
 describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () => {
   it.each(["owner", "admin", "therapist"] as const)(
     "%s: asked for ONCE, as that caller, with the patient, the registos in the file, three counts and the export's time, and nothing else",

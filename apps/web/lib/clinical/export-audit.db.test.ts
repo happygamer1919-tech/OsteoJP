@@ -325,6 +325,8 @@ d("EXPORT-01 G4: every export writes exactly one audit row, ids and counts only"
           recordsIncluded: 3,
           sectionsIncluded: 2,
           recordsLeftOut: 4,
+          // The export's own time (batch item 11); its shape is checked below.
+          durationMs: expect.any(Number),
         },
       }),
     },
@@ -695,11 +697,11 @@ d("EXPORT-01 G4: every export writes exactly one audit row, ids and counts only"
       expect(held[0]!.n).toBe(finished);
     });
 
-    it("every value is an id, a count or one of the four document words, under a known key", async () => {
+    it("every value is an id, a count (durationMs included) or one of the four document words, under a known key", async () => {
       const KEYS: Record<string, string[]> = {
         "clinical_record.export_pdf": ["patientId", "recordId"],
         "episode.export_pdf": ["episodeId", "patientId", "recordIds", "recordsIncluded", "recordsLeftOut"],
-        "patient.export_pdf:ficha": ["document", "patientId", "recordIds", "recordsIncluded", "recordsLeftOut", "sectionsIncluded"],
+        "patient.export_pdf:ficha": ["document", "durationMs", "patientId", "recordIds", "recordsIncluded", "recordsLeftOut", "sectionsIncluded"],
         "patient.export_pdf:imported_group": ["document", "patientId", "recordIds", "recordsIncluded", "recordsLeftOut"],
         "patient.export_pdf:rgpd_form": ["document", "patientId", "recordId"],
         "patient.export_pdf:declaracao": ["document", "locationId", "patientId"],
@@ -717,7 +719,7 @@ d("EXPORT-01 G4: every export writes exactly one audit row, ids and counts only"
         for (const [key, value] of Object.entries(row.metadata)) {
           if (key === "document") expect(DOCUMENTS, kind).toContain(value);
           else if (key === "recordIds") expect((value as unknown[]).every(isId), kind).toBe(true);
-          else if (key.startsWith("records") || key.startsWith("sections")) expect(isCount(value), `${kind}.${key}`).toBe(true);
+          else if (key.startsWith("records") || key.startsWith("sections") || key === "durationMs") expect(isCount(value), `${kind}.${key}`).toBe(true);
           else expect(isId(value), `${kind}.${key}`).toBe(true);
         }
         expect(isId(row.entity_id) && isId(row.actor) && row.tenant === tenant, kind).toBe(true);

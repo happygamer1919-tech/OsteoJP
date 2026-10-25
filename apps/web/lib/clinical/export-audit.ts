@@ -17,7 +17,7 @@ import { ClinicalError } from "./errors";
  *   "Transferir PDF" (a registo)       clinical_record.export_pdf  the registo  recordId, patientId
  *   "PDF do episódio" (an app episode) episode.export_pdf          the episode  (recordEpisodeExport, report/episode-export.ts)
  *   "PDF do episódio" (imported group) patient.export_pdf          the patient  document, patientId, recordIds, 2 counts
- *   "Exportar ficha"                   patient.export_pdf          the patient  document, patientId, recordIds, 3 counts
+ *   "Exportar ficha"                   patient.export_pdf          the patient  document, patientId, recordIds, 3 counts, durationMs
  *   the RGPD form                      patient.export_pdf          the patient  document, patientId, recordId
  *   the Declaração de Presença         patient.export_pdf          the patient  document, patientId, locationId
  *
