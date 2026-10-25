@@ -36,6 +36,10 @@ export type AdminErrorCode =
   // already knows their colleagues exist, so concealment would buy nothing and
   // cost them a comprehensible message.
   | "forbidden"
+  // PL-09: a memberships save by an admin assigned to some clinics would leave
+  // the member with no clinic at all. Distinct from `forbidden`: the admin may
+  // well be acting inside their own clinic; the repair is to keep one ticked.
+  | "no_clinic"
   // P0 2026-09-08: the weekly editor refused because a DATE-SPECIFIC row already
   // covers that weekday, which is a real conflict with a real repair - and
   // `invalid` pointed at neither. The weekly editor cannot express "the ordinary

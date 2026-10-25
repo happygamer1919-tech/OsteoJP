@@ -36,7 +36,7 @@
 import { randomUUID } from "node:crypto";
 
 import { sql as raw } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -308,6 +308,71 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
         listed.has(loc[c.key]),
       );
     }
+  });
+
+  // R10 (2026-10-25): a clinic held off online booking by configuration
+  // (`online-booking-hold.ts`) reads, through all four doors, exactly as one
+  // with nobody bookable, and every other location is untouched. These arms run
+  // BEFORE the last one below, which staffs `noHours` and so changes the
+  // expected list.
+  describe("R10: ONLINE_BOOKING_HELD_LOCATION_IDS holds a clinic off online booking", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const heldExpected = (held: CaseKey[]) => expectedListed.filter((k) => !held.includes(k));
+
+    async function allFourDoors(): Promise<{ catalog: CaseKey[]; guard: CaseKey[]; publicList: CaseKey[]; submit: CaseKey[] }> {
+      const catalog = listedKeys((await store.getCatalog(principal())).locations.map((l) => l.id));
+      const publicList = listedKeys((await publicCatalog()).locations.map((l) => l.id));
+      const guard: CaseKey[] = [];
+      const submit: CaseKey[] = [];
+      for (const c of CASES) {
+        if (await store.isBookableLocation(principal(), loc[c.key])) guard.push(c.key);
+        if (await isGuestSellable({ tenantId, serviceId, locationId: loc[c.key] })) submit.push(c.key);
+      }
+      return { catalog: catalog.sort(), guard: guard.sort(), publicList: publicList.sort(), submit: submit.sort() };
+    }
+
+    it("the staffed clinic, held, is refused by all four doors; the other listed clinics stay listed", async () => {
+      vi.stubEnv("ONLINE_BOOKING_HELD_LOCATION_IDS", loc.staffed);
+      const want = [...heldExpected(["staffed"])].sort();
+      // Guards a vacuous pass: the hold must leave something listed.
+      expect(want.length).toBeGreaterThan(0);
+      expect(await allFourDoors()).toEqual({ catalog: want, guard: want, publicList: want, submit: want });
+    });
+
+    it("two held clinics, one written in capitals and one entry that is not an id: both held, the bad entry ignored", async () => {
+      vi.stubEnv(
+        "ONLINE_BOOKING_HELD_LOCATION_IDS",
+        ` ${loc.staffed.toUpperCase()} , not-a-location, ${loc.expiredHours},`,
+      );
+      const want = [...heldExpected(["staffed", "expiredHours"])].sort();
+      expect(await allFourDoors()).toEqual({ catalog: want, guard: want, publicList: want, submit: want });
+    });
+
+    it("holding another tenant's clinic changes nothing here, and that clinic stays refused here as before", async () => {
+      vi.stubEnv("ONLINE_BOOKING_HELD_LOCATION_IDS", otherTenantLocationId);
+      const want = [...expectedListed].sort();
+      expect(await allFourDoors()).toEqual({ catalog: want, guard: want, publicList: want, submit: want });
+    });
+
+    it("empty, or only entries that are not ids, holds nothing", async () => {
+      const want = [...expectedListed].sort();
+      for (const value of ["", "  ", "x,y"]) {
+        vi.stubEnv("ONLINE_BOOKING_HELD_LOCATION_IDS", value);
+        expect(await allFourDoors(), JSON.stringify(value)).toEqual({ catalog: want, guard: want, publicList: want, submit: want });
+      }
+    });
+
+    it("removing the value lists the held clinic again (the hold is fully reversible)", async () => {
+      vi.stubEnv("ONLINE_BOOKING_HELD_LOCATION_IDS", loc.staffed);
+      expect(await store.isBookableLocation(principal(), loc.staffed)).toBe(false);
+      vi.unstubAllEnvs();
+      delete process.env.ONLINE_BOOKING_HELD_LOCATION_IDS;
+      const want = [...expectedListed].sort();
+      expect(await allFourDoors()).toEqual({ catalog: want, guard: want, publicList: want, submit: want });
+    });
   });
 
   it("giving the unstaffed location a bookable therapist lists it, through all four doors", async () => {

@@ -219,6 +219,9 @@ export default async function StaffPage({
   const errorText =
     m === "err:last_owner" ? s["admin.staff.lastOwnerBlocked"]
     : m === "err:owner_tier" ? s["admin.staff.ownerTierBlocked"]
+    // PL-09: a save that reaches a clinic outside the admin's own clinics.
+    : m === "err:forbidden" ? s["admin.staff.outsideYourClinics"]
+    : m === "err:no_clinic" ? s["admin.staff.keepOneClinic"]
     : m === "err:email_taken" ? s["admin.staff.emailTakenBlocked"]
     : m === "err:password" ? s["admin.staff.deleteWrongPassword"]
     : m === "err:has_activity" ? s["admin.staff.deleteHasActivity"]
