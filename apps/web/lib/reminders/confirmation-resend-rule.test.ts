@@ -11,9 +11,8 @@
  * dropped and never told.
  *
  * STRATEGY'S RULING, as built:
- *   (1) a change of START TIME always notifies; the duplicate key carries the
- *       start AND the therapist, so a real change is never swallowed, and an
- *       identical re-save sends nothing;
+ *   (1) a change of START TIME always notifies; a real change is never
+ *       swallowed by the duplicate key, and an identical re-save sends nothing;
  *   (2) a THERAPIST-ONLY change sends the EMAIL only, the SMS only when the
  *       patient has no usable email (no address, or email off for the clinic
  *       or for the patient);
@@ -32,8 +31,16 @@
  * second call with a fresh window.
  *
  * WHAT IS NOT. The key is a SETTING: it is live only after the owner presses
- * Resync on the Inngest app. Until then Inngest still keys on appointment +
- * start, which the "with the old key" arms reproduce.
+ * Resync on the Inngest app. Until then Inngest keeps the key of its last
+ * sync, which the "with the old key" arms reproduce.
+ *
+ * Q-N (strategy's ruling of 2026-10-22). The key was appointment + start +
+ * therapist under Q-K, and dropped a change BACK to an earlier start or
+ * therapist inside 24 hours; this file pinned that as a known residual. The
+ * key is now appointment + the save's own marker (`saveId`), so every save
+ * runs its own confirmation and only a second DELIVERY of one event is
+ * dropped. The arms "a change BACK ... is sent" below are those residual
+ * arms, turned round.
  *
  * Ids and names are invented.
  */
@@ -136,6 +143,9 @@ const hourAfter = (d: Date) => new Date(d.getTime() + 60 * 60_000);
 
 /** The confirmation key exactly as it stood before Q-K, for the control arms. */
 const KEY_BEFORE_QK = 'event.data.appointmentId + ":confirmation:" + event.data.startsAt';
+/** The confirmation key exactly as Q-K left it, before Q-N, for the control arms. */
+const KEY_BEFORE_QN =
+  'event.data.appointmentId + ":confirmation:" + event.data.startsAt + ":" + event.data.practitionerId';
 
 /** The one row the fake transaction serves: a confirmed portal appointment. */
 let rowState = {
@@ -353,15 +363,19 @@ describe("the model can fail: the key in force decides what is dropped", () => {
     expect(dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}`]);
   });
 
-  it("an event without a therapist cannot be keyed: the model refuses rather than guesses", () => {
+  it("an event without a save marker cannot be keyed: the model refuses rather than guesses", () => {
     expect(() =>
       deliver([
         {
           name: "appointment/scheduled",
-          data: { appointmentId: APPT, startsAt: ORIGINAL.toISOString(), confirmationEligible: true },
+          data: { appointmentId: APPT, startsAt: ORIGINAL.toISOString(), practitionerId: ANA, confirmationEligible: true },
         },
       ]),
-    ).toThrow(/practitionerId/);
+    ).toThrow(/saveId/);
+  });
+
+  it("the key is the appointment and the save, and nothing else", () => {
+    expect(CONFIRMATION_IDEMPOTENCY_KEY).toBe('event.data.appointmentId + ":confirmation:" + event.data.saveId');
   });
 });
 
@@ -374,6 +388,7 @@ describe("rule 1: a change of START TIME always notifies, email and SMS", () => 
       tenantId: TENANT,
       startsAt: LATER.toISOString(),
       practitionerId: ANA,
+      saveId: expect.any(String),
       confirmationEligible: true,
     });
   });
@@ -383,7 +398,7 @@ describe("rule 1: a change of START TIME always notifies, email and SMS", () => 
     expect(await received()).toEqual({ email: ["confirmation.email"], sms: ["confirmation.sms"] });
   });
 
-  it("inside the same day as the booking's confirmation it is NOT swallowed: the start is in the key", async () => {
+  it("inside the same day as the booking's confirmation it is NOT swallowed: each save has a key of its own", async () => {
     await booked();
     await move({ startsAt: LATER });
     const { runs, dropped } = deliver(h.sent);
@@ -409,6 +424,7 @@ describe("rule 2: a THERAPIST-ONLY change sends the EMAIL only; the SMS only wit
           tenantId: TENANT,
           startsAt: ORIGINAL.toISOString(),
           practitionerId: RUI,
+          saveId: expect.any(String),
           confirmationEligible: true,
           therapistChangeOnly: true,
         },
@@ -444,7 +460,7 @@ describe("rule 2: a THERAPIST-ONLY change sends the EMAIL only; the SMS only wit
     expect(await received()).toEqual({ email: [], sms: ["confirmation.sms"] });
   });
 
-  it("inside the same day as the booking's confirmation it is NOT swallowed: the therapist is in the key", async () => {
+  it("inside the same day as the booking's confirmation it is NOT swallowed: each save has a key of its own", async () => {
     await booked();
     await changeTherapistFromFicha(RUI);
     const { runs, dropped } = deliver(h.sent);
@@ -462,6 +478,7 @@ describe("a change of CLINIC sends the full confirmation: the message names the 
       tenantId: TENANT,
       startsAt: ORIGINAL.toISOString(),
       practitionerId: ANA,
+      saveId: expect.any(String),
       confirmationEligible: true,
     });
     expect(await received()).toEqual({ email: ["confirmation.email"], sms: ["confirmation.sms"] });
@@ -488,6 +505,7 @@ describe("rule 3: Cancelada back to Confirmada keeps today's send", () => {
       tenantId: TENANT,
       startsAt: ORIGINAL.toISOString(),
       practitionerId: ANA,
+      saveId: expect.any(String),
       confirmationEligible: true,
     });
   });
@@ -557,43 +575,75 @@ describe("a START-TIME change AFTER a therapist change still notifies", () => {
 });
 
 /**
- * KNOWN RESIDUAL OF THE RULED KEY (Q-K review, round 1; put to strategy).
+ * Q-N: A CHANGE BACK TO AN EARLIER START OR THERAPIST INSIDE 24 HOURS IS SENT.
  *
- * The key is appointment + start + therapist, as ruled. Inside its 24 hours it
- * drops ANY confirmation whose start and therapist were already confirmed for
- * this appointment, so a change that RETURNS to an earlier pair is swallowed
- * and the patient's last message names the pair they are no longer booked
- * for. These arms pin that as it stands: if the key's composition changes,
- * they fail and the change is visible.
+ * Until Q-N these three arms pinned the opposite, as a known residual of the
+ * Q-K key (appointment + start + therapist): inside its 24 hours a change that
+ * RETURNED to an earlier pair was dropped, and the patient's last message
+ * named the pair they were no longer booked for. The key is now appointment +
+ * the save's own marker, so each save runs its own confirmation, and the only
+ * thing dropped is a second DELIVERY of one event (the last arm). Each arm
+ * also runs the Q-K key over the same events, so it fails if the key goes back.
  */
-describe("KNOWN RESIDUAL: a change back to an earlier start and therapist within 24 hours is dropped", () => {
-  it("Terapeuta A to B and back to A: the return to A is dropped", async () => {
+describe("a change BACK to an earlier start or therapist within 24 hours is sent", () => {
+  it("Terapeuta A to B and back to A: the return to A is sent, the email naming A", async () => {
     await booked();
     await changeTherapistFromFicha(RUI);
     await changeTherapistFromFicha(ANA);
     // The save asked for a confirmation each time...
     expect(h.sent.map((e) => e.data.confirmationEligible)).toEqual([true, true, true]);
-    // ...and the key drops the third, which repeats the booking's pair.
+    // ...and each save has a marker of its own, so the key drops none of them.
+    const markers = h.sent.map((e) => e.data.saveId);
+    expect(new Set(markers).size).toBe(3);
     const { runs, dropped } = deliver(h.sent);
-    expect(runs.map((r) => r.practitionerId)).toEqual([ANA, RUI]);
-    expect(dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}:${ANA}`]);
+    expect(dropped).toEqual([]);
+    expect(runs.map((r) => r.practitionerId)).toEqual([ANA, RUI, ANA]);
+    // The last thing the patient receives is the therapist-only email for A.
+    expect(await received([h.sent[2]!])).toEqual({ email: ["confirmation.email"], sms: [] });
+    // Control: under the Q-K key the same three events lose the return.
+    expect(deliver(h.sent, KEY_BEFORE_QN).dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}:${ANA}`]);
   });
 
-  it("10:00 to 15:00 and back to 10:00: the return is dropped, although rule 1 says a start change notifies", async () => {
+  it("10:00 to 15:00 and back to 10:00: the return is sent, the full pair, as rule 1 says", async () => {
     await booked();
     await move({ startsAt: LATER });
     await move({ startsAt: ORIGINAL });
     const { runs, dropped } = deliver(h.sent);
-    expect(runs.map((r) => r.startsAt)).toEqual([ORIGINAL.toISOString(), LATER.toISOString()]);
-    expect(dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}:${ANA}`]);
+    expect(dropped).toEqual([]);
+    expect(runs.map((r) => r.startsAt)).toEqual([
+      ORIGINAL.toISOString(),
+      LATER.toISOString(),
+      ORIGINAL.toISOString(),
+    ]);
+    expect(await received([h.sent[2]!])).toEqual({ email: ["confirmation.email"], sms: ["confirmation.sms"] });
+    // Control: under the Q-K key the same three events lose the return.
+    expect(deliver(h.sent, KEY_BEFORE_QN).dropped).toEqual([`${APPT}:confirmation:${ORIGINAL.toISOString()}:${ANA}`]);
   });
 
-  it("after 24 hours the same return is sent: the residual is the key's window, not the save's decision", async () => {
+  it("all of it inside ONE 24 hour window: the window no longer decides, the save does", async () => {
     await booked();
     await changeTherapistFromFicha(RUI);
-    h.sent.length = 0;
     await changeTherapistFromFicha(ANA);
-    expect(deliver(h.sent).runs).toHaveLength(1);
+    await move({ startsAt: LATER });
+    await move({ startsAt: ORIGINAL });
+    // Then an identical re-save: the save itself carries no confirmation.
+    await move({});
+    expect(h.sent.map((e) => e.data.confirmationEligible)).toEqual([true, true, true, true, true, false]);
+    const { runs, dropped } = deliver(h.sent);
+    expect(dropped).toEqual([]);
+    expect(runs).toHaveLength(5);
+  });
+
+  it("a retried DELIVERY of the same save is still dropped: one save, one confirmation", async () => {
+    await changeTherapistFromFicha(RUI);
+    expect(h.sent).toHaveLength(1);
+    const once = h.sent[0]!;
+    // Inngest delivers at least once: the same event, the same data, again.
+    const { runs, dropped } = deliver([once, { ...once, data: { ...once.data } }]);
+    expect(runs).toHaveLength(1);
+    expect(dropped).toEqual([`${APPT}:confirmation:${String(once.data.saveId)}`]);
+    // And the patient receives ONE email, not two.
+    expect(await received([once, once])).toEqual({ email: ["confirmation.email"], sms: [] });
   });
 });
 

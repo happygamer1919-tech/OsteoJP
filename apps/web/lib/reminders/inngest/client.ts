@@ -18,19 +18,34 @@ export type AppointmentScheduledData = {
   startsAt: string; // ISO-8601 UTC
   /**
    * Q-K. The appointment's Terapeuta (a staff user id) at the moment of the
-   * save that emitted this event. Part of the confirmation's duplicate key,
-   * appointment + start + therapist (CONFIRMATION_IDEMPOTENCY_KEY in
-   * ./functions.ts). PRESENT ON EVERY EVENT THE APPLICATION SENDS, and only
-   * those: the owner-run re-arm and backfill scripts (packages/db/scripts/
-   * inc-1007-rearm-reminders-emit.mjs, obs-05-backfill-emit.mjs) omit it and
-   * send `confirmationEligible: false`, so their events never start a
-   * confirmation run. ./functions.ts states the assumption that rests on. A
-   * staff id, not a fact about the patient. OPTIONAL IN THIS TYPE for that
-   * reason: the type describes every event on the wire, and the scripts' events
-   * carry no therapist. The application's sender (lib/reminders/index.ts)
-   * requires it in its own argument type, so no application event omits it.
+   * save that emitted this event. Q-N took it OUT of the confirmation's
+   * duplicate key, which is now appointment + `saveId` (below); it still
+   * rides every event the application sends. The owner-run re-arm and
+   * backfill scripts (packages/db/scripts/inc-1007-rearm-reminders-emit.mjs,
+   * obs-05-backfill-emit.mjs) omit it. A staff id, not a fact about the
+   * patient. OPTIONAL IN THIS TYPE for that reason: the type describes every
+   * event on the wire, and the scripts' events carry no therapist. The
+   * application's sender (lib/reminders/index.ts) requires it in its own
+   * argument type, so no application event omits it.
    */
   practitionerId?: string;
+  /**
+   * Q-N. An opaque random id (a uuid) made ONCE PER SAVE, on the server, by
+   * `enqueueRemindersAfterCommit` (lib/scheduling/reminders.ts), and carried
+   * by every event that save emits. It names nobody and says nothing about
+   * the patient or the visit. It is the second half of the confirmation's
+   * duplicate key, appointment + `saveId` (CONFIRMATION_IDEMPOTENCY_KEY in
+   * ./functions.ts): a second DELIVERY of one event repeats it and is
+   * dropped, a second SAVE has a new one and is not.
+   *
+   * PRESENT ON EVERY EVENT THE APPLICATION SENDS, and only those: the
+   * owner-run scripts named above omit it and send `confirmationEligible:
+   * false`, so their events never start a confirmation run (./functions.ts
+   * says what the key would do without it). OPTIONAL IN THIS TYPE for that
+   * reason. The application's sender (lib/reminders/index.ts) requires it in
+   * its own argument type, so no application event omits it.
+   */
+  saveId?: string;
   /**
    * Q-K. Present, and `true`, ONLY when the save that emitted this event
    * changed the Terapeuta and kept the start and the clinic. The confirmation
@@ -95,6 +110,16 @@ export type AppointmentStatusChangedData = {
   appointmentId: string;
   tenantId: string;
   endsAt: string; // ISO-8601 UTC
+  /**
+   * Q-O. Present, and `true`, ONLY on the appointment/completed event a
+   * "Corrigir estado" into Concluida emits (lib/scheduling/actions.ts,
+   * `correctAppointmentEstadoAction`). It asks the 24 hour function for the
+   * satisfaction survey ALONE: never the follow-up message, which the
+   * ruling did not extend to a correction. Absent on every other event, so
+   * the ordinary Estado path keeps exactly the payload it had. A flag about
+   * the EVENT; it names nobody.
+   */
+  surveyOnly?: true;
 };
 
 export const EVENT_APPOINTMENT_SCHEDULED = "appointment/scheduled" as const;

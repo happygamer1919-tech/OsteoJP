@@ -297,7 +297,7 @@ function withinClinicHoursExists(
 function deliversServiceExists(
   tenantId: string,
   practitioner: Practitioner,
-  serviceId: string,
+  serviceId: SQL | string,
 ): SQL {
   return sql`exists (
     select 1 from therapist_services ts
@@ -428,9 +428,80 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     const allLocationIds = locationRows.map((l) => l.id);
     const bookableLocations = locationRows.map((l) => ({ id: l.id, name: l.name }));
 
-    const bookableServices: BookableService[] = serviceRows
-      // A location-bound service only lists if its location is active/bookable.
-      .filter((s) => s.locationId === null || allLocationIds.includes(s.locationId))
+    // A location-bound service only lists if its location is active/bookable.
+    const candidates = serviceRows.filter(
+      (s) => s.locationId === null || allLocationIds.includes(s.locationId),
+    );
+
+    // Q-R (strategy ruling 2026-10-22, on top of owner ruling Q-M): "a service
+    // with no ticked therapist is hidden online until someone is ticked".
+    //
+    // PER CLINIC, BECAUSE THE THERAPIST STEP IS PER CLINIC. For every (service,
+    // clinic) pair the catalog is about to offer, it asks the therapist step's
+    // own question (`listBookableTherapists` below: would it name anybody?) and
+    // keeps only the pairs where the answer is yes.
+    //
+    // THE USER PREDICATE BELOW IS A COPY OF THE ROSTER'S, ON PURPOSE, AND IT IS
+    // HELD EQUAL BY A TEST. The roster's SQL stays inline in
+    // `listBookableTherapists`, because the frozen gate test
+    // scripts/staff-11-jp-one-clinic-check.test.mjs reads it there. The only
+    // differences allowed are the two bindings (`l.id` for `${locationId}`,
+    // `s.id` for `serviceId`); catalog-roster-parity.test.ts fails on any other,
+    // and catalog-hides-unstaffed-services.db.test.ts compares the two answers
+    // pair by pair on a real database. Change both or neither.
+    //
+    // A SERVICE LEFT WITH NO CLINIC IS DROPPED, NEVER SENT WITH AN EMPTY LIST.
+    // The portal's booking flow reads an empty `locationIds` as "every clinic"
+    // (BookingFlow.tsx), so an emptied list would show the service everywhere,
+    // the opposite of the ruling.
+    //
+    // "Owner may override" needs no switch in code: ticking a therapist in
+    // Equipa brings the service back at that therapist's clinics (DECISIONS.md,
+    // Q-R).
+    const staffed = new Set<string>();
+    if (candidates.length > 0 && allLocationIds.length > 0) {
+      const notShared = await sharedResourceExclusion();
+      const ids = (xs: readonly string[]): SQL =>
+        sql.join(
+          xs.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        );
+      const pairs = (await db.execute(sql`
+        select s.id as service_id, l.id as location_id
+        from services s
+        join locations l on l.tenant_id = s.tenant_id
+        where s.tenant_id = ${principal.tenantId}
+          and s.id in (${ids(candidates.map((s) => s.id))})
+          and l.id in (${ids(allLocationIds)})
+          and exists (
+            select 1 from users u
+      where u.tenant_id = ${principal.tenantId}
+        and u.is_active = true
+        and u.is_bookable = true
+        ${notShared}
+        and exists (
+          select 1 from availability_templates av
+          where av.tenant_id = ${principal.tenantId}
+            and av.user_id = u.id
+            and av.location_id = l.id
+            and av.is_active = true
+            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
+            and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
+        )
+        and ${deliversServiceExists(principal.tenantId, sql`u.id`, sql`s.id`)}
+          )
+      `)) as unknown as ReadonlyArray<{ service_id: string; location_id: string }>;
+      for (const p of pairs) staffed.add(`${p.service_id}:${p.location_id}`);
+    }
+
+    const bookableServices: BookableService[] = candidates
+      .map((s) => ({
+        ...s,
+        staffedAt: (s.locationId === null ? allLocationIds : [s.locationId]).filter((l) =>
+          staffed.has(`${s.id}:${l}`),
+        ),
+      }))
+      .filter((s) => s.staffedAt.length > 0)
       .map((s) => ({
         id: s.id,
         name: s.name,
@@ -440,7 +511,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         // no payment, no fiscal document this phase.
         priceCents: effectivePriceCents(s.priceCents, null),
         currency: s.currency,
-        locationIds: s.locationId === null ? allLocationIds : [s.locationId],
+        locationIds: s.staffedAt,
       }));
 
     // BOTH preselections are decided by getBookableCatalog (booking.ts), which

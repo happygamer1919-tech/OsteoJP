@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { enqueueAppointmentReminders, enqueueFollowUp, enqueueNoShow } from "@/lib/reminders";
 import { MAX_OCCURRENCES } from "./recurrence";
 import { CONFIRMABLE_STATUSES } from "@/lib/reminders/confirmable-statuses";
@@ -19,9 +20,7 @@ export type ReminderEnqueueTarget = {
   startsAt: Date;
   /**
    * Q-K. The appointment's CURRENT Terapeuta (post-create / post-reschedule).
-   * Required: it rides every appointment/scheduled event, because the
-   * confirmation's duplicate key is appointment + start + therapist
-   * (lib/reminders/inngest/functions.ts).
+   * Required: it rides every appointment/scheduled event.
    */
   practitionerId: string;
   /**
@@ -98,6 +97,14 @@ export class ReminderBurstError extends Error {
  *   Q-K: what such a re-save owes the CONFIRMATION is the target's
  *   `confirmation` field; the reminders are emitted either way.
  *
+ * Q-N: ONE CALL IS ONE SAVE. The call makes the save's marker (`saveId`, a
+ * random uuid) once, here, and puts it on every event it emits. The
+ * confirmation's duplicate key is appointment + that marker
+ * (lib/reminders/inngest/functions.ts), so a second delivery of an event is
+ * dropped and a second save is not. Every emitter of appointment/scheduled in
+ * the application reaches Inngest through this function, so none of them can
+ * send an event without a marker; lib/reminders/index.ts requires it.
+ *
  * Best-effort by design: the appointment is already persisted, so a failed
  * enqueue is logged (sanitized — no PII; ids are uuids) and swallowed rather than
  * surfaced as a user-facing failure. A miss degrades to "no reminder", never to a
@@ -123,6 +130,10 @@ export async function enqueueRemindersAfterCommit(
   // sites, so a future call site inherits it instead of having to remember it.
   const eligibleIndex = confirmationEligibleIndex(targets, Date.now());
 
+  // Q-N: made once per save, BEFORE the loop, so every event of this save
+  // carries the same marker, and a retried send of one event carries it too.
+  const saveId = randomUUID();
+
   for (const [i, t] of targets.entries()) {
     try {
       await enqueueAppointmentReminders({
@@ -130,6 +141,7 @@ export async function enqueueRemindersAfterCommit(
         tenantId,
         startsAt: t.startsAt,
         practitionerId: t.practitionerId,
+        saveId,
         confirmationEligible: i === eligibleIndex,
         ...(t.acceptedPedido === true ? { acceptedPedido: true } : {}),
         ...(t.acceptedGuestRequest === true ? { acceptedGuestRequest: true } : {}),
@@ -195,6 +207,30 @@ export type StatusNotificationTarget = {
   appointmentId: string;
   endsAt: Date;
 };
+
+/**
+ * Q-O. After a "Corrigir estado" INTO Concluida commits, ask for the
+ * satisfaction survey: the same appointment/completed event the ordinary
+ * Estado path emits, marked `surveyOnly`, so the 24 hour function sends the
+ * survey alone and never the follow-up message. Whether a correction asks at
+ * all (into Concluida, a visit that ended in the last 7 days or has not
+ * ended yet) is
+ * `correctionAsksSurvey` in ./estado-correction.ts; the caller emits only
+ * when it says so.
+ *
+ * Best-effort and post-commit, like the others here: the correction stands,
+ * and a failed enqueue is logged without a payload and swallowed.
+ */
+export async function enqueueSurveyAfterCorrection(
+  tenantId: string,
+  target: StatusNotificationTarget,
+): Promise<void> {
+  try {
+    await enqueueFollowUp({ appointmentId: target.appointmentId, tenantId, endsAt: target.endsAt, surveyOnly: true });
+  } catch (e) {
+    console.error("scheduling: correction survey enqueue failed", e instanceof Error ? e.name : "unknown");
+  }
+}
 
 /**
  * Emit completion or no-show events for each affected appointment, best-effort,

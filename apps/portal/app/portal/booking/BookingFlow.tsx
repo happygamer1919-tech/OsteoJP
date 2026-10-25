@@ -378,6 +378,12 @@ export function BookingFlow({
       {step === 2 && (
         <div className="flex flex-col gap-3">
           <h2 className="text-lg font-medium text-text-primary">{s.booking.step_service}</h2>
+          {orderedServices.length === 0 && (
+            // Q-R (2026-10-22): a service is offered at a clinic only while a
+            // therapist offered online there is ticked for it, so a clinic that
+            // is listed can have none. Said plainly rather than an empty step.
+            <p className="text-sm text-text-secondary">{s.booking.no_services}</p>
+          )}
           {orderedServices.map((svc) => (
             <button key={svc.id} type="button" onClick={() => selectService(svc.id)} className={ROW}>
               <span className="min-w-0 flex-1">

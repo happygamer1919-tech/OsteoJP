@@ -5217,3 +5217,97 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   member in Equipa. (3) Only then does this branch (`booking/Q-M2-portal-filter`,
   the filter) merge. Anyone still without a mapping when (3) deploys disappears
   from the portal for every service.
+
+## 2026-10-25 - Q-V: a correction into Concluida asks the survey before the visit's end too; the shared duplicate key's gap is accepted
+
+- **Strategy ruling Q-V (2026-10-25), verbatim:** "Q-V (1) yes, drop the lower
+  bound. (2) accept and document." It amends Q-O (2026-10-22, "emit on a
+  correction into Concluida, only for visits that ended in the last 7 days, same
+  24 h and 60-day rules").
+- **(1) No lower bound.** `correctionAsksSurvey`
+  (`apps/web/lib/scheduling/estado-correction.ts`) is now true for a legal
+  correction into Concluida of a visit that ended no more than 7 days before the
+  correction, or has not ended yet, including one that has not started. The
+  7-day upper bound stays. Timing is unchanged: `send-follow-up-notification`
+  sleeps until `endsAt + 24 h` (computed from the event's `endsAt` alone), so a
+  correction made early still asks only 24 hours after the visit ends.
+- **(2) Accepted residual: one duplicate key.** The correction's event is the
+  ordinary `appointment/completed` with `surveyOnly: true`, so it shares the
+  follow-up's idempotency key, `appointmentId:follow_up`, which Inngest holds
+  for 24 hours from the first event. A correction back into Concluida that lands
+  between (the visit's end + 24 h) and (the first completed event + 24 h) is
+  dropped by the key. The first run has already woken and read a status that
+  was not Concluida, so it sent nothing, and that visit gets no survey. Before
+  the visit's end + 24 h nothing is lost: the first run is still asleep and
+  reads Concluida when it wakes. A key of its own would change the function's
+  stored options and need a Resync, so strategy accepted the gap. Documented
+  next to the emit in `correctAppointmentEstadoAction`
+  (`apps/web/lib/scheduling/actions.ts`).
+- **Known limit, not ruled: a far-future visit.** "Corrigir estado" has no date
+  check, so a future Cancelada visit corrected into Concluida now emits, and its
+  run sleeps until that visit's end + 24 h. Inngest's free plan publishes a
+  30-day limit on a run; what happens to a longer sleep is not established. The
+  ordinary reminders that sleep months ahead carry the same exposure
+  (OPS-scheduler-free-plan-30-day-run-limit). A correction in, out and back in,
+  more than 24 h apart before the visit ends, leaves two sleeping runs; the
+  survey's per-patient lock (0102) makes the second answer `cooldown`, so there
+  is no double send.
+- **Tests:** `estado-correction-survey.test.ts` (2 h before the end emits, a visit
+  not yet started emits, 7 days 1 hour after does not; the arm that asserted the
+  old lower bound now asserts the emit) and `inngest/functions.test.ts` (a
+  correction made before the visit started still sleeps to `endsAt + 24 h`).
+
+## 2026-10-22 - Q-R: a service no offered therapist is ticked for is hidden in the patient app until someone is ticked
+
+- **Strategy ruling Q-R (2026-10-22), verbatim:** "Q-R yes: a service with no
+  ticked therapist is hidden online until someone is ticked. Owner may override."
+- **The gap it closes.** Under Q-M (above) the therapist step lists only
+  therapists ticked for the chosen service, but the catalog still listed every
+  patient-bookable service. A service nobody bookable was ticked for was offered,
+  and the next step answered it with nobody and no slots.
+- **What the patient app does now.** The catalog (`getCatalog` in
+  `apps/api/lib/appointments/store.ts`, served by `GET /api/v1/booking/catalog`)
+  lists a service at a clinic only when at least one user passes the therapist
+  step's own predicate for that service at that clinic. A service left with no
+  clinic is left out of the response entirely, never sent with an empty
+  `locationIds`, because the portal's booking flow reads an empty list as "every
+  clinic". The response shape is unchanged; `docs/api/openapi.yaml` only rewords the `locationIds` description.
+- **One predicate, two copies held equal.** The catalog asks the therapist
+  step's own question: an active, bookable user who is not a shared resource,
+  with an active schedule row at that clinic valid today in Lisbon (Q-ROSTER),
+  and ticked for that service (Q-M). The roster's SQL stays inline in
+  `listBookableTherapists`, byte-equal to before, because the frozen gate test
+  `scripts/staff-11-jp-one-clinic-check.test.mjs` reads it there; `getCatalog`
+  carries a copy. `apps/api/lib/appointments/catalog-roster-parity.test.ts`
+  fails if the two differ in anything but the clinic and service bindings, and
+  the DB-gated suite below compares their answers pair by pair. The same scope
+  follows: per clinic, and "valid today", so a service whose only ticked
+  therapist's hours start next month is hidden until they start, exactly as that
+  therapist is absent from the therapist step until then.
+- **A listed clinic can now have no service.** R45 lists a clinic when anybody
+  bookable has hours there, with no date, so a clinic can be listed while no
+  service is offered there. The portal's service step then says "Não há
+  serviços disponíveis para marcação online nesta clínica. Contacte a clínica."
+  (`booking.no_services`). Which clinics are listed is unchanged.
+- **The public guest form is unchanged.** It is a different catalog
+  (`GET /api/v1/booking/guest/catalog`): it lists by the price grid (GUEST-08),
+  shows no therapist and assigns nobody (reception does). Whether Q-R reaches it
+  is an open question for strategy.
+- **The staff agenda is unchanged** (PL-06a): staff book any service with any
+  therapist.
+- **How the owner overrides.** No switch in code. To bring a hidden service back
+  online, an admin ticks it for at least one bookable therapist with hours at
+  that clinic, in Equipa, Gerir, Servico principal; it reappears at that
+  therapist's clinics on the next catalog load. To keep a ticked service off the
+  portal, Administracao, Servicos, Gerir, "Fechar a marcacao por pacientes" still
+  applies. Showing a service online that nobody is ticked for would need a code
+  change, and the patient would then reach a therapist step with nobody in it.
+- **Proof.** `apps/api/lib/appointments/catalog-hides-unstaffed-services.db.test.ts`
+  (DB-gated, real store): shown with a ticked bookable therapist, at that
+  therapist's clinic only; hidden with none; hidden with only a non-bookable
+  therapist, only a therapist at another clinic, or only a therapist whose hours
+  have expired, each of the first two with a control that brings it back; and a
+  parity arm comparing every (service, clinic) pair with the therapist step. The
+  e2e spec `apps/web/e2e/portal-booking-request-mode.spec.ts` gains a Q-R arm,
+  and its Decision C arms tick a therapist for Drenagem Linfatica for their own
+  length, since the seed ticks nobody for it.

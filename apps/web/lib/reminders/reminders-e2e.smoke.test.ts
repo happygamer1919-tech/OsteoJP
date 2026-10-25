@@ -323,7 +323,8 @@ describe("reschedule link secret (REMINDERS_LINK_SECRET)", () => {
 describe("Inngest scheduler wiring", () => {
   it("registers all notification functions and serves them at /api/inngest", async () => {
     const { functions } = await import("./inngest/functions");
-    expect(functions).toHaveLength(5);
+    // Five notification functions and the reminder sweep (SWEEP-03).
+    expect(functions).toHaveLength(6);
 
     const route = await import("@/app/api/inngest/route");
     // serve() must expose the three verbs Inngest calls (GET/POST/PUT).
@@ -345,6 +346,7 @@ describe("Inngest scheduler wiring", () => {
       tenantId: TENANT_ID,
       startsAt: STARTS_AT,
       practitionerId: "therapist-1",
+      saveId: "save-1",
       confirmationEligible: true,
     });
 
@@ -356,6 +358,7 @@ describe("Inngest scheduler wiring", () => {
         tenantId: TENANT_ID,
         startsAt: STARTS_AT.toISOString(),
         practitionerId: "therapist-1",
+        saveId: "save-1",
         confirmationEligible: true,
       },
     });
