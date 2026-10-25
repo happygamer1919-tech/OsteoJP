@@ -25,7 +25,7 @@
   "files": {
     ".env.example": "463dd0a4c495e522ec9ff8d695d2e580da3778188c8ff0d056367d63c430b584",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
-    ".github/scripts/assert-rls-executed.mjs": "2d3435520e95d8d9ba76fe92d283c1a83046b69a00d32f0479c671f23fc32417",
+    ".github/scripts/assert-rls-executed.mjs": "ff2a0520e8a1b14b2ff6ff24b999d45e1a9077c098d09d881f50460900fb88c4",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
     ".github/workflows/ci.yml": "56ca4e11b16209094ab3d7ae82dfcaf3a22ad59e2fcb5ca3918cd69df5b32ccd",
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
@@ -111,6 +111,7 @@
     "scripts/portal-frozen-locale-is-quarantined.test.mjs": "fff0f73ad106d9f74ea31fb9b4ac09c2c82568b2b0f8ccd12590b438bd93b27f",
     "scripts/portal-i18n-dead-keys.test.mjs": "fef0b33d3fb6a352240130e4ad506fa97f9b33a2ffa31f2feb554f3ece1c8bb8",
     "scripts/read-applied-migrations-target.test.mjs": "36bf852d991daa908c6c0ac23723f226e38337480c38a9a4a553df0a2087fa50",
+    "scripts/read-montemor-online-20261025.test.mjs": "9977f780f8009daa5f9dbdd1cc6ffc3801104c27879f5e74c61b5544222379b0",
     "scripts/registo-episode-key-0105.test.mjs": "7c46f3b59fc7013a6cf0d3d75c4474948a4dae7f5eeddcf17756a34a5c84b472",
     "scripts/registo-writes-0097.test.mjs": "066a843ab350612642229d8b9f2e172275b2ac87fba983643fca9131e0001944",
     "scripts/reminder-claims-0106.test.mjs": "cfac2be3eb1cef0cca9556536f2d034d6731114de8d13a99036c5589670a0738",
