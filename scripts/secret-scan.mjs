@@ -36,6 +36,26 @@
 // A FINDING NEVER PRINTS THE VALUE. File, line, pattern name and length only. A
 // scanner that echoes a secret into a terminal log has leaked it.
 //
+// ===========================================================================
+// IT ALSO REFUSES CONFLICT MARKERS (R3, strategy, 2026-10-25)
+// ===========================================================================
+// That morning a merge commit carrying unresolved conflict markers in
+// docs/DECISIONS.md was pushed to a pull request armed for auto-merge. It was
+// disarmed within a minute and nothing merged, but nothing on this machine would
+// have stopped it: the resolver's own check had failed and the push went ahead.
+// The check lives HERE, not in a second script, because every clone's hook
+// already runs this file (no hook to reinstall) and CI runs it on every PR's
+// added lines (a required check, not only a habit).
+//
+// A MARKER is a whole ADDED line that is one of git's own: seven `<`, `>` or `|`
+// at the start of the line, then a space and a label or nothing; or exactly seven
+// `=` and nothing else. WHOLE LINES ONLY, never a substring count:
+// docs/DECISIONS.md quotes the markers inside its prose, and the 2026-10-25
+// resolver failed by counting substrings. A lone `=======` line is a Markdown
+// heading underline, so it counts only when the same file's added lines also
+// carry a `<`, `>` or `|` marker; a real conflict always leaves one of those.
+// A marker finding prints the file, the line and `conflict-marker`.
+//
 // WHAT IT DOES NOT CATCH, stated so nobody reads more into a pass: a secret with
 // no recognisable shape (a bare 32-hex Twilio auth token on a line that does not
 // name it), anything inside a binary file (counted and reported, never read),
@@ -290,6 +310,28 @@ export function addedLines(diff) {
   return { lines, binary };
 }
 
+const MARKER = /^(?:<{7}|>{7}|\|{7})(?: .*)?$/;
+const MARKER_SEPARATOR = /^={7}$/;
+
+/**
+ * Conflict marker lines among added lines (R3, header). Per file: every `<`, `>`
+ * or `|` marker line, and a `=======` line only when that file has one of those.
+ */
+export function markerFindings(lines) {
+  const byFile = new Map();
+  for (const l of lines) {
+    if (!byFile.has(l.file)) byFile.set(l.file, []);
+    byFile.get(l.file).push(l);
+  }
+  const findings = [];
+  for (const [file, fileLines] of byFile) {
+    const hard = fileLines.filter((l) => MARKER.test(l.text));
+    const marked = hard.length > 0 ? fileLines.filter((l) => MARKER.test(l.text) || MARKER_SEPARATOR.test(l.text)) : [];
+    for (const l of marked) findings.push({ file, line: l.line, pattern: "conflict-marker", length: 0 });
+  }
+  return findings;
+}
+
 /** Findings for a set of added lines. Carries the match LENGTH, never the value. */
 export function scanLines(lines, compiled) {
   const findings = [];
@@ -378,6 +420,7 @@ export function main(argv, { cwd = process.cwd(), readStdin = () => readFileSync
       lineCount += added.lines.length;
       binary += added.binary;
       findings.push(...scanLines(added.lines, compiled));
+      findings.push(...markerFindings(added.lines));
     }
 
     if (findings.length > 0) {
@@ -385,6 +428,10 @@ export function main(argv, { cwd = process.cwd(), readStdin = () => readFileSync
       for (const f of findings) {
         const where = f.line ? `${f.file}:${f.line}` : f.file;
         err(`  ${where}  ${f.pattern}${f.length ? `  (${f.length} chars, value not printed)` : ""}`);
+      }
+      if (findings.some((f) => f.pattern === "conflict-marker")) {
+        err("conflict-marker: an unresolved merge. Resolve it, check `git diff origin/main` has no marker line, commit, then push.");
+        err("If the pull request is armed for auto-merge, disarm it before you push the repair (R3).");
       }
       err("A false positive is fixed in scripts/secret-scan.mjs with a negative sample that proves it.");
       err("Bypassing the hook (--no-verify) is owner-confirmable.");
