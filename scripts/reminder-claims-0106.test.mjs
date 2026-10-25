@@ -1044,14 +1044,15 @@ test("STAGE 0'S W-9 SEARCH is the one the document's prose gives, it leaves out 
   assert.ok(s0.includes("W9X=$(printf '%s\\n' \"${W9}\" | grep -cv '^packages/db/tests/reschedule-requests-rls[.]db[.]test[.]ts:' || true)"));
   assert.ok(s0.some((l) => l.startsWith('[ "${W9X}" = 0 ] || ') && EXPLICIT_HALT.test(l)));
   assert.ok(s0.some((l) => l.startsWith('[ "${W9N}" = 3 ] || ') && EXPLICIT_HALT.test(l)));
-  // Run on this tree, the search prints exactly the three lines of the one test.
-  const r = spawnSync("git", ["grep", "-n", "-I", "-E", "reminder_claims|reminder_sweep_passes|reminderClaims|reminderSweepPasses", "--", "apps", "packages", "scripts", "supabase", ...W9_EXCLUDED.map((p) => `:(exclude)${p}`)], { cwd: ROOT, encoding: "utf8" });
-  if (r.status === 128 && /not a git repository/.test(r.stderr)) return;
-  assert.equal(r.status, 0, r.stderr);
-  const got = r.stdout.trim().split("\n");
-  assert.equal(got.length, 3, r.stdout);
-  for (const l of got) assert.ok(l.startsWith(`${W9_ALLOWED_FILE}:`), l);
-  // The search would see this file if it did not leave it out.
+  // RETIRED AFTER 0106'S APPLY: a run of the search on THIS tree, which required it to print exactly
+  // the three lines of the one test. That was stage 0's pre-apply property, true only until code that
+  // reads the table landed, and the reminder sweep's code reads it. What the search does with a
+  // foreign line, a line short or no line at all is proven on synthetic output by "THE W-9 SEARCH,
+  // stage 0 whole" below, and does not depend on the tree.
+  // The search leaves this file out, by name, in the very line the block runs...
+  assert.ok(W9_EXCLUDED.includes(THIS_FILE));
+  assert.ok(line.includes(` ':(exclude)${THIS_FILE}'`), "the search does not leave this file out");
+  // ...and it would see this file if it did not.
   assert.ok(read(THIS_FILE).includes("reminder_claims"));
 });
 
