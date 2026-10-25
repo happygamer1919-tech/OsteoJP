@@ -5218,7 +5218,45 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   the filter) merge. Anyone still without a mapping when (3) deploys disappears
   from the portal for every service.
 
-<<<<<<< HEAD
+## 2026-10-25 - Q-V: a correction into Concluida asks the survey before the visit's end too; the shared duplicate key's gap is accepted
+
+- **Strategy ruling Q-V (2026-10-25), verbatim:** "Q-V (1) yes, drop the lower
+  bound. (2) accept and document." It amends Q-O (2026-10-22, "emit on a
+  correction into Concluida, only for visits that ended in the last 7 days, same
+  24 h and 60-day rules").
+- **(1) No lower bound.** `correctionAsksSurvey`
+  (`apps/web/lib/scheduling/estado-correction.ts`) is now true for a legal
+  correction into Concluida of a visit that ended no more than 7 days before the
+  correction, or has not ended yet, including one that has not started. The
+  7-day upper bound stays. Timing is unchanged: `send-follow-up-notification`
+  sleeps until `endsAt + 24 h` (computed from the event's `endsAt` alone), so a
+  correction made early still asks only 24 hours after the visit ends.
+- **(2) Accepted residual: one duplicate key.** The correction's event is the
+  ordinary `appointment/completed` with `surveyOnly: true`, so it shares the
+  follow-up's idempotency key, `appointmentId:follow_up`, which Inngest holds
+  for 24 hours from the first event. A correction back into Concluida that lands
+  between (the visit's end + 24 h) and (the first completed event + 24 h) is
+  dropped by the key. The first run has already woken and read a status that
+  was not Concluida, so it sent nothing, and that visit gets no survey. Before
+  the visit's end + 24 h nothing is lost: the first run is still asleep and
+  reads Concluida when it wakes. A key of its own would change the function's
+  stored options and need a Resync, so strategy accepted the gap. Documented
+  next to the emit in `correctAppointmentEstadoAction`
+  (`apps/web/lib/scheduling/actions.ts`).
+- **Known limit, not ruled: a far-future visit.** "Corrigir estado" has no date
+  check, so a future Cancelada visit corrected into Concluida now emits, and its
+  run sleeps until that visit's end + 24 h. Inngest's free plan publishes a
+  30-day limit on a run; what happens to a longer sleep is not established. The
+  ordinary reminders that sleep months ahead carry the same exposure
+  (OPS-scheduler-free-plan-30-day-run-limit). A correction in, out and back in,
+  more than 24 h apart before the visit ends, leaves two sleeping runs; the
+  survey's per-patient lock (0102) makes the second answer `cooldown`, so there
+  is no double send.
+- **Tests:** `estado-correction-survey.test.ts` (2 h before the end emits, a visit
+  not yet started emits, 7 days 1 hour after does not; the arm that asserted the
+  old lower bound now asserts the emit) and `inngest/functions.test.ts` (a
+  correction made before the visit started still sleeps to `endsAt + 24 h`).
+
 ## 2026-10-22 - Q-R: a service no offered therapist is ticked for is hidden in the patient app until someone is ticked
 
 - **Strategy ruling Q-R (2026-10-22), verbatim:** "Q-R yes: a service with no
@@ -5273,43 +5311,3 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   e2e spec `apps/web/e2e/portal-booking-request-mode.spec.ts` gains a Q-R arm,
   and its Decision C arms tick a therapist for Drenagem Linfatica for their own
   length, since the seed ticks nobody for it.
-=======
-## 2026-10-25 - Q-V: a correction into Concluida asks the survey before the visit's end too; the shared duplicate key's gap is accepted
-
-- **Strategy ruling Q-V (2026-10-25), verbatim:** "Q-V (1) yes, drop the lower
-  bound. (2) accept and document." It amends Q-O (2026-10-22, "emit on a
-  correction into Concluida, only for visits that ended in the last 7 days, same
-  24 h and 60-day rules").
-- **(1) No lower bound.** `correctionAsksSurvey`
-  (`apps/web/lib/scheduling/estado-correction.ts`) is now true for a legal
-  correction into Concluida of a visit that ended no more than 7 days before the
-  correction, or has not ended yet, including one that has not started. The
-  7-day upper bound stays. Timing is unchanged: `send-follow-up-notification`
-  sleeps until `endsAt + 24 h` (computed from the event's `endsAt` alone), so a
-  correction made early still asks only 24 hours after the visit ends.
-- **(2) Accepted residual: one duplicate key.** The correction's event is the
-  ordinary `appointment/completed` with `surveyOnly: true`, so it shares the
-  follow-up's idempotency key, `appointmentId:follow_up`, which Inngest holds
-  for 24 hours from the first event. A correction back into Concluida that lands
-  between (the visit's end + 24 h) and (the first completed event + 24 h) is
-  dropped by the key. The first run has already woken and read a status that
-  was not Concluida, so it sent nothing, and that visit gets no survey. Before
-  the visit's end + 24 h nothing is lost: the first run is still asleep and
-  reads Concluida when it wakes. A key of its own would change the function's
-  stored options and need a Resync, so strategy accepted the gap. Documented
-  next to the emit in `correctAppointmentEstadoAction`
-  (`apps/web/lib/scheduling/actions.ts`).
-- **Known limit, not ruled: a far-future visit.** "Corrigir estado" has no date
-  check, so a future Cancelada visit corrected into Concluida now emits, and its
-  run sleeps until that visit's end + 24 h. Inngest's free plan publishes a
-  30-day limit on a run; what happens to a longer sleep is not established. The
-  ordinary reminders that sleep months ahead carry the same exposure
-  (OPS-scheduler-free-plan-30-day-run-limit). A correction in, out and back in,
-  more than 24 h apart before the visit ends, leaves two sleeping runs; the
-  survey's per-patient lock (0102) makes the second answer `cooldown`, so there
-  is no double send.
-- **Tests:** `estado-correction-survey.test.ts` (2 h before the end emits, a visit
-  not yet started emits, 7 days 1 hour after does not; the arm that asserted the
-  old lower bound now asserts the emit) and `inngest/functions.test.ts` (a
-  correction made before the visit started still sleeps to `endsAt + 24 h`).
->>>>>>> origin/main
