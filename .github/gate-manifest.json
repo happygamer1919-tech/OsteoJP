@@ -48,6 +48,7 @@
     "scripts/0083-checks-quote-the-real-file.test.mjs": "6a266fb9850ae40b5412393a388a22d789916bc6884f9c061c48e047c8ef009e",
     "scripts/agent-commands-carry-no-credentials.test.mjs": "042c8eaf0d5d25dcde8c197b04f3e0f25289a257f38b270f0078641289a4a749",
     "scripts/anexo-link-v2-data-op.test.mjs": "79bbcde9e02b60c21fa4a92083193af25f228c998b429447d2b623a807a98175",
+    "scripts/annulment-insert-policy-0107.test.mjs": "2639c04c3f0822e65cf6e8f909bdf49a7010e913b94436f7734fea9ba37ef59d",
     "scripts/anon-sequences-default-0103.test.mjs": "3377310d21a2d89536efb93a0d6aeabc1407c5ee51e3649ba173b0ec29f49eef",
     "scripts/apply-lane/apply-lane-settings.test.mjs": "10678466dff7d0f1ccb6003098d3ba444995e140920dc465b8664a706157933d",
     "scripts/apply-lane/set-user-classify-all-shell.test.mjs": "b62320b3c580780a9cfa742ab3acb5ad2b2c45e9af694719145c8d38ace665df",
