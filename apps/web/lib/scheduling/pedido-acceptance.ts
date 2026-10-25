@@ -25,9 +25,9 @@ import { enqueueRemindersAfterCommit, type ReminderEnqueueTarget } from "./remin
 // reminder runs (cancelOn) and the replacements are dropped by the 24h
 // idempotency key (lib/reminders/inngest/functions.ts): emitting for such a row
 // would REMOVE its reminders. THAT WAS TRUE UNTIL 2026-10-07: the reminder key
-// now carries the save, so the replacement runs. The rule here stands anyway,
-// because the confirmation key is unchanged and an event nobody needs is still
-// an event. So pedido-ness is read BEFORE the write, from the
+// now carries the save, so the replacement runs, and since Q-N the
+// confirmation key carries the save too. The rule here stands anyway, because
+// an event nobody needs is still an event. So pedido-ness is read BEFORE the write, from the
 // database's own definition (public.is_unconfirmed_pedido, 0059/0067), which is
 // SECURITY DEFINER so the answer does not depend on who is asking.
 //
@@ -68,7 +68,9 @@ export async function isUnconfirmedPedido(tx: DbTx, appointmentId: string): Prom
  * and their replacements carry the keys already seen). The patient got no
  * confirmation and no reminders, and nothing anywhere recorded an attempt.
  * (Since 2026-10-07 the reminder key carries the save, so the reminder half of
- * this can no longer happen; the confirmation half still can.)
+ * this can no longer happen. Since Q-N the confirmation key carries the save
+ * too, so neither half can; not emitting stays, because an event for an
+ * unaccepted request has nothing to send.)
  *
  * THE FIX IS TO NOT EMIT, not to change a key: the key and the trigger filter
  * are untouched.

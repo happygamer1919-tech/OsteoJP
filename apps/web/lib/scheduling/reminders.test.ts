@@ -14,6 +14,8 @@ const TENANT = "22222222-2222-2222-2222-222222222222";
 const T1 = new Date("2031-07-01T09:00:00.000Z");
 const T2 = new Date("2031-07-08T09:00:00.000Z");
 const PRAC = "therapist-1";
+/** Q-N: the save's marker is a random v4 uuid, so it carries nothing about the visit. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 let savedFlag: string | undefined;
 beforeEach(() => {
@@ -43,6 +45,7 @@ describe("enqueueRemindersAfterCommit", () => {
       tenantId: TENANT,
       startsAt: T1,
       practitionerId: PRAC,
+      saveId: expect.stringMatching(UUID),
       confirmationEligible: true,
     });
     expect(enqueue).toHaveBeenNthCalledWith(2, {
@@ -50,6 +53,7 @@ describe("enqueueRemindersAfterCommit", () => {
       tenantId: TENANT,
       startsAt: T2,
       practitionerId: PRAC,
+      saveId: expect.stringMatching(UUID),
       confirmationEligible: false,
     });
   });
@@ -65,8 +69,29 @@ describe("enqueueRemindersAfterCommit", () => {
       tenantId: TENANT,
       startsAt: T2,
       practitionerId: PRAC,
+      saveId: expect.stringMatching(UUID),
       confirmationEligible: true,
     });
+  });
+
+  it("Q-N: ONE save, ONE marker: every event of the call carries the same saveId", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [
+      { appointmentId: "appt-1", startsAt: T1, practitionerId: PRAC },
+      { appointmentId: "appt-2", startsAt: T2, practitionerId: PRAC },
+    ]);
+    const markers = enqueue.mock.calls.map((c) => (c[0] as { saveId: string }).saveId);
+    expect(markers).toHaveLength(2);
+    expect(markers[0]).toMatch(UUID);
+    expect(markers[1]).toBe(markers[0]);
+  });
+
+  it("Q-N: TWO saves of the same appointment, same start and therapist: two different markers", async () => {
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: "appt-1", startsAt: T1, practitionerId: PRAC }]);
+    await enqueueRemindersAfterCommit(TENANT, [{ appointmentId: "appt-1", startsAt: T1, practitionerId: PRAC }]);
+    const [first, second] = enqueue.mock.calls.map((c) => (c[0] as { saveId: string }).saveId);
+    expect(first).toMatch(UUID);
+    expect(second).toMatch(UUID);
+    expect(second).not.toBe(first);
   });
 
   it("no occurrences → no events", async () => {
