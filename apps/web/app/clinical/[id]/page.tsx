@@ -27,6 +27,7 @@ import { StoredRecordContent } from "./stored-record-content";
 import { DownloadReportButton } from "./DownloadReportButton";
 import { fieldAnchorId } from "./anchors";
 import { HIDDEN_FIELD_KEYS, sectionLabel } from "./field-display";
+import { formatLisbonDateTime } from "../lisbon-format";
 import { PatientHeaderStrip } from "./PatientHeaderStrip";
 import { RecordForm } from "./RecordForm";
 import { canDownloadReport, statusLabel } from "./record-status";
@@ -257,7 +258,7 @@ export default async function RecordDetailPage({
                 {record.signedByName && (
                   <span className="text-text-secondary">
                     {s["clinical.signedBy"]}: {record.signedByName}
-                    {record.signedAt ? ` · ${s["clinical.signedAt"]}: ${new Date(record.signedAt).toLocaleString("pt-PT")}` : ""}
+                    {record.signedAt ? ` · ${s["clinical.signedAt"]}: ${formatLisbonDateTime(record.signedAt)}` : ""}
                   </span>
                 )}
               </span>
