@@ -194,12 +194,12 @@ describe("downloadPatientFichaUrlAction: the export's own time (batch item 11)",
         now += 700;
         return render(...args);
       });
-      const store = upload.getMockImplementation()!;
+      const store = upload.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
       upload.mockImplementation(async (...args: unknown[]) => {
         now += 200;
         return store(...args);
       });
-      const sign = createSignedUrl.getMockImplementation()!;
+      const sign = createSignedUrl.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
       createSignedUrl.mockImplementation(async (...args: unknown[]) => {
         now += 50;
         return sign(...args);
