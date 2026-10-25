@@ -33,38 +33,47 @@ export async function assertStaffInScope(
 /**
  * Serialise every write to ONE member (Q-M review, 2026-10-20; PL-09): a save
  * that reads the member's current rows and then writes from what it read takes
- * `SELECT ... FOR UPDATE` on the member's own users row first, so two saves on
+ * `SELECT ... FOR NO KEY UPDATE` on the member's own users row first, so two saves on
  * the same member run one after the other and the second reads what the first
  * committed. It also refuses a member this actor cannot see (another tenant's
  * id) with not_found.
  */
 export async function lockStaffMember(tx: DbTx, userId: string): Promise<void> {
+  // NO KEY UPDATE: serialises the saves on this member without conflicting
+  // with the KEY SHARE locks that foreign keys to users take (an audit insert
+  // naming this member, for one).
   const [row] = await tx
     .select({ id: users.id })
     .from(users)
     .where(eq(users.id, userId))
-    .for("update");
+    .for("no key update");
   if (!row) throw new AdminError("not_found");
 }
 
 /**
- * A location-scoped admin changes clinic memberships only at their own clinics.
- * `toAdd` and `toRemove` are the clinics a save would add and remove; any of them
- * outside the scope refuses the whole save (`forbidden`). A membership at another
- * clinic that the save leaves as it is passes: the Gerir form lists every clinic
- * of the tenant and posts the member's existing memberships back unchanged.
- * No-op for owner and for an unassigned admin (scope null).
+ * The clinic set a memberships save writes. For the owner and an unassigned
+ * admin (scope null) it is exactly what the form posted. For an admin assigned
+ * to some clinics, the save governs only their own clinics:
+ *   - a posted clinic outside the scope that the member does not hold is an
+ *     add at another clinic, and refuses the whole save (`forbidden`);
+ *   - a membership the member holds outside the scope is KEPT, whether or not
+ *     the form posted it. The Gerir form posts active clinics only, so a
+ *     membership at an archived clinic is never posted, and must not read as a
+ *     removal.
+ * Result: (posted within the scope) together with (held outside the scope).
  */
-export function assertMembershipChangeInScope(
-  toAdd: readonly string[],
-  toRemove: readonly string[],
+export function resolveMembershipSet(
+  wanted: readonly string[],
+  current: ReadonlySet<string>,
   scope: string[] | null,
-): void {
-  if (!scope) return;
+): string[] {
+  if (!scope) return [...new Set(wanted)];
   const own = new Set(scope);
-  if ([...toAdd, ...toRemove].some((locationId) => !own.has(locationId))) {
+  if (wanted.some((locationId) => !current.has(locationId) && !own.has(locationId))) {
     throw new AdminError("forbidden");
   }
+  const keptOutside = [...current].filter((locationId) => !own.has(locationId));
+  return [...new Set([...wanted.filter((locationId) => own.has(locationId)), ...keptOutside])];
 }
 
 /**

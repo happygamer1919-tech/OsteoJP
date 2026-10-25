@@ -32,7 +32,7 @@ const admin: RequestContext = { tenantId: "tenant-A", role: "admin", userId: "ad
 const reception: RequestContext = { tenantId: "tenant-A", role: "reception", userId: "recep-1" };
 
 // A fake tx for setTherapistPrimaryService. Three selects run in order:
-//   (0) the member lock → `.for("update")` → [{id}] (Q-M review);
+//   (0) the member lock → `.for("no key update")` → [{id}] (Q-M review);
 //   (1) active-service validation → `.limit(1)` → [{id}] when active, else [];
 //   (2) the therapist's mapped services → `.orderBy()` → oldest-first.
 // delete/insert are recorded; `update` must stay untouched (42501-safe).
@@ -79,7 +79,7 @@ describe("setTherapistPrimaryService (W3-04 + W4-01)", () => {
     expect(serviceIdsOf(calls.inserts)).toEqual(["svc-b", "svc-a"]); // chosen first
     expect(calls.inserts[0]).toMatchObject({ tenantId: "tenant-A", therapistUserId: "ther-1" });
     expect(writeAudit).toHaveBeenCalledTimes(1);
-    expect(calls.locks).toEqual(["update"]); // the member row is locked first
+    expect(calls.locks).toEqual(["no key update"]); // the member row is locked first
   });
 
   it("zero-mapping therapist: INSERT the first service, becomes primary (no delete, no UPDATE)", async () => {
@@ -162,7 +162,7 @@ describe("getTherapistPrimaryServiceId (W3-04)", () => {
 // therapist. The patient app offers a therapist only for a mapped service; the
 // staff agenda preselects the PRIMARY (earliest row) and must not move. A fake
 // tx for setTherapistServices. Three selects run in order:
-//   (0) the member lock → `.for("update")` → [{id}], or [] for a member this
+//   (0) the member lock → `.for("no key update")` → [{id}], or [] for a member this
 //       actor cannot see;
 //   (1) the therapist's mapped services → `.orderBy()` → oldest-first;
 //   (2) the tenant's ACTIVE services → awaited straight off `.where()`.
@@ -217,7 +217,7 @@ describe("setTherapistServices (Q-M): several services, the primary never moves"
     expect(serviceIdsOf(calls.inserts)).not.toContain("svc-primary");
     // A double submit is a no-op on the unique key, never an error.
     expect(calls.onConflictDoNothing).toBe(2);
-    expect(calls.locks).toEqual(["update"]);
+    expect(calls.locks).toEqual(["no key update"]);
     expect(calls.inserts[0]).toMatchObject({ tenantId: "tenant-A", therapistUserId: "ther-1" });
     expect(writeAudit).toHaveBeenCalledWith(
       tx,

@@ -64,6 +64,8 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
   const therapistRole = randomUUID();
   const clinicA = randomUUID();
   const clinicB = randomUUID();
+  /** An ARCHIVED clinic: the Gerir form never posts it. */
+  const clinicC = randomUUID();
   const serviceOne = randomUUID();
   const serviceTwo = randomUUID();
 
@@ -80,6 +82,8 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
   const memberAB = randomUUID();
   /** A therapist at both clinics, used only by the two-saves arm. */
   const memberRace = randomUUID();
+  /** A therapist at clinic A and at the archived clinic C. */
+  const memberAC = randomUUID();
 
   const asOwner: RequestContext = { tenantId: tenant, role: "owner", userId: owner };
   const asAdminA: RequestContext = { tenantId: tenant, role: "admin", userId: adminA };
@@ -146,6 +150,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       [memberB, therapistRole, "ter-b"],
       [memberAB, therapistRole, "ter-ab"],
       [memberRace, therapistRole, "ter-race"],
+      [memberAC, therapistRole, "ter-ac"],
     ] as const) {
       await db.execute(
         raw`insert into users (id, tenant_id, role_id, email, full_name, is_bookable)
@@ -158,6 +163,10 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
           values (${clinicA}::uuid, ${tenant}::uuid, 'Clinica A (teste)', '08:00', '21:00', 60),
                  (${clinicB}::uuid, ${tenant}::uuid, 'Clinica B (teste)', '08:00', '21:00', 60)`,
     );
+    await db.execute(
+      raw`insert into locations (id, tenant_id, name, opens_at, closes_at, slot_granularity_min, is_active)
+          values (${clinicC}::uuid, ${tenant}::uuid, 'Clinica C arquivada (teste)', '08:00', '21:00', 60, false)`,
+    );
     for (const [userId, locationId] of [
       [adminA, clinicA],
       [memberA, clinicA],
@@ -166,6 +175,8 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       [memberAB, clinicB],
       [memberRace, clinicA],
       [memberRace, clinicB],
+      [memberAC, clinicA],
+      [memberAC, clinicC],
     ] as const) {
       await db.execute(
         raw`insert into staff_locations (tenant_id, user_id, location_id)
@@ -288,6 +299,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
         setTherapistPrimaryService(asAdminA, memberB, serviceTwo),
       ).rejects.toMatchObject({ code: "not_found" });
       expect(await servicesOf(memberB)).toEqual([serviceOne]);
+      expect(await auditCount("therapist.primary_service.set", memberB)).toBe(0);
     });
 
     it("control: the same admin sets the primary of a member at their clinic", async () => {
@@ -312,6 +324,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
         code: "not_found",
       });
       expect(await servicesOf(memberB)).toEqual(before);
+      expect(await auditCount("therapist.services.set", memberB)).toBe(0);
     });
 
     it("control: the same admin ticks a service for a member at their clinic", async () => {
@@ -337,6 +350,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
         setStaffLocations(asAdminA, memberB, [clinicA, clinicB]),
       ).rejects.toMatchObject({ code: "not_found" });
       expect(await clinicsOf(memberB)).toEqual([clinicB]);
+      expect(await auditCount("staff.locations.set", memberB)).toBe(0);
     });
 
     it("a scoped admin may not ADD a clinic outside their scope to their own member", async () => {
@@ -344,13 +358,29 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
         setStaffLocations(asAdminA, memberA, [clinicA, clinicB]),
       ).rejects.toMatchObject({ code: "forbidden" });
       expect(await clinicsOf(memberA)).toEqual([clinicA]);
+      expect(await auditCount("staff.locations.set", memberA)).toBe(0);
     });
 
-    it("a scoped admin may not REMOVE a clinic outside their scope", async () => {
-      await expect(setStaffLocations(asAdminA, memberAB, [clinicA])).rejects.toMatchObject({
-        code: "forbidden",
-      });
+    it("a membership outside the scope that the post omits is kept, not removed", async () => {
+      // Before round 3 this save was refused as a removal at clinic B. A scoped
+      // admin's save now governs only their own clinics, so B is kept: no change.
+      await setStaffLocations(asAdminA, memberAB, [clinicA]);
       expect(await clinicsOf(memberAB)).toEqual(sorted(clinicA, clinicB));
+      expect(await auditCount("staff.locations.set", memberAB)).toBe(0);
+    });
+
+    it("a membership at an archived clinic, which the form never posts, is kept on an unchanged save", async () => {
+      await setStaffLocations(asAdminA, memberAC, [clinicA]);
+      expect(await clinicsOf(memberAC)).toEqual(sorted(clinicA, clinicC));
+      expect(await auditCount("staff.locations.set", memberAC)).toBe(0);
+    });
+
+    it("an explicit add at a clinic outside the scope is still refused, archived clinic held or not", async () => {
+      await expect(
+        setStaffLocations(asAdminA, memberAC, [clinicA, clinicB]),
+      ).rejects.toMatchObject({ code: "forbidden" });
+      expect(await clinicsOf(memberAC)).toEqual(sorted(clinicA, clinicC));
+      expect(await auditCount("staff.locations.set", memberAC)).toBe(0);
     });
 
     it("a scoped admin may not leave themselves with no clinic", async () => {
@@ -376,8 +406,13 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       const gate = new Promise<void>((resolve) => (release = resolve));
       let held!: () => void;
       const holding = new Promise<void>((resolve) => (held = resolve));
+      let holderPid = 0;
       const holder = db.transaction(async (tx) => {
-        await tx.execute(raw`select id from users where id = ${memberRace}::uuid for update`);
+        const me = (await tx.execute(
+          raw`select pg_backend_pid() as pid`,
+        )) as unknown as { pid: number }[];
+        holderPid = Number(me[0]!.pid);
+        await tx.execute(raw`select id from users where id = ${memberRace}::uuid for no key update`);
         await tx.execute(
           raw`delete from staff_locations where tenant_id = ${tenant}::uuid
                 and user_id = ${memberRace}::uuid and location_id = ${clinicB}::uuid`,
@@ -398,14 +433,15 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
         .finally(() => {
           settled = true;
         });
-      // Wait for a condition, not a duration: the save has finished, or it is
-      // queued behind a lock. The bound only stops a hung run.
-      for (let i = 0; i < 400 && !settled; i++) {
-        const waiting = (await db.execute(
-          raw`select count(*)::int as n from pg_locks where not granted`,
+      // Wait for a condition, not a duration: the save has finished, or some
+      // backend is blocked by THIS holder. The bound only stops a hung run.
+      for (let i = 0; i < 1000 && !settled; i++) {
+        const blocked = (await db.execute(
+          raw`select count(*)::int as n from pg_stat_activity
+               where ${holderPid}::int = any(pg_blocking_pids(pid))`,
         )) as unknown as { n: number }[];
-        if (Number(waiting[0]!.n) > 0) break;
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        if (Number(blocked[0]!.n) > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
       release();
       await holder;

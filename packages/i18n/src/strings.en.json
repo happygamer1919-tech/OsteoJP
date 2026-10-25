@@ -687,6 +687,7 @@
   "admin.staff.invited": "Member invited.",
   "admin.staff.lastOwnerBlocked": "The clinic must keep at least one active owner.",
   "admin.staff.ownerTierBlocked": "Only an owner can assign or change the owner role.",
+  "admin.staff.outsideYourClinics": "This change is outside your clinics: you can only change the clinics you are assigned to.",
   "admin.staff.emailTakenBlocked": "That email is already used by another staff member.",
   "admin.staff.error": "The operation failed.",
   "admin.staff.inviteEmailSent": "Invite email sent. The new member sets their own password via the link.",

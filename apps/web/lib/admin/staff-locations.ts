@@ -10,9 +10,9 @@ import { AdminError } from "./errors";
 import {
   assertKeepsAMembership,
   assertLocationInScope,
-  assertMembershipChangeInScope,
   assertStaffInScope,
   lockStaffMember,
+  resolveMembershipSet,
 } from "./staff-scope";
 
 /**
@@ -68,7 +68,8 @@ export async function listStaffLocations(
 }
 
 /**
- * Set a member's clinic memberships to EXACTLY `locationIds` (add the missing,
+ * Set a member's clinic memberships to EXACTLY `locationIds` (owner and an
+ * unassigned admin; a location-scoped admin, see below) (add the missing,
  * remove the absent). Colour on kept rows is preserved (only add/remove touch
  * rows). Every requested id must resolve to a location in the actor's tenant
  * (RLS-scoped read) or the whole set is rejected — a forged/cross-tenant id is
@@ -79,9 +80,10 @@ export async function listStaffLocations(
  * itself holds no PII.
  *
  * PL-09 Phase 4: a location-scoped admin edits only a member at their own
- * clinics, and adds or removes only their own clinics. A membership at another
- * clinic that the save leaves unchanged passes, since the form posts it back.
- * Such an admin never leaves a member, themselves included, with no clinic.
+ * clinics, and adds or removes only their own clinics. A membership the member
+ * holds at another clinic is kept whether or not the form posted it (the form
+ * posts active clinics only), and adding another clinic is refused. Such an
+ * admin never leaves a member, themselves included, with no clinic.
  */
 export async function setStaffLocations(
   actor: RequestContext,
@@ -117,14 +119,17 @@ export async function setStaffLocations(
       .from(staffLocations)
       .where(eq(staffLocations.userId, userId)); // RLS scopes tenant
     const currentIds = new Set(current.map((c) => c.locationId));
-    const wantedSet = new Set(wanted);
+    // The set this save writes: the posted set, or, for an admin assigned to
+    // some clinics, the posted clinics within their scope plus every membership
+    // held outside it (resolveMembershipSet; an add outside the scope refuses).
+    const finalIds = resolveMembershipSet(wanted, currentIds, scope);
+    const finalSet = new Set(finalIds);
 
-    const toAdd = wanted.filter((id) => !currentIds.has(id));
-    const toRemove = [...currentIds].filter((id) => !wantedSet.has(id));
+    const toAdd = finalIds.filter((id) => !currentIds.has(id));
+    const toRemove = [...currentIds].filter((id) => !finalSet.has(id));
 
     if (toAdd.length === 0 && toRemove.length === 0) return; // no-op, no audit
-    assertMembershipChangeInScope(toAdd, toRemove, scope);
-    assertKeepsAMembership(wanted.length, scope);
+    assertKeepsAMembership(finalIds.length, scope);
 
     for (const locationId of toAdd) {
       await tx.insert(staffLocations).values({
@@ -150,7 +155,7 @@ export async function setStaffLocations(
       entityType: "staff_locations",
       entityId: userId,
       // PII-free: ids + counts only.
-      metadata: { added: toAdd.length, removed: toRemove.length, total: wanted.length },
+      metadata: { added: toAdd.length, removed: toRemove.length, total: finalIds.length },
     });
   });
 }
