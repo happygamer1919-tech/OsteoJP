@@ -6,6 +6,7 @@ import { s, locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { getEpisodeDetail } from "@/lib/clinical/episodes";
 import type { RecordStatus } from "@/lib/clinical/records";
+import { formatLisbonDate } from "../../lisbon-format";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +101,7 @@ export default async function EpisodePage({
                   <td className="py-2 pr-4">{statusLabel(r.status)}</td>
                   <td className="py-2 pr-4">{r.version}</td>
                   <td className="py-2 pr-4">
-                    {new Date(r.updatedAt).toLocaleDateString("pt-PT")}
+                    {formatLisbonDate(r.updatedAt)}
                   </td>
                   <td className="py-2 pr-4">
                     <Link href={`/clinical/${r.id}`} className="underline">
