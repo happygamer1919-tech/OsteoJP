@@ -2,6 +2,7 @@ import type { PatientPrincipal } from "@osteojp/auth";
 import { AppointmentError } from "./errors";
 import { isWithinCancellationCutoff, isBeforeMinimumNotice } from "./cutoff";
 import { emitPatientChange } from "@/lib/notifications/patient-change";
+import { isHeldLocation } from "@/lib/booking/online-booking-hold";
 import { chooseTherapist, type TherapistCandidate } from "./therapist";
 
 // Patient appointments orchestration — view / book / cancel / reschedule.
@@ -698,6 +699,9 @@ export async function listRescheduleOptions(
   if (isWithinCancellationCutoff(appt.startsAt, now)) {
     throw new AppointmentError("cutoff");
   }
+  // R10: a clinic held off online booking offers no slot to move to. The
+  // appointment itself stays where it is; reception can still move it by hand.
+  if (isHeldLocation(appt.locationId)) return [];
 
   const durationMin = Math.round((appt.endsAt.getTime() - appt.startsAt.getTime()) / 60_000);
 
@@ -736,6 +740,12 @@ export async function rescheduleAppointment(
   // Cutoff is on the CURRENT start: you cannot touch an imminent appointment.
   if (isWithinCancellationCutoff(appt.startsAt, now)) {
     throw new AppointmentError("cutoff");
+  }
+  // R10: at a clinic held off online booking the action is refused with the
+  // answer a clinic nobody can be booked at already gets. Same rule as the
+  // options list above: the list is a courtesy, this is the control.
+  if (isHeldLocation(appt.locationId)) {
+    throw new AppointmentError("location_unavailable");
   }
   if (input.startsAt.getTime() <= now.getTime()) {
     throw new AppointmentError("slot_in_past");
