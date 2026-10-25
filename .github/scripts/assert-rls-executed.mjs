@@ -314,6 +314,14 @@ const SUITES = [
   // here so that the ABSENCE of either is red too.
   { file: "clinical-episodes-role-matrix.db.test.ts", hard: true },
   { file: "episodes-role-matrix.db.test.ts", hard: true },
+  // 0106, added 2026-10-22 after its merge (#1623). The DB-gated suite of the
+  // reminder sweep's two tables, reminder_claims and reminder_sweep_passes,
+  // read and written as the real roles: only the userless reminder job
+  // writes, a staff session reads its own tenant and writes nothing, no
+  // application role updates or deletes a row, service_role holds nothing,
+  // and a claim's appointment is of the row's tenant. Named here so that its
+  // ABSENCE is red too.
+  { file: "reminder-claims-rls.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
