@@ -162,7 +162,7 @@ Nota: o intervalo de datas tem no máximo 92 dias. Se escolher um intervalo maio
 
 ## Comunicações: Recuperação
 
-**Comunicações** tem três separadores: **Recuperação**, **Lembretes SMS** e **Respostas SMS**, e abre sempre em **Recuperação**. O separador **Recuperação** mostra a lista **Recuperação de utentes**: pacientes que estiveram em tratamento recentemente e não têm marcação futura. A lista mostra quem esteve na clínica desde o início do mês passado até há 7 dias, a começar pelos que estão há mais tempo sem voltar. Cada paciente aparece com a **Última consulta**, o **Terapeuta**, o telefone, a última nota (quando existe) e os botões **WhatsApp**, **SMS**, **Email**, **Adiar**, **Abrir ficha** e, quando o paciente tem notas, **Notas**. Mais abaixo fica a secção **Adiados**.
+Os separadores de **Comunicações** incluem **Recuperação**, **Lembretes SMS** e **Respostas SMS**, e **Comunicações** abre sempre em **Recuperação**. O separador **Recuperação** mostra a lista **Recuperação de utentes**: pacientes que estiveram em tratamento recentemente e não têm marcação futura. A lista mostra quem esteve na clínica desde o início do mês passado até há 7 dias, a começar pelos que estão há mais tempo sem voltar. Cada paciente aparece com a **Última consulta**, o **Terapeuta**, o telefone, a última nota (quando existe) e os botões **WhatsApp**, **SMS**, **Email**, **Adiar**, **Abrir ficha** e, quando o paciente tem notas, **Notas**. Mais abaixo fica a secção **Adiados**.
 
 ### Como fazer: contactar um paciente
 
