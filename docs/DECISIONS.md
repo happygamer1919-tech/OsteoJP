@@ -5243,6 +5243,15 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   stored options and need a Resync, so strategy accepted the gap. Documented
   next to the emit in `correctAppointmentEstadoAction`
   (`apps/web/lib/scheduling/actions.ts`).
+- **Known limit, not ruled: a far-future visit.** "Corrigir estado" has no date
+  check, so a future Cancelada visit corrected into Concluida now emits, and its
+  run sleeps until that visit's end + 24 h. Inngest's free plan publishes a
+  30-day limit on a run; what happens to a longer sleep is not established. The
+  ordinary reminders that sleep months ahead carry the same exposure
+  (OPS-scheduler-free-plan-30-day-run-limit). A correction in, out and back in,
+  more than 24 h apart before the visit ends, leaves two sleeping runs; the
+  survey's per-patient lock (0102) makes the second answer `cooldown`, so there
+  is no double send.
 - **Tests:** `estado-correction-survey.test.ts` (2 h before the end emits, a visit
   not yet started emits, 7 days 1 hour after does not; the arm that asserted the
   old lower bound now asserts the emit) and `inngest/functions.test.ts` (a
