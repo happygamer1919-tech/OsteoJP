@@ -81,7 +81,7 @@ export function resolveMembershipSet(
  * with no clinic falls outside every scoped admin's list, and an admin with no
  * clinic is unrestricted (`viewerLocationScope` returns null), so emptying a
  * member's memberships, the admin's own included, would move them out of the
- * clinic model rather than between clinics. Refused with `forbidden`. No-op for
+ * clinic model rather than between clinics. Refused with `no_clinic`. No-op for
  * owner and for an unassigned admin (scope null).
  */
 export function assertKeepsAMembership(
@@ -89,7 +89,7 @@ export function assertKeepsAMembership(
   scope: string[] | null,
 ): void {
   if (!scope) return;
-  if (remaining === 0) throw new AdminError("forbidden");
+  if (remaining === 0) throw new AdminError("no_clinic");
 }
 
 /**

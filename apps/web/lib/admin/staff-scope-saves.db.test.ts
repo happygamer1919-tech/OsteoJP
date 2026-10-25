@@ -385,7 +385,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
 
     it("a scoped admin may not leave themselves with no clinic", async () => {
       await expect(setStaffLocations(asAdminA, adminA, [])).rejects.toMatchObject({
-        code: "forbidden",
+        code: "no_clinic",
       });
       expect(await clinicsOf(adminA)).toEqual([clinicA]);
       expect(await auditCount("staff.locations.set", adminA)).toBe(0);
@@ -393,7 +393,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
 
     it("a scoped admin may not leave a colleague with no clinic", async () => {
       await expect(setStaffLocations(asAdminA, memberA, [])).rejects.toMatchObject({
-        code: "forbidden",
+        code: "no_clinic",
       });
       expect(await clinicsOf(memberA)).toEqual([clinicA]);
       expect(await auditCount("staff.locations.set", memberA)).toBe(0);
