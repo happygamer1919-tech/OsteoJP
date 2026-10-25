@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**554 cards on the board. 380 shipped, 174 open. Launch readiness 9/9, every launch gate passes.**
+**580 cards on the board. 394 shipped, 186 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,60 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-25, after the merges
+>
+> **The reminder sweep is merged and deployed, and waits for your Resync.**
+> Strategy lifted the freeze, and thirteen pull requests merged from 08:14 to
+> 11:50 Lisbon, one in checks at a time. The production deploy that carries the
+> sweep and Q-N completed at 11:00:46 Lisbon. **Your Inngest Resync of
+> osteojp-reminders is pending:** until you press it the sweep is not
+> registered and Q-N's key is not live. After it the sweep runs in shadow and
+> sends nothing.
+>
+> **Next:** shadow from Monday 2026-10-26 to Wednesday 2026-10-28. Then you read
+> the Inngest usage page and SOLO projects the month. Sending, together with the
+> never-reminded visits (Q-T), is armed on Thursday 2026-10-29 as one change of
+> yours, only under 70% of the monthly allowance. The history rewrite stays on
+> Sunday 2026-11-01, and only if sending has been clean since 2026-10-29 and no
+> sweep fix is in flight; otherwise Sunday 2026-11-08.
+>
+> **Merged on 2026-10-25:** the sweep, with its gate changes and three test-only
+> changes; a change back to an earlier time or therapist inside 24 hours now
+> sends its booking confirmation (Q-N, live after the Resync); the other SMS raise the same alert as the reminder when the
+> provider refuses our sender or text (Q-L, Q-U); a status correction into
+> Concluída asks for the survey (Q-O, Q-V; the survey stays off); the patient
+> app hides a service no therapist is ticked for (Q-R); the guide's Início
+> lesson names no tab count (Q-P). What patients or staff see stays open until
+> you have looked at it deployed. The clock-change tests (#1624) merged last, at 12:06.
+>
+> **For you:** check Equipa for bookable therapists with no services ticked
+> (Q-M). **New on the board:** a timing-sensitive test to repair, and a choice
+> on the workflow that updates every open pull request after each merge
+> (recommended: update only armed ones).
+
+> ### Where things stand, 2026-10-25
+>
+> **Migration 0106 is applied** (Sunday 2026-10-25, 01:45 WEST, journal 104).
+> The reminder sweep merges on 2026-10-25 and runs in shadow after your Resync;
+> sending is armed on Thursday 2026-10-29 if a measured projection is under 70%
+> of the scheduler's monthly allowance. It must be sending before Friday
+> 2026-11-06, with Wednesday 2026-11-04 as the fallback.
+>
+> **The history rewrite moved to Sunday 2026-11-01** (freeze from Saturday
+> 2026-10-31 at 22:00 Lisbon, start after 10:00, on your typed go), and only if
+> sweep sending has been clean since 2026-10-29; otherwise Sunday 2026-11-08.
+>
+> **Merged since 2026-10-16:** notices of a visit reach only reception at that
+> visit's clinic; an old login tab reloads once instead of staying stuck; the
+> patient app offers only therapists ticked for the service, and Equipa lets an
+> admin tick several services per therapist; a staff move re-sends the booking
+> confirmation only for a real change (live after the reminder app is
+> resynced); the survey's guide lesson, hidden while the survey is off. Each
+> stays open until you have looked at it deployed.
+>
+> **New on the board:** strategy's rulings of 2026-10-22 (Q-N, Q-O, Q-P, Q-R and
+> Q-S), one card each, and one Equipa follow-up.
 
 > ### Where things stand, 2026-10-15, after 0105
 >
