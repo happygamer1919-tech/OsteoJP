@@ -729,6 +729,13 @@
       "when": 1788502700000,
       "tag": "0106_reminder_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1788502800000,
+      "tag": "0107_record_annulments_insert_policy",
+      "breakpoints": true
     }
   ]
 }
