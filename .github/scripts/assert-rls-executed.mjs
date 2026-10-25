@@ -339,6 +339,14 @@ const SUITES = [
   { file: "reminder-claim-closed.db.test.ts", hard: true },
   { file: "sweep.db.test.ts", hard: true },
   { file: "sweep-send.db.test.ts", hard: true },
+  // 0107 (record_annulments INSERT policy): who may write an annulment row,
+  // proven as the real principals (packages/db) and through annulRecord
+  // (apps/web). Each asks the schema which expression it holds and THROWS on a
+  // database without the ruled one once the migration is promoted. Named here
+  // so that the ABSENCE of either is red too. THIS ENTRY NEEDS 0107 ON MAIN:
+  // before its pull request merges these files do not exist.
+  { file: "record-annulments-insert-policy.db.test.ts", hard: true },
+  { file: "annul-record.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
