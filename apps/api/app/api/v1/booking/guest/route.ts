@@ -321,7 +321,8 @@ export async function POST(req: Request): Promise<Response> {
       `[guest-booking] refused: service ${serviceId} is not sellable at location ${locationId} ` +
         `for tenant ${tenantId}. GUEST-08 requires active + not internal_only + patient_bookable, ` +
         "an ACTIVE service_location_prices row at that location, and an active location. " +
-        "R45 also requires a bookable therapist with active hours at that location.",
+        "R45 also requires a bookable therapist with active hours at that location, " +
+        "or the location is held (R10).",
     );
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
