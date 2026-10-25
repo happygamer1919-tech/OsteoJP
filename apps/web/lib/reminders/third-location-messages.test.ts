@@ -130,6 +130,14 @@ vi.mock("./confirm-code-store", () => ({
   }),
   withdrawConfirmCode: vi.fn(async () => true),
 }));
+// The reminder claim (./reminder-claim.ts) is replaced: this file has no
+// database, where the real claim fails open and logs one error per call. One
+// arm below counts the errors of the message it is about. A claim that is not
+// held changes nothing the dispatcher does.
+vi.mock("./reminder-claim", () => ({
+  takeReminderClaim: vi.fn(async () => ({ held: false, claimId: null })),
+  releaseReminderClaim: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/surveys/survey-store", () => ({
   issueSurveyAutomatic: vi.fn(async (args: { channel: string; code: string }) => {
     h.surveyIssues.push({ channel: args.channel, code: args.code });
