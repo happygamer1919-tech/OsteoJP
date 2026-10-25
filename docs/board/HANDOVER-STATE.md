@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**566 cards on the board. 382 shipped, 184 open. Launch readiness 9/9, every launch gate passes.**
+**569 cards on the board. 384 shipped, 185 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -148,15 +148,17 @@ report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
 
-> ### Where things stand, 2026-10-22
+> ### Where things stand, 2026-10-25
 >
-> **Migration 0106: merged, not applied, sitting 2026-10-22 night.** It slipped
-> from Monday 2026-10-19 or Tuesday 2026-10-20. The reminder sweep must be
-> sending before Friday 2026-11-06, with Wednesday 2026-11-04 as the fallback.
+> **Migration 0106 is applied** (Sunday 2026-10-25, 01:45 WEST, journal 104).
+> The reminder sweep merges on 2026-10-25 and runs in shadow after your Resync;
+> sending is armed on Thursday 2026-10-29 if a measured projection is under 70%
+> of the scheduler's monthly allowance. It must be sending before Friday
+> 2026-11-06, with Wednesday 2026-11-04 as the fallback.
 >
-> **The history rewrite is confirmed for Sunday 2026-10-25.** A freeze from
-> Saturday 2026-10-24 at 22:00 Lisbon; it starts after 10:00 Lisbon on Sunday,
-> on your typed go.
+> **The history rewrite moved to Sunday 2026-11-01** (freeze from Saturday
+> 2026-10-31 at 22:00 Lisbon, start after 10:00, on your typed go), and only if
+> sweep sending has been clean since 2026-10-29; otherwise Sunday 2026-11-08.
 >
 > **Merged since 2026-10-16:** notices of a visit reach only reception at that
 > visit's clinic; an old login tab reloads once instead of staying stuck; the
