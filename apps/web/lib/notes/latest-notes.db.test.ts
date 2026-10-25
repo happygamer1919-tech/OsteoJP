@@ -41,6 +41,14 @@ const live = Boolean(url);
 const d = live ? describe : describe.skip;
 
 const NOW = new Date("2026-10-21T09:00:00.000Z");
+/**
+ * The legacy leg's instant. It must be newer than the unified notes the suite
+ * writes, whose created_at is the database's now(), so it is taken from the
+ * real clock and not from NOW: a fixed date stops being "newest" once it passes
+ * (both legacy tests went red from 2026-10-21 10:00 UTC). One value for both
+ * tests, because the backfill duplicate must repeat the same instant.
+ */
+const LEGACY_AT = new Date(Math.max(NOW.getTime(), Date.now()) + 60 * 60_000);
 
 /** The bodies. Distinct sentences so a leak is greppable in a whole payload. */
 const NOTE_VISIBLE_PATIENT = "VISIVEL-PACIENTE ligou a remarcar na proxima semana";
@@ -364,7 +372,7 @@ d("a note preview is never handed to a principal who cannot open the full view",
   /* ------------------------------------------------------------------ */
 
   it("reads the LEGACY relation too, and the newest of the two legs wins", async () => {
-    const at = new Date(NOW.getTime() + 60 * 60_000);
+    const at = LEGACY_AT;
     await db.execute(
       raw`insert into patient_note_revisions (tenant_id, patient_id, content, author_user_id, created_at)
           values (${tenant}::uuid, ${pVisible}::uuid, ${"LEGADO mais recente"}, ${outsider}::uuid,
@@ -389,7 +397,7 @@ d("a note preview is never handed to a principal who cannot open the full view",
      * `count(distinct (content, at))`. A bare `count(*)` would tell reception
      * there are two notes when there is one.
      */
-    const at = new Date(NOW.getTime() + 60 * 60_000);
+    const at = LEGACY_AT;
     await db.execute(
       raw`insert into appointment_notes (tenant_id, patient_id, appointment_id, author_user_id, body, created_at)
           values (${tenant}::uuid, ${pVisible}::uuid, null, ${outsider}::uuid, ${"LEGADO mais recente"},
