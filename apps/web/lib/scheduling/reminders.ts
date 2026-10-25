@@ -209,6 +209,30 @@ export type StatusNotificationTarget = {
 };
 
 /**
+ * Q-O. After a "Corrigir estado" INTO Concluida commits, ask for the
+ * satisfaction survey: the same appointment/completed event the ordinary
+ * Estado path emits, marked `surveyOnly`, so the 24 hour function sends the
+ * survey alone and never the follow-up message. Whether a correction asks at
+ * all (into Concluida, a visit that ended in the last 7 days or has not
+ * ended yet) is
+ * `correctionAsksSurvey` in ./estado-correction.ts; the caller emits only
+ * when it says so.
+ *
+ * Best-effort and post-commit, like the others here: the correction stands,
+ * and a failed enqueue is logged without a payload and swallowed.
+ */
+export async function enqueueSurveyAfterCorrection(
+  tenantId: string,
+  target: StatusNotificationTarget,
+): Promise<void> {
+  try {
+    await enqueueFollowUp({ appointmentId: target.appointmentId, tenantId, endsAt: target.endsAt, surveyOnly: true });
+  } catch (e) {
+    console.error("scheduling: correction survey enqueue failed", e instanceof Error ? e.name : "unknown");
+  }
+}
+
+/**
  * Emit completion or no-show events for each affected appointment, best-effort,
  * post-commit. Mirrors the enqueueRemindersAfterCommit pattern: network calls
  * stay outside the DB transaction, a failed enqueue is logged and swallowed.

@@ -110,6 +110,16 @@ export type AppointmentStatusChangedData = {
   appointmentId: string;
   tenantId: string;
   endsAt: string; // ISO-8601 UTC
+  /**
+   * Q-O. Present, and `true`, ONLY on the appointment/completed event a
+   * "Corrigir estado" into Concluida emits (lib/scheduling/actions.ts,
+   * `correctAppointmentEstadoAction`). It asks the 24 hour function for the
+   * satisfaction survey ALONE: never the follow-up message, which the
+   * ruling did not extend to a correction. Absent on every other event, so
+   * the ordinary Estado path keeps exactly the payload it had. A flag about
+   * the EVENT; it names nobody.
+   */
+  surveyOnly?: true;
 };
 
 export const EVENT_APPOINTMENT_SCHEDULED = "appointment/scheduled" as const;
