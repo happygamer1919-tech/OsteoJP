@@ -183,12 +183,28 @@ describe("downloadPatientFichaUrlAction: an export, step by step", () => {
 });
 
 describe("downloadPatientFichaUrlAction: the export's own time (batch item 11)", () => {
-  it("durationMs is the monotonic clock's distance from the action's start to the signed URL, the audit not included", async () => {
+  it("durationMs is the monotonic clock's distance from the action's very start to the signed URL, the audit not included", async () => {
     // An injected clock: performance.now() reads `now`, and each mocked step
     // moves it on by its own amount. Nothing here waits or reads a real clock.
     let now = 1_000;
     const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
     try {
+      // Every step from the session on moves the clock, so a start taken late
+      // (after the session, the read or the ceiling) reads short.
+      mockCtx.mockImplementation(async () => {
+        now += 10;
+        return ctxOf("owner");
+      });
+      const read = mockSelection.getMockImplementation()!;
+      mockSelection.mockImplementation(async (...args) => {
+        now += 30;
+        return read(...args);
+      });
+      const ceiling = mockCeiling.getMockImplementation()!;
+      mockCeiling.mockImplementation(async (...args) => {
+        now += 20;
+        return ceiling(...args);
+      });
       const render = mockRender.getMockImplementation()!;
       mockRender.mockImplementation(async (...args) => {
         now += 700;
@@ -211,7 +227,8 @@ describe("downloadPatientFichaUrlAction: the export's own time (batch item 11)",
 
       expect(await downloadPatientFichaUrlAction(PATIENT)).toEqual({ url: SIGNED });
       expect(mockAudit).toHaveBeenCalledTimes(1);
-      expect(mockAudit.mock.calls[0]![1].durationMs).toBe(950);
+      // 10 (session) + 30 (read) + 20 (ceiling) + 700 (render) + 200 (upload) + 50 (sign).
+      expect(mockAudit.mock.calls[0]![1].durationMs).toBe(1_010);
     } finally {
       clock.mockRestore();
     }

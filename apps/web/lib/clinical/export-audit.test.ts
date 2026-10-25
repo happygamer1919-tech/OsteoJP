@@ -194,6 +194,10 @@ describe("recordPatientFichaExport: the export's own time (batch item 11)", () =
     const timed = fakeTx();
     await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, durationMs: 1234.6 });
     expect(timed.inserted[0]!.v.metadata).toMatchObject({ durationMs: 1235 });
+    // Rounded to the nearest, not up: 1234.4 is 1234.
+    const down = fakeTx();
+    await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, durationMs: 1234.4 });
+    expect(down.inserted[0]!.v.metadata).toMatchObject({ durationMs: 1234 });
     const untimed = fakeTx();
     await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0 });
     expect(untimed.inserted[0]!.v.metadata).not.toHaveProperty("durationMs");
