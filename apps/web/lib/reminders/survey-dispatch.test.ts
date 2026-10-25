@@ -846,3 +846,112 @@ describe("canary: only a listed patient, everyone else as off", () => {
     expectNoSurveyWork();
   });
 });
+
+/* ==================================================================== */
+/* Q-O: a correction into Concluida asks for the survey ALONE            */
+/* ==================================================================== */
+
+/**
+ * Strategy's ruling of 2026-10-22: "emit on a correction into Concluida, only
+ * for visits that ended in the last 7 days, same 24 h and 60-day rules." The
+ * correction emits the ordinary appointment/completed event with
+ * `surveyOnly: true`. These arms drive the real handler with that event: the
+ * survey goes through the same sleep and the same issue door, and where the
+ * ordinary run would fall back to the follow-up message, this one sends
+ * nothing. Which corrections emit is lib/scheduling/estado-correction-survey.test.ts.
+ */
+describe("Q-O: a correction's run sends the survey or nothing, never the follow-up", () => {
+  const CORRECTION_EVENT = {
+    appointmentId: APPT,
+    tenantId: TENANT,
+    endsAt: "2031-05-14T14:15:00.000Z",
+    surveyOnly: true,
+  };
+
+  it("switch off (every value that reads off): nothing is sent, nothing is read, no row", async () => {
+    for (const value of OFF_VALUES) {
+      if (value === undefined) delete process.env.SURVEY_SEND_MODE;
+      else process.env.SURVEY_SEND_MODE = value;
+      process.env.SURVEY_CANARY_PATIENT_IDS = PATIENT;
+
+      let steps: string[] = [];
+      const run = await runOnce({}, async () => {
+        const woken = await wake(CORRECTION_EVENT);
+        steps = woken.steps;
+        return woken.result;
+      });
+
+      // The same 24 hour sleep, under the same step names.
+      expect(steps).toEqual(["sleepUntil:wait-24h-after-visit:2031-05-15T14:15:00.000Z", "run:dispatch-follow-up"]);
+      expect(run.outcome, `SURVEY_SEND_MODE=${JSON.stringify(value)}`).toEqual({
+        appointmentId: APPT,
+        dispatched: false,
+        reason: "survey_only",
+      });
+      expect(run.email).toEqual([]);
+      expect(run.sms).toEqual([]);
+      expect(run.ledger).toEqual([]);
+      expect(run.reads).toBe(0);
+      expectNoSurveyWork();
+    }
+  });
+
+  it("CONTROL: the same visit's ORDINARY event, switch off, sends the follow-up", async () => {
+    const ordinary = { appointmentId: APPT, tenantId: TENANT, endsAt: CORRECTION_EVENT.endsAt };
+    const run = await runOnce({}, async () => (await wake(ordinary)).result);
+    expect(run.email.map((m) => m.templateId)).toEqual(["follow_up.email"]);
+    expect(run.sms.map((m) => m.templateId)).toEqual(["follow_up.sms"]);
+  });
+
+  it("canary, the patient not listed: the one row that says so, and no follow-up", async () => {
+    process.env.SURVEY_SEND_MODE = "canary";
+    process.env.SURVEY_CANARY_PATIENT_IDS = OTHER_PATIENT;
+    const run = await runOnce({}, async () => (await wake(CORRECTION_EVENT)).result);
+    expect(run.outcome).toEqual({ appointmentId: APPT, dispatched: false, reason: "survey_only" });
+    expect(run.email).toEqual([]);
+    expect(run.sms).toEqual([]);
+    expect(only(run.ledger)).toMatchObject({ outcome: "suppressed", suppressionReason: "survey_canary_not_listed" });
+    expectNoSurveyWork();
+  });
+
+  it("canary, the patient listed: the survey, as an ordinary run sends it", async () => {
+    process.env.SURVEY_SEND_MODE = "canary";
+    process.env.SURVEY_CANARY_PATIENT_IDS = PATIENT;
+    h.loadReminderData.mockResolvedValue(row());
+    const { result } = await wake(CORRECTION_EVENT);
+    expect(result).toMatchObject({ appointmentId: APPT, dispatched: true });
+    expect(h.email.map((m) => m.templateId)).toEqual(["survey.email"]);
+    expect(h.sms).toEqual([]);
+  });
+
+  it("switch on: the survey, through the issue door, and no follow-up", async () => {
+    process.env.SURVEY_SEND_MODE = "on";
+    h.loadReminderData.mockResolvedValue(row());
+    const { result, steps } = await wake(CORRECTION_EVENT);
+    expect(steps).toEqual(["sleepUntil:wait-24h-after-visit:2031-05-15T14:15:00.000Z", "run:dispatch-follow-up"]);
+    expect(result).toMatchObject({ appointmentId: APPT, dispatched: true });
+    expect(h.issues).toHaveLength(1);
+    expect(h.email.map((m) => m.templateId)).toEqual(["survey.email"]);
+    expect(h.sms).toEqual([]);
+  });
+
+  it("switch on, a send to this patient in the last 60 days: the door refuses, a row, NO message", async () => {
+    process.env.SURVEY_SEND_MODE = "on";
+    h.issueAnswer = "cooldown";
+    h.loadReminderData.mockResolvedValue(row());
+    const { result } = await wake(CORRECTION_EVENT);
+    expect(result).toEqual({ appointmentId: APPT, dispatched: false, reason: "survey_cooldown" });
+    expect(h.issues).toHaveLength(1);
+    expect(h.email).toEqual([]);
+    expect(h.sms).toEqual([]);
+    expect(h.ledger.map((r) => [r.outcome, r.suppressionReason])).toEqual([["suppressed", "survey_cooldown"]]);
+  });
+
+  it("switch on, corrected away from Concluida again before the run wakes: the status gate holds", async () => {
+    process.env.SURVEY_SEND_MODE = "on";
+    h.loadReminderData.mockResolvedValue(row({ status: "no_show" }));
+    const { result } = await wake(CORRECTION_EVENT);
+    expect(result).toEqual({ appointmentId: APPT, dispatched: false, reason: "status" });
+    expectNoSurveyWork();
+  });
+});

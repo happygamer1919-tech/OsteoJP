@@ -41,7 +41,7 @@ import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conf
 import { checkAvailability } from "./availability-enforcement";
 import { checkClinicClosure, checkClinicWindow } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
-import { correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
+import { correctionAsksSurvey, correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
 import { isUncancel } from "./uncancel";
 import { uncancelOverdrawsPack } from "./uncancel-db";
 import { cancelAuthority, namesSharedResource, ownCancelRefusal } from "./cancel-authority";
@@ -70,6 +70,7 @@ import { bookPackSessionTx } from "@/lib/packs/instances";
 import {
   enqueueRemindersAfterCommit,
   enqueueStatusNotificationsAfterCommit,
+  enqueueSurveyAfterCorrection,
   type ReminderEnqueueTarget,
   type StatusNotificationTarget,
 } from "./reminders";
@@ -2660,6 +2661,8 @@ export async function correctAppointmentEstadoAction(
 
   const allowConflict = !!opts?.allowConflict;
   const ip = await clientIp();
+  // Q-O: set inside the transaction, emitted only after it commits.
+  let surveyTarget: StatusNotificationTarget | null = null;
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(actor, async (tx) => {
       const [row] = await tx
@@ -2765,9 +2768,34 @@ export async function correctAppointmentEstadoAction(
         },
         ip,
       });
+
+      // Q-O (strategy's ruling of 2026-10-22). A correction INTO Concluida
+      // of a visit that ended in the last 7 days, or has not ended yet (Q-V
+      // (1), 2026-10-25), asks for the satisfaction survey, as the ordinary
+      // Estado path does (enqueueStatusNotificationsAfterCommit). Decided
+      // here, against the clock at the moment of the correction; emitted
+      // after the commit. Every other correction emits nothing, as before.
+      //
+      // ACCEPTED RESIDUAL (Q-V (2), strategy 2026-10-25). The event shares
+      // the follow-up's idempotency key, `appointmentId:follow_up`, which
+      // Inngest holds for 24 hours from the first event. A correction back
+      // into Concluida that lands after the visit's end + 24 h (the first
+      // run has woken, read a status that was not Concluida and sent
+      // nothing) but before the first completed event + 24 h is dropped by
+      // the key, and that visit gets no survey. Its own key would need a
+      // Resync, so it is accepted and documented (docs/DECISIONS.md, Q-V).
+      if (correctionAsksSurvey(row.status, to, row.endsAt, Date.now())) {
+        surveyTarget = { appointmentId: row.id, endsAt: row.endsAt };
+      }
       return { ok: true, data: { id } };
     });
-    if (result.ok) revalidateAppointmentSurfaces();
+    if (result.ok) {
+      revalidateAppointmentSurfaces();
+      const target = surveyTarget;
+      if (target) {
+        await afterCommit("estadoCorrection", () => enqueueSurveyAfterCorrection(actor.tenantId, target));
+      }
+    }
     return result;
   } catch (e) {
     console.error("scheduling: estado correction failed", e instanceof Error ? e.name : "unknown");

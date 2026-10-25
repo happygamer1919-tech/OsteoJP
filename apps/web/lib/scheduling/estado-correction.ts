@@ -91,3 +91,37 @@ export function correctionEntersBlockingSet(
 ): boolean {
   return (from === "cancelled" || from === "no_show") && to === "completed";
 }
+
+/** Q-O: how far back a visit may have ended for a correction to ask the survey (Q-V: no lower bound). */
+export const CORRECTION_SURVEY_WINDOW_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * Q-O. Does this correction ask for the satisfaction survey? Strategy's ruling
+ * of 2026-10-22: "emit on a correction into Concluida, only for visits that
+ * ended in the last 7 days, same 24 h and 60-day rules."
+ *
+ * True only for a legal correction INTO `completed` (from Cancelada or Falta)
+ * of a visit that ended no more than 7 days before `nowMs`, or has not ended
+ * yet. A correction OUT of `completed`, or into anything else, asks nothing,
+ * which is what it did before.
+ *
+ * NO LOWER BOUND (Q-V (1), strategy 2026-10-25: "drop the lower bound"). A
+ * correction made before the visit's end, including one made before it
+ * started (marked Falta early, then corrected), asks too. The timing is not
+ * this function's: the Inngest function sleeps until endsAt + 24 h whatever
+ * the moment of the correction, so a survey is never asked before the visit
+ * is over.
+ *
+ * The 24 hour wait and the 60-day rule are not here: the event this answer
+ * emits runs the same Inngest function and the same issue door as an
+ * ordinary Concluida (lib/reminders/inngest/functions.ts, the 0102 door).
+ */
+export function correctionAsksSurvey(
+  from: AppointmentStatusValue,
+  to: AppointmentStatusValue,
+  endsAt: Date,
+  nowMs: number,
+): boolean {
+  if (to !== "completed" || !isLegalEstadoCorrection(from, to)) return false;
+  return nowMs - endsAt.getTime() <= CORRECTION_SURVEY_WINDOW_MS;
+}
