@@ -87,6 +87,12 @@ import { SurveyRows } from "./survey-rows";
 
 export const dynamic = "force-dynamic";
 
+// The time limit of this page's requests, its server actions included: they
+// build PDFs ("Exportar ficha", "PDF do episódio" and the Declaração). 300 s is the hosting platform's own default, written
+// down so the repository states the limit instead of a dashboard holding it;
+// it shortens nothing. Pinned by app/document-routes-max-duration.test.ts.
+export const maxDuration = 300;
+
 const s = getStrings(DEFAULT_LOCALE);
 
 const primaryLink =

@@ -40,15 +40,13 @@
  * to 1.5 s alone; beside four other suites, 0.4 s at best and 10.7 s at
  * worst). The numbers to read are the ones of this file run by itself.
  *
- * THE LIMIT IS NOT IN THE REPOSITORY. No source file sets `maxDuration`, and
- * `vercel.json` holds the region only, so the limit of this route is the
- * hosting project's own, a value kept in the hosting dashboard that nothing
- * here can read. What the repository does record is that production has let a
- * request of this app run for 59 seconds (packages/db/src/client.ts, the note
- * on the pool size: a p75 of 59 s on /patients). So the limit in force was no
- * shorter than that, and CEILING_MS is that number: a floor for the limit, not
- * the limit. If the route is ever given a limit of its own, this number
- * follows it.
+ * THE LIMIT. Since 2026-10-25 the page that runs this action,
+ * app/patients/[id]/page.tsx, sets `maxDuration = 300` (seconds), the hosting
+ * platform's default written down. CEILING_MS stays at 59 s, well inside it:
+ * production has let a request of this app run for 59 seconds
+ * (packages/db/src/client.ts, the note on the pool size), and an export near
+ * that is already a fault worth seeing. app/document-routes-max-duration.test.ts
+ * fails if this number ever reaches the page's limit.
  *
  * Runs in `.github/workflows/db-tests.yml` (it globs `.db.test.ts` in this
  * workspace) and self-skips without DATABASE_URL, like every suite beside it.
@@ -117,7 +115,7 @@ vi.mock("./report-model", async (importOriginal) => {
 const live = Boolean(process.env.DATABASE_URL);
 const d = live ? describe : describe.skip;
 
-/** See THE LIMIT IS NOT IN THE REPOSITORY in the header. */
+/** See THE LIMIT in the header. */
 const CEILING_MS = 59_000;
 const RUNS = 3;
 
