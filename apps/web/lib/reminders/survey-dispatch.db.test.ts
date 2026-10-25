@@ -458,6 +458,56 @@ d("SAT-01: the automatic survey send against a real database", () => {
     }
   });
 
+  /**
+   * Q-O. A "Corrigir estado" into Concluida asks for the survey ALONE
+   * (`surveyOnly`). The 60-day rule is the database's, so it is proven here:
+   * the same door answers the correction's run as it answers an ordinary one.
+   */
+  it.each([
+    ["automatic", 59, false],
+    ["manual", 59, false],
+    ["automatic", 61, true],
+  ] as const)(
+    "Q-O, a correction's survey-only run, a %s send %i days ago: issued is %s, and never a follow-up",
+    async (origin, daysAgo, issued) => {
+      const patientId = await patient();
+      await earlierSend(patientId, origin, daysAgo);
+      const appointmentId = await visit({ patientId });
+
+      const outcome = await dispatchSurvey(tenant, appointmentId, { surveyOnly: true });
+
+      expect([...h.email, ...h.sms].filter((m) => m.templateId.startsWith("follow_up."))).toEqual([]);
+      if (issued) {
+        expect(outcome).toMatchObject({ dispatched: true });
+        expect(h.email.map((m) => m.templateId)).toEqual(["survey.email"]);
+        codeIn(h.email[0]!);
+        expect(await sendsOf(patientId)).toHaveLength(1);
+      } else {
+        expect(outcome).toEqual({ dispatched: false, reason: "survey_cooldown" });
+        expect(h.email).toEqual([]);
+        expect(await sendsOf(patientId)).toEqual([]);
+        expect(await ledger(appointmentId)).toEqual([
+          { channel: "email", template_id: "survey.email", outcome: "suppressed", suppression_reason: "survey_cooldown" },
+        ]);
+      }
+    },
+  );
+
+  it("Q-O, switch off, a correction's survey-only run: nothing is sent and NOTHING in the database changes", async () => {
+    const v = await concluded();
+    process.env.SURVEY_SEND_MODE = "off";
+    const before = await snapshot();
+
+    expect(await dispatchSurvey(tenant, v.appointmentId, { surveyOnly: true })).toEqual({
+      dispatched: false,
+      reason: "survey_only",
+    });
+
+    expect(h.email).toEqual([]);
+    expect(h.sms).toEqual([]);
+    expect(await snapshot()).toEqual(before);
+  });
+
   it("two runs waking together for one patient (a series concluded in one save): ONE send, ONE message", async () => {
     const patientId = await patient();
     const a = await visit({ patientId });

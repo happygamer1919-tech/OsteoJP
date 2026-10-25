@@ -1722,6 +1722,7 @@
   "remindersLog.reason.survey_not_eligible": "o paciente não quer receber avaliações, ou a consulta já tem resposta ou deixou de estar concluída",
   "remindersLog.reason.survey_not_allowed": "envio recusado pela base de dados",
   "remindersLog.reason.survey_issue_error": "erro ao registar o envio",
+  "remindersLog.reason.survey_only": "só a avaliação foi pedida (correção de estado), e a avaliação não se aplica a este paciente",
   "remindersLog.reason.unknown": "motivo não reconhecido ({code})",
   "remindersLog.filterAll": "Todos",
   "remindersLog.filterFailures": "Só falhas",
