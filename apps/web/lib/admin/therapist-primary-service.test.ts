@@ -8,6 +8,13 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // that contract, active-service validation, and admin-only gating (real assertCan).
 
 vi.mock("server-only", () => ({}));
+// PL-09 Phase 4: the location guard is a no-op here (owner / unassigned
+// admin); the scoped cases run against a real database in
+// staff-scope-saves.db.test.ts.
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  viewerLocationScope: vi.fn(async () => null),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 vi.mock("./audit", () => ({ writeAudit: vi.fn() }));
 

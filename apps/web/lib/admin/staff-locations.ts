@@ -3,9 +3,11 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { locations, staffLocations } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { isTherapistPaletteColor } from "@/lib/scheduling/therapist-color";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { assertMembershipChangeInScope, assertStaffInScope } from "./staff-scope";
 
 /**
  * Equipa location membership + per-location agenda colour (W12-40-Q2).
@@ -69,6 +71,10 @@ export async function listStaffLocations(
  * Membership drives the 0045 admin clinical-visibility basis, so this is a
  * permission-sensitive action: it is audited even though `staff_locations`
  * itself holds no PII.
+ *
+ * PL-09 Phase 4: a location-scoped admin edits only a member at their own
+ * clinics, and adds or removes only their own clinics. A membership at another
+ * clinic that the save leaves unchanged passes, since the form posts it back.
  */
 export async function setStaffLocations(
   actor: RequestContext,
@@ -78,8 +84,10 @@ export async function setStaffLocations(
   assertCan(actor.role, "users:manage");
   if (!userId) throw new AdminError("invalid");
   const wanted = [...new Set(locationIds.filter((id) => id.length > 0))];
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
+    await assertStaffInScope(tx, userId, scope);
     // Every requested location must be a real location of this tenant (RLS scopes
     // the read); reject the whole request on any unknown/cross-tenant id.
     if (wanted.length > 0) {
@@ -104,6 +112,7 @@ export async function setStaffLocations(
     const toRemove = [...currentIds].filter((id) => !wantedSet.has(id));
 
     if (toAdd.length === 0 && toRemove.length === 0) return; // no-op, no audit
+    assertMembershipChangeInScope(toAdd, toRemove, scope);
 
     for (const locationId of toAdd) {
       await tx.insert(staffLocations).values({
@@ -139,6 +148,7 @@ export async function setStaffLocations(
  * be a W12-21 palette key (allowlist) or null to clear it (→ FNV fallback). The
  * member must already belong to that location — colour lives on the membership
  * row, so there is nothing to colour without a membership. Owner/admin only.
+ * PL-09 Phase 4: a location-scoped admin colours only a member at their clinics.
  */
 export async function setStaffColor(
   actor: RequestContext,
@@ -152,8 +162,10 @@ export async function setStaffColor(
   if (normalized !== null && !isTherapistPaletteColor(normalized)) {
     throw new AdminError("invalid");
   }
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
+    await assertStaffInScope(tx, userId, scope);
     const [row] = await tx
       .select({ id: staffLocations.id, color: staffLocations.color })
       .from(staffLocations)

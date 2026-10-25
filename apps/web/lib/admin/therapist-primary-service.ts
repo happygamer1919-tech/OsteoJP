@@ -3,8 +3,10 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import { services, therapistServices, users, type DbTx } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { assertStaffInScope } from "./staff-scope";
 
 /**
  * Per-therapist PRIMARY service (W3-04) — the service W3-03 auto-selects into
@@ -133,9 +135,12 @@ export async function setTherapistPrimaryService(
 ): Promise<void> {
   assertCan(actor.role, "users:manage");
   if (!therapistId || !serviceId) throw new AdminError("invalid");
+  // PL-09 Phase 4: a location-scoped admin sets services only for staff at their clinics.
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
     await lockMember(tx, therapistId);
+    await assertStaffInScope(tx, therapistId, scope);
     // Defense: `serviceId` must be an ACTIVE service of this tenant (the dropdown
     // only lists active services; reject a forged / archived id). RLS scopes the
     // read to the actor's tenant.
@@ -222,9 +227,12 @@ export async function setTherapistServices(
   assertCan(actor.role, "users:manage");
   if (!therapistId) throw new AdminError("invalid");
   const wanted = [...new Set(serviceIds.filter((id) => id !== ""))];
+  // PL-09 Phase 4: a location-scoped admin sets services only for staff at their clinics.
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
     await lockMember(tx, therapistId);
+    await assertStaffInScope(tx, therapistId, scope);
     const mapped = await tx
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
