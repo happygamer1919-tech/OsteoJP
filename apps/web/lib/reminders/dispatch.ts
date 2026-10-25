@@ -411,6 +411,14 @@ async function sendPatientSms(args: {
   templateId: string;
   /** SWEEP-47: passed by the reminder dispatch only. */
   attempt?: SendAttempt;
+  /**
+   * Q-L: raise the sender or body alert (`alertSenderOrBodyRefusal`) here,
+   * after the `provider_error` row. Passed by the confirmation, booking
+   * approved, follow-up, no-show and (Q-U, strategy 2026-10-25) survey SMS
+   * senders. The reminder paths do not pass it: they raise the alert
+   * themselves, after their claim is settled.
+   */
+  alertsOnOurRefusal?: true;
 }): Promise<SendResult | SmsSkip> {
   // ONE VERDICT, SHARED. `smsNumberVerdict` is the two questions this function
   // has always asked (does it normalise; is it a line that can receive SMS), in
@@ -474,6 +482,7 @@ async function sendPatientSms(args: {
         appointmentId: args.appointmentId,
       }),
     args.attempt,
+    args.alertsOnOurRefusal === true,
   );
 }
 
@@ -521,6 +530,8 @@ async function sendRecordingProviderError(
   send: () => Promise<SendResult>,
   /** The reminder dispatch's note of how far this call got. Absent for every other caller. */
   attempt?: SendAttempt,
+  /** Q-L: raise the sender or body alert after the row (see `sendPatientSms`). */
+  alertsOnOurRefusal = false,
 ): Promise<SendResult> {
   try {
     if (attempt) attempt.handOverStarted = true;
@@ -529,6 +540,8 @@ async function sendRecordingProviderError(
     const code = providerErrorCode(e);
     if (attempt) attempt.refusal = { channel: row.channel, code };
     await recordDispatch({ ...row, outcome: "provider_error", providerErrorCode: code });
+    // Q-L: after the row, and it never throws, so `e` goes on unchanged.
+    if (alertsOnOurRefusal) await alertSenderOrBodyRefusal({ channel: row.channel, code });
     throw e;
   }
 }
@@ -710,8 +723,10 @@ function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | n
  * after one could be a second copy.
  *
  * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`), on
- * either REMINDER path, the switch off included. The other SMS senders in this
- * file (confirmation, booking approved, follow-up, no-show) raise none.
+ * either REMINDER path, the switch off included, and (Q-L, strategy
+ * 2026-10-18) on the confirmation, booking approved, follow-up and no-show
+ * SMS, and (Q-U, strategy 2026-10-25) on the survey SMS, after their
+ * `provider_error` row. The survey email raises none.
  *
  * A code missing from this list costs a reminder that is not retried; a code
  * wrongly on it could cost a second copy.
@@ -736,7 +751,11 @@ export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", re
  * message body (21617) is wrong, so every patient's SMS is refused the same
  * way. Each also raises an alert (`alertSenderOrBodyRefusal`), on both
  * reminder paths, the switch off included, besides giving the claim up. Strategy, Q-C of
- * 2026-10-15. Pinned by a test, and every code here is on the list above.
+ * 2026-10-15. Q-L of 2026-10-18 raises the same alert on the confirmation,
+ * booking approved, follow-up and no-show SMS, and Q-U of 2026-10-25 on the
+ * survey SMS (`sendPatientSms`'s `alertsOnOurRefusal`), where there is no
+ * claim. Pinned by a test, and every
+ * code here is on the list above.
  */
 export const SENDER_OR_BODY_REFUSAL_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
   email: [],
@@ -1837,6 +1856,7 @@ async function dispatchTodaysConfirmation(
       phone: data.patientPhone,
       body,
       templateId: "confirmation.sms",
+      alertsOnOurRefusal: true,
     });
     const handedOver = isSmsSkip(sent) ? null : sent;
     await recordDispatch({
@@ -2092,6 +2112,7 @@ async function dispatchBookingApproved(
     phone,
     body,
     templateId: "booking_approved.sms",
+    alertsOnOurRefusal: true,
   });
   const handedOver = isSmsSkip(sent) ? null : sent;
   await recordDispatch({
@@ -2179,6 +2200,7 @@ export async function dispatchFollowUp(
       phone: data.patientPhone,
       body: renderFollowUpSms(locale, ctx),
       templateId: "follow_up.sms",
+      alertsOnOurRefusal: true,
     });
     if (!isSmsSkip(sent)) channels.push(sent);
   }
@@ -2487,6 +2509,7 @@ async function dispatchSurveyInner(
     phone,
     body: rendered.body,
     templateId: SURVEY_SMS_TEMPLATE_ID,
+    alertsOnOurRefusal: true,
   });
   const handedOver = isSmsSkip(sent) ? null : sent;
   await recordDispatch({
@@ -2580,6 +2603,7 @@ export async function dispatchNoShow(
       phone: data.patientPhone,
       body: renderNoShowSms(locale, ctx),
       templateId: "no_show.sms",
+      alertsOnOurRefusal: true,
     });
     if (!isSmsSkip(sent)) channels.push(sent);
   }
