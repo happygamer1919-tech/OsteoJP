@@ -8,6 +8,13 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // palette allowlist are REAL.
 
 vi.mock("server-only", () => ({}));
+// PL-09 Phase 4: the location guard is a no-op here (owner / unassigned
+// admin); the scoped cases run against a real database in
+// staff-scope-saves.db.test.ts.
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  viewerLocationScope: vi.fn(async () => null),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
 vi.mock("@/lib/auth/context", () => ({ runScoped: vi.fn() }));
 vi.mock("./audit", () => ({ writeAudit: vi.fn() }));
 
@@ -23,7 +30,8 @@ const reception: RequestContext = { tenantId: "tenant-A", role: "reception", use
 
 // tx for setStaffLocations: two selects branch on the table —
 //   from(locations)      → validation, returns the ids that exist in-tenant;
-//   from(staffLocations) → the member's current memberships.
+//   from(staffLocations) → the member's current memberships;
+// and the member lock, `.for("update")` on the users row, finds the member.
 // insert/delete are recorded; update must stay untouched.
 function setLocsTx(current: string[], validLocationIds: string[]) {
   const calls = {
@@ -34,10 +42,15 @@ function setLocsTx(current: string[], validLocationIds: string[]) {
   const tx = {
     select: () => ({
       from: (tbl: unknown) => ({
-        where: async () =>
-          tbl === locations
-            ? validLocationIds.map((id) => ({ id }))
-            : current.map((locationId) => ({ locationId })),
+        where: () =>
+          Object.assign(
+            Promise.resolve(
+              tbl === locations
+                ? validLocationIds.map((id) => ({ id }))
+                : current.map((locationId) => ({ locationId })),
+            ),
+            { for: async () => [{ id: "member" }] },
+          ),
       }),
     }),
     insert: () => ({
