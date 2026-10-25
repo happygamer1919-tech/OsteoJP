@@ -55,6 +55,8 @@ const h = vi.hoisted(() => ({
   sendCount: 0,
   /** Called as a transport is entered: every check of the dispatcher is behind that call. */
   onHandOver: null as null | ((channel: string) => void),
+  /** When set, every transport waits here after its hand-over, before it returns. */
+  handOverGate: null as null | Promise<void>,
 }));
 
 vi.mock("./data", () => ({ loadReminderData: h.loadReminderData }));
@@ -64,6 +66,7 @@ vi.mock("./clients", async (importOriginal) => {
     vi.fn(async () => {
       h.sends.push(channel);
       h.onHandOver?.(channel);
+      if (h.handOverGate) await h.handOverGate;
       if (h.sendDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, h.sendDelayMs));
       // The Twilio SDK's shape: a numeric `code` on the error. 21612 is on the
       // pinned list of answers that give a claim up; 21211 is kept by ruling
@@ -279,6 +282,7 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
     h.transport = "sent";
     h.sendDelayMs = 0;
     h.onHandOver = null;
+    h.handOverGate = null;
     h.loadReminderData.mockReset();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -485,14 +489,29 @@ d("SWEEP-47: while the sweep is the sender a live claim blocks, and two senders 
       delete process.env.REMINDERS_SWEEP_MODE;
       const id = await fresh();
       h.loadReminderData.mockResolvedValue(loaded(id));
-      h.sendDelayMs = 300;
+      // Today a claim blocks only once a `sent` row is on record. No transport
+      // returns, so no `sent` row is written, until all eight have handed
+      // over: every sender has read before any message is on record, however
+      // slowly the runner starts them. A held sender never hands over, so the
+      // gate also opens after 10 s (the test allows 20 s), and a regression
+      // fails the count below instead of hanging. A 300 ms transport delay was
+      // not enough: on a slow runner on 2026-10-25 three of the eight read
+      // after the first `sent` row and were held.
+      let allHandedOver!: () => void;
+      let fallback: ReturnType<typeof setTimeout> | undefined;
+      h.handOverGate = new Promise<void>((resolve) => {
+        allHandedOver = resolve;
+        fallback = setTimeout(resolve, 10_000);
+      });
+      h.onHandOver = () => {
+        if (h.sends.length === SENDERS) allHandedOver();
+      };
       const outcomes = await Promise.all(Array.from({ length: SENDERS }, () => dispatch(id, "run")));
-      // Today a claim blocks only once a `sent` row is on record, and none is
-      // yet when eight senders read in the same instant.
+      clearTimeout(fallback);
       expect(h.sends).toHaveLength(SENDERS);
       expect(outcomes.every((o) => o.dispatched)).toBe(true);
       expect(await claimsOf(id)).toHaveLength(SENDERS);
-    });
+    }, 20_000);
 
     it("two senders of DIFFERENT reminders of one visit do not hold each other", async () => {
       const id = await fresh();
