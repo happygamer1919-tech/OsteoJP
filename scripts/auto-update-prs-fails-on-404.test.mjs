@@ -81,25 +81,30 @@ function extractRunBlock() {
  * BODY, newline, HTTP CODE - the exact contract the script parses with
  * `sed '$d'` and `tail -n1`.
  */
-function runPass({ updateCode }) {
+const ARMED_42 = {
+  number: 42,
+  draft: false,
+  base: { ref: "main" },
+  head: { ref: "feat/x", label: "o:feat/x" },
+  auto_merge: { merge_method: "squash" },
+};
+
+function runPass({ updateCode = 202, prs = [ARMED_42], onlyPr = "", script = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "auto-update-test-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
 
-  const list = JSON.stringify([
-    {
-      number: 42,
-      draft: false,
-      base: { ref: "main" },
-      head: { ref: "feat/x", label: "o:feat/x" },
-    },
-  ]);
+  const list = JSON.stringify(prs);
+  // Every update-branch call is logged, so a test can say WHICH PRs were updated,
+  // not only whether the pass exited 0.
+  const calls = join(dir, "update-calls");
+  writeFileSync(calls, "");
   const curl = `#!/bin/sh
 for a in "$@"; do
   case "$a" in
     *"/pulls?state=open"*) printf '%s\\n200\\n' '${list}'; exit 0 ;;
     *"/compare/"*)         printf '%s\\n200\\n' '{"behind_by":1}'; exit 0 ;;
-    *"/update-branch"*)    printf '%s\\n${updateCode}\\n' '{"message":"stub"}'; exit 0 ;;
+    *"/update-branch"*)    printf '%s\\n' "$a" >> '${calls}'; printf '%s\\n${updateCode}\\n' '{"message":"stub"}'; exit 0 ;;
   esac
 done
 printf 'unexpected curl call\\n500\\n'; exit 0
@@ -108,20 +113,25 @@ printf 'unexpected curl call\\n500\\n'; exit 0
   writeFileSync(curlPath, curl);
   chmodSync(curlPath, 0o755);
 
-  const script = join(dir, "pass.sh");
-  writeFileSync(script, extractRunBlock());
+  const scriptPath = join(dir, "pass.sh");
+  writeFileSync(scriptPath, script ?? extractRunBlock());
 
-  const r = spawnSync("bash", [script], {
+  const r = spawnSync("bash", [scriptPath], {
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
       AUTO_UPDATE_TOKEN: "stub-token-not-a-secret",
       REPO: "owner/repo",
       RUNNER_TEMP: dir,
+      ONLY_PR: onlyPr,
     },
     encoding: "utf8",
   });
-  return { status: r.status, out: `${r.stdout}${r.stderr}` };
+  const updated = readFileSync(calls, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((u) => Number(u.match(/\/pulls\/(\d+)\/update-branch/)[1]));
+  return { status: r.status, out: `${r.stdout}${r.stderr}`, updated };
 }
 
 test("a 404 on update-branch FAILS the pass", () => {
@@ -213,4 +223,88 @@ test("the failure is carried OUT of the loop's subshell", () => {
     /if \[ -e "\$\{failed_marker\}" \]/,
     "nothing reads the failure marker",
   );
+});
+
+// ==========================================================================
+// R1, STRATEGY 2026-10-25, OPTION (b): ONLY ARMED PRs ARE UPDATED
+// ==========================================================================
+// Before R1 every merge to main merged main into every open PR and started all
+// their CI. Now a push updates only PRs armed for auto-merge, and arming a PR
+// (pull_request_target, auto_merge_enabled) updates that one PR. Each case runs
+// the shipped block and reads the update-branch calls it actually made.
+
+const pr = (number, extra = {}) => ({
+  number,
+  draft: false,
+  base: { ref: "main" },
+  head: { ref: `feat/${number}`, label: `o:feat/${number}` },
+  ...extra,
+});
+const ARMED = { auto_merge: { merge_method: "squash" } };
+
+test("R1: a pass updates the armed PR and leaves the unarmed one BEHIND", () => {
+  const { status, out, updated } = runPass({ prs: [pr(7, ARMED), pr(8), pr(9, { auto_merge: null })] });
+  assert.equal(status, 0, out);
+  assert.deepEqual(updated, [7], `only #7 is armed:\n${out}`);
+  assert.match(out, /PR #8 \(feat\/8\): not armed for auto-merge - not updated, by rule \(R1\)/);
+  assert.match(out, /PR #9 \(feat\/9\): not armed/);
+});
+
+test("R1: a PR object with no auto_merge field reads as unarmed, never as armed", () => {
+  const { updated, out } = runPass({ prs: [pr(11)] });
+  assert.deepEqual(updated, [], out);
+});
+
+test("R1: held-for-apply wins over armed", () => {
+  const { updated, out } = runPass({ prs: [pr(12, { ...ARMED, labels: [{ name: "held-for-apply" }] })] });
+  assert.deepEqual(updated, [], out);
+  assert.match(out, /labelled held-for-apply - not updated, by rule/);
+});
+
+test("R1: arming (ONLY_PR) updates that PR and no other armed PR", () => {
+  const { status, updated, out } = runPass({ prs: [pr(20, ARMED), pr(21, ARMED)], onlyPr: "21" });
+  assert.equal(status, 0, out);
+  assert.deepEqual(updated, [21], out);
+  assert.match(out, /Only PR #21 is considered/);
+});
+
+test("R1: arming an unarmed PR number updates nothing (the PR is re-read, not trusted from the event)", () => {
+  const { updated, out } = runPass({ prs: [pr(30), pr(31, ARMED)], onlyPr: "30" });
+  assert.deepEqual(updated, [], out);
+});
+
+test("R1: an ONLY_PR that is not a number STOPS the pass rather than widening it", () => {
+  const { status, updated, out } = runPass({ prs: [pr(40, ARMED)], onlyPr: "40 || true" });
+  assert.notEqual(status, 0, out);
+  assert.deepEqual(updated, [], out);
+  assert.match(out, /ONLY_PR is not a PR number/);
+});
+
+test("R1: a PR into another base is never updated, armed or not", () => {
+  const { updated, out } = runPass({ prs: [pr(50, { ...ARMED, base: { ref: "tmp/x" } })] });
+  assert.deepEqual(updated, [], out);
+});
+
+test("R1: SEEDED FAILURE - a copy with the armed filter removed is caught by the cases above", () => {
+  const disarmed = extractRunBlock().replace(
+    /if \[ "\$\{armed\}" != "true" \]; then[\s\S]*?continue\n\s*fi\n/,
+    "",
+  );
+  assert.notEqual(disarmed, extractRunBlock(), "the seeded mutation did not apply; the block's shape changed");
+  const { updated } = runPass({ prs: [pr(7, ARMED), pr(8)], script: disarmed });
+  assert.deepEqual(updated, [7, 8], "the harness cannot tell an armed-only pass from an update-everything pass");
+});
+
+// THE TRIGGERS. The block above cannot see how it is started, so the YAML is
+// pinned: a push to main runs the pass; arming runs it for one PR; the default
+// token holds no permission; arming never cancels a pass.
+test("R1: the triggers, the permissions and the concurrency groups", () => {
+  const text = readFileSync(WORKFLOW, "utf8");
+  assert.match(text, /\non:\n  push:\n    branches: \[main\]\n  pull_request_target:\n    types: \[auto_merge_enabled\]\n  workflow_dispatch:/);
+  assert.match(text, /\npermissions: \{\}\n/);
+  assert.match(text, /ONLY_PR: \$\{\{ github\.event\.pull_request\.number \|\| inputs\.pr \|\| '' \}\}/);
+  assert.match(text, /group: \$\{\{ github\.event_name == 'pull_request_target' && format\('auto-update-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'auto-update-prs' \}\}/);
+  // pull_request_target runs with secrets: nothing of the PR may be checked out.
+  assert.doesNotMatch(text, /actions\/checkout/);
+  assert.doesNotMatch(text, /github\.event\.pull_request\.(head|title|body)/);
 });
