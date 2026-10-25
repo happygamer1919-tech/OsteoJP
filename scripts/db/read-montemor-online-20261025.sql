@@ -11,9 +11,10 @@
 -- WHAT IT PRINTS: ONE result set (so the Supabase SQL editor, which shows only
 -- the last result, shows all of it), ordered by `n`, columns
 -- n | check | observed | expected | verdict. Verdicts are OK, VACUOUS or FAIL;
--- rows that only inform read INFO and are never counted. It prints location ids
--- (a clinic, not a person), counts, Lisbon dates, appointment `origin` and
--- `status` values. No patient id, no staff id, no name of a person, no phone,
+-- rows that only inform read INFO and are never counted. It prints Montemor's
+-- location id (a clinic, not a person; the two controls print no id), counts,
+-- Lisbon dates, and appointment `origin` and `status` values (labels such as
+-- `staff`, `patient_portal`, `scheduled`, which name no one). No patient id, no staff id, no name of a person, no phone,
 -- no email, no address, no note.
 --
 -- THE CLINICS are found by name, because production has no code column:
@@ -49,6 +50,24 @@
 --              (apps/api/app/api/v1/booking/guest/catalog/route.ts). The public
 --              form shows no slots: reception answers its requests.
 --   PORTAL ONLINE = listed AND staffed > 0 AND slot days > 0.
+--   reschedule slot days
+--              the portal's RESCHEDULE options (booking.ts listRescheduleOptions
+--              -> store.listOpenSlots with serviceId null) read neither the
+--              listing rule, nor locations.is_active, nor therapist_services, nor
+--              "staffed today": days from today to today + 14 on which an active,
+--              bookable, non-shared user has an active template at the clinic for
+--              that weekday, valid that day. They are offered to a patient whose
+--              own visit there is scheduled or confirmed and starts 24 hours or
+--              more from now (MUTABLE_STATUSES, cutoff.ts): counted as
+--              reschedulable appointments.
+--   present or future templates
+--              active templates at the clinic held by an active, bookable,
+--              non-shared user whose valid_until is null or today or later. A
+--              hold is not decided on today's snapshot: any such row means the
+--              clinic is or will become bookable without anyone acting.
+--   HOLD NEEDED (Montemor only) = portal online OR guest listed OR (reschedule
+--              slot days > 0 AND reschedulable appointments > 0) OR present or
+--              future templates > 0.
 --
 -- EVERY VERDICT CARRIES A CONTROL, so a zero is never a pass by default:
 --   0  the transaction is READ ONLY;
@@ -144,14 +163,45 @@ fig as (
          on p.service_id = s.id and p.tenant_id = s.tenant_id
       where s.tenant_id = o.tenant_id and p.location_id = o.id and p.is_active = true
         and s.is_active = true and s.internal_only = false and s.patient_bookable = true
-        and (s.location_id is null or s.location_id = o.id)) as guest_priced
+        and (s.location_id is null or s.location_id = o.id)) as guest_priced,
+    (select count(distinct g.day)
+       from today t
+       cross join lateral generate_series(t.d, t.d + 14, interval '1 day') as g(day)
+      where exists (
+        select 1
+          from public.availability_templates av
+          join public.users u on u.id = av.user_id and u.tenant_id = av.tenant_id
+         where av.tenant_id = o.tenant_id and av.location_id = o.id
+           and av.is_active = true and u.is_active = true
+           and u.is_bookable = true and u.is_shared_resource = false
+           and av.weekday = extract(dow from g.day)::int
+           and (av.valid_from  is null or av.valid_from  <= g.day::date)
+           and (av.valid_until is null or av.valid_until >= g.day::date))) as reschedule_slot_days,
+    (select count(*)
+       from public.appointments a
+      where a.tenant_id = o.tenant_id and a.location_id = o.id
+        and a.status in ('scheduled', 'confirmed')
+        and a.starts_at >= now() + interval '24 hours') as reschedulable_appts,
+    (select count(*)
+       from public.availability_templates av
+       join public.users u on u.id = av.user_id and u.tenant_id = av.tenant_id
+       cross join today t
+      where av.tenant_id = o.tenant_id and av.location_id = o.id
+        and av.is_active = true and u.is_active = true
+        and u.is_bookable = true and u.is_shared_resource = false
+        and (av.valid_until is null or av.valid_until >= t.d)) as present_or_future
   from one o
 ),
 f as (
   select fig.*,
          (fig.is_active and fig.fragment_rows > 0) as listed,
          (fig.is_active and fig.fragment_rows > 0
-          and fig.staffed_today > 0 and fig.slot_days > 0) as portal_online
+          and fig.staffed_today > 0 and fig.slot_days > 0) as portal_online,
+         ((fig.is_active and fig.fragment_rows > 0
+           and fig.staffed_today > 0 and fig.slot_days > 0)
+          or (fig.is_active and fig.fragment_rows > 0)
+          or (fig.reschedule_slot_days > 0 and fig.reschedulable_appts > 0)
+          or fig.present_or_future > 0) as hold_needed
     from fig
 ),
 mn as (select * from f where code = 'MN'),
@@ -200,10 +250,15 @@ select n, "check", observed, expected, verdict from (
     from ctl
   union all
   select 10 + case code when 'MN' then 0 when 'LV' then 1 else 2 end,
-         code || ': location id, is_active, listed, staffed services today, slot days in the next 14, guest priced services',
-         id::text || ' | is_active=' || is_active::text || ' | listed=' || listed::text
+         code || case when code = 'MN' then ': location id, ' else ': ' end
+           || 'is_active, listed, staffed services today, slot days in the next 14, guest priced services, reschedule slot days, reschedulable appointments, present or future templates',
+         case when code = 'MN' then id::text || ' | ' else '' end
+           || 'is_active=' || is_active::text || ' | listed=' || listed::text
            || ' | staffed_today=' || staffed_today::text || ' | slot_days_next_14=' || slot_days::text
-           || ' | guest_priced=' || guest_priced::text,
+           || ' | guest_priced=' || guest_priced::text
+           || ' | reschedule_slot_days=' || reschedule_slot_days::text
+           || ' | reschedulable_appointments=' || reschedulable_appts::text
+           || ' | present_or_future_templates=' || present_or_future::text,
          case when code = 'MN' then 'information' else 'control: listed, staffed > 0, slot days > 0' end,
          'INFO'
     from f
@@ -212,8 +267,12 @@ select n, "check", observed, expected, verdict from (
          'MN_ONLINE',
          'portal_listed=' || listed::text || ' portal_staffed_services_today=' || staffed_today::text
            || ' portal_slot_days_next_14=' || slot_days::text || ' portal_online=' || portal_online::text
-           || ' guest_listed=' || listed::text || ' guest_priced_services=' || guest_priced::text,
-         'a hold is needed if portal_online=true (slots) or guest_listed=true (requests)',
+           || ' guest_listed=' || listed::text || ' guest_priced_services=' || guest_priced::text
+           || ' reschedule_slot_days=' || reschedule_slot_days::text
+           || ' reschedulable_appointments=' || reschedulable_appts::text
+           || ' mn_present_or_future_templates=' || present_or_future::text
+           || ' hold_needed=' || hold_needed::text,
+         'hold_needed = portal_online OR guest_listed OR (reschedule_slot_days > 0 AND reschedulable_appointments > 0) OR mn_present_or_future_templates > 0',
          'INFO'
     from mn
   union all

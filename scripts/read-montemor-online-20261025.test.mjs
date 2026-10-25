@@ -16,7 +16,10 @@
 //     turn: each run ends with exit 1, exactly one STOP line, no pass line, and the tool chain stopped;
 //   * the block passes only on the profile 3 OK / 0 VACUOUS / 0 FAIL with an MN_ONLINE row, and STOPs
 //     on a VACUOUS, a FAIL, a missing MN_ONLINE row, a transaction that is not read only, a pinned file
-//     that differs, a dirty worktree, and a merge commit that is not on origin/main.
+//     that differs, a dirty worktree, a merge commit that is not on origin/main, a missing apply
+//     directory and a missing environment file;
+//   * the read names the reschedule measure, the reschedulable visits, the present-or-future schedule
+//     rows and hold_needed in its MN_ONLINE row, and prints no location id for the two controls.
 // Under bash always; under zsh wherever zsh is installed (it is not on the GitHub runner).
 //
 // WHAT IT DOES NOT PROVE: that the read runs against a database. That is the rehearsal in the document.
@@ -85,6 +88,15 @@ test("the read never names a column that holds a person", () => {
   assert.doesNotMatch(code, /\b(full_name|phone|email|address|notes|nif|patient_id|practitioner_id|created_by)\b/i, "the read names a personal column");
   assert.doesNotMatch(code, /select[^;]*\bu\.id\s+as\b/i, "the read outputs a user id");
   assert.match(code, /count\(distinct av\.user_id\)/, "holders are counted, never listed");
+});
+
+test("the read carries the hold rule's measures, and the controls print no id", () => {
+  for (const k of ["reschedule_slot_days=", "reschedulable_appointments=", "mn_present_or_future_templates=", "hold_needed="]) {
+    assert.ok(sql.includes(`' ${k}'`), `MN_ONLINE does not print ${k}`);
+  }
+  assert.match(sql, /case when code = 'MN' then id::text \|\| ' \| ' else '' end/, "a control's location id is printed");
+  assert.match(sql, /a\.starts_at >= now\(\) \+ interval '24 hours'/, "the reschedulable visits do not follow the 24 hour cutoff");
+  assert.match(sql, /av\.valid_until is null or av\.valid_until >= t\.d\)\) as present_or_future/, "present or future rows are not read from valid_until");
 });
 
 test("the block's shape: pipefail on line 2, no set -e, no # line, no continuation, one read-only psql", () => {
@@ -291,6 +303,12 @@ for (const shell of shells) {
         assertStop(runOnce(shell, base, text), re, `changed ${p}`);
         writeFileSync(f, keep);
       }
+      const r1 = runOnce(shell, base, filled(base).replaceAll(join(base, "apply"), join(base, "no-such-apply-dir")));
+      assertStop(r1, /the apply worktree is not there/, "missing apply directory");
+      assert.ok(!/^(git|node|psql|shasum|rm|tee|awk|cut):/m.test(r1.calls), `a command ran after the cd failed: ${r1.calls}`);
+      const r2 = runOnce(shell, base, filled(base).replaceAll(join(base, "prod.env"), join(base, "no-such.env")));
+      assertStop(r2, /production environment file could not be loaded/, "missing env file");
+      assert.ok(!/^(node|psql):/m.test(r2.calls), `the guard or psql ran without the env file: ${r2.calls}`);
       const f = join(base, "apply", DOC_PATH);
       const keep = readFileSync(f);
       writeFileSync(f, Buffer.concat([keep, Buffer.from("\n")]));
