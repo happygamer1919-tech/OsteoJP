@@ -73,10 +73,12 @@
 --   0  the transaction is READ ONLY;
 --   1  exactly one Montemor row exists. CONTROL: exactly one Linda-a-Velha row
 --      and exactly one Castelo Branco row match their own patterns;
---   2  THE MEASURE WORKS: Linda-a-Velha and Castelo Branco are each PORTAL
---      ONLINE by the same predicates. If either is not, the read cannot tell a
---      Montemor that is not bookable from a measure that finds nothing, and
---      verdict 2 reads VACUOUS.
+--   2  THE MEASURE WORKS: Linda-a-Velha and Castelo Branco each read PORTAL
+--      ONLINE, present or future schedule rows > 0 and reschedule slot days > 0,
+--      by the same predicates (every measure hold_needed keys on, except the
+--      reschedulable visits, which a working clinic may have none of). If
+--      either is not, the read cannot tell a Montemor that is not bookable from
+--      a measure that finds nothing, and verdict 2 reads VACUOUS.
 -- Then INFO rows: Montemor's figures and the line MN_ONLINE, the same figures
 -- for the two controls, Montemor's schedule rows (counts and dates), and its
 -- appointments by Lisbon date, origin and status.
@@ -206,7 +208,10 @@ f as (
 ),
 mn as (select * from f where code = 'MN'),
 ctl as (
-  select count(*) filter (where portal_online) as online,
+  -- Each control must show every measure the hold rule keys on, so a subquery
+  -- that always returns 0 cannot leave hold_needed=false unchallenged.
+  select count(*) filter (where portal_online and present_or_future > 0
+                            and reschedule_slot_days > 0) as online,
          count(*) as measured
     from f where code in ('LV', 'CB')
 ),
@@ -242,7 +247,7 @@ select n, "check", observed, expected, verdict from (
     from counts
   union all
   select 2,
-         '2. the measure works: Linda-a-Velha and Castelo Branco are each PORTAL ONLINE by the same predicates',
+         '2. the measure works: Linda-a-Velha and Castelo Branco each read PORTAL ONLINE, present or future schedule rows > 0 and reschedule slot days > 0, by the same predicates',
          online::text || ' of ' || measured::text,
          '2 of 2',
          case when measured = 2 and online = 2 then 'OK'
