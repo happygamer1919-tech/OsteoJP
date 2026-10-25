@@ -187,9 +187,12 @@ describe("a re-save never loses or doubles a reminder (INC 2026-10-07)", () => {
     expect(schedule.idempotency).toBeUndefined();
   });
 
-  it("the confirmation keeps its own key: one per appointment and start, however many saves", () => {
+  it("the confirmation keeps its own key: one per appointment and SAVE, made by the app, not Inngest's event id", () => {
     const confirmation = authoredOptions(sendAppointmentConfirmation);
     expect(confirmation.idempotency).toBe(CONFIRMATION_IDEMPOTENCY_KEY);
+    // Q-N: the save's marker rides the event data, so a redelivery of one
+    // event repeats it; the reminder's `scheduledBy` is a different thing.
+    expect(CONFIRMATION_IDEMPOTENCY_KEY).toBe('event.data.appointmentId + ":confirmation:" + event.data.saveId');
     expect(CONFIRMATION_IDEMPOTENCY_KEY).not.toContain("scheduledBy");
     expect(confirmation.singleton).toBeUndefined();
     expect(confirmation.debounce).toBeUndefined();
