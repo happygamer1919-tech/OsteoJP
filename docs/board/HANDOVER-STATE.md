@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**580 cards on the board. 393 shipped, 187 open. Launch readiness 9/9, every launch gate passes.**
+**580 cards on the board. 394 shipped, 186 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -172,7 +172,7 @@ this line and the board disagree.*
 > Concluída asks for the survey (Q-O, Q-V; the survey stays off); the patient
 > app hides a service no therapist is ticked for (Q-R); the guide's Início
 > lesson names no tab count (Q-P). What patients or staff see stays open until
-> you have looked at it deployed. Still open: the clock-change tests (#1624).
+> you have looked at it deployed. The clock-change tests (#1624) merged last, at 12:06.
 >
 > **For you:** check Equipa for bookable therapists with no services ticked
 > (Q-M). **New on the board:** a timing-sensitive test to repair, and a choice

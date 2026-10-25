@@ -11580,22 +11580,22 @@
     },
     {
       "id": "DST-lisbon-guards-across-the-clock-change",
-      "title": "The Lisbon guards read the right hour across the clock change of 2026-10-25: tests only (#1624, open)",
+      "title": "The Lisbon guards read the right hour across the clock change of 2026-10-25: tests only (#1624)",
       "home_lane": "in_flight",
       "owner_terminal": "solo",
       "blocked_on": null,
       "last_checkpoint": "2026-10-25",
-      "lane": "in_flight",
-      "status": "in_flight",
+      "lane": "shipped",
+      "status": "shipped",
       "priority": "medium",
       "gate": "green_self_merge",
       "evidence": {
         "kind": "pr",
         "at": "2026-10-25",
-        "ref": "#1624 open since 2026-10-22, not merged on 2026-10-25."
+        "ref": "#1624 merged 2026-10-25 at 12:06 Lisbon as 150dfdba."
       },
       "open_on_purpose": null,
-      "notes": "=== 2026-10-25 (SOLO) === OPEN AS #1624. SOLO fills its merge line.\nASKED BY STRATEGY on 2026-10-22: proof that the Lisbon guards hold across the clock change of Sunday 2026-10-25 (02:00 Lisbon).\nWHAT: real instants from 00:30Z to 02:30Z on 2026-10-25, read in Europe/Lisbon. The clinic-hours guard and the midday closure give the right verdict on both sides of the change, and the 0106 apply document's closed-hours check is run as written, on GNU and BSD date. A fixed +01:00 zone turns 10 cases red. Tests only, Tier A.\nRELATED: DST-apply-window-never-ends-in-a-repeated-hour, TEST-sweep-late-rule-across-the-clock-change-2026-10-25."
+      "notes": "=== 2026-10-25 (SOLO) === MERGED as #1624 at 12:06 Lisbon (150dfdba), the last of the day's merges.\nASKED BY STRATEGY on 2026-10-22: proof that the Lisbon guards hold across the clock change of Sunday 2026-10-25 (02:00 Lisbon).\nWHAT: real instants from 00:30Z to 02:30Z on 2026-10-25, read in Europe/Lisbon. The clinic-hours guard and the midday closure give the right verdict on both sides of the change, and the 0106 apply document's closed-hours check is run as written, on GNU and BSD date. A fixed +01:00 zone turns 10 cases red. Tests only, Tier A.\nRELATED: DST-apply-window-never-ends-in-a-repeated-hour, TEST-sweep-late-rule-across-the-clock-change-2026-10-25."
     },
     {
       "id": "LE-link-codes-doubling-test-is-wall-clock-sensitive",
