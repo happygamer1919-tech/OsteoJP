@@ -43,18 +43,22 @@ name: Inngest auto-sync (osteojp-reminders)
 # than typed here). Preview deployments, and the osteojp-api and osteojp-portal
 # projects, are skipped by the `if:` below.
 #
-# TWO DEPLOYS IN A ROW: the older run is cancelled. The newer run syncs the newer
-# commit, which is the only one worth registering.
+# TWO DEPLOYS IN A ROW: the runs queue, one at a time, and a running sync is
+# never cancelled. The concurrency group sits on the `sync` JOB, not on the
+# workflow: every deployment_status event starts this workflow (previews of the
+# api and portal projects, inactive updates), and a workflow-level group with
+# cancel-in-progress would let any of them cancel a running production sync
+# before its own `if` had even been read. On the job, only runs that pass the
+# `if` take the group. With cancel-in-progress false GitHub keeps one sync
+# running and at most one waiting; a newer waiting run replaces an older WAITING
+# one, which is right: the newer commit is the one worth registering, and the
+# run already in progress finishes.
 
 on:
   deployment_status:
 
 permissions:
   contents: read
-
-concurrency:
-  group: inngest-auto-sync
-  cancel-in-progress: true
 
 jobs:
   sync:
@@ -63,7 +67,12 @@ jobs:
       github.event.deployment_status.state == 'success' &&
       startsWith(github.event.deployment.environment, 'Production') &&
       endsWith(github.event.deployment.environment, 'osteojp-platform')
+    concurrency:
+      group: inngest-auto-sync
+      cancel-in-progress: false
     runs-on: ubuntu-latest
+    # Above the wait step's own 10-minute deadline plus the sync and the check,
+    # so the step's NOT SYNCED line always prints before the job is killed.
     timeout-minutes: 20
     env:
       APP_ORIGIN: https://app.osteojp.pt
@@ -88,8 +97,15 @@ jobs:
 
       - name: Wait until app.osteojp.pt serves the deployed commit
         run: |
+          # A deadline in elapsed seconds, not a count of attempts: a slow curl
+          # (up to 15 s each) cannot stretch the wait past 10 minutes. The two
+          # WAIT_* variables are set by nothing in this workflow; only the
+          # script test shortens them, to prove the NOT SYNCED path in seconds.
           live=""
-          for attempt in $(seq 1 40); do
+          deadline=$(( $(date +%s) + ${WAIT_DEADLINE_SECONDS:-600} ))
+          attempt=0
+          while [ "$(date +%s)" -lt "${deadline}" ]; do
+            attempt=$((attempt + 1))
             body=$(curl -sS --max-time 15 "${APP_ORIGIN}/api/inngest/deployed" 2>/dev/null || true)
             live=$(printf '%s' "${body}" | jq -r '.commit // empty' 2>/dev/null || true)
             if [ "${live}" = "${DEPLOYED_SHA}" ]; then
@@ -97,7 +113,7 @@ jobs:
               exit 0
             fi
             echo "Attempt ${attempt}: live commit is '${live:-unknown}', waiting for ${DEPLOYED_SHA}."
-            sleep 15
+            sleep "${WAIT_SLEEP_SECONDS:-15}"
           done
           echo "::error::After 10 minutes ${APP_ORIGIN} still serves '${live:-unknown}', not ${DEPLOYED_SHA}. NOT SYNCED. If a newer deploy took the domain, its own run syncs it; otherwise the owner presses Resync."
           exit 1
