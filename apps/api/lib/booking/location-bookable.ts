@@ -1,6 +1,8 @@
 import { sql, type SQL } from "drizzle-orm";
 import { locations } from "@osteojp/db";
 
+import { heldLocationIds } from "./online-booking-hold";
+
 /**
  * R45 item 1 (strategy, 2026-10-06): THE PORTAL HIDES ANY LOCATION WITH NO
  * BOOKABLE THERAPIST.
@@ -76,7 +78,18 @@ import { locations } from "@osteojp/db";
  * can run against has it.
  */
 export function locationHasBookableTherapist(): SQL {
-  return sql`exists (
+  // R10: a clinic held off online booking by configuration reads as one with
+  // nobody bookable (`online-booking-hold.ts`). Read on every call; no hold,
+  // no extra term.
+  const held = heldLocationIds();
+  const hold =
+    held.length === 0
+      ? sql``
+      : sql` and ${locations.id} not in (${sql.join(
+          held.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`;
+  return sql`(exists (
     select 1
       from availability_templates av
       join users u on u.id = av.user_id and u.tenant_id = av.tenant_id
@@ -86,5 +99,5 @@ export function locationHasBookableTherapist(): SQL {
        and u.is_active = true
        and u.is_bookable = true
        and u.is_shared_resource = false
-  )`;
+  )${hold})`;
 }

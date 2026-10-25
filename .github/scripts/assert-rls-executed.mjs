@@ -339,6 +339,17 @@ const SUITES = [
   { file: "reminder-claim-closed.db.test.ts", hard: true },
   { file: "sweep.db.test.ts", hard: true },
   { file: "sweep-send.db.test.ts", hard: true },
+  // PL-09 Phase 4, added 2026-10-25. One DB-gated suite of apps/web: every
+  // Equipa save that names a staff member (Ativar login, the clinic
+  // memberships, their colour, the primary and the other services) acts only
+  // on staff at a location-scoped admin's own clinics, and the membership save
+  // adds or removes only those clinics; the owner and an admin with no clinic
+  // are unrestricted. Run as the real roles through runScoped, RLS and the
+  // location scope, which a mock replaces. Named here so that its ABSENCE is
+  // red too.
+  // THIS ENTRY NEEDS THE PL-09 SUITE ON MAIN: before that pull request merges
+  // the file does not exist, and an absent suite here is red.
+  { file: "staff-scope-saves.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.
