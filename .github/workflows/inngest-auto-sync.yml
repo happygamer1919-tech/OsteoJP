@@ -1,0 +1,152 @@
+name: Inngest auto-sync (osteojp-reminders)
+
+# R6, STRATEGY'S RULING OF 2026-10-25: THE APP IS SYNCED BY EVERY PRODUCTION
+# DEPLOY, NOT BY A HAND ON A BUTTON.
+#
+# Until this workflow, the Inngest app osteojp-reminders was synced by the owner
+# pressing Resync. A function's CODE followed every deploy; its SETTINGS
+# (triggers, cancelOn, idempotency, concurrency) stayed whatever Inngest stored at
+# the last press. On 2026-10-07 the last press was 2026-08-03, and three merged
+# and deployed changes were not live (CLAUDE.md, "a change to a background job's
+# settings is not live at merge").
+#
+# WHAT IT DOES, after a successful PRODUCTION deployment of osteojp-platform:
+#   1. Counts, from the code at the deployed commit, the functions /api/inngest
+#      serves (scripts/inngest-expected-functions.mjs). Never a constant.
+#   2. Waits, at most 10 minutes, until https://app.osteojp.pt/api/inngest/deployed
+#      answers with the deployed commit. A sync sent before the domain points at
+#      the new deployment would register the OLD functions.
+#   3. Sends `PUT https://app.osteojp.pt/api/inngest`. That is the same call the
+#      Resync button makes: the app registers its own functions with Inngest,
+#      signing the request with its own INNGEST_SIGNING_KEY, which never leaves
+#      Vercel. This workflow holds no secret and needs none.
+#   4. Checks that the live deployment serves exactly the expected count, and
+#      that Inngest's answer to the registration carries no error.
+#
+# WHAT IT DOES NOT DO, said plainly:
+#   - It does not use the Inngest Vercel integration. That integration sets
+#     INNGEST_SIGNING_KEY and INNGEST_EVENT_KEY itself, and the event key in use
+#     is never rotated (R6).
+#   - It does not read what Inngest STORED. An unsigned GET on /api/inngest
+#     answers 401 in cloud mode (inngest 4.5.0, InngestCommHandler GET branch),
+#     and Inngest's own API needs a key. What it proves is that the deployment
+#     it synced serves the expected number of functions, and that Inngest
+#     accepted the registration. The dashboard's sync entry is the owner's check
+#     on the first run (R6's GATE).
+#   - It syncs osteojp-reminders only. The other serve endpoints under
+#     /api/inngest/* (consultation, invoicexpress, ifthenpay, stripe) are other
+#     Inngest apps and are not synced by this workflow.
+#
+# WHICH DEPLOYMENTS: Vercel's GitHub app names the environment
+# "Production <dash> osteojp-platform" (read from the deployments API on
+# 2026-10-25; the dash is not ASCII, so it is matched by its two ends rather
+# than typed here). Preview deployments, and the osteojp-api and osteojp-portal
+# projects, are skipped by the `if:` below.
+#
+# TWO DEPLOYS IN A ROW: the older run is cancelled. The newer run syncs the newer
+# commit, which is the only one worth registering.
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inngest-auto-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync osteojp-reminders after a production deploy
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      startsWith(github.event.deployment.environment, 'Production') &&
+      endsWith(github.event.deployment.environment, 'osteojp-platform')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ORIGIN: https://app.osteojp.pt
+      DEPLOYED_SHA: ${{ github.event.deployment.sha }}
+    steps:
+      - name: Check out the deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+          persist-credentials: false
+
+      - name: Count the functions the code serves
+        id: expected
+        run: |
+          node scripts/inngest-expected-functions.mjs --list || { echo "::error::Could not read the served functions from the code at ${DEPLOYED_SHA}."; exit 1; }
+          count=$(node scripts/inngest-expected-functions.mjs) || { echo "::error::Could not count the served functions."; exit 1; }
+          case "${count}" in
+            ''|*[!0-9]*) echo "::error::The count is not a number: '${count}'"; exit 1 ;;
+          esac
+          echo "Expected from code at ${DEPLOYED_SHA}: ${count} function(s)."
+          echo "count=${count}" >> "${GITHUB_OUTPUT}"
+
+      - name: Wait until app.osteojp.pt serves the deployed commit
+        run: |
+          live=""
+          for attempt in $(seq 1 40); do
+            body=$(curl -sS --max-time 15 "${APP_ORIGIN}/api/inngest/deployed" 2>/dev/null || true)
+            live=$(printf '%s' "${body}" | jq -r '.commit // empty' 2>/dev/null || true)
+            if [ "${live}" = "${DEPLOYED_SHA}" ]; then
+              echo "Attempt ${attempt}: ${APP_ORIGIN} serves ${DEPLOYED_SHA}."
+              exit 0
+            fi
+            echo "Attempt ${attempt}: live commit is '${live:-unknown}', waiting for ${DEPLOYED_SHA}."
+            sleep 15
+          done
+          echo "::error::After 10 minutes ${APP_ORIGIN} still serves '${live:-unknown}', not ${DEPLOYED_SHA}. NOT SYNCED. If a newer deploy took the domain, its own run syncs it; otherwise the owner presses Resync."
+          exit 1
+
+      - name: Sync (PUT /api/inngest)
+        id: sync
+        run: |
+          out="${RUNNER_TEMP}/sync-body.json"
+          code=$(curl -sS -X PUT "${APP_ORIGIN}/api/inngest" --fail-with-body --max-time 60 -o "${out}" -w '%{http_code}') || {
+            echo "::error::The sync call failed (HTTP ${code:-none}). NOT SYNCED. Body follows."
+            cat "${out}" 2>/dev/null || true
+            exit 1
+          }
+          echo "HTTP ${code}. Body:"
+          cat "${out}"; echo
+          # inngest 4.5.0 (InngestCommHandler, PUT, out-of-band): the body is
+          # {message, modified}. `message` is Inngest's `error` field, which
+          # defaults to "Successfully registered" on success. A failed
+          # registration answers a non-2xx status (caught by --fail-with-body
+          # above) or another message, which is a failure here too.
+          message=$(jq -r '.message // empty' "${out}") || { echo "::error::The sync answer is not JSON."; exit 1; }
+          if [ "${message}" != "Successfully registered" ]; then
+            echo "::error::Inngest did not confirm the registration. Its message: '${message:-none}'. NOT SYNCED."
+            exit 1
+          fi
+          modified=$(jq -r '.modified // false' "${out}")
+          echo "modified=${modified}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check the live function count against the code
+        env:
+          EXPECTED: ${{ steps.expected.outputs.count }}
+          MODIFIED: ${{ steps.sync.outputs.modified }}
+        run: |
+          body=$(curl -sS --max-time 15 "${APP_ORIGIN}/api/inngest/deployed") || { echo "::error::Could not read ${APP_ORIGIN}/api/inngest/deployed after the sync."; exit 1; }
+          live_commit=$(printf '%s' "${body}" | jq -r '.commit // empty') || { echo "::error::Not JSON: ${body}"; exit 1; }
+          live_count=$(printf '%s' "${body}" | jq -r '.functionCount // empty') || { echo "::error::Not JSON: ${body}"; exit 1; }
+          if [ "${live_commit}" != "${DEPLOYED_SHA}" ]; then
+            echo "::error::The domain moved to '${live_commit}' during the sync. This run cannot vouch for what was registered; the newer deploy's run will sync again."
+            exit 1
+          fi
+          if [ "${live_count}" != "${EXPECTED}" ]; then
+            echo "::error::The live deployment serves ${live_count:-no} function(s); the code at ${DEPLOYED_SHA} lists ${EXPECTED}."
+            exit 1
+          fi
+          {
+            echo "### osteojp-reminders synced"
+            echo ""
+            echo "- Commit: \`${DEPLOYED_SHA}\`"
+            echo "- Functions served and registered: ${live_count} (expected from code: ${EXPECTED})"
+            echo "- Inngest reported the app modified: ${MODIFIED}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "Synced ${DEPLOYED_SHA}: ${live_count} function(s), as the code lists. Modified: ${MODIFIED}."

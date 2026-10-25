@@ -31,6 +31,7 @@
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
     ".github/workflows/e2e.yml": "e4655dae440762161f7b96d95be1661ecf1349da3b16d5e43b04a5cd5d581c81",
     ".github/workflows/held-for-apply-blocks-merge.yml": "1874ed14cdbf61261e0d5da952a78f65828c3f81a179b7b309853054a0b57566",
+    ".github/workflows/inngest-auto-sync.yml": "957df0b25eb0a483f9bb13c41ca3e3dbcd8782d6c312b00e94220bb364264014",
     ".github/workflows/openapi-drift.yml": "79fa51f5d2be2861bd193559610a7d1b762913c20df7a017a1e0e6131b6eb68a",
     ".github/workflows/prod-drift-check.yml": "b1007535c2cce199ff59e1720b4270f84443aeffc4feff80c2d2d4856a50ec0f",
     ".github/workflows/prod-migrate.yml": "be46608dbcd2a4ec1c96a28207b10e73b5f666e526a47e540e59bbecde21b760",
