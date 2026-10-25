@@ -1,9 +1,8 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/lib/reminders/inngest/client";
-import { functions } from "@/lib/reminders/inngest/functions";
-// INTAKE-01: the guest intake retention cron rides this already-synced endpoint
-// (see lib/guest-intake/inngest/retention.ts for why it is not its own app).
-import { purgeExpiredGuestIntakesDaily } from "@/lib/guest-intake/inngest/retention";
+// The reminder functions plus the INTAKE-01 retention cron, in one list that
+// /api/inngest/deployed also counts (lib/reminders/inngest/served.ts).
+import { servedFunctions } from "@/lib/reminders/inngest/served";
 
 // Inngest serve endpoint. Inngest calls GET (introspection), POST (function
 // invocation), and PUT (registration). Requests are authenticated by the Inngest
@@ -38,5 +37,5 @@ import { purgeExpiredGuestIntakesDaily } from "@/lib/guest-intake/inngest/retent
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [...functions, purgeExpiredGuestIntakesDaily],
+  functions: servedFunctions,
 });
