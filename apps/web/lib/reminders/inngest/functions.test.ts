@@ -314,6 +314,10 @@ describe("the 24-hour function is the one Inngest already has (SAT-01)", () => {
     ["corrected soon after the visit", "2031-05-14T14:15:00.000Z", "2031-05-15T14:15:00.000Z"],
     // Corrected six days on: the instant has passed, and it is still endsAt + 24 h.
     ["corrected days later", "2031-05-08T09:00:00.000Z", "2031-05-09T09:00:00.000Z"],
+    // Q-V (1): corrected before the visit started. The sleep is computed from
+    // endsAt alone, never from the moment of the correction, so it still
+    // waits to endsAt + 24 h.
+    ["corrected before the visit started", "2031-06-30T10:45:00.000Z", "2031-07-01T10:45:00.000Z"],
   ])("a correction's event (%s) takes the same 24 hour sleep, then asks for the survey ALONE", async (_case, endsAt, wakesAt) => {
     d.dispatchSurvey.mockClear();
     d.dispatchFollowUp.mockClear();

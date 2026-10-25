@@ -6,6 +6,11 @@
  * Concluida, only for visits that ended in the last 7 days, same 24 h and
  * 60-day rules."
  *
+ * Q-V (1), strategy 2026-10-25, verbatim: "Q-V (1) yes, drop the lower
+ * bound." A correction before the visit's end (even before it started) asks
+ * too; the 7-day upper bound stays. The run still waits until endsAt + 24 h
+ * (lib/reminders/inngest/functions.ts), so no survey is asked early.
+ *
  * Before it, the correction door emitted nothing, so a visit moved from Falta
  * to Concluida never had its survey. This file holds WHICH corrections emit
  * (the pure rule, every legal pair, and the 7-day window at both edges) and
@@ -134,7 +139,7 @@ afterEach(() => {
 
 const ALL: AppointmentStatusValue[] = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
 
-describe("correctionAsksSurvey: into Concluida, a visit that ended in the last 7 days", () => {
+describe("correctionAsksSurvey: into Concluida, a visit that ended in the last 7 days or has not ended", () => {
   it("of the six legal corrections, only the two INTO completed ask", () => {
     const legal = ALL.flatMap((from) => ALL.map((to) => [from, to] as const)).filter(([f, t]) =>
       isLegalEstadoCorrection(f, t),
@@ -160,7 +165,9 @@ describe("correctionAsksSurvey: into Concluida, a visit that ended in the last 7
     ["ended exactly 7 days ago", 7 * DAY, true],
     ["ended 7 days 1 hour ago", 7 * DAY + HOUR, false],
     ["ended 30 days ago", 30 * DAY, false],
-    ["has not ended yet (ends in an hour)", -HOUR, false],
+    // Q-V (1): no lower bound. The run sleeps until endsAt + 24 h either way.
+    ["ends in two hours (corrected 2 h before the end)", -2 * HOUR, true],
+    ["has not started yet (ends in three days)", -3 * DAY, true],
   ])("a visit that %s: %s", (_label, msAgo, asks) => {
     const endsAt = new Date(NOW.getTime() - msAgo);
     expect(correctionAsksSurvey("no_show", "completed", endsAt, NOW.getTime())).toBe(asks);
@@ -210,10 +217,24 @@ describe("correctAppointmentEstadoAction emits the survey's event exactly when t
     expect(h.sent).toEqual([]);
   });
 
-  it("Falta to Concluida of a visit that has not ended yet: nothing (an open question, see the rule)", async () => {
-    row = { ...row, status: "no_show", ...endedAgo(-HOUR) };
-    expect((await correctAppointmentEstadoAction(APPT, "completed")).ok).toBe(true);
-    expect(h.sent).toEqual([]);
+  it("Falta to Concluida, 2 h before the visit ends (Q-V (1)): ONE completed event, survey only", async () => {
+    row = { ...row, status: "no_show", ...endedAgo(-2 * HOUR) };
+    expect(await correctAppointmentEstadoAction(APPT, "completed")).toEqual({ ok: true, data: { id: APPT } });
+    expect(h.sent).toEqual([
+      {
+        name: COMPLETED,
+        data: { appointmentId: APPT, tenantId: TENANT, endsAt: row.endsAt.toISOString(), surveyOnly: true },
+      },
+    ]);
+  });
+
+  it("Falta to Concluida of a visit that has not started yet (Q-V (1)): it emits, and the run sleeps to endsAt + 24 h", async () => {
+    row = { ...row, status: "no_show", ...endedAgo(-3 * DAY) };
+    expect(row.startsAt.getTime()).toBeGreaterThan(NOW.getTime());
+    expect(await correctAppointmentEstadoAction(APPT, "completed")).toEqual({ ok: true, data: { id: APPT } });
+    expect(h.sent.map((e) => [e.name, e.data.endsAt, e.data.surveyOnly])).toEqual([
+      [COMPLETED, row.endsAt.toISOString(), true],
+    ]);
   });
 
   it("a refused correction emits nothing: an illegal pair, and a slot taken since", async () => {

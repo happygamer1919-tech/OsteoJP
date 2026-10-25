@@ -92,7 +92,7 @@ export function correctionEntersBlockingSet(
   return (from === "cancelled" || from === "no_show") && to === "completed";
 }
 
-/** Q-O: how far back a visit may have ended for a correction to ask the survey. */
+/** Q-O: how far back a visit may have ended for a correction to ask the survey (Q-V: no lower bound). */
 export const CORRECTION_SURVEY_WINDOW_MS = 7 * 24 * 60 * 60_000;
 
 /**
@@ -101,13 +101,16 @@ export const CORRECTION_SURVEY_WINDOW_MS = 7 * 24 * 60 * 60_000;
  * ended in the last 7 days, same 24 h and 60-day rules."
  *
  * True only for a legal correction INTO `completed` (from Cancelada or Falta)
- * of a visit whose end is at or before `nowMs` and no more than 7 days before
- * it. A correction OUT of `completed`, or into anything else, asks nothing,
+ * of a visit that ended no more than 7 days before `nowMs`, or has not ended
+ * yet. A correction OUT of `completed`, or into anything else, asks nothing,
  * which is what it did before.
  *
- * A VISIT THAT HAS NOT ENDED YET (marked Falta early, then corrected) has not
- * "ended in the last 7 days", so it asks nothing. That reading is the
- * ruling's words; whether such a visit should ask is an open question.
+ * NO LOWER BOUND (Q-V (1), strategy 2026-10-25: "drop the lower bound"). A
+ * correction made before the visit's end, including one made before it
+ * started (marked Falta early, then corrected), asks too. The timing is not
+ * this function's: the Inngest function sleeps until endsAt + 24 h whatever
+ * the moment of the correction, so a survey is never asked before the visit
+ * is over.
  *
  * The 24 hour wait and the 60-day rule are not here: the event this answer
  * emits runs the same Inngest function and the same issue door as an
@@ -120,6 +123,5 @@ export function correctionAsksSurvey(
   nowMs: number,
 ): boolean {
   if (to !== "completed" || !isLegalEstadoCorrection(from, to)) return false;
-  const sinceEnd = nowMs - endsAt.getTime();
-  return sinceEnd >= 0 && sinceEnd <= CORRECTION_SURVEY_WINDOW_MS;
+  return nowMs - endsAt.getTime() <= CORRECTION_SURVEY_WINDOW_MS;
 }

@@ -2770,11 +2770,20 @@ export async function correctAppointmentEstadoAction(
       });
 
       // Q-O (strategy's ruling of 2026-10-22). A correction INTO Concluida
-      // of a visit that ended in the last 7 days asks for the satisfaction
-      // survey, as the ordinary Estado path does (enqueueStatusNotifications-
-      // AfterCommit). Decided here, against the clock at the moment of the
-      // correction; emitted after the commit. Every other correction emits
-      // nothing, as before.
+      // of a visit that ended in the last 7 days, or has not ended yet (Q-V
+      // (1), 2026-10-25), asks for the satisfaction survey, as the ordinary
+      // Estado path does (enqueueStatusNotificationsAfterCommit). Decided
+      // here, against the clock at the moment of the correction; emitted
+      // after the commit. Every other correction emits nothing, as before.
+      //
+      // ACCEPTED RESIDUAL (Q-V (2), strategy 2026-10-25). The event shares
+      // the follow-up's idempotency key, `appointmentId:follow_up`, which
+      // Inngest holds for 24 hours from the first event. A correction back
+      // into Concluida that lands after the visit's end + 24 h (the first
+      // run has woken, read a status that was not Concluida and sent
+      // nothing) but before the first completed event + 24 h is dropped by
+      // the key, and that visit gets no survey. Its own key would need a
+      // Resync, so it is accepted and documented (docs/DECISIONS.md, Q-V).
       if (correctionAsksSurvey(row.status, to, row.endsAt, Date.now())) {
         surveyTarget = { appointmentId: row.id, endsAt: row.endsAt };
       }

@@ -201,7 +201,8 @@ export type StatusNotificationTarget = {
  * satisfaction survey: the same appointment/completed event the ordinary
  * Estado path emits, marked `surveyOnly`, so the 24 hour function sends the
  * survey alone and never the follow-up message. Whether a correction asks at
- * all (into Concluida, a visit that ended in the last 7 days) is
+ * all (into Concluida, a visit that ended in the last 7 days or has not
+ * ended yet) is
  * `correctionAsksSurvey` in ./estado-correction.ts; the caller emits only
  * when it says so.
  *
