@@ -44,8 +44,10 @@ export type ServiceWithClinic = Option & { locationId?: string | null };
  * The chips: the services visible at the viewer's clinics.
  *
  * A service with `location_id` NULL is offered at every clinic; one bound to a
- * clinic is offered only when that clinic is one of the viewer's. The same rule
- * the portal catalog applies (apps/api/lib/appointments/store.ts getCatalog).
+ * clinic is offered only when that clinic is one of the viewer's. This is the
+ * clinic scope alone: the portal catalog (apps/api/lib/appointments/store.ts
+ * getCatalog) also hides a service no therapist offered online is ticked for
+ * (Q-R), and the staff agenda does not (PL-06a).
  * `locationId` UNDEFINED means the row did not say, and is treated like null:
  * hiding a service because a field was not selected would be a silent loss.
  *
