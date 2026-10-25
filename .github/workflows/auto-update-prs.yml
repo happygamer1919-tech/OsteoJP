@@ -78,8 +78,9 @@ name: Auto-update PR branches
 # file as it is on main, with the repository's secrets, so it must never check
 # out or execute the PR's code. This job checks nothing out: it reads the PR's
 # number from the event and makes three GitHub API calls. The PR is re-read from
-# the API (not trusted from the event) and must still be open, non-draft, armed,
-# into main and not held when the pass looks at it.
+# the API and must still be open, non-draft, into main, not held and not headed
+# by main when the pass looks at it. Only its ARMED state is taken from the event
+# when a lagging read says unarmed (the step's "armed by this very event").
 on:
   push:
     branches: [main]
@@ -101,10 +102,12 @@ on:
 # most for pull_request_target, whose default token could otherwise write.
 permissions: {}
 
-# One group for the passes (a newer main supersedes an older pass), and one group
-# per PR for arming, so arming one PR never cancels a pass or another PR's update.
+# One group for the passes on a push (a newer main supersedes an older pass), one
+# per PR for arming, and one per (base, pr) for a dispatch, so arming never
+# cancels a pass, and a proof dispatch never cancels a pass on main or the
+# other way round.
 concurrency:
-  group: ${{ github.event_name == 'pull_request_target' && format('auto-update-pr-{0}', github.event.pull_request.number) || 'auto-update-prs' }}
+  group: ${{ github.event_name == 'pull_request_target' && format('auto-update-pr-{0}', github.event.pull_request.number) || github.event_name == 'workflow_dispatch' && format('auto-update-dispatch-{0}-{1}', inputs.base, inputs.pr) || 'auto-update-prs' }}
   cancel-in-progress: true
 
 jobs:
@@ -124,6 +127,10 @@ jobs:
           # hand, the `base` input, so the gate can be run on a throwaway base
           # and never on main.
           BASE: ${{ github.event.pull_request.base.ref || inputs.base || 'main' }}
+          # The arming event itself (pull_request_target + auto_merge_enabled).
+          # On it, the PR WAS just armed, whatever a lagging read says.
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           if [ -z "${AUTO_UPDATE_TOKEN}" ]; then
             echo "AUTO_UPDATE_TOKEN secret not set, skipping. This workflow no-ops safely until the owner adds the PAT."
@@ -181,11 +188,33 @@ jobs:
           case "${BASE}" in
             ''|*[!A-Za-z0-9._/-]*) echo "::error::BASE is not a branch name: '${BASE}'"; exit 1 ;;
           esac
+          # ARMED BY THIS VERY EVENT. On pull_request_target/auto_merge_enabled the
+          # PR has just been armed. The list call can still read auto_merge as
+          # null for a moment, and skipping it then would leave it BEHIND: the
+          # exact case R1 exists for. So on that event, and for that PR only,
+          # an unarmed read is treated as armed (the same answer e2e.yml gives
+          # its own "armed by this very event, read as unarmed"). Every other
+          # check still applies: open, non-draft, into the base, not held, head
+          # not main. A dispatch never gets this: it trusts the read.
+          arming_event=false
+          if [ "${EVENT_NAME:-}" = "pull_request_target" ] && [ "${EVENT_ACTION:-}" = "auto_merge_enabled" ]; then
+            arming_event=true
+            # Arming is acted on for PRs into main only. A throwaway base is
+            # proved by dispatch, never by an arming event.
+            if [ "${BASE}" != "main" ]; then
+              echo "PR #${ONLY_PR} was armed into ${BASE}, not main - not updated, by rule."
+              exit 0
+            fi
+          fi
           if [ "${BASE}" != "main" ]; then
             echo "Base branch: ${BASE} (not main)."
           fi
           if [ -n "${ONLY_PR}" ]; then
             echo "Only PR #${ONLY_PR} is considered."
+            found=$(printf '%s' "${list_body}" | jq --arg only "${ONLY_PR}" --arg base "${BASE}" '[.[] | select(.draft == false) | select(.base.ref == $base) | select((.number | tostring) == $only)] | length') || { echo "::error::Could not read the PR list."; exit 1; }
+            if [ "${found}" = "0" ]; then
+              echo "PR #${ONLY_PR} is not an open, non-draft PR into ${BASE} - nothing to do."
+            fi
           fi
           printf '%s' "${list_body}" \
             | jq -c --arg only "${ONLY_PR}" --arg base "${BASE}" '.[] | select(.draft == false) | select(.base.ref == $base) | select($only == "" or (.number | tostring) == $only) | {number, ref: .head.ref, label: .head.label, armed: ((.auto_merge // null) != null), held: (((.labels // []) | map(.name) | index("held-for-apply")) != null)}' \
@@ -201,9 +230,18 @@ jobs:
                   continue
                 fi
 
-                if [ "${armed}" != "true" ]; then
-                  echo "PR #${num} (${ref}): not armed for auto-merge - not updated, by rule (R1). It is brought up to date when it is armed."
+                if [ "${ref}" = "main" ]; then
+                  echo "PR #${num} (${ref}): its head branch is main - never updated, by rule."
                   continue
+                fi
+
+                if [ "${armed}" != "true" ]; then
+                  if [ "${arming_event}" = "true" ] && [ "${num}" = "${ONLY_PR}" ]; then
+                    echo "PR #${num} (${ref}): armed by this very event, read as unarmed - treated as armed."
+                  else
+                    echo "PR #${num} (${ref}): not armed for auto-merge - not updated, by rule (R1). It is brought up to date when it is armed."
+                    continue
+                  fi
                 fi
 
                 # How far behind main is this PR's head?

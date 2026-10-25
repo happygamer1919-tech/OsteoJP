@@ -89,7 +89,7 @@ const ARMED_42 = {
   auto_merge: { merge_method: "squash" },
 };
 
-function runPass({ updateCode = 202, prs = [ARMED_42], onlyPr = "", base = "main", script = null } = {}) {
+function runPass({ updateCode = 202, prs = [ARMED_42], onlyPr = "", base = "main", eventName = "push", eventAction = "", script = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "auto-update-test-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -125,6 +125,8 @@ printf 'unexpected curl call\\n500\\n'; exit 0
       RUNNER_TEMP: dir,
       ONLY_PR: onlyPr,
       BASE: base,
+      EVENT_NAME: eventName,
+      EVENT_ACTION: eventAction,
     },
     encoding: "utf8",
   });
@@ -269,9 +271,76 @@ test("R1: arming (ONLY_PR) updates that PR and no other armed PR", () => {
   assert.match(out, /Only PR #21 is considered/);
 });
 
-test("R1: arming an unarmed PR number updates nothing (the PR is re-read, not trusted from the event)", () => {
-  const { updated, out } = runPass({ prs: [pr(30), pr(31, ARMED)], onlyPr: "30" });
+test("R1: a DISPATCH naming an unarmed PR updates nothing (a dispatch trusts the read)", () => {
+  const { updated, out } = runPass({ prs: [pr(30), pr(31, ARMED)], onlyPr: "30", eventName: "workflow_dispatch" });
   assert.deepEqual(updated, [], out);
+});
+
+// R4 round 1, MAJOR: the arming event's own PR, read as unarmed by a lagging
+// list call, must still be updated. The case R1 exists for.
+const ARMING = { eventName: "pull_request_target", eventAction: "auto_merge_enabled" };
+
+test("R1: ARMED BY THIS VERY EVENT, READ AS UNARMED: the arming event's PR is updated", () => {
+  const { status, updated, out } = runPass({ prs: [pr(32), pr(33)], onlyPr: "32", ...ARMING });
+  assert.equal(status, 0, out);
+  assert.deepEqual(updated, [32], out);
+  assert.match(out, /PR #32 \(feat\/32\): armed by this very event, read as unarmed - treated as armed/);
+});
+
+test("R1: SEEDED FAILURE - a copy that does not trust the arming event leaves that PR BEHIND", () => {
+  const real = extractRunBlock();
+  const disarmed = real.replace('if [ "${arming_event}" = "true" ] && [ "${num}" = "${ONLY_PR}" ]; then', "if false; then");
+  assert.notEqual(disarmed, real, "the seeded mutation did not apply");
+  const { updated } = runPass({ prs: [pr(32)], onlyPr: "32", ...ARMING, script: disarmed });
+  assert.deepEqual(updated, [], "the harness cannot tell the event-trusting pass from one that skips the PR");
+});
+
+test("R1: the arming event still refuses a held PR and a draft", () => {
+  const held = runPass({ prs: [pr(34, { labels: [{ name: "held-for-apply" }] })], onlyPr: "34", ...ARMING });
+  assert.deepEqual(held.updated, [], held.out);
+  const draft = runPass({ prs: [pr(35, { draft: true })], onlyPr: "35", ...ARMING });
+  assert.deepEqual(draft.updated, [], draft.out);
+  assert.match(draft.out, /PR #35 is not an open, non-draft PR into main - nothing to do/);
+});
+
+test("R1: an arming event into a base that is not main updates nothing", () => {
+  const { status, updated, out } = runPass({ prs: [pr(36, { ...ARMED, base: { ref: "tmp/x" } })], onlyPr: "36", base: "tmp/x", ...ARMING });
+  assert.equal(status, 0, out);
+  assert.deepEqual(updated, [], out);
+  assert.match(out, /PR #36 was armed into tmp\/x, not main - not updated, by rule/);
+});
+
+test("R1: SEEDED FAILURE - without the main-only arming rule, the tmp-base arming updates", () => {
+  const real = extractRunBlock();
+  const disarmed = real.replace(/if \[ "\$\{BASE\}" != "main" \]; then\n\s*echo "PR #\$\{ONLY_PR\} was armed into[^\n]*\n\s*exit 0\n\s*fi\n/, "");
+  assert.notEqual(disarmed, real, "the seeded mutation did not apply");
+  const { updated } = runPass({ prs: [pr(36, { ...ARMED, base: { ref: "tmp/x" } })], onlyPr: "36", base: "tmp/x", ...ARMING, script: disarmed });
+  assert.deepEqual(updated, [36]);
+});
+
+test("R1: a PR whose head branch is main is never updated, armed or not", () => {
+  const { updated, out } = runPass({ prs: [pr(37, { ...ARMED, head: { ref: "main", label: "fork:main" } })] });
+  assert.deepEqual(updated, [], out);
+  assert.match(out, /PR #37 \(main\): its head branch is main - never updated, by rule/);
+});
+
+test("R1: SEEDED FAILURE - without the head-is-main rule, that PR is updated", () => {
+  const real = extractRunBlock();
+  const disarmed = real.replace(/if \[ "\$\{ref\}" = "main" \]; then[\s\S]*?continue\n\s*fi\n/, "");
+  assert.notEqual(disarmed, real, "the seeded mutation did not apply");
+  const { updated } = runPass({ prs: [pr(37, { ...ARMED, head: { ref: "main", label: "fork:main" } })], script: disarmed });
+  assert.deepEqual(updated, [37]);
+});
+
+test("R1: an ONLY_PR not among the open PRs into BASE is said plainly", () => {
+  const { status, updated, out } = runPass({ prs: [pr(38, ARMED)], onlyPr: "99", eventName: "workflow_dispatch" });
+  assert.equal(status, 0, out);
+  assert.deepEqual(updated, [], out);
+  assert.match(out, /PR #99 is not an open, non-draft PR into main - nothing to do/);
+  const real = extractRunBlock();
+  const disarmed = real.replace(/echo "PR #\$\{ONLY_PR\} is not an open, non-draft PR into[^\n]*\n/, ":\n");
+  assert.notEqual(disarmed, real, "the seeded mutation did not apply");
+  assert.doesNotMatch(runPass({ prs: [pr(38, ARMED)], onlyPr: "99", script: disarmed }).out, /is not an open, non-draft PR/, "seeded copy still prints it");
 });
 
 test("R1: an ONLY_PR that is not a number STOPS the pass rather than widening it", () => {
@@ -287,10 +356,7 @@ test("R1: a PR into another base is never updated, armed or not", () => {
 });
 
 test("R1: SEEDED FAILURE - a copy with the armed filter removed is caught by the cases above", () => {
-  const disarmed = extractRunBlock().replace(
-    /if \[ "\$\{armed\}" != "true" \]; then[\s\S]*?continue\n\s*fi\n/,
-    "",
-  );
+  const disarmed = extractRunBlock().replace('if [ "${armed}" != "true" ]; then', "if false; then");
   assert.notEqual(disarmed, extractRunBlock(), "the seeded mutation did not apply; the block's shape changed");
   const { updated } = runPass({ prs: [pr(7, ARMED), pr(8)], script: disarmed });
   assert.deepEqual(updated, [7, 8], "the harness cannot tell an armed-only pass from an update-everything pass");
@@ -305,7 +371,8 @@ test("R1: the triggers, the permissions and the concurrency groups", () => {
   assert.match(text, /\npermissions: \{\}\n/);
   assert.match(text, /ONLY_PR: \$\{\{ github\.event\.pull_request\.number \|\| inputs\.pr \|\| '' \}\}/);
   assert.match(text, /BASE: \$\{\{ github\.event\.pull_request\.base\.ref \|\| inputs\.base \|\| 'main' \}\}/);
-  assert.match(text, /group: \$\{\{ github\.event_name == 'pull_request_target' && format\('auto-update-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'auto-update-prs' \}\}/);
+  assert.match(text, /group: \$\{\{ github\.event_name == 'pull_request_target' && format\('auto-update-pr-\{0\}', github\.event\.pull_request\.number\) \|\| github\.event_name == 'workflow_dispatch' && format\('auto-update-dispatch-\{0\}-\{1\}', inputs\.base, inputs\.pr\) \|\| 'auto-update-prs' \}\}/);
+  assert.match(text, /EVENT_NAME: \$\{\{ github\.event_name \}\}\n\s*EVENT_ACTION: \$\{\{ github\.event\.action \}\}/);
   // pull_request_target runs with secrets: nothing of the PR may be checked out.
   assert.doesNotMatch(text, /actions\/checkout/);
   assert.doesNotMatch(text, /github\.event\.pull_request\.(head|title|body)/);
