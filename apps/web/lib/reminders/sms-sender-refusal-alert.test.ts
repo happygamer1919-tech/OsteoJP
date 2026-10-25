@@ -2,9 +2,10 @@
  * sms-sender-refusal-alert.test.ts - Q-L (strategy, 2026-10-18): the
  * confirmation, booking approved, follow-up and no-show SMS raise the same
  * alert the reminder raises (Q-C) when Twilio refuses our sender (21606) or
- * our message body (21617), after the `provider_error` row is written.
+ * our message body (21617), after the `provider_error` row is written. Q-U
+ * (strategy, 2026-10-25) adds the survey SMS.
  *
- * For each of the four senders:
+ * For each of the five senders:
  *   - 21606 and 21617: the transport is called, the `provider_error` row is
  *     written, THEN one alert is raised, with the fixed title, the code and
  *     the channel and nothing else, and the provider's own error goes on
@@ -13,7 +14,8 @@
  *     requests): the same row and the same error, and no alert.
  *
  * WHAT IS REPLACED. The row the dispatch reads (./data), the two transports
- * (./clients), the ledger (./dispatch-ledger) and Sentry. Each records what
+ * (./clients), the ledger (./dispatch-ledger), the survey's issue door
+ * (@/lib/surveys/survey-store, which always answers "issued") and Sentry. Each records what
  * it was given, in one ordered list. Everything the dispatch decides is the
  * real code. Every name, number and address below is invented.
  */
@@ -50,6 +52,10 @@ vi.mock("./dispatch-ledger", () => ({
     );
   }),
 }));
+// The survey's database door. It answers "issued", so the survey reaches its SMS.
+vi.mock("@/lib/surveys/survey-store", () => ({
+  issueSurveyAutomatic: vi.fn(async () => "issued"),
+}));
 // THE TRANSPORT IS REPLACED, NOT WRAPPED: nothing here can reach a provider.
 vi.mock("./clients", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./clients")>();
@@ -67,7 +73,7 @@ vi.mock("./clients", async (importOriginal) => {
   };
 });
 
-import { dispatchConfirmation, dispatchFollowUp, dispatchNoShow } from "./dispatch";
+import { dispatchConfirmation, dispatchFollowUp, dispatchNoShow, dispatchSurvey } from "./dispatch";
 
 const TENANT_ID = "22222222-2222-4222-8222-222222222222";
 const APPOINTMENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -138,9 +144,24 @@ const SENDERS: Sender[] = [
     env: {},
     run: () => dispatchNoShow(TENANT_ID, APPOINTMENT_ID),
   },
+  {
+    // Q-U. The switch on, a concluded visit and no email: the survey goes by SMS.
+    name: "the survey",
+    templateId: "survey.sms",
+    row: { status: "completed" },
+    env: { SURVEY_SEND_MODE: "on" },
+    run: () => dispatchSurvey(TENANT_ID, APPOINTMENT_ID),
+  },
 ];
 
-const ENV_KEYS = ["BOOK_CONFIRM_MODE", "BOOK_CONFIRM_CANARY_PATIENT_IDS", "REMINDERS_LINK_SECRET", "REMINDERS_RESCHEDULE_BASE_URL"];
+const ENV_KEYS = [
+  "BOOK_CONFIRM_MODE",
+  "BOOK_CONFIRM_CANARY_PATIENT_IDS",
+  "SURVEY_SEND_MODE",
+  "SURVEY_CANARY_PATIENT_IDS",
+  "REMINDERS_LINK_SECRET",
+  "REMINDERS_RESCHEDULE_BASE_URL",
+];
 const saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {

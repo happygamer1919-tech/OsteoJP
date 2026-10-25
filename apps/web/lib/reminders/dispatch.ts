@@ -406,8 +406,9 @@ async function sendPatientSms(args: {
   /**
    * Q-L: raise the sender or body alert (`alertSenderOrBodyRefusal`) here,
    * after the `provider_error` row. Passed by the confirmation, booking
-   * approved, follow-up and no-show senders. The reminder paths do not pass
-   * it: they raise the alert themselves, after their claim is settled.
+   * approved, follow-up, no-show and (Q-U, strategy 2026-10-25) survey SMS
+   * senders. The reminder paths do not pass it: they raise the alert
+   * themselves, after their claim is settled.
    */
   alertsOnOurRefusal?: true;
 }): Promise<SendResult | SmsSkip> {
@@ -716,7 +717,8 @@ function refusedAtTheDoor(attempt: SendAttempt | undefined): DispatchOutcome | n
  * 21606 and 21617 also raise an alert (`SENDER_OR_BODY_REFUSAL_CODES`), on
  * either REMINDER path, the switch off included, and (Q-L, strategy
  * 2026-10-18) on the confirmation, booking approved, follow-up and no-show
- * SMS, after their `provider_error` row. The survey's own SMS raises none.
+ * SMS, and (Q-U, strategy 2026-10-25) on the survey SMS, after their
+ * `provider_error` row. The survey email raises none.
  *
  * A code missing from this list costs a reminder that is not retried; a code
  * wrongly on it could cost a second copy.
@@ -742,8 +744,9 @@ export const CLAIM_RELEASING_PROVIDER_CODES: Readonly<Record<"sms" | "email", re
  * way. Each also raises an alert (`alertSenderOrBodyRefusal`), on both
  * reminder paths, the switch off included, besides giving the claim up. Strategy, Q-C of
  * 2026-10-15. Q-L of 2026-10-18 raises the same alert on the confirmation,
- * booking approved, follow-up and no-show SMS (`sendPatientSms`'s
- * `alertsOnOurRefusal`), where there is no claim. Pinned by a test, and every
+ * booking approved, follow-up and no-show SMS, and Q-U of 2026-10-25 on the
+ * survey SMS (`sendPatientSms`'s `alertsOnOurRefusal`), where there is no
+ * claim. Pinned by a test, and every
  * code here is on the list above.
  */
 export const SENDER_OR_BODY_REFUSAL_CODES: Readonly<Record<"sms" | "email", readonly string[]>> = {
@@ -2484,6 +2487,7 @@ async function dispatchSurveyInner(
     phone,
     body: rendered.body,
     templateId: SURVEY_SMS_TEMPLATE_ID,
+    alertsOnOurRefusal: true,
   });
   const handedOver = isSmsSkip(sent) ? null : sent;
   await recordDispatch({
