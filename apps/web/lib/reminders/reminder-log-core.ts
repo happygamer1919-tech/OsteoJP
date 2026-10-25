@@ -174,6 +174,20 @@ const REASON_LABEL: Readonly<Record<string, string>> = {
   template_unapproved: s["remindersLog.reason.template_unapproved"],
   missing_provider_config: s["remindersLog.reason.missing_provider_config"],
   invalid_recipient: s["remindersLog.reason.invalid_recipient"],
+  // SWEEP-02. A reminder that was already sent for its start.
+  // The dispatcher writes NO row for it, so this sentence is not expected on
+  // the page; it is here because every reason the dispatcher can answer has
+  // one, and a row that ever did carry it must not read as unrecognised.
+  claim_held: s["remindersLog.reason.claim_held"],
+  // Q-A, 2026-10-15. Another taker held the same attempt; no row either.
+  // Kept: the guard in reminder-log-core.test.ts asks a sentence of every reason dispatch.ts answers.
+  claim_held_by_duplicate: s["remindersLog.reason.claim_held_by_duplicate"],
+  // SWEEP-47. Written only while the sweep is the sender: a reminder whose
+  // time passed too long ago to send, one whose visit had already begun, and
+  // a call that came before its time.
+  mark_missed: s["remindersLog.reason.mark_missed"],
+  start_passed: s["remindersLog.reason.start_passed"],
+  not_due: s["remindersLog.reason.not_due"],
   // SAT-01. The satisfaction survey's own reasons (dispatchSurvey).
   survey_canary_not_listed: s["remindersLog.reason.survey_canary_not_listed"],
   survey_cooldown: s["remindersLog.reason.survey_cooldown"],
