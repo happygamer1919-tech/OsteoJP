@@ -268,13 +268,20 @@ export const BACK_MS = 60_000;
  * G1. The most one event of this script can cost the scheduler, as the vendor
  * counts it (one execution per function run and one per step):
  *   schedule-appointment-reminders   1 run + 1 step (the fan-out)       = 2
- *   send-appointment-reminder, twice 1 run + 2 steps (sleep, dispatch)  = 6
- * 3 runs and 5 steps. An appointment 24 to 48 hours ahead costs 5, so 8 is an
- * upper bound. confirmationEligible is false, so no confirmation run starts.
- * "At most 8" is WITHOUT RETRIES: a run or a step the scheduler tries again
+ *   send-appointment-reminder, twice 1 run + at most 11 steps          = 24
+ * 3 runs and 23 steps. With the sweep's send switch off a reminder takes 2
+ * steps (sleep, dispatch), 8 an event. With it on, the reminder is the
+ * sweep's backstop (apps/web/lib/reminders/inngest/backstop.ts): it sleeps to
+ * its time, sleeps for the sweep and asks, then follows a moved visit up to
+ * MOVED_MARK_WAITS (4) times, one sleep and one ask each. That is 3 to 11
+ * steps a reminder, 10 to 26 an event, so 26 is an upper bound whichever way
+ * the switch stands (strategy's Q-F b of 2026-10-18). An appointment 24 to 48
+ * hours ahead has one reminder and costs less. confirmationEligible is false,
+ * so no confirmation run starts.
+ * "At most 26" is WITHOUT RETRIES: a run or a step the scheduler tries again
  * is not counted here, and whether the vendor bills a retry is not established.
  */
-export const EXECUTIONS_PER_EVENT = 8;
+export const EXECUTIONS_PER_EVENT = 26;
 /** G1. Strategy's limit of 2026-10-08: the projection must be UNDER this. */
 export const EXECUTION_LIMIT = 20_000;
 /** The bound on one read of the reminder ledger. */
@@ -1177,7 +1184,7 @@ export async function run(argv, deps = {}) {
     const underLimit = underExecutionLimit(projected);
     out(
       `G1 PROJECTED SCHEDULER EXECUTIONS: ${projected} at most  ` +
-        `(${scope} appointments in scope x ${EXECUTIONS_PER_EVENT}: 3 runs and 5 steps each)`,
+        `(${scope} appointments in scope x ${EXECUTIONS_PER_EVENT}: 3 runs and 23 steps each)`,
     );
     out(`G1 UNDER THE LIMIT OF ${EXECUTION_LIMIT}: ${underLimit ? "yes" : "NO"}`);
     // G4. A count for reception. No screen lists appointments without a reminder,
