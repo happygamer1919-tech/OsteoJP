@@ -1,0 +1,1 @@
+TEST ONLY, R1 throwaway of 2026-10-25 into tmp/r1-base-1025 (never main). Deleted after the test.
