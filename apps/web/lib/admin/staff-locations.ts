@@ -12,6 +12,7 @@ import {
   assertLocationInScope,
   assertMembershipChangeInScope,
   assertStaffInScope,
+  lockStaffMember,
 } from "./staff-scope";
 
 /**
@@ -93,6 +94,10 @@ export async function setStaffLocations(
   const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
+    // The member's row lock comes first: the no-clinic rule below reads the
+    // current memberships, and two admins each removing one of a member's two
+    // clinics must not both read two and both pass.
+    await lockStaffMember(tx, userId);
     await assertStaffInScope(tx, userId, scope);
     // Every requested location must be a real location of this tenant (RLS scopes
     // the read); reject the whole request on any unknown/cross-tenant id.

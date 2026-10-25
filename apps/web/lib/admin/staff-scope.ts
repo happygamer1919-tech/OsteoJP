@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
-import { staffLocations, type DbTx } from "@osteojp/db";
+import { staffLocations, users, type DbTx } from "@osteojp/db";
 import { AdminError } from "./errors";
 
 /**
@@ -28,6 +28,23 @@ export async function assertStaffInScope(
     .where(and(eq(staffLocations.userId, userId), inArray(staffLocations.locationId, scope)))
     .limit(1);
   if (rows.length === 0) throw new AdminError("not_found");
+}
+
+/**
+ * Serialise every write to ONE member (Q-M review, 2026-10-20; PL-09): a save
+ * that reads the member's current rows and then writes from what it read takes
+ * `SELECT ... FOR UPDATE` on the member's own users row first, so two saves on
+ * the same member run one after the other and the second reads what the first
+ * committed. It also refuses a member this actor cannot see (another tenant's
+ * id) with not_found.
+ */
+export async function lockStaffMember(tx: DbTx, userId: string): Promise<void> {
+  const [row] = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for("update");
+  if (!row) throw new AdminError("not_found");
 }
 
 /**

@@ -78,6 +78,8 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
   const memberB = randomUUID();
   /** A therapist at both clinics. */
   const memberAB = randomUUID();
+  /** A therapist at both clinics, used only by the two-saves arm. */
+  const memberRace = randomUUID();
 
   const asOwner: RequestContext = { tenantId: tenant, role: "owner", userId: owner };
   const asAdminA: RequestContext = { tenantId: tenant, role: "admin", userId: adminA };
@@ -143,6 +145,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       [memberA, therapistRole, "ter-a"],
       [memberB, therapistRole, "ter-b"],
       [memberAB, therapistRole, "ter-ab"],
+      [memberRace, therapistRole, "ter-race"],
     ] as const) {
       await db.execute(
         raw`insert into users (id, tenant_id, role_id, email, full_name, is_bookable)
@@ -161,6 +164,8 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       [memberB, clinicB],
       [memberAB, clinicA],
       [memberAB, clinicB],
+      [memberRace, clinicA],
+      [memberRace, clinicB],
     ] as const) {
       await db.execute(
         raw`insert into staff_locations (tenant_id, user_id, location_id)
@@ -243,6 +248,7 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
         code: "not_found",
       });
       expect(await colourOf(memberB, clinicB)).toBeNull();
+      expect(await auditCount("staff.color.set", memberB)).toBe(0);
     });
 
     it("control: the same admin colours a member at their clinic", async () => {
@@ -361,6 +367,54 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       });
       expect(await clinicsOf(memberA)).toEqual([clinicA]);
       expect(await auditCount("staff.locations.set", memberA)).toBe(0);
+    });
+
+    it("two saves on one member run one after the other, so the second reads what the first committed", async () => {
+      // A save by the other clinic's admin, written directly: it takes the
+      // member's row lock, removes clinic B, and holds its transaction open.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let held!: () => void;
+      const holding = new Promise<void>((resolve) => (held = resolve));
+      const holder = db.transaction(async (tx) => {
+        await tx.execute(raw`select id from users where id = ${memberRace}::uuid for update`);
+        await tx.execute(
+          raw`delete from staff_locations where tenant_id = ${tenant}::uuid
+                and user_id = ${memberRace}::uuid and location_id = ${clinicB}::uuid`,
+        );
+        held();
+        await gate;
+      });
+      await holding;
+
+      // adminA removes clinic A, keeping B. Without the lock this save reads both
+      // clinics, passes, and the two commits leave the member with none.
+      let settled = false;
+      const save = setStaffLocations(asAdminA, memberRace, [clinicB])
+        .then(
+          () => "ok",
+          (err: { code?: string }) => err.code ?? String(err),
+        )
+        .finally(() => {
+          settled = true;
+        });
+      // Wait for a condition, not a duration: the save has finished, or it is
+      // queued behind a lock. The bound only stops a hung run.
+      for (let i = 0; i < 400 && !settled; i++) {
+        const waiting = (await db.execute(
+          raw`select count(*)::int as n from pg_locks where not granted`,
+        )) as unknown as { n: number }[];
+        if (Number(waiting[0]!.n) > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      release();
+      await holder;
+
+      // The second save read the committed removal of B: keeping B now means
+      // adding it back, which is outside adminA's clinics.
+      expect(await save).toBe("forbidden");
+      expect(await clinicsOf(memberRace)).toEqual([clinicA]);
+      expect(await auditCount("staff.locations.set", memberRace)).toBe(0);
     });
 
     it("control: the owner may still leave a member with no clinic", async () => {

@@ -30,7 +30,8 @@ const reception: RequestContext = { tenantId: "tenant-A", role: "reception", use
 
 // tx for setStaffLocations: two selects branch on the table —
 //   from(locations)      → validation, returns the ids that exist in-tenant;
-//   from(staffLocations) → the member's current memberships.
+//   from(staffLocations) → the member's current memberships;
+// and the member lock, `.for("update")` on the users row, finds the member.
 // insert/delete are recorded; update must stay untouched.
 function setLocsTx(current: string[], validLocationIds: string[]) {
   const calls = {
@@ -41,10 +42,15 @@ function setLocsTx(current: string[], validLocationIds: string[]) {
   const tx = {
     select: () => ({
       from: (tbl: unknown) => ({
-        where: async () =>
-          tbl === locations
-            ? validLocationIds.map((id) => ({ id }))
-            : current.map((locationId) => ({ locationId })),
+        where: () =>
+          Object.assign(
+            Promise.resolve(
+              tbl === locations
+                ? validLocationIds.map((id) => ({ id }))
+                : current.map((locationId) => ({ locationId })),
+            ),
+            { for: async () => [{ id: "member" }] },
+          ),
       }),
     }),
     insert: () => ({
