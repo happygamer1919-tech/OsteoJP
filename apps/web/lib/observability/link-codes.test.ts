@@ -584,7 +584,11 @@ describe("the cost of reading a string is not the sender's to choose", () => {
     // Counted, not timed: how many times the scrub calls the engine, and how many
     // characters it hands it. Each pattern it runs is one the test above has read
     // for an unbounded quantifier, so the engine's work per character is bounded,
-    // and the characters handed over are the work.
+    // and the characters handed over are the engine's work. What this test sees is
+    // the engine only: work the scrub might do outside a RegExp method (a string
+    // search, a hand-written loop) is caught by the 1 MB ceiling tests above, which
+    // still time themselves. If those ever become counting tests, that work needs a
+    // test of its own.
     const work = (size: number) => engineCalls(() => scrubLinkCodesUnbounded("c+".repeat(size / 2)));
     const small = work(MEGABYTE);
     const large = work(2 * MEGABYTE);
