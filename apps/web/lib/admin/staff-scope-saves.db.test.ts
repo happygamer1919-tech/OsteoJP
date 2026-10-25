@@ -250,6 +250,22 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       expect(await colourOf(memberA, clinicA)).toBe("forest");
     });
 
+    it("a scoped admin may not colour a member's membership at another clinic", async () => {
+      // memberAB is at both clinics, so the member is in scope; clinic B is not.
+      await expect(setStaffColor(asAdminA, memberAB, clinicB, "forest")).rejects.toMatchObject({
+        code: "forbidden",
+      });
+      expect(await colourOf(memberAB, clinicB)).toBeNull();
+      expect(await auditCount("staff.color.set", memberAB)).toBe(0);
+    });
+
+    it("control: the owner colours that membership at the other clinic", async () => {
+      await setStaffColor(asOwner, memberAB, clinicB, "forest");
+      expect(await colourOf(memberAB, clinicB)).toBe("forest");
+      await setStaffColor(asOwner, memberAB, clinicB, null);
+      expect(await colourOf(memberAB, clinicB)).toBeNull();
+    });
+
     it("the owner and an admin with no clinic colour the other clinic's member", async () => {
       await setStaffColor(asOwner, memberB, clinicB, "forest");
       expect(await colourOf(memberB, clinicB)).toBe("forest");
@@ -331,6 +347,29 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       expect(await clinicsOf(memberAB)).toEqual(sorted(clinicA, clinicB));
     });
 
+    it("a scoped admin may not leave themselves with no clinic", async () => {
+      await expect(setStaffLocations(asAdminA, adminA, [])).rejects.toMatchObject({
+        code: "forbidden",
+      });
+      expect(await clinicsOf(adminA)).toEqual([clinicA]);
+      expect(await auditCount("staff.locations.set", adminA)).toBe(0);
+    });
+
+    it("a scoped admin may not leave a colleague with no clinic", async () => {
+      await expect(setStaffLocations(asAdminA, memberA, [])).rejects.toMatchObject({
+        code: "forbidden",
+      });
+      expect(await clinicsOf(memberA)).toEqual([clinicA]);
+      expect(await auditCount("staff.locations.set", memberA)).toBe(0);
+    });
+
+    it("control: the owner may still leave a member with no clinic", async () => {
+      await setStaffLocations(asOwner, memberA, []);
+      expect(await clinicsOf(memberA)).toEqual([]);
+      await setStaffLocations(asOwner, memberA, [clinicA]); // restore for the arms below
+      expect(await clinicsOf(memberA)).toEqual([clinicA]);
+    });
+
     it("control: posting another clinic's membership back unchanged is a plain save", async () => {
       // The Gerir form lists every clinic and posts the member's B tick back.
       await setStaffLocations(asAdminA, memberAB, [clinicA, clinicB]);
@@ -349,6 +388,29 @@ d("PL-09 Phase 4: the Equipa saves act only on staff at the admin's clinics", ()
       expect(await clinicsOf(memberB)).toEqual(sorted(clinicA, clinicB));
       await setStaffLocations(asAdminNone, memberB, [clinicB]);
       expect(await clinicsOf(memberB)).toEqual([clinicB]);
+    });
+  });
+
+  /* ------------------- a member id that does not exist --------------------- */
+
+  describe("a member id that does not exist", () => {
+    it("answers not_found on every save, the same as a member at another clinic", async () => {
+      const nobody = randomUUID();
+      await expect(activateStaffLogin(asAdminA, nobody)).rejects.toMatchObject({
+        code: "not_found",
+      });
+      await expect(setStaffColor(asAdminA, nobody, clinicA, "forest")).rejects.toMatchObject({
+        code: "not_found",
+      });
+      await expect(
+        setTherapistPrimaryService(asAdminA, nobody, serviceTwo),
+      ).rejects.toMatchObject({ code: "not_found" });
+      await expect(setTherapistServices(asAdminA, nobody, [])).rejects.toMatchObject({
+        code: "not_found",
+      });
+      await expect(setStaffLocations(asAdminA, nobody, [clinicA])).rejects.toMatchObject({
+        code: "not_found",
+      });
     });
   });
 });

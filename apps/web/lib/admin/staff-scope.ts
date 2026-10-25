@@ -49,3 +49,30 @@ export function assertMembershipChangeInScope(
     throw new AdminError("forbidden");
   }
 }
+
+/**
+ * A location-scoped admin never leaves a member with no clinic at all. A member
+ * with no clinic falls outside every scoped admin's list, and an admin with no
+ * clinic is unrestricted (`viewerLocationScope` returns null), so emptying a
+ * member's memberships, the admin's own included, would move them out of the
+ * clinic model rather than between clinics. Refused with `forbidden`. No-op for
+ * owner and for an unassigned admin (scope null).
+ */
+export function assertKeepsAMembership(
+  remaining: number,
+  scope: string[] | null,
+): void {
+  if (!scope) return;
+  if (remaining === 0) throw new AdminError("forbidden");
+}
+
+/**
+ * A location-scoped admin sets a member's agenda colour only at their own
+ * clinics: the colour lives on the membership at one clinic, so it is a change
+ * at that clinic. `forbidden` otherwise. No-op for owner and for an unassigned
+ * admin (scope null).
+ */
+export function assertLocationInScope(locationId: string, scope: string[] | null): void {
+  if (!scope) return;
+  if (!scope.includes(locationId)) throw new AdminError("forbidden");
+}

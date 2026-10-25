@@ -7,7 +7,12 @@ import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { isTherapistPaletteColor } from "@/lib/scheduling/therapist-color";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
-import { assertMembershipChangeInScope, assertStaffInScope } from "./staff-scope";
+import {
+  assertKeepsAMembership,
+  assertLocationInScope,
+  assertMembershipChangeInScope,
+  assertStaffInScope,
+} from "./staff-scope";
 
 /**
  * Equipa location membership + per-location agenda colour (W12-40-Q2).
@@ -75,6 +80,7 @@ export async function listStaffLocations(
  * PL-09 Phase 4: a location-scoped admin edits only a member at their own
  * clinics, and adds or removes only their own clinics. A membership at another
  * clinic that the save leaves unchanged passes, since the form posts it back.
+ * Such an admin never leaves a member, themselves included, with no clinic.
  */
 export async function setStaffLocations(
   actor: RequestContext,
@@ -113,6 +119,7 @@ export async function setStaffLocations(
 
     if (toAdd.length === 0 && toRemove.length === 0) return; // no-op, no audit
     assertMembershipChangeInScope(toAdd, toRemove, scope);
+    assertKeepsAMembership(wanted.length, scope);
 
     for (const locationId of toAdd) {
       await tx.insert(staffLocations).values({
@@ -148,7 +155,8 @@ export async function setStaffLocations(
  * be a W12-21 palette key (allowlist) or null to clear it (→ FNV fallback). The
  * member must already belong to that location — colour lives on the membership
  * row, so there is nothing to colour without a membership. Owner/admin only.
- * PL-09 Phase 4: a location-scoped admin colours only a member at their clinics.
+ * PL-09 Phase 4: a location-scoped admin colours only a member at their clinics,
+ * and only at those clinics.
  */
 export async function setStaffColor(
   actor: RequestContext,
@@ -166,6 +174,7 @@ export async function setStaffColor(
 
   await runScoped(actor, async (tx) => {
     await assertStaffInScope(tx, userId, scope);
+    assertLocationInScope(locationId, scope);
     const [row] = await tx
       .select({ id: staffLocations.id, color: staffLocations.color })
       .from(staffLocations)
