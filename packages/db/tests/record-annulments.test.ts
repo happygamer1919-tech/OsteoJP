@@ -68,15 +68,19 @@ describe.skipIf(!live)("0035 record_annulments — append-only annul (live DB)",
     expect(seen.ids).not.toContain(seen.bId);
   });
 
-  it("INSERT of an own-tenant annulment under tenant-A JWT succeeds", async () => {
+  // The owner, in their own name, on a signed registo.
+  it("INSERT of an own-tenant annulment by the tenant's owner, in their own name, succeeds", async () => {
     const inserted = await asRole(p!, "service_role", null, async (tx) => {
       const tA = randomUUID();
+      const owner = randomUUID();
       await seedTenant(tx, tA);
+      await tx`insert into users (id, tenant_id, email, full_name)
+               values (${owner}, ${tA}, ${`ra-${owner}@x.pt`}, 'Owner')`;
       const recA = await seedSignedRecord(tx, tA);
       await tx.unsafe("set local role authenticated");
-      await tx`select set_config('request.jwt.claims', ${claimsFor(tA)}, true)`;
-      return (await tx`insert into record_annulments (tenant_id, record_id)
-        values (${tA}, ${recA}) returning id`) as { id: string }[];
+      await tx`select set_config('request.jwt.claims', ${claimsFor(tA, "owner", owner)}, true)`;
+      return (await tx`insert into record_annulments (tenant_id, record_id, annulled_by_user_id)
+        values (${tA}, ${recA}, ${owner}) returning id`) as { id: string }[];
     });
     expect(inserted.length).toBe(1);
   });
