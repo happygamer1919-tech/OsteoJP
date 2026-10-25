@@ -136,7 +136,7 @@ Nota: a lista mostra no máximo 92 dias a contar da data de início. Para um per
 
 ## Comunicações: Recuperação
 
-**Comunicações** tem três separadores: **Recuperação**, **Lembretes SMS** e **Respostas SMS**, e abre sempre em **Recuperação**. O separador **Recuperação** lista os pacientes que estiveram em tratamento e não têm marcação futura: quem veio desde o início do mês passado até há 7 dias, primeiro os que estão há mais tempo sem voltar. Cada cartão mostra a **Última consulta**, o **Terapeuta**, o telefone, a última nota e a ligação **Abrir ficha**. Mais abaixo fica a lista **Adiados**.
+Os separadores de **Comunicações** incluem **Recuperação**, **Lembretes SMS** e **Respostas SMS**, e **Comunicações** abre sempre em **Recuperação**. O separador **Recuperação** lista os pacientes que estiveram em tratamento e não têm marcação futura: quem veio desde o início do mês passado até há 7 dias, primeiro os que estão há mais tempo sem voltar. Cada cartão mostra a **Última consulta**, o **Terapeuta**, o telefone, a última nota e a ligação **Abrir ficha**. Mais abaixo fica a lista **Adiados**.
 
 ### Como fazer: contactar um paciente
 
@@ -352,7 +352,7 @@ Nota: uma pessoa sem localização atribuída vê todas as localizações e toda
 
 ## Administração: Serviços
 
-**Serviços** tem a lista dos serviços da clínica, com **Duração (min)**, **Preço (€)** e **Estado**, e, mais abaixo, os **Pacotes** de sessões. A etiqueta **Portal** indica que os pacientes podem marcar esse serviço sozinhos, no portal.
+**Serviços** tem a lista dos serviços da clínica, com **Duração (min)**, **Preço (€)** e **Estado**, e, mais abaixo, os **Pacotes** de sessões. A etiqueta **Portal** indica que o serviço está aberto à marcação pelos pacientes, no portal. O serviço só aparece no portal numa clínica se também estiver assinalado, em **Administração**, **Equipa**, **Gerir**, **Serviço principal**, para pelo menos um terapeuta **Disponível para marcações** com horário nessa clínica.
 
 ### Como fazer: criar um serviço
 
@@ -362,7 +362,7 @@ Nota: uma pessoa sem localização atribuída vê todas as localizações e toda
 ### Como fazer: alterar um serviço ou o preço num local
 
 1. Clique em **Gerir** na linha do serviço, altere o que for preciso e clique em **Guardar**.
-2. No mesmo painel, **Abrir a marcação por pacientes** ou **Fechar a marcação por pacientes** decide se o serviço aparece no portal, e **Arquivar** deixa de o oferecer.
+2. No mesmo painel, **Abrir a marcação por pacientes** ou **Fechar a marcação por pacientes** decide se o serviço está aberto à marcação no portal, e **Arquivar** deixa de o oferecer.
 3. Para um preço diferente num local, abra **Preços por local**, escreva o preço desse local e clique em **Guardar preços**. Um local com o campo em branco usa o preço base.
 
 ### Como fazer: criar um pacote
