@@ -366,6 +366,8 @@ d("BOOK-CONFIRM: a public-form request is linked to the appointment booked for i
       tenantId,
       startsAt: booked.start.toISOString(),
       practitionerId: therapistId,
+      // Q-N: the marker of this save, a random uuid.
+      saveId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
       confirmationEligible: true,
       acceptedGuestRequest: true,
     });
