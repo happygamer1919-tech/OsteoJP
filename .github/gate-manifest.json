@@ -91,7 +91,7 @@
     "scripts/import/prod-run-runbook.test.mjs": "89cb2fda4faa891ac85bfe5d4f4f02ee27cb35ba6229b4e7a13153161a80f873",
     "scripts/import/rehearsal-runbook.test.mjs": "b8805f92605d3623f9a6bd1cae11702aa9f3816997b4bdea65c6c27ac2ae8557",
     "scripts/import/run-import.test.mjs": "7e82eb9b8214fff7ed376c4da2c5d5267f5ffd85ace990b63789eecfa7d324ab",
-    "scripts/inc-1007-rearm-reminders-emit.test.mjs": "877139500c9f1d9543561e9c10dcfc8365502d031f8b4c2f64a650eede95b472",
+    "scripts/inc-1007-rearm-reminders-emit.test.mjs": "3095356aff0bb6a24cb6716371376676d3c9e2a3de17d0a0c0b7617c687f5c5e",
     "scripts/ingestion-sign.test.mjs": "c6ba1b8cf42878ccb91d3f829e676c280e7b59ea8d82387e5b7bbe6ae2b40e2e",
     "scripts/lane-stack.test.mjs": "2bcc1f73267c7567c59e89b67bb1d077d3fc81342abcfa1a312ed75d62c51296",
     "scripts/local-target.test.mjs": "a7cfe74aea60206f5b0e2c3215526e9b59d48f31acc565550e331bf23c161f5c",
