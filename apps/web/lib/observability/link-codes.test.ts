@@ -549,22 +549,53 @@ describe("the cost of reading a string is not the sender's to choose", () => {
     expect(scrubLinkCodes(out)).toBe(out);
   });
 
-  it("doubling the worst input doubles the time, it does not quadruple it", () => {
-    const time = (size: number) => {
-      const text = "c+".repeat(size / 2);
-      let best = Infinity;
-      for (let run = 0; run < 3; run += 1) {
-        const started = performance.now();
-        scrubLinkCodesUnbounded(text);
-        best = Math.min(best, performance.now() - started);
-      }
-      return best;
-    };
-    const small = time(MEGABYTE);
-    const large = time(4 * MEGABYTE);
-    // Linear is 4 times. Quadratic is 16 times. The floor keeps a timer that
-    // reads near zero from deciding anything.
-    expect(large).toBeLessThan(Math.max(small, 25) * 10);
+  /**
+   * Every call into the regular expression engine while `run` runs, counted at
+   * the outermost call only (a replace that calls exec inside is one call), with
+   * the length of the text it was handed and the pattern it was.
+   */
+  function engineCalls(run: () => void): Array<{ pattern: RegExp; length: number }> {
+    const calls: Array<{ pattern: RegExp; length: number }> = [];
+    const proto = RegExp.prototype as unknown as Record<PropertyKey, unknown>;
+    const keys: PropertyKey[] = [Symbol.replace, Symbol.match, Symbol.matchAll, Symbol.search, Symbol.split, "exec", "test"];
+    const originals = new Map<PropertyKey, unknown>(keys.map((key) => [key, proto[key]]));
+    let depth = 0;
+    for (const key of keys) {
+      const original = originals.get(key) as (this: RegExp, ...args: unknown[]) => unknown;
+      proto[key] = function (this: RegExp, input: unknown, ...rest: unknown[]) {
+        if (depth === 0) calls.push({ pattern: this, length: String(input).length });
+        depth += 1;
+        try {
+          return original.call(this, input, ...rest);
+        } finally {
+          depth -= 1;
+        }
+      };
+    }
+    try {
+      run();
+    } finally {
+      for (const key of keys) proto[key] = originals.get(key);
+    }
+    return calls;
+  }
+
+  it("doubling the worst input doubles the work, it does not quadruple it", () => {
+    // Counted, not timed: how many times the scrub calls the engine, and how many
+    // characters it hands it. Each pattern it runs is one the test above has read
+    // for an unbounded quantifier, so the engine's work per character is bounded,
+    // and the characters handed over are the work.
+    const work = (size: number) => engineCalls(() => scrubLinkCodesUnbounded("c+".repeat(size / 2)));
+    const small = work(MEGABYTE);
+    const large = work(2 * MEGABYTE);
+    for (const call of [...small, ...large]) expect(LINK_CODE_PATTERNS).toContain(call.pattern);
+    // One pass per pattern, whatever the size.
+    expect(small).toHaveLength(LINK_CODE_PATTERNS.length);
+    expect(large).toHaveLength(small.length);
+    // Each pass reads the whole text once: twice the text is twice the reading.
+    const read = (calls: Array<{ length: number }>) => calls.reduce((sum, call) => sum + call.length, 0);
+    expect(read(small)).toBe(LINK_CODE_PATTERNS.length * MEGABYTE);
+    expect(read(large)).toBe(2 * read(small));
   });
 });
 
