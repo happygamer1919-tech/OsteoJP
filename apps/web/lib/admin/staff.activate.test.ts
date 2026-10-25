@@ -15,6 +15,13 @@ const H = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
+// PL-09 Phase 4: the location guard is a no-op here (owner / unassigned
+// admin); the scoped cases run against a real database in
+// staff-scope-saves.db.test.ts.
+vi.mock("@/lib/auth/viewer-locations", () => ({
+  viewerLocationScope: vi.fn(async () => null),
+  resolveViewerLocationIds: vi.fn(async () => []),
+}));
 vi.mock("@osteojp/db", () => ({
   users: { id: "id", email: "email", fullName: "full_name", isActive: "is_active", roleId: "role_id" },
   roles: { id: "id", slug: "slug" },

@@ -31,6 +31,7 @@ import { type SendResult } from "@/lib/reminders/clients";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { isForeignKeyViolation } from "./foreign-key-refusal";
+import { assertStaffInScope } from "./staff-scope";
 import { verifyDeletePassword } from "./appointment-delete-password";
 import { countActiveOwners, wouldRemoveLastOwner } from "./guards";
 
@@ -87,26 +88,6 @@ export async function listStaff(actor: RequestContext): Promise<StaffMember[]> {
       })),
     );
   });
-}
-
-/**
- * PL-09 Phase 4: an admin may only act on staff AT their location(s). Resolve the
- * viewer's scope (null for owner / unassigned admin) BEFORE the mutation tx, then
- * pass it here: a target outside the scope is treated as not_found - it is
- * invisible to this admin, exactly as it is absent from listStaff. No-op for owner.
- */
-async function assertStaffInScope(
-  tx: DbTx,
-  userId: string,
-  scope: string[] | null,
-): Promise<void> {
-  if (!scope) return;
-  const rows = await tx
-    .select({ id: staffLocations.userId })
-    .from(staffLocations)
-    .where(and(eq(staffLocations.userId, userId), inArray(staffLocations.locationId, scope)))
-    .limit(1);
-  if (rows.length === 0) throw new AdminError("not_found");
 }
 
 /**
@@ -244,16 +225,19 @@ export async function activateStaffLogin(
   assertCan(actor.role, "users:manage");
   if (!userId) throw new AdminError("invalid", "userId is required");
 
-  const rows = await runScoped(actor, (tx) =>
-    tx
+  // PL-09 Phase 4: a location-scoped admin activates only staff at their clinics.
+  const scope = await viewerLocationScope(actor);
+  const row = await runScoped(actor, async (tx) => {
+    const [found] = await tx
       .select({ email: users.email, isActive: users.isActive, roleSlug: roles.slug })
       .from(users)
       .leftJoin(roles, eq(users.roleId, roles.id))
       .where(eq(users.id, userId))
-      .limit(1),
-  );
-  const row = rows[0];
-  if (!row) throw new AdminError("not_found");
+      .limit(1);
+    if (!found) throw new AdminError("not_found");
+    await assertStaffInScope(tx, userId, scope);
+    return found;
+  });
   // Owner-tier: only an owner may activate another owner's login (anti-escalation).
   if (row.roleSlug === "owner" && actor.role !== "owner") throw new AdminError("owner_tier");
   if (!row.isActive) throw new AdminError("invalid", "cannot activate a deactivated staff member");
