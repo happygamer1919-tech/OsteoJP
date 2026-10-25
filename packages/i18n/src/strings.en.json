@@ -1722,6 +1722,7 @@
   "remindersLog.reason.survey_not_eligible": "the patient opted out of surveys, or the visit already has an answer or is no longer concluded",
   "remindersLog.reason.survey_not_allowed": "send refused by the database",
   "remindersLog.reason.survey_issue_error": "error while recording the send",
+  "remindersLog.reason.survey_only": "only the survey was asked for (a status correction), and the survey does not apply to this patient",
   "remindersLog.reason.unknown": "unrecognised reason ({code})",
   "remindersLog.filterAll": "All",
   "remindersLog.filterFailures": "Failures only",

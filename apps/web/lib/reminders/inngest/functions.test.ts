@@ -310,9 +310,57 @@ describe("the 24-hour function is the one Inngest already has (SAT-01)", () => {
       "sleepUntil:wait-24h-after-visit:2031-05-15T14:15:00.000Z",
       "run:dispatch-follow-up",
     ]);
-    expect(d.dispatchSurvey.mock.calls).toEqual([["tenant-1", "appt-1"]]);
+    // Q-O: an event without the flag reads as `surveyOnly: false`.
+    expect(d.dispatchSurvey.mock.calls).toEqual([["tenant-1", "appt-1", { surveyOnly: false }]]);
     // The follow-up is the survey dispatch's to call, when the switch says so.
     expect(d.dispatchFollowUp).not.toHaveBeenCalled();
     expect(result).toEqual({ appointmentId: "appt-1", dispatched: true, channels: [] });
+  });
+
+  /**
+   * Q-O. A "Corrigir estado" into Concluida emits the same event with
+   * `surveyOnly: true`. The 24 hour wait is THIS function's sleep, so the
+   * correction's run must take the same sleep to the same instant: endsAt +
+   * 24 h, whenever the correction was made.
+   */
+  it.each([
+    // Corrected two hours after the visit: the run still waits to endsAt + 24 h.
+    ["corrected soon after the visit", "2031-05-14T14:15:00.000Z", "2031-05-15T14:15:00.000Z"],
+    // Corrected six days on: the instant has passed, and it is still endsAt + 24 h.
+    ["corrected days later", "2031-05-08T09:00:00.000Z", "2031-05-09T09:00:00.000Z"],
+    // Q-V (1): corrected before the visit started. The sleep is computed from
+    // endsAt alone, never from the moment of the correction, so it still
+    // waits to endsAt + 24 h.
+    ["corrected before the visit started", "2031-06-30T10:45:00.000Z", "2031-07-01T10:45:00.000Z"],
+  ])("a correction's event (%s) takes the same 24 hour sleep, then asks for the survey ALONE", async (_case, endsAt, wakesAt) => {
+    d.dispatchSurvey.mockClear();
+    d.dispatchFollowUp.mockClear();
+    d.dispatchSurvey.mockResolvedValueOnce({ dispatched: false, reason: "survey_only" });
+    const steps: string[] = [];
+    const step = {
+      sleepUntil: async (id: string, at: Date) => {
+        steps.push(`sleepUntil:${id}:${at.toISOString()}`);
+      },
+      run: async (id: string, fn: () => Promise<unknown>) => {
+        steps.push(`run:${id}`);
+        return fn();
+      },
+    };
+    const handler = (sendFollowUpNotification as unknown as {
+      fn: (ctx: unknown) => Promise<unknown>;
+    }).fn;
+
+    await handler({
+      event: {
+        id: "evt-2",
+        ts: 1,
+        data: { appointmentId: "appt-1", tenantId: "tenant-1", endsAt, surveyOnly: true },
+      },
+      step,
+    });
+
+    expect(steps).toEqual([`sleepUntil:wait-24h-after-visit:${wakesAt}`, "run:dispatch-follow-up"]);
+    expect(d.dispatchSurvey.mock.calls).toEqual([["tenant-1", "appt-1", { surveyOnly: true }]]);
+    expect(d.dispatchFollowUp).not.toHaveBeenCalled();
   });
 });
