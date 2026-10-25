@@ -91,6 +91,10 @@ describe("Inngest event payloads carry identifiers only", () => {
       // the Terapeuta and kept the start and the clinic". A flag about the
       // EVENT; it names nobody and carries no value but `true`.
       "therapistChangeOnly",
+      // Q-O, added deliberately: a literal `true` saying "this completed event
+      // is a correction's, send the survey alone". A flag about the EVENT; it
+      // names nobody and carries no value but `true`.
+      "surveyOnly",
     ]);
 
     const blocks = src.match(/=\s*\{[^}]*\}/g) ?? [];

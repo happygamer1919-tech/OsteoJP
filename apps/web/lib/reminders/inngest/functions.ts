@@ -327,6 +327,12 @@ export const sendAppointmentConfirmation = inngest.createFunction(
 // the two step names are the ones the function has always had, so no Resync is
 // owed, and a run that went to sleep before this code wakes into it. Asserted
 // in ./functions.test.ts.
+//
+// Q-O. A "Corrigir estado" into Concluida emits this same event with
+// `surveyOnly: true` (strategy's ruling of 2026-10-22), so the same 24 hour
+// wait applies to it, and the same issue door applies the 60-day rule. The
+// flag makes the dispatch send the survey or nothing: never the follow-up.
+// Still no option changed, so still no Resync.
 
 export const sendFollowUpNotification = inngest.createFunction(
   {
@@ -335,12 +341,14 @@ export const sendFollowUpNotification = inngest.createFunction(
     idempotency: 'event.data.appointmentId + ":follow_up"',
   },
   async ({ event, step }) => {
-    const { appointmentId, tenantId, endsAt } =
+    const { appointmentId, tenantId, endsAt, surveyOnly } =
       event.data as AppointmentStatusChangedData;
     const sendAt = new Date(new Date(endsAt).getTime() + 24 * 60 * 60_000);
     await step.sleepUntil("wait-24h-after-visit", sendAt);
     const outcome = await step.run("dispatch-follow-up", () =>
-      dispatchSurvey(tenantId, appointmentId),
+      // Q-O: `=== true`, so every event without the flag (the ordinary Estado
+      // path, and every run asleep from before it) reads as false.
+      dispatchSurvey(tenantId, appointmentId, { surveyOnly: surveyOnly === true }),
     );
     return { appointmentId, ...outcome };
   },
