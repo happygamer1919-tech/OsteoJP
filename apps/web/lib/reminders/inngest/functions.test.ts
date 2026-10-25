@@ -80,8 +80,16 @@ describe("reminder reschedule supersession config", () => {
     );
   });
 
-  it("registers all five notification functions (2 reminders + confirmation + follow-up + no-show)", () => {
-    expect(functions).toHaveLength(5);
+  it("registers the five notification functions (2 reminders + confirmation + follow-up + no-show) and the sweep", () => {
+    expect(functions).toHaveLength(6);
+    expect(functions.map((f) => f.id())).toEqual([
+      "schedule-appointment-reminders",
+      "send-appointment-reminder",
+      "send-appointment-confirmation",
+      "send-follow-up-notification",
+      "send-no-show-notification",
+      "sweep-due-reminders",
+    ]);
   });
 });
 
@@ -249,14 +257,17 @@ describe("the 24-hour function is the one Inngest already has (SAT-01)", () => {
     expect(opts.triggers).toEqual([{ event: EVENT_APPOINTMENT_COMPLETED }]);
   });
 
-  it("no function was added, and the other four keep their ids", () => {
-    expect(functions).toHaveLength(5);
+  // The sixth function is the reminder sweep (SWEEP-03, ./sweep.ts), not the
+  // survey: SAT-01 added none, and the five it found keep their ids and order.
+  it("the survey added no function: the five keep their ids and order, and the sweep is the sixth", () => {
+    expect(functions).toHaveLength(6);
     expect(functions.map((f) => f.id())).toEqual([
       "schedule-appointment-reminders",
       "send-appointment-reminder",
       "send-appointment-confirmation",
       "send-follow-up-notification",
       "send-no-show-notification",
+      "sweep-due-reminders",
     ]);
     expect(Object.keys(authoredOptions(sendNoShowNotification)).sort()).toEqual([
       "id",
