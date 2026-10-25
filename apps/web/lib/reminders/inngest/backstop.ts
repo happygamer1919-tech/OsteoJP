@@ -44,14 +44,14 @@ import type { ReminderDueData } from "./client";
  * ==========================================================================
  * ITS OWN FILE, AND WHAT THAT COSTS
  * ==========================================================================
- * A frozen test counts the `step.` calls written inside the reminder
- * function's block in ./functions.ts, to project what one saved appointment
- * costs at the scheduler: 2 steps a reminder, 8 executions an event. The
- * steps below are written here, so that count still reads 2. IT IS TRUE WHILE
- * THE SWITCH IS OFF AND SHORT WHILE IT IS ON: a reminder job then runs at
- * least one sleep more (3 steps, 10 executions an event). The projection is
- * used by the one-time re-arm script only; correcting the pin is a
- * GATE-CHANGE, reported with this change, to merge before the switch is on.
+ * A frozen test (G1 in scripts/inc-1007-rearm-reminders-emit.test.mjs)
+ * projects what one saved appointment costs at the scheduler. It counts the
+ * `step.` calls of the reminder block in ./functions.ts up to the send
+ * switch's branch, then the ones written here, the moved-mark loop counted
+ * MOVED_MARK_WAITS times: 3 to 11 steps a reminder while the switch is on,
+ * 26 executions an event at most (ruling Q-F, 2026-10-18). The re-arm
+ * script's constant is 26 to match. Adding a step here moves that count, and
+ * the frozen test says so.
  *
  * NO OPTION OF THE FUNCTION CHANGES. Its trigger, key, singleton and cancelOn
  * are what they were, so this needs no Resync.

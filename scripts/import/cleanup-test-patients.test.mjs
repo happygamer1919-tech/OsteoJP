@@ -239,16 +239,18 @@ const CREATED = new Set(
  * 0102_sat01_satisfaction_survey.sql reached main. 0102 was applied to
  * production on 2026-10-07 from its held head and then merged (#1551); from
  * that merge the three are in CREATED and their entries were inert, and they
- * are removed in this GATE-CHANGE, which follows the apply.
+ * are removed in the GATE-CHANGE that followed the apply (#1563).
  *
- * ONE ENTRY NOW: reminder_claims, the reminder sweep's table, so the cleanup
- * can list it before 0106_reminder_claims.sql reaches main (0106 is merged
- * before its apply and applied from main, as 0100 and 0101 were). Once 0106 is
- * promoted the entry is inert; the next GATE-CHANGE that touches this file
- * removes it and fixes the floor of the FK-path test below at 25 (until then
- * the floor raises itself when the migration lands).
+ * AND ONE MORE: reminder_claims, the reminder sweep's table, added by the
+ * GATE-CHANGE #1617 so the cleanup could list it before
+ * 0106_reminder_claims.sql reached main. #1623 merged 0106 on 2026-10-21
+ * (Lisbon), the entry went inert, and it is removed in this GATE-CHANGE,
+ * which also fixes the floor of the FK-path test below at 25.
+ *
+ * EMPTY NOW: every table in DELETE_ORDER must be created by a numbered
+ * migration.
  */
-const AHEAD_OF_MIGRATION = new Set(["reminder_claims"]);
+const AHEAD_OF_MIGRATION = new Set([]);
 
 test("every table it deletes from still exists in schema.ts", () => {
   // A renamed or dropped table lands here as a red test rather than as a failed
@@ -313,19 +315,17 @@ test("every table with an FK path to patients is covered", () => {
   // added patient_care_team; 21 once 0093 (RGPD-01, #1399, 2026-09-23) added
   // patient_rgpd_acceptances; 24 once 0102 (SAT-01, #1551, 2026-10-07) added
   // appointment_survey_sends, appointment_survey_codes and
-  // appointment_survey_responses. The floor was not raised at 0080, and its old
-  // comment skipped that step, so it read 19 while the true count was 21 and a
-  // lost patients edge on 0093 stayed green. At 24 a floor of 25 fails with
-  // "found 24". Raise it in the same GATE-CHANGE that adds the next child of
-  // patients to DELETE_ORDER.
+  // appointment_survey_responses; 25 once 0106 (the reminder sweep, #1623,
+  // 2026-10-21) added reminder_claims, a child of appointments. The floor was
+  // not raised at 0080, and its old comment skipped that step, so it read 19
+  // while the true count was 21 and a lost patients edge on 0093 stayed green.
+  // At 25 a floor of 26 fails with "found 25". Raise it in the same GATE-CHANGE
+  // that adds the next child of patients to DELETE_ORDER.
   //
-  // 25 ONCE 0106 IS ON MAIN, and the floor raises itself: reminder_claims was
-  // added here ahead of its migration (AHEAD_OF_MIGRATION), when main reached
-  // only 24, so a fixed 25 would have reddened main. The term below adds 1 the
-  // moment a migration creates reminder_claims, so no window opens between the
-  // promotion and the GATE-CHANGE that fixes it at 25 and drops the term.
-  const floor = 24 + (CREATED.has("reminder_claims") ? 1 : 0);
-  assert.ok(reached.size >= floor, `expected at least ${floor} patient-rooted tables, found ${reached.size}`);
+  // #1617 made this floor raise itself from 24 to 25 the moment a migration
+  // created reminder_claims, because it listed that table ahead of 0106. 0106
+  // is on main, so the floor is a plain 25 again.
+  assert.ok(reached.size >= 25, `expected at least 25 patient-rooted tables, found ${reached.size}`);
   const covered = new Set(DELETE_ORDER);
   for (const t of reached) {
     assert.ok(covered.has(t), `${t} has an FK path to patients but the script never deletes from it`);

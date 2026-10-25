@@ -340,7 +340,7 @@ anything is sent.
 ### G1: the projected scheduler executions
 
 ```text
-G1 PROJECTED SCHEDULER EXECUTIONS: <inScope x 8> at most  (<inScope> appointments in scope x 8: 3 runs and 5 steps each)
+G1 PROJECTED SCHEDULER EXECUTIONS: <inScope x 26> at most  (<inScope> appointments in scope x 26: 3 runs and 23 steps each)
 G1 UNDER THE LIMIT OF 20000: yes
 ```
 
@@ -358,10 +358,15 @@ attempted and the rows held back for a mark. It is not one number for the whole
 operation: it shrinks as sent rows come inside 24 hours or start. **The first
 sitting's number is the gate**: the one the dry run of step 3 prints.
 
-"At most 8" is without retries. A run or a step that the scheduler tries again
-is not in the 8, and whether the vendor bills a retry is not established.
+"At most 26" is without retries. A run or a step that the scheduler tries again
+is not in the 26, and whether the vendor bills a retry is not established.
+26 is the bound with the reminder sweep on main: a reminder job takes 2 steps
+while the sweep's send switch is off and up to 11 while it is on (it waits for
+the sweep, asks, and follows a moved visit up to 4 times). Before the sweep
+the bound was 8 (strategy's Q-F b, 2026-10-18).
 
-`NO` means 20000 or more, which is 2,500 appointments or more. A dry run that
+`NO` means 20000 or more, which is 770 appointments or more (769 is the most
+that passes). A dry run that
 prints `NO` still exits 0, and the sitting halts there: that is gate G1. A
 `--confirm` on `NO` ends with `FAILED` after the report lines and before
 anything is sent. Nothing is written to the marker and the lock is given back.
@@ -756,7 +761,8 @@ means another run. The sends of the sitting are over when a dry run prints
 `ELIGIBLE: 0`.
 
 **Why 200.** One run then ends in a few minutes, inside the ten minutes a
-session allows a command. At about 2,500 appointments that is up to 14 runs.
+session allows a command. At the script's limit (769 appointments in scope,
+at 26 executions an event since ruling Q-F) that is up to 4 runs.
 The margin of every one of them is 690 s. The few minutes are reasoned from
 local runs: no send to the hosted scheduler was timed. The script's own stop
 comes later than ten minutes: its last send may start up to 615 s after the
