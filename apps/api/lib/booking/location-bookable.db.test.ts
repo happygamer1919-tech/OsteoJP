@@ -213,6 +213,7 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     // tenant's location, so each table has to be empty for both before the
     // table it points at is touched.
     const both = [tenantId, otherTenantId];
+    for (const t of both) await db.execute(raw`delete from therapist_services where tenant_id = ${t}`);
     for (const t of both) await db.execute(raw`delete from service_location_prices where tenant_id = ${t}`);
     for (const t of both) await db.execute(raw`delete from services where tenant_id = ${t}`);
     for (const t of both) await db.execute(raw`delete from availability_templates where tenant_id = ${t}`);
@@ -237,9 +238,29 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     const catalog = await store.getCatalog(principal());
     expect(listedKeys(catalog.locations.map((l) => l.id)).sort()).toEqual([...expectedListed].sort());
     expect(catalog.locations.map((l) => l.id)).not.toContain(otherTenantLocationId);
-    // A service bound to no location is offered at the listed locations only.
-    const service = catalog.services.find((s) => s.id === serviceId);
-    expect(listedKeys(service?.locationIds ?? []).sort()).toEqual([...expectedListed].sort());
+    // Q-R (2026-10-22): nobody in this fixture is ticked for the service, so the
+    // logged-in catalogue does not offer it at all.
+    // catalog-hides-unstaffed-services.db.test.ts proves that rule in full.
+    expect(catalog.services.map((s) => s.id)).not.toContain(serviceId);
+  });
+
+  it("door 1, with every user of this tenant ticked for it, a service is offered only at listed locations whose therapist step names somebody today", async () => {
+    // Every user of this tenant, the inactive, non-bookable and shared ones
+    // included: the therapist step's own rule (its predicate, copied into getCatalog) must still keep
+    // them out. Of the three listed locations only `staffed` has hours valid
+    // today; `expiredHours` and `notStartedHours` are listed (R45 carries no
+    // date) but their therapist step is empty (Q-ROSTER), so Q-R offers the
+    // service at neither.
+    await db.execute(raw`insert into therapist_services (tenant_id, therapist_user_id, service_id)
+      select tenant_id, id, ${serviceId} from users where tenant_id = ${tenantId}`);
+    try {
+      const catalog = await store.getCatalog(principal());
+      const service = catalog.services.find((s) => s.id === serviceId);
+      expect(listedKeys(service?.locationIds ?? [])).toEqual(["staffed"]);
+      expect(service?.locationIds ?? []).not.toContain(otherTenantLocationId);
+    } finally {
+      await db.execute(raw`delete from therapist_services where tenant_id = ${tenantId}`);
+    }
   });
 
   for (const c of CASES) {

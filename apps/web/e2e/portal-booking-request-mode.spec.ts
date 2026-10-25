@@ -4,7 +4,8 @@
  * Covers the two things LOOP 4 shipped that only a browser can prove:
  *
  *   1. DECISION C — preselection is never a restriction. The service step lists
- *      EVERY patient-bookable service. Nothing is filtered by the patient's
+ *      EVERY patient-bookable service somebody is ticked for at the clinic
+ *      (Q-R, 2026-10-22, hides the rest). Nothing is filtered by the patient's
  *      history, and the step is never skipped on their behalf.
  *   2. REQUEST-MODE — a portal booking submits a PEDIDO, not a confirmed
  *      appointment, and the patient is told the time is only reserved once
@@ -34,12 +35,14 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 import {
   LOCATION,
   PORTAL_BASE_URL,
   PORTAL_STORAGE,
   SERVICE,
   SERVICE_UNMAPPED,
+  TENANT_A,
   THERAPIST_MULTI_LOCATION,
   THERAPIST_ONE_LOCATION,
 } from "./fixtures";
@@ -50,6 +53,61 @@ test.use({
   storageState: PORTAL_STORAGE.patient,
   baseURL: PORTAL_BASE_URL,
 });
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+/**
+ * Q-R (strategy ruling 2026-10-22): "a service with no ticked therapist is
+ * hidden online until someone is ticked". The seed ticks NOBODY for Drenagem
+ * Linfatica (it is the staff-side PL-06a fixture), so the portal no longer
+ * offers it, and the catalog at Linda-a-Velha is Osteopatia alone.
+ *
+ * Two arms below need Drenagem offered: Decision C (a one-service catalog would
+ * let "preselection never narrows the list" pass while narrowing was impossible
+ * to observe) and the Q-R control. So for the length of `body` this ticks
+ * THERAPIST_ONE_LOCATION (who works at Linda-a-Velha) for Drenagem, and unticks
+ * it after, whatever happened. The staff-side specs that rely on Drenagem being
+ * unmapped name a different therapist ("E2E Therapist"), and the workers run
+ * one at a time (playwright.config.ts), so nothing else sees the row.
+ *
+ * A MISSING KEY IS A FAILURE, NOT A SKIP: a skip here would turn the Decision C
+ * arm into a pass that asserted nothing.
+ */
+async function withDrenagemTicked(body: () => Promise<void>): Promise<void> {
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    throw new Error("Q-R arm needs the service-role key to tick a therapist for Drenagem");
+  }
+  const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  const who = await db
+    .from("users")
+    .select("id")
+    .eq("tenant_id", TENANT_A)
+    .eq("full_name", THERAPIST_ONE_LOCATION)
+    .single();
+  if (who.error || !who.data) {
+    throw new Error(`seeded therapist ${THERAPIST_ONE_LOCATION} not found: ${who.error?.message}`);
+  }
+  const therapistId = (who.data as { id: string }).id;
+  const tick = await db
+    .from("therapist_services")
+    .upsert(
+      { tenant_id: TENANT_A, therapist_user_id: therapistId, service_id: SERVICE_UNMAPPED.id },
+      { onConflict: "tenant_id,therapist_user_id,service_id" },
+    );
+  if (tick.error) throw new Error(`tick Drenagem: ${tick.error.message}`);
+  try {
+    await body();
+  } finally {
+    const untick = await db
+      .from("therapist_services")
+      .delete()
+      .eq("tenant_id", TENANT_A)
+      .eq("therapist_user_id", therapistId)
+      .eq("service_id", SERVICE_UNMAPPED.id);
+    if (untick.error) throw new Error(`untick Drenagem: ${untick.error.message}`);
+  }
+}
 
 /**
  * The service step's rows. Each renders "<duration> min", which the step's own
@@ -193,103 +251,114 @@ async function bookFirstAvailable(page: Page): Promise<boolean> {
 test("Decision C: the usual service is MARKED, and every other bookable service is still offered", async ({
   page,
 }) => {
-  await openServiceStep(page);
+  // Q-R: Drenagem is offered only while somebody is ticked for it (see
+  // withDrenagemTicked), so this arm ticks one for its own length.
+  await withDrenagemTicked(async () => {
+    await openServiceStep(page);
 
-  const rows = serviceRows(page);
+    const rows = serviceRows(page);
 
-  // PRECONDITION, ASSERTED RATHER THAN ASSUMED. An empty catalog would make
-  // every assertion below pass vacuously, so the emptiness itself fails here and
-  // names why. This exact assertion caught the seed never setting
-  // patient_bookable — migrations run BEFORE the seed, so 0057's backfill saw an
-  // empty services table and flipped nothing.
-  await expect(
-    rows,
-    "the portal catalog is EMPTY - no service has patient_bookable set in the E2E database",
-  ).not.toHaveCount(0);
+    // PRECONDITION, ASSERTED RATHER THAN ASSUMED. An empty catalog would make
+    // every assertion below pass vacuously, so the emptiness itself fails here and
+    // names why. This exact assertion caught the seed never setting
+    // patient_bookable — migrations run BEFORE the seed, so 0057's backfill saw an
+    // empty services table and flipped nothing.
+    await expect(
+      rows,
+      "the portal catalog is EMPTY - no service has patient_bookable set in the E2E database",
+    ).not.toHaveCount(0);
 
-  // PRESELECTION HAPPENED. The seeded portal patient (Maria Filia) has one
-  // COMPLETED appointment, for Osteopatia, so that is her usual service.
-  const badge = page.getByText("O seu serviço habitual");
-  await expect(badge).toHaveCount(1); // exactly one, never several
+    // PRESELECTION HAPPENED. The seeded portal patient (Maria Filia) has one
+    // COMPLETED appointment, for Osteopatia, so that is her usual service.
+    const badge = page.getByText("O seu serviço habitual");
+    await expect(badge).toHaveCount(1); // exactly one, never several
 
-  // AND IT IS ON THE RIGHT ROW. A badge on the wrong service would still satisfy
-  // a bare count, so the row that carries it is named.
-  await expect(
-    rows.filter({ hasText: SERVICE.name }).filter({ hasText: "O seu serviço habitual" }),
-  ).toHaveCount(1);
+    // AND IT IS ON THE RIGHT ROW. A badge on the wrong service would still satisfy
+    // a bare count, so the row that carries it is named.
+    await expect(
+      rows.filter({ hasText: SERVICE.name }).filter({ hasText: "O seu serviço habitual" }),
+    ).toHaveCount(1);
 
-  // *** THE DECISION C INVARIANT, AND THE REASON THIS TEST EXISTS. *** The other
-  // bookable service is STILL OFFERED. History preselects; it never removes an
-  // option the patient is entitled to book. This is the assertion that fails the
-  // moment someone turns the preselection into a filter.
-  await expect(rows.filter({ hasText: SERVICE_UNMAPPED.name })).toHaveCount(1);
+    // *** THE DECISION C INVARIANT, AND THE REASON THIS TEST EXISTS. *** The other
+    // bookable service is STILL OFFERED. History preselects; it never removes an
+    // option the patient is entitled to book. This is the assertion that fails the
+    // moment someone turns the preselection into a filter.
+    await expect(rows.filter({ hasText: SERVICE_UNMAPPED.name })).toHaveCount(1);
 
-  // THE STEP IS NOT SKIPPED. Advancing on the patient's behalf would remove the
-  // choice rather than preselect within it.
-  await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible();
+    // THE STEP IS NOT SKIPPED. Advancing on the patient's behalf would remove the
+    // choice rather than preselect within it.
+    await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible();
 
-  // EVERY ROW IS SELECTABLE — the preselected one and the others alike.
-  const offered = await rows.count();
-  for (let i = 0; i < offered; i += 1) {
-    await expect(rows.nth(i)).toBeEnabled();
-  }
+    // EVERY ROW IS SELECTABLE — the preselected one and the others alike.
+    const offered = await rows.count();
+    for (let i = 0; i < offered; i += 1) {
+      await expect(rows.nth(i)).toBeEnabled();
+    }
+  });
 });
 
 test("Decision C: choosing a service advances the flow and does not narrow what was on offer", async ({
   page,
 }) => {
-  await openServiceStep(page);
+  // Q-R: with Drenagem ticked the catalog has two services, so a narrowing
+  // after the first choice is observable (see withDrenagemTicked).
+  await withDrenagemTicked(async () => {
+    await openServiceStep(page);
 
-  const rows = serviceRows(page);
-  await expect(rows).not.toHaveCount(0);
-  const before = await rows.count();
+    const rows = serviceRows(page);
+    await expect(rows).not.toHaveCount(0);
+    const before = await rows.count();
+    // Not vacuous: with one service there is nothing a narrowing could remove.
+    expect(before).toBeGreaterThanOrEqual(2);
 
-  await rows.first().click();
+    await rows.first().click();
 
-  // Forward: A2 INSERTED THE THERAPIST STEP HERE. This assertion used to expect
-  // date/time directly and was correctly invalidated by A2 rather than being
-  // wrong before - the flow genuinely gained a step, and the counter went 4 to 5.
-  await expect(page.getByRole("heading", { name: /terapeuta/i })).toBeVisible({
-    timeout: 15_000,
+    // Forward: A2 INSERTED THE THERAPIST STEP HERE. This assertion used to expect
+    // date/time directly and was correctly invalidated by A2 rather than being
+    // wrong before - the flow genuinely gained a step, and the counter went 4 to 5.
+    await expect(page.getByRole("heading", { name: /terapeuta/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // "Escolham por mim" is FIRST and is a real button, not an absence. Taking it
+    // preserves the pre-A2 auto-assignment exactly, which is what keeps this test
+    // about SERVICE narrowing rather than about therapist availability - a
+    // specific therapist would make the next step depend on that person's seeded
+    // calendar.
+    await page.getByRole("button", { name: /escolham por mim/i }).click();
+
+    // Forward again: NOW the date/time step.
+    await expect(page.getByRole("heading", { name: /data|hora/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Back TWICE, through the therapist step, to the service list. The SAME set of
+    // services is still offered. A flow that narrowed the list after a first
+    // choice would be a restriction introduced by the act of choosing, which is
+    // the same defect Decision C forbids at the start.
+    const backButton = page.getByRole("button", { name: /voltar|anterior/i }).first();
+    await backButton.click();
+    await expect(page.getByRole("heading", { name: /terapeuta/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await backButton.click();
+    await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(serviceRows(page)).toHaveCount(before);
   });
-
-  // "Escolham por mim" is FIRST and is a real button, not an absence. Taking it
-  // preserves the pre-A2 auto-assignment exactly, which is what keeps this test
-  // about SERVICE narrowing rather than about therapist availability - a
-  // specific therapist would make the next step depend on that person's seeded
-  // calendar.
-  await page.getByRole("button", { name: /escolham por mim/i }).click();
-
-  // Forward again: NOW the date/time step.
-  await expect(page.getByRole("heading", { name: /data|hora/i })).toBeVisible({
-    timeout: 15_000,
-  });
-
-  // Back TWICE, through the therapist step, to the service list. The SAME set of
-  // services is still offered. A flow that narrowed the list after a first
-  // choice would be a restriction introduced by the act of choosing, which is
-  // the same defect Decision C forbids at the start.
-  const backButton = page.getByRole("button", { name: /voltar|anterior/i }).first();
-  await backButton.click();
-  await expect(page.getByRole("heading", { name: /terapeuta/i })).toBeVisible({
-    timeout: 15_000,
-  });
-  await backButton.click();
-  await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible({
-    timeout: 15_000,
-  });
-  await expect(serviceRows(page)).toHaveCount(before);
 });
 
 test("Q-M: the therapist step lists only therapists mapped to the chosen service", async ({
   page,
 }) => {
   // Owner ruling Q-M (2026-10-20) supersedes PL-06a on the patient path. The
-  // seed maps both Linda-a-Velha therapists to Osteopatia, and maps NOBODY to
-  // Drenagem Linfatica (the staff-side PL-06a fixture). So the same clinic's
-  // therapist step lists two people for one service and none for the other.
-  // Each half is the other's control: an empty list for Drenagem cannot pass on
-  // a roster that never loads, because Osteopatia's loads on the same page.
+  // seed maps both Linda-a-Velha therapists to Osteopatia, so its therapist step
+  // lists both. For the length of the second half, only THERAPIST_ONE_LOCATION
+  // is ticked for Drenagem Linfatica (withDrenagemTicked), so the same clinic's
+  // therapist step lists that one person for Drenagem and not the other. Each
+  // half is the other's control: a missing name for Drenagem cannot pass on a
+  // roster that never loads, because Osteopatia's loads on the same page.
   await openServiceStep(page);
   const therapistHeading = page.getByRole("heading", { name: /terapeuta/i });
 
@@ -300,20 +369,40 @@ test("Q-M: the therapist step lists only therapists mapped to the chosen service
   });
   await expect(page.getByRole("button", { name: THERAPIST_MULTI_LOCATION })).toBeVisible();
 
-  await page.getByRole("button", { name: /voltar|anterior/i }).first().click();
-  await expect(page.getByRole("heading", { name: /servi[çc]o/i })).toBeVisible({
-    timeout: 15_000,
+  await withDrenagemTicked(async () => {
+    await openServiceStep(page);
+    await serviceRows(page).filter({ hasText: SERVICE_UNMAPPED.name }).first().click();
+    await expect(therapistHeading).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: THERAPIST_ONE_LOCATION })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { name: THERAPIST_MULTI_LOCATION })).toHaveCount(0);
+  });
+});
+
+test("Q-R: a service nobody is ticked for is not offered, and comes back once somebody is", async ({
+  page,
+}) => {
+  // Strategy ruling Q-R (2026-10-22): "a service with no ticked therapist is
+  // hidden online until someone is ticked". The seed ticks nobody for Drenagem
+  // Linfatica. Osteopatia on the same page is the control: an absent Drenagem
+  // cannot pass on a service step that never rendered.
+  await openServiceStep(page);
+  await expect(serviceRows(page).filter({ hasText: SERVICE.name })).toHaveCount(1);
+  await expect(serviceRows(page).filter({ hasText: SERVICE_UNMAPPED.name })).toHaveCount(0);
+
+  // "Owner may override": ticking somebody in Equipa brings it back. The tick is
+  // written straight to the table here; the Equipa form that writes it is
+  // covered by equipa-primary-service.spec.ts.
+  await withDrenagemTicked(async () => {
+    await openServiceStep(page);
+    await expect(serviceRows(page).filter({ hasText: SERVICE_UNMAPPED.name })).toHaveCount(1);
   });
 
-  await serviceRows(page).filter({ hasText: SERVICE_UNMAPPED.name }).first().click();
-  await expect(therapistHeading).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/não há terapeutas disponíveis/i)).toBeVisible({
-    timeout: 15_000,
-  });
-  await expect(page.getByRole("button", { name: THERAPIST_ONE_LOCATION })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: THERAPIST_MULTI_LOCATION })).toHaveCount(0);
-  // "Escolham por mim" stays, and is honest: the API answers with no slots.
-  await expect(page.getByRole("button", { name: /escolham por mim/i })).toBeVisible();
+  // And it is hidden again once the tick is gone.
+  await openServiceStep(page);
+  await expect(serviceRows(page).filter({ hasText: SERVICE.name })).toHaveCount(1);
+  await expect(serviceRows(page).filter({ hasText: SERVICE_UNMAPPED.name })).toHaveCount(0);
 });
 
 /*
