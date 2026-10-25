@@ -49,9 +49,12 @@ export async function enqueueAppointmentReminders(args: {
   appointmentId: string;
   tenantId: string;
   startsAt: Date;
-  /** Q-K: the appointment's Terapeuta after the save. Part of the
-   *  confirmation's duplicate key, so no default: every event carries it. */
+  /** Q-K: the appointment's Terapeuta after the save. No default: every event carries it. */
   practitionerId: string;
+  /** Q-N: the save's own marker, made once per save by the caller
+   *  (`enqueueRemindersAfterCommit`). Half of the confirmation's duplicate
+   *  key, so no default: every event carries it. */
+  saveId: string;
   /** No default: every caller must state which occurrence carries the
    *  confirmation, so a new call site cannot silently reintroduce the burst. */
   confirmationEligible: boolean;
@@ -69,6 +72,7 @@ export async function enqueueAppointmentReminders(args: {
       tenantId: args.tenantId,
       startsAt: args.startsAt.toISOString(),
       practitionerId: args.practitionerId,
+      saveId: args.saveId,
       confirmationEligible: args.confirmationEligible,
       // The key is ABSENT unless this is an acceptance, so every other event
       // keeps the exact payload it had before the marker existed.
