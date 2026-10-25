@@ -58,13 +58,15 @@
  * carry NO RETURNING, so the INSERT policy alone decides them; the RETURNING
  * form has its own arm.
  *
- * R01, R05, R06 AND TWO CLAIMS OF R07 REST ON THE REGISTO'S OWN SELECT POLICY.
- * The expression reads the registo as the caller, and reception, a therapist
- * with no tie to the patient (and a role the matrix does not name) read no
- * registo, so those attempts cannot reach the role term. R02 and R04 are the
- * arms that do: an admin assigned to the patient's clinic, and a therapist on
- * the patient's care team at that clinic, each read the registo (PREMISE) and
- * are refused by the role term and by the two therapist terms alone.
+ * R01, R05, R06, R15 AND TWO CLAIMS OF R07 REST ON THE REGISTO'S OWN SELECT
+ * POLICY. The expression reads the registo as the caller, and reception, a
+ * therapist with no tie to the patient, a therapist of another patient (R15:
+ * neither of its attempts reaches clinical_therapist_sees_patient) and a role
+ * the matrix does not name read no registo, so those attempts cannot reach the
+ * role term. R02 and R04 are the arms that do: an admin assigned to the
+ * patient's clinic, and a therapist on the patient's care team at that clinic,
+ * each read the registo (PREMISE) and are refused by the role term and by the
+ * two therapist terms alone. R04 is the arm that tests the patient term.
  *
  * NO REGISTO OF THIS FILE IS EVER COMMITTED. A signed registo cannot be
  * deleted (clinical_records_enforce_immutability), so each arm builds its
