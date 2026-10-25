@@ -69,7 +69,9 @@ name: Auto-update PR branches
 #     already behind main, that one PR is brought up to date at once, so it does
 #     not wait for the next merge to main before it can go green;
 #   - by hand (workflow_dispatch): the same pass as a push, or, with the `pr`
-#     input, the same single-PR update as arming.
+#     input, the same single-PR update as arming. The `base` input names
+#     another base branch, so the gate is proven on a throwaway base, never by
+#     arming a throwaway PR into main.
 # A PR labelled held-for-apply is still never updated, armed or not.
 #
 # pull_request_target IS SAFE HERE BECAUSE NOTHING OF THE PR RUNS. It runs this
@@ -89,6 +91,10 @@ on:
         description: "Only this PR number (it must be armed). Empty: every armed PR."
         required: false
         default: ""
+      base:
+        description: "The base branch whose PRs are considered. main, except for a throwaway test."
+        required: false
+        default: "main"
 
 # The job uses AUTO_UPDATE_TOKEN for every call and needs nothing from the
 # default token, so the default token gets no permission at all. That matters
@@ -113,6 +119,11 @@ jobs:
           # Empty on a push: every armed PR. A number when one PR was armed, or
           # when the dispatch names one.
           ONLY_PR: ${{ github.event.pull_request.number || inputs.pr || '' }}
+          # main on a push. On arming, the armed PR's own base (main in every
+          # real case: only main has the protection that makes arming wait). By
+          # hand, the `base` input, so the gate can be run on a throwaway base
+          # and never on main.
+          BASE: ${{ github.event.pull_request.base.ref || inputs.base || 'main' }}
         run: |
           if [ -z "${AUTO_UPDATE_TOKEN}" ]; then
             echo "AUTO_UPDATE_TOKEN secret not set, skipping. This workflow no-ops safely until the owner adds the PAT."
@@ -167,11 +178,17 @@ jobs:
             '') ;;
             *[!0-9]*) echo "::error::ONLY_PR is not a PR number: '${ONLY_PR}'"; exit 1 ;;
           esac
+          case "${BASE}" in
+            ''|*[!A-Za-z0-9._/-]*) echo "::error::BASE is not a branch name: '${BASE}'"; exit 1 ;;
+          esac
+          if [ "${BASE}" != "main" ]; then
+            echo "Base branch: ${BASE} (not main)."
+          fi
           if [ -n "${ONLY_PR}" ]; then
             echo "Only PR #${ONLY_PR} is considered."
           fi
           printf '%s' "${list_body}" \
-            | jq -c --arg only "${ONLY_PR}" '.[] | select(.draft == false) | select(.base.ref == "main") | select($only == "" or (.number | tostring) == $only) | {number, ref: .head.ref, label: .head.label, armed: ((.auto_merge // null) != null), held: (((.labels // []) | map(.name) | index("held-for-apply")) != null)}' \
+            | jq -c --arg only "${ONLY_PR}" --arg base "${BASE}" '.[] | select(.draft == false) | select(.base.ref == $base) | select($only == "" or (.number | tostring) == $only) | {number, ref: .head.ref, label: .head.label, armed: ((.auto_merge // null) != null), held: (((.labels // []) | map(.name) | index("held-for-apply")) != null)}' \
             | while read -r pr; do
                 num=$(printf '%s' "${pr}" | jq -r '.number')
                 ref=$(printf '%s' "${pr}" | jq -r '.ref')
@@ -190,7 +207,7 @@ jobs:
                 fi
 
                 # How far behind main is this PR's head?
-                cmp=$(api "https://api.github.com/repos/${REPO}/compare/main...${label}")
+                cmp=$(api "https://api.github.com/repos/${REPO}/compare/${BASE}...${label}")
                 cmp_body=$(printf '%s' "${cmp}" | sed '$d')
                 cmp_code=$(printf '%s' "${cmp}" | tail -n1)
                 if [ "${cmp_code}" != "200" ]; then

@@ -89,7 +89,7 @@ const ARMED_42 = {
   auto_merge: { merge_method: "squash" },
 };
 
-function runPass({ updateCode = 202, prs = [ARMED_42], onlyPr = "", script = null } = {}) {
+function runPass({ updateCode = 202, prs = [ARMED_42], onlyPr = "", base = "main", script = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "auto-update-test-"));
   const bin = join(dir, "bin");
   mkdirSync(bin);
@@ -124,6 +124,7 @@ printf 'unexpected curl call\\n500\\n'; exit 0
       REPO: "owner/repo",
       RUNNER_TEMP: dir,
       ONLY_PR: onlyPr,
+      BASE: base,
     },
     encoding: "utf8",
   });
@@ -303,8 +304,26 @@ test("R1: the triggers, the permissions and the concurrency groups", () => {
   assert.match(text, /\non:\n  push:\n    branches: \[main\]\n  pull_request_target:\n    types: \[auto_merge_enabled\]\n  workflow_dispatch:/);
   assert.match(text, /\npermissions: \{\}\n/);
   assert.match(text, /ONLY_PR: \$\{\{ github\.event\.pull_request\.number \|\| inputs\.pr \|\| '' \}\}/);
+  assert.match(text, /BASE: \$\{\{ github\.event\.pull_request\.base\.ref \|\| inputs\.base \|\| 'main' \}\}/);
   assert.match(text, /group: \$\{\{ github\.event_name == 'pull_request_target' && format\('auto-update-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'auto-update-prs' \}\}/);
   // pull_request_target runs with secrets: nothing of the PR may be checked out.
   assert.doesNotMatch(text, /actions\/checkout/);
   assert.doesNotMatch(text, /github\.event\.pull_request\.(head|title|body)/);
+});
+
+test("R1: with BASE set to a throwaway base, only its armed PRs are updated, against that base", () => {
+  const { status, updated, out } = runPass({
+    prs: [pr(60, { ...ARMED, base: { ref: "tmp/r1-base" } }), pr(61, { base: { ref: "tmp/r1-base" } }), pr(62, ARMED)],
+    base: "tmp/r1-base",
+  });
+  assert.equal(status, 0, out);
+  assert.deepEqual(updated, [60], `#61 is unarmed and #62 is into main:\n${out}`);
+  assert.match(out, /Base branch: tmp\/r1-base \(not main\)/);
+});
+
+test("R1: a BASE that is not a branch name STOPS the pass", () => {
+  const { status, updated, out } = runPass({ prs: [pr(70, ARMED)], base: "main; true" });
+  assert.notEqual(status, 0, out);
+  assert.deepEqual(updated, [], out);
+  assert.match(out, /BASE is not a branch name/);
 });
