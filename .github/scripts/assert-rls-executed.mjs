@@ -339,6 +339,25 @@ const SUITES = [
   { file: "reminder-claim-closed.db.test.ts", hard: true },
   { file: "sweep.db.test.ts", hard: true },
   { file: "sweep-send.db.test.ts", hard: true },
+  // 0107 (record_annulments INSERT policy): who may write an annulment row,
+  // proven as the real principals (packages/db) and through annulRecord
+  // (apps/web). Each asks the schema which expression it holds and THROWS on a
+  // database without the ruled one once the migration is promoted. Named here
+  // so that the ABSENCE of either is red too. THIS ENTRY NEEDS 0107 ON MAIN:
+  // before its pull request merges these files do not exist.
+  { file: "record-annulments-insert-policy.db.test.ts", hard: true },
+  { file: "annul-record.db.test.ts", hard: true },
+  // PL-09 Phase 4, added 2026-10-25. One DB-gated suite of apps/web: every
+  // Equipa save that names a staff member (Ativar login, the clinic
+  // memberships, their colour, the primary and the other services) acts only
+  // on staff at a location-scoped admin's own clinics, and the membership save
+  // adds or removes only those clinics; the owner and an admin with no clinic
+  // are unrestricted. Run as the real roles through runScoped, RLS and the
+  // location scope, which a mock replaces. Named here so that its ABSENCE is
+  // red too.
+  // THIS ENTRY NEEDS THE PL-09 SUITE ON MAIN: before that pull request merges
+  // the file does not exist, and an absent suite here is red.
+  { file: "staff-scope-saves.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.

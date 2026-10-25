@@ -125,8 +125,12 @@ describe("source guards", () => {
   });
 
   it("the retention cron is registered on the served endpoint, daily, in Lisbon", async () => {
+    // R6: the route serves the one list in lib/reminders/inngest/served.ts, and
+    // the retention cron is on that list.
     const route = code(read("app/api/inngest/route.ts"));
-    expect(route).toMatch(/functions:\s*\[\.\.\.functions,\s*purgeExpiredGuestIntakesDaily\]/);
+    expect(route).toMatch(/functions:\s*servedFunctions\b/);
+    const served = code(read("lib/reminders/inngest/served.ts"));
+    expect(served).toMatch(/servedFunctions\s*=\s*\[\.\.\.functions,\s*purgeExpiredGuestIntakesDaily\]/);
     const { GUEST_INTAKE_RETENTION_CRON } = await import("./inngest/retention");
     expect(GUEST_INTAKE_RETENTION_CRON).toMatch(/^TZ=Europe\/Lisbon \d{1,2} \d{1,2} \* \* \*$/);
   });
