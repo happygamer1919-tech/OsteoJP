@@ -23,7 +23,7 @@
   ],
   "packageJsonScripts": "3b18e5e01a171db3611efc857e08007e018eb4dc514224fc034c53d61b14804a",
   "files": {
-    ".env.example": "0cd9961268dfdccae022173190a7592c5129f65d770e06e37657a3ece62a0823",
+    ".env.example": "3b2a339745bb442fe7dc2979e4246d057d7ee20464d87d0caabb69dd971dd432",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
     ".github/scripts/assert-rls-executed.mjs": "2d3435520e95d8d9ba76fe92d283c1a83046b69a00d32f0479c671f23fc32417",
     ".github/workflows/auto-update-prs.yml": "b6d756f8e4c616aebe291e9caeff476ccd7fe77d1a616071d7a1b8a51bdb71b3",
