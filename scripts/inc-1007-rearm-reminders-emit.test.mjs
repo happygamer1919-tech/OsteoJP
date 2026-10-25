@@ -94,6 +94,77 @@ const SRC = readFileSync(SCRIPT, "utf8");
 const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const FUNCTIONS = readFileSync(join(ROOT, "apps/web/lib/reminders/inngest/functions.ts"), "utf8");
 
+/**
+ * G1, THE EXECUTIONS ONE EVENT COSTS, DERIVED FROM THE CODE IT STARTS. Strategy's
+ * Q-F of 2026-10-18, option b: "pin the true bound 26 and change the script's
+ * constant in a paired PR". The vendor counts one execution per function run
+ * and one per step. Two shapes of the reminder job are known, and each pins
+ * its own number:
+ *   - THE JOB OF TODAY: it sleeps to its time and dispatches. 2 steps a
+ *     reminder; with the fan-out, 3 runs and 5 steps, 8 an event.
+ *   - WITH THE SWEEP'S BACKSTOP (SWEEP-47, apps/web/lib/reminders/inngest/
+ *     backstop.ts): while the send switch is on, the job sleeps to its time,
+ *     then sleeps for the sweep and asks, then follows a moved visit up to
+ *     MOVED_MARK_WAITS (4) times, one sleep and one ask each. 3 to 11 steps a
+ *     reminder; 3 runs and 23 steps, 26 an event at most.
+ * The backstop and the script's 26 arrive on main in ONE merge (the sweep), so
+ * this file is true on main before that merge and after it. The backstop's
+ * steps are counted where they are written; the reminder block in
+ * functions.ts alone still reads 2.
+ */
+const blockOf = (id) => {
+  const start = FUNCTIONS.indexOf(`id: "${id}"`);
+  assert.ok(start > 0, `${id} not found in functions.ts`);
+  const next = FUNCTIONS.indexOf("inngest.createFunction(", start);
+  return FUNCTIONS.slice(start, next === -1 ? FUNCTIONS.length : next);
+};
+const stepsIn = (text) => (text.match(/\bstep\.[A-Za-z]+\(/g) ?? []).length;
+const BACKSTOP_PATH = join(ROOT, "apps/web/lib/reminders/inngest/backstop.ts");
+const G1 = (() => {
+  const fanOut = stepsIn(blockOf("schedule-appointment-reminders"));
+  const block = blockOf("send-appointment-reminder");
+  const backstop = block.includes("dispatchAfterTheSweep(");
+  const runs = 1 + OFFSETS.length;
+  if (!backstop) {
+    const perReminder = stepsIn(block);
+    return { backstop, fanOut, runs, perReminder, steps: fanOut + OFFSETS.length * perReminder };
+  }
+  // With the switch on, the block runs its steps up to `if (sweepSends())`,
+  // then the backstop, and returns: its own `dispatch` is not reached.
+  const gate = block.indexOf("if (sweepSends()) {");
+  const src = readFileSync(BACKSTOP_PATH, "utf8");
+  const fnAt = src.indexOf("export async function dispatchAfterTheSweep(");
+  const fnEnd = src.indexOf("\n}\n", fnAt);
+  const fn = src.slice(fnAt, fnEnd);
+  const loopAt = fn.indexOf("for (let n = 1; n <= MOVED_MARK_WAITS; n++) {");
+  const loopEnd = fn.indexOf("\n  }\n", loopAt);
+  const waits = Number(src.match(/^export const MOVED_MARK_WAITS = (\d+);$/m)?.[1]);
+  const shape = {
+    gate,
+    fnAt,
+    fnEnd,
+    loopAt,
+    loopEnd,
+    waits,
+    beforeGate: stepsIn(block.slice(0, gate)),
+    beforeLoop: stepsIn(fn.slice(0, loopAt)),
+    inLoop: stepsIn(fn.slice(loopAt, loopEnd)),
+    afterLoop: stepsIn(fn.slice(loopEnd)),
+    switchOff: stepsIn(block),
+  };
+  const switchOn = shape.beforeGate + shape.beforeLoop + shape.inLoop * waits + shape.afterLoop;
+  const perReminder = Math.max(shape.switchOff, switchOn);
+  return { backstop, fanOut, runs, perReminder, steps: fanOut + OFFSETS.length * perReminder, shape, src };
+})();
+/** The numbers each shape pins, character for character. */
+const G1_PIN = G1.backstop
+  ? { perEvent: 26, runs: 3, steps: 23, lastUnder: 769, firstRefused: 770 }
+  : { perEvent: 8, runs: 3, steps: 5, lastUnder: 2499, firstRefused: 2500 };
+/** The G1 line the script prints for `n` appointments in scope. */
+const g1Line = (n) =>
+  `G1 PROJECTED SCHEDULER EXECUTIONS: ${n * G1_PIN.perEvent} at most  ` +
+  `(${n} appointments in scope x ${G1_PIN.perEvent}: ${G1_PIN.runs} runs and ${G1_PIN.steps} steps each)`;
+
 /** A self-declared fixture password. Never a credential. */
 const PW = "s3cr3t-do-not-print";
 const LANE_URL = `postgresql://postgres:${PW}@127.0.0.1:1/postgres`;
@@ -861,27 +932,48 @@ test("the scheduler settings this script relies on are the ones functions.ts car
   assert.equal((FUNCTIONS.match(/CONFIRMATION_TRIGGER_FILTER/g) ?? []).length, 2, "the filter is used somewhere besides its definition and the one trigger");
 });
 
-test("G1: 8 executions per event is what functions.ts costs, counted from its runs and steps", () => {
-  // The vendor counts one execution per function run and one per step.
-  const whole = (id) => {
-    const start = FUNCTIONS.indexOf(`id: "${id}"`);
-    assert.ok(start > 0, `${id} not found in functions.ts`);
-    const next = FUNCTIONS.indexOf("inngest.createFunction(", start);
-    return FUNCTIONS.slice(start, next === -1 ? FUNCTIONS.length : next);
-  };
-  const steps = (id) => (whole(id).match(/\bstep\.[A-Za-z]+\(/g) ?? []).length;
-  assert.equal(steps("schedule-appointment-reminders"), 1, "the fan-out gained or lost a step");
-  assert.equal(steps("send-appointment-reminder"), 2, "the reminder gained or lost a step");
+test("G1: the executions per event are what functions.ts and the sweep's backstop cost, counted from their runs and steps (8 without the backstop, 26 with it)", () => {
+  // The vendor counts one execution per function run and one per step. G1 (top of this file) counts them.
+  assert.equal(G1.fanOut, 1, "the fan-out gained or lost a step");
+  // The reminder block in functions.ts alone: a sleep and today's dispatch. With the backstop the
+  // block still reads 2, because the backstop's steps are written in backstop.ts.
+  assert.equal(stepsIn(blockOf("send-appointment-reminder")), 2, "the reminder gained or lost a step");
+  if (G1.backstop) {
+    const s = G1.shape;
+    assert.ok(s.gate > 0, "the reminder no longer branches on `if (sweepSends()) {`");
+    // The branch runs the backstop and RETURNS, so today's `dispatch` step is not also run.
+    assert.match(
+      blockOf("send-appointment-reminder"),
+      /if \(sweepSends\(\)\) \{\s*const afterTheSweep = await dispatchAfterTheSweep\(step as unknown as BackstopStep, event\.data as ReminderDueData\);\s*return \{/,
+      "the switch-on branch no longer ends at the backstop",
+    );
+    assert.ok(s.fnAt > 0 && s.fnEnd > s.fnAt, "dispatchAfterTheSweep not found in backstop.ts");
+    assert.ok(s.loopAt > 0 && s.loopEnd > s.loopAt, "the moved-mark loop is not written as `for (let n = 1; n <= MOVED_MARK_WAITS; n++) {`");
+    assert.equal((G1.src.match(/\bfor \(/g) ?? []).length, 1, "backstop.ts gained a loop this count does not read");
+    assert.equal((G1.src.match(/\bwhile \(/g) ?? []).length, 0, "backstop.ts gained a loop this count does not read");
+    assert.equal(stepsIn(G1.src), s.beforeLoop + s.inLoop + s.afterLoop, "backstop.ts has a step outside dispatchAfterTheSweep");
+    // Switch on: the sleep to the reminder's time (functions.ts), then one sleep for the sweep and one
+    // ask, then at most MOVED_MARK_WAITS more of each. Switch off: today's 2.
+    assert.deepEqual(
+      { beforeGate: s.beforeGate, beforeLoop: s.beforeLoop, inLoop: s.inLoop, afterLoop: s.afterLoop, waits: s.waits, switchOff: s.switchOff },
+      { beforeGate: 1, beforeLoop: 2, inLoop: 2, afterLoop: 0, waits: 4, switchOff: 2 },
+    );
+    assert.equal(G1.perReminder, 11);
+  } else {
+    assert.equal(G1.perReminder, 2);
+  }
   // One fan-out run, and one reminder run per offset. The confirmation is not started: its trigger filter is false.
-  const runs = 1 + OFFSETS.length;
-  const allSteps = steps("schedule-appointment-reminders") + OFFSETS.length * steps("send-appointment-reminder");
-  assert.deepEqual([runs, allSteps], [3, 5]);
-  assert.equal(EXECUTIONS_PER_EVENT, runs + allSteps);
-  assert.equal(EXECUTIONS_PER_EVENT, 8);
+  assert.deepEqual([G1.runs, G1.steps], [G1_PIN.runs, G1_PIN.steps]);
+  assert.equal(G1.runs + G1.steps, G1_PIN.perEvent);
+  assert.equal(EXECUTIONS_PER_EVENT, G1.runs + G1.steps);
+  assert.equal(EXECUTIONS_PER_EVENT, G1.backstop ? 26 : 8);
   assert.equal(EXECUTION_LIMIT, 20_000);
+  // The refusal point follows: the last count strictly under the limit, and the first that is not.
+  assert.equal(G1_PIN.lastUnder, Math.ceil(EXECUTION_LIMIT / G1_PIN.perEvent) - 1);
+  assert.equal(G1_PIN.firstRefused, Math.ceil(EXECUTION_LIMIT / G1_PIN.perEvent));
   // EXACTLY TWO functions IN functions.ts listen to the event this script sends (a listener
   // in another file would not redden this test): the fan-out, and the
-  // confirmation behind its filter. A third listener would cost executions the 8 does not count.
+  // confirmation behind its filter. A third listener would cost executions G1 does not count.
   const triggers = [...FUNCTIONS.matchAll(/^\s*triggers: (\[.*\]),$/gm)].map((m) => m[1]);
   assert.equal(triggers.length, (FUNCTIONS.match(/inngest\.createFunction\(/g) ?? []).length, "a function declares its triggers in a shape this test does not read");
   assert.deepEqual(
@@ -891,8 +983,8 @@ test("G1: 8 executions per event is what functions.ts costs, counted from its ru
   );
   // Every use of the name is accounted for: the import, the reminder's cancelOn, and those two triggers.
   assert.equal((FUNCTIONS.match(/\bEVENT_APPOINTMENT_SCHEDULED\b/g) ?? []).length, 4, "appointment/scheduled is used somewhere new in functions.ts");
-  // And the 8 is without retries, which the script says where it defines the number.
-  assert.match(SRC, /"At most 8" is WITHOUT RETRIES/);
+  // And the bound is without retries, which the script says where it defines the number.
+  assert.ok(SRC.includes(`"At most ${G1_PIN.perEvent}" is WITHOUT RETRIES`), "the script does not say its bound is without retries");
 });
 
 test("the real destination is Inngest's event API, pinned as text and never called from here", () => {
@@ -1106,7 +1198,7 @@ test("the dry run prints the counts, the skips and hold-backs by reason and the 
   // touched row at 30 hours and the two rows held back for a mark (24 h + 2 min, 48 h - 30 s).
   const gates = r.lines.indexOf("  attempted before and sent again now (--resend-attempted): 0");
   assert.deepEqual(r.lines.slice(gates + 1, gates + 8), [
-    "G1 PROJECTED SCHEDULER EXECUTIONS: 304 at most  (38 appointments in scope x 8: 3 runs and 5 steps each)",
+    g1Line(38),
     "G1 UNDER THE LIMIT OF 20000: yes",
     "G4 NEXT 48 HOURS, NOT RE-ARMED: 5  (starting within 24 hours: 2; 24 to 48 hours ahead: 3)",
     "  reception sees these appointments in Agenda, and which of them got an SMS in Comunicações, Lembretes SMS",
@@ -1195,7 +1287,7 @@ test("the first run is a canary of --max, and a second run continues with the re
   assert.match(dry.lines.join("\n"), /^skipped: already sent by an earlier run \(marker\): 25$/m);
   assert.equal(dry.result.eligible, 7);
   // G1 is the bound for everything in scope at THIS read, sent already or not: the 25 rows already sent still count.
-  assert.ok(dry.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 304 at most  (38 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(dry.lines.includes(g1Line(38)));
   // And the next run's first ledger read asks about every row the marker holds.
   assert.deepEqual(dry.reader.ledgers, [first.reader.ledgers[1]]);
   assert.ok(
@@ -1718,13 +1810,13 @@ test("--max-days-ahead on the whole run: the row beyond it is held back and coun
   assert.equal(r.result.eligible, 31);
   assert.equal(r.lines[r.lines.indexOf("skipped: starts within 24 hours: 2") + 1], "held back: starts more than --max-days-ahead 28 days after the read: 1");
   assert.ok(r.lines.includes("  by days until start: 1 to 2=1  2 to 7=30  7 to 30=0  over 30=0"));
-  assert.ok(r.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 296 at most  (37 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(r.lines.includes(g1Line(37)));
   // Exactly 28 days ahead is in; one millisecond more is out.
   const edge = [dbRow(1, { starts_at: new Date(T0 + 28 * DAY) }), dbRow(2, { starts_at: new Date(T0 + 28 * DAY + 1) })];
   const dry = await runWith(edge, ["--max-days-ahead", "28"]);
   assert.equal(dry.result.eligible, 1);
   assert.ok(dry.lines.includes("held back: starts more than --max-days-ahead 28 days after the read: 1"));
-  assert.ok(dry.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 8 at most  (1 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(dry.lines.includes(g1Line(1)));
   const sent = await runWith(edge, SINK_CONFIRM(1, ["--max-days-ahead", "28"]));
   assert.deepEqual(sent.events.map((e) => e.data.appointmentId), [apptId(1)], "a row beyond the bound was sent");
   assert.equal(sent.marker.history[0].maxDaysAhead, 28);
@@ -1764,47 +1856,52 @@ test("G1: which verdicts are in scope, and the arithmetic of the projection", ()
   for (const v of ["touched_25h", "already_sent", "attempted", "near_mark", "held_back", "emit"]) assert.equal(inScope(v), true, v);
   for (const v of ["unaccepted_request", "inside_24h", "beyond_max_days"]) assert.equal(inScope(v), false, v);
   assert.equal(projectedExecutions(0), 0);
-  assert.equal(projectedExecutions(1), 8);
-  assert.equal(projectedExecutions(38), 304);
-  assert.equal(projectedExecutions(2499), 19_992);
-  assert.equal(projectedExecutions(2500), 20_000);
+  // Each shape pins its own products, character for character.
+  const expected = G1.backstop
+    ? { one: 26, thirtyEight: 988, lastUnder: 19_994, firstRefused: 20_020 }
+    : { one: 8, thirtyEight: 304, lastUnder: 19_992, firstRefused: 20_000 };
+  assert.equal(projectedExecutions(1), expected.one);
+  assert.equal(projectedExecutions(38), expected.thirtyEight);
+  assert.equal(projectedExecutions(G1_PIN.lastUnder), expected.lastUnder);
+  assert.equal(projectedExecutions(G1_PIN.firstRefused), expected.firstRefused);
   // "Under" is strict: the limit itself is NO.
   assert.equal(underExecutionLimit(19_999), true);
   assert.equal(underExecutionLimit(20_000), false);
   assert.equal(underExecutionLimit(20_001), false);
   assert.equal(underExecutionLimit(0), true);
-  assert.equal(underExecutionLimit(projectedExecutions(2499)), true);
-  assert.equal(underExecutionLimit(projectedExecutions(2500)), false);
+  assert.equal(underExecutionLimit(projectedExecutions(G1_PIN.lastUnder)), true);
+  assert.equal(underExecutionLimit(projectedExecutions(G1_PIN.firstRefused)), false);
 });
 
-test("G1: 2499 appointments in scope is yes and a confirm goes on; 2500 is NO, the dry run says so and ends normally, and a confirm is refused with nothing sent", async () => {
+test("G1: the last count under the limit (2499 at 8 an event, 769 at 26) is yes and a confirm goes on; the next (2500, 770) is NO, the dry run says so and ends normally, and a confirm is refused with nothing sent", async () => {
+  const { lastUnder, firstRefused } = G1_PIN;
   const many = (count) => Array.from({ length: count }, (_, i) => dbRow(i + 1));
-  const under = await runWith(many(2499), []);
+  const under = await runWith(many(lastUnder), []);
   assert.equal(under.halt, null);
-  assert.ok(under.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 19992 at most  (2499 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(under.lines.includes(g1Line(lastUnder)));
   assert.ok(under.lines.includes("G1 UNDER THE LIMIT OF 20000: yes"));
-  const goes = await runWith(many(2499), SINK_CONFIRM(2499, ["--max", "1"]));
+  const goes = await runWith(many(lastUnder), SINK_CONFIRM(lastUnder, ["--max", "1"]));
   assert.equal(goes.halt, null);
   assert.equal(goes.result.sent, 1);
 
-  const rows = many(2500);
+  const rows = many(firstRefused);
   const dry = await runWith(rows, []);
   assert.equal(dry.halt, null, "a dry run must print NO and end normally");
-  assert.deepEqual(dry.result, { sent: 0, eligible: 2500, changed: 0, attempted: 0, notReached: 0 });
-  assert.ok(dry.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 20000 at most  (2500 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.deepEqual(dry.result, { sent: 0, eligible: firstRefused, changed: 0, attempted: 0, notReached: 0 });
+  assert.ok(dry.lines.includes(g1Line(firstRefused)));
   assert.ok(dry.lines.includes("G1 UNDER THE LIMIT OF 20000: NO"));
-  assert.ok(dry.lines.some((l) => l.startsWith("THIS RUN: 25 of 2500 ")));
+  assert.ok(dry.lines.some((l) => l.startsWith(`THIS RUN: 25 of ${firstRefused} `)));
 
-  const refused = await runWith(rows, SINK_CONFIRM(2500, ["--max", "1"]));
+  const refused = await runWith(rows, SINK_CONFIRM(firstRefused, ["--max", "1"]));
   assert.equal(refused.halt?.code, 1);
   assert.equal(
     refused.halt.message,
-    "G1: the projected scheduler executions are 20000, which is not under the limit of 20000. Nothing was sent and nothing was recorded. Report every line above.",
+    `G1: the projected scheduler executions are ${firstRefused * G1_PIN.perEvent}, which is not under the limit of 20000. Nothing was sent and nothing was recorded. Report every line above.`,
   );
   // After the read and after the report lines...
   assert.ok(refused.lines.includes("G1 UNDER THE LIMIT OF 20000: NO"));
   assert.ok(refused.lines.some((l) => l.startsWith("G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT")));
-  assert.ok(refused.lines.at(-1).startsWith("THIS RUN: 1 of 2500 "));
+  assert.ok(refused.lines.at(-1).startsWith(`THIS RUN: 1 of ${firstRefused} `));
   // ...and before anything is sent or recorded, with the lock given back.
   assert.equal(refused.events.length, 0);
   assert.equal(refused.marker, null);
@@ -1815,12 +1912,16 @@ test("G1: 2499 appointments in scope is yes and a confirm goes on; 2500 is NO, t
   // The wrong --expect does not hide it: G1 is refused first.
   assert.match((await runWith(rows, SINK_CONFIRM(7, ["--max", "1"]))).halt.message, /^G1: /);
 
-  // The count is of rows IN SCOPE. Two rows beyond the bound take 2501 back under the limit.
-  const far = [...many(2499), dbRow(2500, { starts_at: new Date(T0 + 200 * DAY) }), dbRow(2501, { starts_at: new Date(T0 + 201 * DAY) })];
+  // The count is of rows IN SCOPE. Two rows beyond the bound take the count back under the limit.
+  const far = [
+    ...many(lastUnder),
+    dbRow(lastUnder + 1, { starts_at: new Date(T0 + 200 * DAY) }),
+    dbRow(lastUnder + 2, { starts_at: new Date(T0 + 201 * DAY) }),
+  ];
   assert.ok((await runWith(far, [])).lines.includes("G1 UNDER THE LIMIT OF 20000: NO"));
   const bounded = await runWith(far, ["--max-days-ahead", "150"]);
   assert.ok(bounded.lines.includes("held back: starts more than --max-days-ahead 150 days after the read: 2"));
-  assert.ok(bounded.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 19992 at most  (2499 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(bounded.lines.includes(g1Line(lastUnder)));
   assert.ok(bounded.lines.includes("G1 UNDER THE LIMIT OF 20000: yes"));
 });
 
@@ -1874,7 +1975,7 @@ test("G4 on a later read: a row an earlier run sent, now inside 24 hours, is cou
   assert.equal(run1.result.sent, 6);
   assert.ok(run1.lines.includes("G4 NEXT 48 HOURS, NOT RE-ARMED: 0  (starting within 24 hours: 0; 24 to 48 hours ahead: 0)"));
   assert.ok(run1.lines.includes("  not counted: 0 starting within 24 hours that an earlier run of this operation sent"));
-  assert.ok(run1.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 48 at most  (6 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(run1.lines.includes(g1Line(6)));
   // Row 2 as a run that died inside its request would have left it: attempted, the outcome unknown.
   const doc = JSON.parse(readFileSync(run1.markerPath, "utf8"));
   const two = doc.history[0].rows.find((x) => x.id === apptId(2));
@@ -1905,7 +2006,7 @@ test("G4 on a later read: a row an earlier run sent, now inside 24 hours, is cou
   ]);
   assert.ok(r.lines[g4 + 3].startsWith("G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT"), "the third G4 line is not directly above the G3 line");
   // G1 is the number of THIS read: the sent rows that came inside 24 hours have left the scope.
-  assert.ok(r.lines.includes("G1 PROJECTED SCHEDULER EXECUTIONS: 16 at most  (2 appointments in scope x 8: 3 runs and 5 steps each)"));
+  assert.ok(r.lines.includes(g1Line(2)));
   // A confirm prints the same three lines.
   const confirm = await runWith(second, SINK_CONFIRM(0), { dir: run1.dir, t0: later });
   assert.equal(confirm.halt, null);
