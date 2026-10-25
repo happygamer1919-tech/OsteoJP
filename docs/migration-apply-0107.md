@@ -1,8 +1,8 @@
 # 0107: apply the record_annulments INSERT policy
 
-**NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number after 0106, and this document carries its six blocks, proven by their fault-injection test. Open, in order: the rehearsal of the blocks by an agent that did not write them; one R4 round on the blocks, the check files and the script test; SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the values this document cannot hold (the merge commit's sha as MERGED, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). Until the pull request is merged every block below STOPs at its first check, because this document is not on `origin/main`. **The sitting is closed hours only** (this migration alters a policy; see "Closed hours, and the locks").
+**NOT READY. Nothing in this document may be pasted yet.** The migration is promoted to its number after 0106, and this document carries its six blocks, proven by their fault-injection test. Open, in order: SOLO's READY line; the pull request, opened held; `main` merged in with CI green; the owner's two clicks; and GREEN's dispatch, which carries the values this document cannot hold (the merge commit's sha as MERGED, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). Until the pull request is merged every block below STOPs at its first check, because this document is not on `origin/main`. **The sitting is closed hours only** (this migration alters a policy; see "Closed hours, and the locks").
 
-**Status: AUTHORED 2026-10-12; REVIEWED (a fresh reviewer PASSED the draft aligned with strategy's ruling of 2026-10-13, option b); REHEARSED WITH LIMITS 2026-10-13 on a throwaway (the migration, both check files, the suites and going back; see "The first rehearsal"); PROMOTED 2026-10-25 (`packages/db/migrations/0107_record_annulments_insert_policy.sql`, journal idx 104); BLOCKS WRITTEN 2026-10-25 AND PROVEN BY THEIR FAULT-INJECTION TEST; REHEARSED 2026-10-25 BY THEIR AUTHOR ONLY, ON LANE AMBER AT PRODUCTION'S POSITION (see "The second rehearsal"): STAGES 0, 1 AND 2 AND THE CLOCK CHECK RAN WHOLE, BEFORE YOU START AND THE CLOSING READ TO THEIR READER LINES. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `56c310cd99add5a4d6dfa3df3ed1e49251988ce4bc0d4e291ac818bd0fef047a`, three statements, unchanged by the promotion.
+**Status: AUTHORED 2026-10-12; REVIEWED (a fresh reviewer PASSED the draft aligned with strategy's ruling of 2026-10-13, option b); REHEARSED WITH LIMITS 2026-10-13 on a throwaway (the migration, both check files, the suites and going back; see "The first rehearsal"); PROMOTED 2026-10-25 (`packages/db/migrations/0107_record_annulments_insert_policy.sql`, journal idx 104); BLOCKS WRITTEN 2026-10-25 AND PROVEN BY THEIR FAULT-INJECTION TEST; REHEARSED 2026-10-25 BY THEIR AUTHOR ONLY, ON LANE AMBER AT PRODUCTION'S POSITION (see "The second rehearsal"): STAGES 0, 1 AND 2 AND THE CLOCK CHECK RAN WHOLE, BEFORE YOU START AND THE CLOSING READ TO THEIR READER LINES; REHEARSED INDEPENDENTLY 2026-10-25 BY AN AGENT THAT DID NOT WRITE THEM (run 2, PASS; see "The independent rehearsal"); ONE R4 ROUND ON THE BLOCKS, THE CHECK FILES AND THE SCRIPT TEST 2026-10-25 (NO BLOCKER, NO MAJOR, THREE MINOR WORDING FINDINGS, ANSWERED IN `9784c346` WITH NO BLOCK BYTE CHANGED). NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `56c310cd99add5a4d6dfa3df3ed1e49251988ce4bc0d4e291ac818bd0fef047a`, three statements, unchanged by the promotion.
 
 **In plain language.** Anular marks a signed registo as annulled by writing one row to `record_annulments`. After this migration the database accepts that row only from the owner, or from a therapist who authored the registo or who treats or created its patient, written in their own name, for a signed registo of their own clinic group. That is exactly who the application's Anular serves today, so nobody loses anything they can do today, and no application change travels with it. It changes one expression of one policy. It touches no row, no grant, no function and no other policy. Every annulment already written stays, and stays readable.
 
@@ -32,8 +32,8 @@ is the lead's call, never the runner's.
 2. **DONE 2026-10-13: a fresh reviewer passed the draft** as aligned with strategy's ruling of 2026-10-13 (option b: the therapist arm reads `public.clinical_therapist_sees_patient`), after the first draft had followed the ruling's first words ("the owner and the registo's author") and would have refused a treating therapist the application allows (the owner's ruling of 2026-09-14, Q-SR62-P4-1).
 3. **DONE 2026-10-25: the promotion** (the next section). No gate edit is forced by it (see "GATE-CHANGES").
 4. **DONE 2026-10-25: this document's blocks, its sidecar and its fault-injection test** (`scripts/annulment-insert-policy-0107.test.mjs`), and the check files' journal verdicts.
-5. **OPEN: the rehearsal of the blocks by an agent that did not write them,** on a throwaway at production's position (`0000` to `0106` applied, a drizzle journal of 104 rows), under the lead's rule of 2026-09-30. The author's own run of 2026-10-25 is recorded below and is not that rehearsal.
-6. **OPEN: one R4 round** on the blocks, the check files' journal verdicts and the script test.
+5. **DONE 2026-10-25: the rehearsal of the blocks by an agent that did not write them,** on a throwaway at production's position (`0000` to `0106` applied, a drizzle journal of 104 rows), under the lead's rule of 2026-09-30: run 2, PASS (see "The independent rehearsal"). The author's own run of the same day is recorded below it and is not that rehearsal.
+6. **DONE 2026-10-25: one R4 round** on the blocks, the check files' journal verdicts and the script test: no BLOCKER, no MAJOR, three MINOR wording findings (stage 1's EXPECT counted the carry rows wrong; the fact table's "What it never touches" claimed more than the post-check reads; the policy suite's header placed R15 wrongly), answered in `9784c346`. No block byte changed (compared by machine), so the rehearsals stand for the blocks; the document's own sha256 moved.
 7. **OPEN: SOLO's READY line; the pull request, opened held (`held-for-apply`, unarmed); `main` merged into the branch with CI green on that head.**
 8. **OPEN, THE OWNER: he takes `held-for-apply` off and merges.** Merges to main stop from that merge until GREEN's report on 0107.
 9. **OPEN: SOLO fills GREEN's dispatch** after the merge: MERGED (the merge commit), DOCSHA (this document's sha256 at that commit) and a run window while both clinics are closed, whose end is not in a repeated hour.
@@ -766,7 +766,47 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 ## Rehearsal
 
-### The second rehearsal, 2026-10-25: the blocks, by their author (NOT the independent rehearsal NOT READY step 5 asks for)
+### The independent rehearsal, 2026-10-25 (run 2): PASS, with the limits the document names
+
+**By an agent that did not write the blocks,** on lane amber (a local Supabase stack, PostgreSQL 17.6), never production. Sunday 2026-10-25, 17:22 to 18:14 Lisbon (WET), a closed day; a usage limit cut the run off after the second paste of stage 1, and it resumed at 18:13. The main sitting ran 17:28 to 17:29, the fault sitting 18:13 to 18:14. The full record is the rehearser's, outside the repository.
+
+**The bytes.** Rehearsed at `324b4b7b` (this document's sha256 there `980ee437...df1b`, equal to its sidecar). The branch then moved to `9784c346` (the R4 round's wording): its six blocks are byte for byte those of `324b4b7b`, checked by machine (the concatenated blocks hash to `bbd95cdd...35d2` in both). Only the document's own sha256 moved, so GREEN's dispatch carries the value at the merge commit, never the rehearsed one.
+
+**The position.** Built by this document's method: the INSERT policy set back to `0035`'s expression, a drizzle journal of 104 rows built from the files, one synthetic signed registo and two synthetic annulments written as `postgres` (one naming the registo's practitioner, one naming nobody); two active clinics, 08:00 to 20:00, read `inside`. A read-only pre-check by hand read 14 OK / 0 VACUOUS / 0 FAIL before any block ran.
+
+**The substitutions, exactly four, and the dispatch fills.**
+- (a) `DATABASE_URL_DIRECT` came from the environment (127.0.0.1); no block line was edited for it.
+- (b) Removed whole, NOT REHEARSED: the reader line of BEFORE YOU START and of the closing read; the environment-file line and the target guard's line of stages 1 and 2.
+- (c) The `cd` into the apply worktree went to a scratch clone whose `origin` is a local bare repository with `main` at `324b4b7b` (six lines).
+- (d) Every `/tmp/0107-` went to a scratch folder.
+- The two dispatch blocks were run FILLED: MERGED `324b4b7b`, DOCSHA as above, the window 202610250000, 202610260629, 202610260800.
+
+Every block ran in a fresh `zsh -f` with an emptied environment, in GREEN's shape.
+
+**The hand step, stated plainly.** With the reader line removed, BEFORE YOU START stops at the grep after it and so never writes `/tmp/0107-start-main.sha`, which the CLOCK CHECK needs. The rehearser read the lane's journal count READ ONLY (`104`) and wrote the head's sha into that file by hand, as the author's rehearsal did. The lead (SOLO) accepts it as a stand-in for a line that is NOT REHEARSED, not as a way past a guard: no guard was edited, passed or worked around, and the production reader never ran.
+
+| Block | Result | Exit |
+|---|---|---|
+| BEFORE YOU START, filled | all three time sources read and agreeing; closed by the weekday table; `merge commit: origin/main IS the commit this block names`; every pin equal; then, the reader line removed, `STOP: the journal read does not say 104. Nothing was applied`, as predicted | 1 |
+| Stage 0 | `newest journal entry: idx 104, ... of 105; before it idx 103 ... 0106_reminder_claims`; check-journal 105 of 105; `R9: closed hours by the weekday table. 0107 runs in closed hours only`; `0107 MERGE, NUMBER, FILES AND CLOCK VERIFIED` | 0 |
+| CLOCK CHECK, filled | `run window recorded in ...0107-window.ok: 324b4b7b... 202610250000 202610260629 202610260800`; `CLOCK: ... Paste stage 1 now.` | 0 |
+| Stage 1 | pre-check `14 OK / 0 VACUOUS / 0 FAIL` (7 CARRY rows, 6 INFO rows); clinics `0 of 2`, inside; verified-migrate with its two NOTICE objects, `journal 104 -> 105 (delta 1)`, `present by sha256: yes`; `0107 APPLIED. Paste stage 2 now.` | 0 |
+| Stage 2 | the eight carries; post-check `19 OK / 0 VACUOUS / 0 FAIL`; verdict 17 `1 row, newest is 0107, when 1788502800000; control 1`; `0107 POST-CHECK PASSED. ...` | 0 |
+| The closing read | head, window and pins pass; then, the reader line removed, `STOP: the journal read after the apply does not say 105. ... Treat the state as UNKNOWN ...`, as predicted | 1 |
+| Stage 1, pasted again | `STOP: stage 1 has ALREADY APPLIED 0107 in this sitting ...` | 1 |
+| Stage 0, pasted again | the same STOP | 1 |
+
+After the two refusals the journal still read 105: nothing more was applied.
+
+**The suites,** on the applied lane, one file at a time: `record-annulments-insert-policy.db.test.ts` 35 of 35, `record-annulments.test.ts` 6 of 6, `apps/web` `annul-record.db.test.ts` 9 of 9.
+
+**The fault test, on a fresh position** (the lane reset, the position rebuilt, the same substitutions and the same hand step; BEFORE YOU START stopped at the reader grep, stage 0 and the CLOCK CHECK exit 0). With `EXECUTE` on `public.clinical_therapist_sees_patient(uuid)` revoked from `authenticated`, stage 1's pre-check read verdict 8 FAIL, `13 OK / 0 VACUOUS / 1 FAIL`, then `STOP: the pre-check printed [1] FAIL verdicts ... Nothing was applied`, exit 1: the journal still 104, the policy still `0035`'s, no applied marker. The grant was restored and the pre-check read 14 OK again.
+
+**Its NOT REHEARSED:** the production journal reader in BEFORE YOU START and the closing read, and so the tail of both after it (the 104 and 105 greps, the APPLIED, pending and orphan greps, the record and the last lines); the environment file and the target guard in stages 1 and 2; BEFORE YOU START's own writing of `0107-start-main.sha` (the hand step above); production's real policy text, counts and `supautils.policy_grants`; and DOCSHA at `9784c346` or at the merge commit.
+
+**Run 1, the same afternoon, was PARTIAL:** its prompt allowed too few substitutions (not the apply worktree's path), so every block stopped at its first check and no sequence ran. Run 2 is the rehearsal of record.
+
+### The second rehearsal, 2026-10-25: the blocks, by their author (not the independent rehearsal above)
 
 **No STOP that the document does not predict, and no finding against a block.** Run on Sunday 2026-10-25, 16:36 to 16:38 Lisbon (WET), a closed day, by SOLO, the author of the blocks. **It is not the independent rehearsal NOT READY step 5 asks for,** and it does not replace it.
 
@@ -817,7 +857,7 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 ## NOT REHEARSED, said one by one
 
-- **The independent rehearsal of the blocks** (NOT READY step 5): open.
+- **What the independent rehearsal names as NOT REHEARSED** (its own list, above): the production reader and the tail of both blocks after it, the environment file and the target guard, BEFORE YOU START's own writing of `0107-start-main.sha`, production's real values, and DOCSHA at the merge commit.
 - **BEFORE YOU START and the CLOCK CHECK as GREEN pastes them:** their PENDING lines stop them first on any throwaway; the filled copies run only in GREEN's dispatch. Their window-end test is proven by the script test, not on a throwaway.
 - **The lines that load the production environment file, the target guard's lines and the reader's lines:** they refuse any throwaway by design (`REFUSING: project ref is "postgres" ...`), which is their purpose, and the lead's rule forbids getting past them.
 - **Production:** its policy text, its row counts and its `supautils.policy_grants` were not read. The pre-check pins every one it depends on, so a difference stops the sitting at the pre-check rather than passing unseen.
@@ -826,4 +866,5 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 - **2026-10-12:** the first draft, to the letter of "the owner and the registo's author"; its own builder raised that it refuses a treating therapist the application allows (the owner's ruling of 2026-09-14). To strategy.
 - **2026-10-13:** strategy ruled option b; the draft aligned (`clinical_therapist_sees_patient`), and a fresh reviewer PASSED it, with one finding answered at the promotion (the check files exited 0 on a FAIL verdict and nothing counted them: the blocks now count every profile).
-- **2026-10-25:** promoted to 0107; blocks, sidecar and script test written. **OPEN:** the R4 round on them.
+- **2026-10-25:** promoted to 0107; blocks, sidecar and script test written.
+- **2026-10-25: one R4 round** on the blocks, the check files and the script test: no BLOCKER, no MAJOR, three MINOR wording findings, answered in `9784c346` (no block byte changed); not re-reviewed, under the review-loop cap (MINOR, no production-touching byte).
