@@ -45,6 +45,27 @@ test("bare markers and the diff3 base marker are findings", () => {
   assert.equal(f.length, 3);
 });
 
+test("CRLF line endings: the marker lines are still findings (R4)", () => {
+  const f = markerFindings([
+    L("w.md", 1, "<<<<<<< HEAD\r"),
+    L("w.md", 2, "ours\r"),
+    L("w.md", 3, "=======\r"),
+    L("w.md", 4, ">>>>>>>\r"),
+    L("w.md", 5, "||||||| base\r"),
+  ]);
+  assert.deepEqual(f.map((x) => x.line), [1, 3, 4, 5]);
+  assert.deepEqual(markerFindings([L("h.md", 1, "Heading\r"), L("h.md", 2, "=======\r")]), [], "a CRLF heading underline alone is still not a finding");
+});
+
+test("SEEDED FAILURE: patterns without \\r? miss every CRLF marker", () => {
+  const src = readFileSync(join(ROOT, "scripts/secret-scan.mjs"), "utf8");
+  const marker = src.match(/^const MARKER = (\/.*\/);$/m)[1];
+  assert.match(marker, /\\r\?\$\/$/, "the pattern no longer ends in \\r?$");
+  const seeded = new RegExp(marker.slice(1, -1).replace("\\r?$", "$"));
+  assert.equal(seeded.test("<<<<<<< HEAD\r"), false, "the seeded copy should miss the CRLF marker");
+  assert.equal(new RegExp(marker.slice(1, -1)).test("<<<<<<< HEAD\r"), true);
+});
+
 test("a marker QUOTED inside a line is not a finding (the DECISIONS.md prose)", () => {
   const f = markerFindings([
     L("docs/DECISIONS.md", 1, "behind when the `<<<<<<<`/`=======`/`>>>>>>>` markers were stripped."),
@@ -141,6 +162,20 @@ test("git REFUSES a marker added on top of a branch the remote already has", () 
     const r = sh(work, ["push", "origin", "feat/later"]);
     assert.notEqual(r.status, 0, r.out);
     assert.match(r.out, /notes\.md:2  conflict-marker/);
+  } finally {
+    rmSync(top, { recursive: true, force: true });
+  }
+});
+
+test("GATE: git REFUSES a push that adds a conflict marker in a CRLF file", () => {
+  const { top, work } = sandbox();
+  try {
+    must(sh(work, ["config", "core.autocrlf", "false"]), "keep CRLF as written");
+    commitOnBranch(work, "feat/crlf", "docs/windows.md", CONFLICTED.replace(/\n/g, "\r\n"));
+    const r = sh(work, ["push", "origin", "feat/crlf"]);
+    assert.notEqual(r.status, 0, `the CRLF marker push went through:\n${r.out}`);
+    assert.match(r.out, /secret-scan: 3 finding\(s\)\. THE PUSH IS BLOCKED\./);
+    assert.match(r.out, /docs\/windows\.md:2  conflict-marker/);
   } finally {
     rmSync(top, { recursive: true, force: true });
   }

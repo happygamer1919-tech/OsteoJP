@@ -61,6 +61,14 @@
 // name it), anything inside a binary file (counted and reported, never read),
 // and anything already on the base. It reads ADDED lines only.
 //
+// WHAT IT REFUSES THAT IS NOT A CONFLICT, ACCEPTED AS A TRADE: a document that
+// shows a marker-shaped example starting at column 0, such as
+// docs/handoff/PURPLE-20260905-CLOSE.md lines 326 to 330 (`<<<<<<< ours`,
+// `||||||| base`, `>>>>>>> theirs`), is refused if those lines are ever added
+// again, and there is no in-file bypass. Indent the example, or put it in a
+// code span, and it passes. A bypass marker would be one more thing a resolver
+// could leave behind; bypassing the hook stays owner-confirmable.
+//
 // Usage:
 //   node scripts/secret-scan.mjs                 # origin/main...HEAD
 //   node scripts/secret-scan.mjs --range A..B    # an explicit range
@@ -310,8 +318,11 @@ export function addedLines(diff) {
   return { lines, binary };
 }
 
-const MARKER = /^(?:<{7}|>{7}|\|{7})(?: .*)?$/;
-const MARKER_SEPARATOR = /^={7}$/;
+// `\r?` because a file with CRLF line endings keeps the `\r` on every added
+// line the diff hands over, and JavaScript's `.` and `$` do not step over it: a
+// pattern without it let a CRLF marker through (R4, 2026-10-25).
+const MARKER = /^(?:<{7}|>{7}|\|{7})(?: [^\r\n]*)?\r?$/;
+const MARKER_SEPARATOR = /^={7}\r?$/;
 
 /**
  * Conflict marker lines among added lines (R3, header). Per file: every `<`, `>`
