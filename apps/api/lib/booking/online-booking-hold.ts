@@ -26,9 +26,14 @@
  * roster, the open slots and a booking, which pass the write guard first, are
  * refused with the answer an unstaffed clinic already gets.
  *
+ * Rescheduling starts from an existing appointment and never reads that
+ * fragment, so it asks `isHeldLocation`: at a held clinic the options list is
+ * empty and the action is refused with the same answer.
+ *
  * WHAT IT DOES NOT TOUCH: the staff application (it never imports this file),
- * the reminder jobs and the sweep, existing appointments, and the patient's
- * own list of appointments. Removing the value and redeploying the api undoes
+ * the reminder jobs and the sweep, existing appointments (none is moved or
+ * cancelled; reception can still move one by hand), and the patient's own list
+ * of appointments. Removing the value and redeploying the api undoes
  * it completely.
  */
 
@@ -52,4 +57,13 @@ export function heldLocationIds(env: EnvSource = process.env): string[] {
     console.warn(`[online-booking-hold] ${ignored} entr${ignored === 1 ? "y is" : "ies are"} not a location id and ${ignored === 1 ? "was" : "were"} ignored`);
   }
   return valid;
+}
+
+/**
+ * Whether one location is held. For the paths that start from an existing
+ * appointment rather than from the catalogue (rescheduling): they never pass
+ * the catalogue's fragment, so they ask here.
+ */
+export function isHeldLocation(locationId: string, env: EnvSource = process.env): boolean {
+  return heldLocationIds(env).includes(locationId.toLowerCase());
 }

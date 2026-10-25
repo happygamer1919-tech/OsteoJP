@@ -8,6 +8,7 @@ const B = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 describe("R10: heldLocationIds reads ONLINE_BOOKING_HELD_LOCATION_IDS", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("names the variable it reads", () => {
@@ -50,6 +51,5 @@ describe("R10: heldLocationIds reads ONLINE_BOOKING_HELD_LOCATION_IDS", () => {
     expect(heldLocationIds()).toEqual([A]);
     vi.stubEnv("ONLINE_BOOKING_HELD_LOCATION_IDS", "");
     expect(heldLocationIds()).toEqual([]);
-    vi.unstubAllEnvs();
   });
 });
