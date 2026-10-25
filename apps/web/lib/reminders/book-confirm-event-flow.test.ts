@@ -95,6 +95,7 @@ describe("the acceptance target carries the marker, and only it does", () => {
       tenantId: TENANT,
       startsAt: STARTS_AT.toISOString(),
       practitionerId: PRAC,
+      saveId: expect.any(String),
       confirmationEligible: true,
       acceptedPedido: true,
     });
@@ -108,6 +109,7 @@ describe("the acceptance target carries the marker, and only it does", () => {
       tenantId: TENANT,
       startsAt: STARTS_AT.toISOString(),
       practitionerId: PRAC,
+      saveId: expect.any(String),
       confirmationEligible: true,
     });
     expect("acceptedPedido" in h.sent[0]!.data).toBe(false);
@@ -120,6 +122,7 @@ describe("the acceptance target carries the marker, and only it does", () => {
       tenantId: TENANT,
       startsAt: STARTS_AT.toISOString(),
       practitionerId: PRAC,
+      saveId: expect.any(String),
       confirmationEligible: true,
       acceptedGuestRequest: true,
     });
@@ -191,14 +194,15 @@ describe("send-appointment-confirmation hands the marker to the dispatch", () =>
     });
   });
 
-  it("the trigger filter and the idempotency key are the ones that were there", () => {
-    // BOOK-CONFIRM keeps both. The key does not read the marker, so a duplicate
-    // acceptance event for the same appointment and start is still one run.
+  it("the trigger filter is the one that was there, and the key reads the save, not the marker", () => {
+    // BOOK-CONFIRM keeps the filter. The key does not read either acceptance
+    // marker: a second DELIVERY of one acceptance event repeats its saveId and
+    // is still one run.
     expect(CONFIRMATION_TRIGGER_FILTER).toBe("event.data.confirmationEligible == true");
-    // Q-K added the therapist to the key; it still does not read either marker.
-    expect(CONFIRMATION_IDEMPOTENCY_KEY).toBe(
-      'event.data.appointmentId + ":confirmation:" + event.data.startsAt + ":" + event.data.practitionerId',
-    );
+    // Q-N: appointment + the save's own marker (it was appointment + start +
+    // therapist under Q-K).
+    expect(CONFIRMATION_IDEMPOTENCY_KEY).toBe('event.data.appointmentId + ":confirmation:" + event.data.saveId');
+    expect(CONFIRMATION_IDEMPOTENCY_KEY).not.toMatch(/acceptedPedido|acceptedGuestRequest/);
   });
 });
 
