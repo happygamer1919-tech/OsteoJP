@@ -56,8 +56,11 @@ export type BookableService = {
   /** Effective (override-then-base) price in integer cents; null = unpublished. */
   priceCents: number | null;
   currency: string;
-  /** Location ids where this service can be booked (a null-location catalog
-   *  service is offered at every bookable location). */
+  /** Location ids where this service can be booked: the clinics it is scoped to
+   *  (every bookable location for a null-location service) where at least one
+   *  therapist the therapist step would offer is ticked for it (Q-R). NEVER
+   *  EMPTY: a service with no such clinic is left out of the catalog, because
+   *  the portal reads an empty list as "every clinic". */
   locationIds: string[];
 };
 
