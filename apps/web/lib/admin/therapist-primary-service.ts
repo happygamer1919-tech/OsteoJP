@@ -1,10 +1,12 @@
 import "server-only";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { services, therapistServices, users, type DbTx } from "@osteojp/db";
+import { services, therapistServices } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
+import { assertStaffInScope, lockStaffMember } from "./staff-scope";
 
 /**
  * Per-therapist PRIMARY service (W3-04) — the service W3-03 auto-selects into
@@ -34,24 +36,6 @@ import { AdminError } from "./errors";
 
 /** The one ordering of a therapist's mappings: oldest first, ties by id. */
 const PRIMARY_ORDER = [asc(therapistServices.createdAt), asc(therapistServices.id)] as const;
-
-/**
- * Serialise every write to ONE member's mappings (Q-M review, 2026-10-20): the
- * services save and the primary save both read the current rows and then write
- * from what they read, so two of them interleaving could each keep or remove a
- * row on stale information. `SELECT ... FOR UPDATE` on the member's own users
- * row, the same row lock the admin settings writers take on `tenants`. It also
- * refuses a member this actor cannot see (another tenant's id), which the
- * foreign key on therapist_services would otherwise accept.
- */
-async function lockMember(tx: DbTx, therapistId: string): Promise<void> {
-  const [row] = await tx
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, therapistId))
-    .for("update");
-  if (!row) throw new AdminError("not_found");
-}
 
 export type TherapistServiceOption = { id: string; name: string };
 export type TherapistPrimary = {
@@ -133,9 +117,12 @@ export async function setTherapistPrimaryService(
 ): Promise<void> {
   assertCan(actor.role, "users:manage");
   if (!therapistId || !serviceId) throw new AdminError("invalid");
+  // PL-09 Phase 4: a location-scoped admin sets services only for staff at their clinics.
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
-    await lockMember(tx, therapistId);
+    await lockStaffMember(tx, therapistId);
+    await assertStaffInScope(tx, therapistId, scope);
     // Defense: `serviceId` must be an ACTIVE service of this tenant (the dropdown
     // only lists active services; reject a forged / archived id). RLS scopes the
     // read to the actor's tenant.
@@ -222,9 +209,12 @@ export async function setTherapistServices(
   assertCan(actor.role, "users:manage");
   if (!therapistId) throw new AdminError("invalid");
   const wanted = [...new Set(serviceIds.filter((id) => id !== ""))];
+  // PL-09 Phase 4: a location-scoped admin sets services only for staff at their clinics.
+  const scope = await viewerLocationScope(actor);
 
   await runScoped(actor, async (tx) => {
-    await lockMember(tx, therapistId);
+    await lockStaffMember(tx, therapistId);
+    await assertStaffInScope(tx, therapistId, scope);
     const mapped = await tx
       .select({ serviceId: therapistServices.serviceId })
       .from(therapistServices)
