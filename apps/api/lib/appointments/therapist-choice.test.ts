@@ -386,13 +386,40 @@ describe("source-level: no fourth predicate, no role filter (PL-06b, D2)", () =>
     expect(ROSTER_FN).toMatch(/av\.valid_until is null or av\.valid_until >=/);
   });
 
-  it("it compares against TODAY in Lisbon, not a window it invented", () => {
-    // The roster step has no date (that is why this is not listAvailableTherapists),
-    // and owner ruling Q-ROSTER settles the instant as now. A startsAt/endsAt
-    // appearing inside THIS method would mean somebody turned the roster back
-    // into an availability query.
+  it("it compares against the slot step's horizon from today in Lisbon, not a window it invented", () => {
+    // The roster step has no date (that is why this is not listAvailableTherapists).
+    // Strategy R15 (2026-10-26) replaced owner ruling Q-ROSTER's "now" with the
+    // days the slot step can offer. A startsAt/endsAt appearing inside THIS
+    // method would mean somebody turned the roster back into an availability
+    // query.
     expect(ROSTER_FN).toMatch(/now\(\) at time zone/);
     expect(ROSTER_FN).not.toMatch(/startsAt|endsAt/);
+  });
+
+  /**
+   * R15 - THE WINDOW OVERLAPS [today, today + OPEN_SLOTS_HORIZON_DAYS].
+   * A template counts when it starts on or before the horizon's last day and
+   * ends on or after today. The horizon is the slot step's own constant, never a
+   * second number, so the roster and the slots cannot drift apart.
+   */
+  it("R15: valid_from is bounded by today + OPEN_SLOTS_HORIZON_DAYS", () => {
+    expect(ROSTER_FN).toMatch(
+      /av\.valid_from\s+<= \(now\(\) at time zone \$\{LISBON\}\)::date \+ \$\{OPEN_SLOTS_HORIZON_DAYS\}::int\)/,
+    );
+  });
+
+  it("R15: valid_until is still bounded by today alone (an expired row offers no day)", () => {
+    expect(ROSTER_FN).toMatch(
+      /av\.valid_until >= \(now\(\) at time zone \$\{LISBON\}\)::date\)/,
+    );
+  });
+
+  it("R15: the horizon is the slot step's constant, imported, and the slot step uses it too", () => {
+    expect(STORE).toMatch(/import \{ OPEN_SLOTS_HORIZON_DAYS \} from "\.\/booking";/);
+    expect(STORE).not.toMatch(/OPEN_SLOTS_HORIZON_DAYS\s*=/);
+    expect(BOOKING).toMatch(/export const OPEN_SLOTS_HORIZON_DAYS = \d+;/);
+    const slots = BOOKING.slice(BOOKING.indexOf("export async function listOpenSlots"));
+    expect(slots.slice(0, slots.indexOf("\n}\n"))).toMatch(/horizonDays: OPEN_SLOTS_HORIZON_DAYS,/);
   });
 
   it("no role or title predicate was introduced anywhere in the store", () => {
