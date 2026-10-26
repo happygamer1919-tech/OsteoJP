@@ -41,6 +41,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *      is named.
  */
 export async function downloadPatientFichaUrlAction(patientId: string): Promise<{ url: string | null }> {
+  // The export's own time, written into its audit row (batch item 11): from
+  // the action's start, before the session is read, to the signed URL, the
+  // audit write itself not included. performance.now() is monotonic: a clock
+  // adjustment during the export cannot bend it.
+  const started = performance.now();
   const ctx = await requireRequestContext();
   if (!can(ctx.role, "clinical_records:read")) return { url: null };
   if (typeof patientId !== "string" || !UUID_RE.test(patientId)) return { url: null };
@@ -79,6 +84,7 @@ export async function downloadPatientFichaUrlAction(patientId: string): Promise<
         recordIds: pdf.recordIds,
         sections: pdf.sections,
         leftOut: pdf.leftOut,
+        durationMs: performance.now() - started,
       });
     } catch {
       // No row, so no URL, and the file just stored will never be linked to:

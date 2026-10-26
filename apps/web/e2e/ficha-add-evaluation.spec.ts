@@ -595,12 +595,15 @@ test.describe("EXPORT-01, gate G1: the owner exports an imported registo and an 
     });
     expect(Object.keys(row.metadata).sort()).toEqual([
       "document",
+      "durationMs",
       "patientId",
       "recordIds",
       "recordsIncluded",
       "recordsLeftOut",
       "sectionsIncluded",
     ]);
+    // The export's own time (batch item 11): a whole number of milliseconds.
+    expect(Number.isInteger(row.metadata.durationMs) && (row.metadata.durationMs as number) >= 0).toBe(true);
     expect(row.metadata).toMatchObject({ document: "ficha", patientId: F.patientId });
     const inFile = row.metadata.recordIds as string[];
     expect(inFile).toContain(F.imported.recordId);

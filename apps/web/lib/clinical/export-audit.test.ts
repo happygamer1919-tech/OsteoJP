@@ -189,6 +189,27 @@ describe.each(["owner", "admin", "therapist"] as const)("the imported group's PD
   });
 });
 
+describe("recordPatientFichaExport: the export's own time (batch item 11)", () => {
+  it("durationMs is written as a whole number of milliseconds when handed in, and absent when not", async () => {
+    const timed = fakeTx();
+    await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, durationMs: 1234.6 });
+    expect(timed.inserted[0]!.v.metadata).toMatchObject({ durationMs: 1235 });
+    // Rounded to the nearest, not up: 1234.4 is 1234.
+    const down = fakeTx();
+    await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, durationMs: 1234.4 });
+    expect(down.inserted[0]!.v.metadata).toMatchObject({ durationMs: 1234 });
+    const untimed = fakeTx();
+    await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0 });
+    expect(untimed.inserted[0]!.v.metadata).not.toHaveProperty("durationMs");
+  });
+
+  it.each([[-5], [Number.NaN], [Number.POSITIVE_INFINITY]])("a duration that is not a positive finite number (%s) is written as 0", async (ms) => {
+    const t = fakeTx();
+    await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, durationMs: ms });
+    expect(t.inserted[0]!.v.metadata).toMatchObject({ durationMs: 0 });
+  });
+});
+
 describe("recordImportedGroupExport and recordPatientFichaExport: what the counts count", () => {
   it("recordsIncluded is the number of registos named, whatever that number is", async () => {
     for (const recordIds of [[R2], [R3, R1], [R1, R2, R3]]) {
@@ -258,7 +279,7 @@ describe("every row: ids, counts and one closed word; never text", () => {
     ["registo", [[{ id: R1, patientId: PATIENT }]], () => recordRegistoExport(owner, R1)],
     ["rgpd_form", [[{ id: R1, patientId: PATIENT }]], () => recordRgpdFormExport(owner, R1)],
     ["imported_group", [], () => recordImportedGroupExport(owner, { patientId: PATIENT, recordIds: [R2, R1], leftOut: 1 })],
-    ["ficha", [], () => recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R2, R1], sections: 1, leftOut: 1 })],
+    ["ficha", [], () => recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R2, R1], sections: 1, leftOut: 1, durationMs: 987.4 })],
     ["declaracao", [[{ id: PATIENT }], [{ id: LOCATION }]], () => recordDeclaracaoExport(owner, { patientId: PATIENT, locationId: LOCATION })],
   ];
 
