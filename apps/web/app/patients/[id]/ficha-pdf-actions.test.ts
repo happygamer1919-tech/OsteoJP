@@ -182,9 +182,62 @@ describe("downloadPatientFichaUrlAction: an export, step by step", () => {
   });
 });
 
+describe("downloadPatientFichaUrlAction: the export's own time (batch item 11)", () => {
+  it("durationMs is the monotonic clock's distance from the action's very start to the signed URL, the audit not included", async () => {
+    // An injected clock: performance.now() reads `now`, and each mocked step
+    // moves it on by its own amount. Nothing here waits or reads a real clock.
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      // Every step from the session on moves the clock, so a start taken late
+      // (after the session, the read or the ceiling) reads short.
+      mockCtx.mockImplementation(async () => {
+        now += 10;
+        return ctxOf("owner");
+      });
+      const read = mockSelection.getMockImplementation()!;
+      mockSelection.mockImplementation(async (...args) => {
+        now += 30;
+        return read(...args);
+      });
+      const ceiling = mockCeiling.getMockImplementation()!;
+      mockCeiling.mockImplementation(async (...args) => {
+        now += 20;
+        return ceiling(...args);
+      });
+      const render = mockRender.getMockImplementation()!;
+      mockRender.mockImplementation(async (...args) => {
+        now += 700;
+        return render(...args);
+      });
+      const store = upload.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
+      upload.mockImplementation(async (...args: unknown[]) => {
+        now += 200;
+        return store(...args);
+      });
+      const sign = createSignedUrl.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
+      createSignedUrl.mockImplementation(async (...args: unknown[]) => {
+        now += 50;
+        return sign(...args);
+      });
+      // The audit write's own time is not counted.
+      mockAudit.mockImplementation(async () => {
+        now += 5_000;
+      });
+
+      expect(await downloadPatientFichaUrlAction(PATIENT)).toEqual({ url: SIGNED });
+      expect(mockAudit).toHaveBeenCalledTimes(1);
+      // 10 (session) + 30 (read) + 20 (ceiling) + 700 (render) + 200 (upload) + 50 (sign).
+      expect(mockAudit.mock.calls[0]![1].durationMs).toBe(1_010);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
+
 describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () => {
   it.each(["owner", "admin", "therapist"] as const)(
-    "%s: asked for ONCE, as that caller, with the patient, the registos in the file and three counts, and nothing else",
+    "%s: asked for ONCE, as that caller, with the patient, the registos in the file, three counts and the export's time, and nothing else",
     async (role) => {
       allGood(role);
       await downloadPatientFichaUrlAction(PATIENT);
@@ -194,7 +247,10 @@ describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () =>
         recordIds: ["r1", "r2", "r3"],
         sections: 2,
         leftOut: 1,
+        durationMs: expect.any(Number),
       });
+      const durationMs = mockAudit.mock.calls[0]![1].durationMs!;
+      expect(durationMs).toBeGreaterThanOrEqual(0);
     },
   );
 
@@ -207,7 +263,13 @@ describe("downloadPatientFichaUrlAction: the audit row of an export (G4)", () =>
     // Selected: r1 and r2 in one section, r3 in another. The engine printed r3 only.
     mockRender.mockResolvedValue({ ...pdf, recordIds: ["r3"], sections: 1, leftOut: 3 });
     await downloadPatientFichaUrlAction(PATIENT);
-    expect(mockAudit.mock.calls[0]![1]).toEqual({ patientId: PATIENT, recordIds: ["r3"], sections: 1, leftOut: 3 });
+    expect(mockAudit.mock.calls[0]![1]).toEqual({
+      patientId: PATIENT,
+      recordIds: ["r3"],
+      sections: 1,
+      leftOut: 3,
+      durationMs: expect.any(Number),
+    });
   });
 
   it("two exports are two rows asked for: one per file handed out", async () => {

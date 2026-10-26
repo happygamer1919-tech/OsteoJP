@@ -294,6 +294,10 @@ d("EXPORT-01 G5: 'Exportar ficha' for a patient with 60 registos, timed", { time
         sectionsIncluded: SECTIONS,
       });
       expect(new Set(row.metadata.recordIds as string[]).size).toBe(REGISTOS);
+      // The export's own time (batch item 11), written by the real action: a
+      // whole number of milliseconds, and not 0, since a real render took place.
+      const durationMs = row.metadata.durationMs;
+      expect(Number.isInteger(durationMs) && (durationMs as number) > 0).toBe(true);
     }
   });
 });
