@@ -1,7 +1,7 @@
 # R14-PROFILE, 2026-10-27: the appointments profile, counts and dates only
 
 **READ ONLY. One block. No window, no apply, no write.**
-**Status: AUTHORED 2026-10-26; THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-r14-profile-20261027.test.mjs`); THE SQL NOT YET REHEARSED ON A THROWAWAY (pending a free database lane); NOT YET REVIEWED (R4).** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, which names `<MERGED>` and this document's sha256.
+**Status: AUTHORED 2026-10-26; THE SQL REHEARSED 2026-10-26 ON A THROWAWAY WITH SYNTHETIC ROWS (twelve cases, below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-r14-profile-20261027.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"); NOT YET REVIEWED (R4).** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, which names `<MERGED>` and this document's sha256.
 
 ## Why this read exists
 
@@ -11,7 +11,7 @@ It is information, not a gate on anything else. It writes nothing.
 
 ## What it reads
 
-`scripts/db/read-r14-profile-20261027.sql`, sha256 `64dc5f49d06e1ae8057c4c0a2ac261fbd2da7e4d30022e7bcfb078e154547d63`. One result set, columns `n | check | observed | expected | verdict`, ordered by `n` then `check`.
+`scripts/db/read-r14-profile-20261027.sql`, sha256 `84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284`. One result set, columns `n | check | observed | expected | verdict`, ordered by `n` then `check`.
 
 **What may be printed:** counts, Lisbon dates and months, a clinic CODE (`LV`, `CB`, `MN`, found by name as MN-READ finds them), and words from fixed lists: the appointment `status` and `confirmation_state` values, the origin class (`imported`, `native_staff`, `native_portal`), the source `estado` (`realizada`, `falta`, `marcada`, else `other`), the block `reason`, the consultation state (`pending`, `fired`, `needs_attention`, else `other`), the SMS outcome (`confirmed`, `cancelled`, `opt_out`, `review`, else `other`). **Never printed:** a name of a person, a patient id, an appointment id, a staff id, a phone, an email, a NIF, a date of birth, a note, a source row, an audit metadata value outside the named keys, an error text, a service name. Names are matched inside SQL only (the person-rows rule, the duplicate-looking patients, the placeholder patients), and only counts leave the match.
 
@@ -95,7 +95,7 @@ No rule for the earlier 2,288 figure was found: not in the repository on any bra
 | D5 | the NIF (digits only) |
 | D6 | the mobile number (context only: families share numbers) |
 
-Recommendation if none reads 2,288: D2. Name alone joins namesakes; NIF is missing on many imported rows; a name and a date of birth on rows linked to different clinics is the shape the import produces when one person had a different `id_paciente` in each clinic's delivery.
+The read chooses none of them. GREEN's output shows which candidate, if any, reads 2,288, and the ruling picks the rule from there.
 
 ## THE HALT RULE
 
@@ -113,7 +113,7 @@ The ruling's gate: "CHECK the profile output. EXPECT no personal data and no pat
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-r14-profile-20261027.sql`, sha256 `64dc5f49d06e1ae8057c4c0a2ac261fbd2da7e4d30022e7bcfb078e154547d63` |
+| The read | `scripts/db/read-r14-profile-20261027.sql`, sha256 `84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes MN-READ pins) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-r14-profile-20261027.sha256` pins it |
@@ -133,7 +133,7 @@ GREEN pastes its dispatch's filled copy, whole and on its own, from `/Users/ivan
 set -o pipefail
 MERGED=PENDING
 DOCSHA=PENDING
-SHAREAD=64dc5f49d06e1ae8057c4c0a2ac261fbd2da7e4d30022e7bcfb078e154547d63
+SHAREAD=84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-r14-profile-20261027.sql
@@ -186,14 +186,31 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly: `set transaction read only; set local statement_timeout = '300s';`
 3. Below it, paste the whole of `scripts/db/read-r14-profile-20261027.sql`. To copy it exactly, once the clone is on main, type this in Claude Code. It copies the file only if it is the reviewed one, and otherwise prints a STOP and copies nothing:
-   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-r14-profile-20261027.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "64dc5f49d06e1ae8057c4c0a2ac261fbd2da7e4d30022e7bcfb078e154547d63" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-r14-profile-20261027.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run. EXPECT one table. Row 0 must read `on` and `OK`: if it does not, stop and send a screenshot, nothing else. Rows 1 to 6 must read `OK`.
 5. Download the result as CSV into `/Users/ivan/osteojp-handover/`, and tell SOLO the file name. It holds counts, dates and codes only.
 
 ## Rehearsal
 
-PENDING: the SQL has not run on a database yet. It runs on a throwaway on a free lane (the `public` schema copied from the local database, synthetic rows only), as the block runs it (`begin read only`, 300 seconds, `rollback`), with these cases: the clean profile (7 OK); each verdict flipped by its seeded fault (a second Linda-a-Velha row, no imported rows, no create row with `startsAt`, no time_off rows, the JP rows renamed apart, a printed row carrying a uuid in a mutant of the read); and a synthetic placeholder patient and a synthetic duplicate pair, counted and never named.
+2026-10-26, lane purple (local stack, 127.0.0.1:54522). A throwaway database `r14prof`: the `public` schema copied from the lane's database with `pg_dump --schema-only --schema=public` (its policies, which name the `auth` schema, and one trigram index did not copy; the read needs neither), then synthetic rows only: three clinics named `... (LV)`, `... (CB)`, `... (MN)`; the two JP rows under the ids on record and two NESA rows, all with invented names; two services; six patients, among them a pair sharing a name and a date of birth at two clinics, a pair sharing a NIF and a mobile number, a placeholder named `NAO MARCAR` and a merged row; five imported appointments with their ledger rows (one ledger row pointing at a missing appointment), eight native staff rows, two portal rows and one shared-resource row; create, update, reschedule, cancel, correction, SMS and hard-delete audit rows; two staff notifications; schedule rows, blocks and four consultations. The seed also carried free text that must never print (a cancel reason, a block note, an error text holding nine digits). Each case ran on a fresh copy (`create database ... template r14prof`), as the block runs it (`begin read only`, 300 seconds, the read, `rollback`); "hits" is the block's own transcript check (uuid fragment, at sign, nine digits).
+
+| Case | What changed | Verdicts (OK VACUOUS FAIL) | Hits | The flipped verdict |
+|---|---|---|---|---|
+| clean | nothing | 7 0 0 | 0 | none. 151 rows; no synthetic name, note, reason or error text in the transcript |
+| not read only | `begin` instead of `begin read only` | 6 0 1 | 0 | 0 FAIL (`off`) |
+| second LV | a second location named like Linda-a-Velha | 6 0 1 | 0 | 1 FAIL (`LV 2, ...`) |
+| other location | a location matching no code | 6 0 1 | 0 | 1 FAIL (`OTHER 1`) |
+| no imported | the appointment ledger rows deleted | 6 1 0 | 0 | 2 VACUOUS (`0, 15, 5, 14`) |
+| no startsAt | the `appointment.create` rows deleted | 6 1 0 | 0 | 3 VACUOUS (`0`) |
+| no blocks | `time_off` emptied | 6 1 0 | 0 | 4 VACUOUS (`11, 0`) |
+| JP apart | the JP(lv) row renamed | 6 1 0 | 0 | 5 VACUOUS (JP grouped false) |
+| NESA apart | one NESA row renamed out of its group | 6 1 0 | 0 | 5 VACUOUS (largest NESA group 1 of 2) |
+| mutant: a patient id printed | row 10 prints `max(patient_id::text)` | 6 0 1 | 5 | 6 FAIL (`5 of 150`) |
+| mutant: a NIF printed | row 54 prints `max(nif)` | 6 0 1 | 1 | 6 FAIL (`1 of 150`) |
+| mutant: a dead move measure | `first_start` always NULL | 6 1 0 | 0 | 3 VACUOUS (`0`) |
+
+What the clean case printed, checked against the seed: row 21 counts the one native row moved since its create row (with its reschedule audit row); row 23 counts one copy, two timed cancels and the one rebooked within 24 hours; row 33 the one overlapping pair; rows 50 D1 to D6 one group of two rows each; row 60 four rows in two groups (JP at two clinics, NESA holding the shared resources); `R12_FIRES` three consultations in 90 days (one each pending, sent, needs attention) and two sent all time. The read took under a second on these rows; its time on production is not measured.
 
 ## NOT REHEARSED
 
-The block itself reads only production: its target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway. So the block's production path (the environment file, the guard, the connection) is NOT REHEARSED. What stands in for it: the SQL rehearsal above (pending) with exactly the block's psql arguments, and the fault-injection test, which runs the block in GREEN's tool shape in bash and zsh with every external command a stub, fails each call in turn, and proves every halt is explicit and that the block passes only on the profile `7 0 0` with an `R12_FIRES` row and a transcript free of uuid fragments, at signs and nine-digit runs.
+The block itself reads only production: its target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway. So the block's production path (the environment file, the guard, the connection) is NOT REHEARSED. What stands in for it: the SQL rehearsal above with exactly the block's psql arguments, and the fault-injection test, which runs the block in GREEN's tool shape in bash and zsh with every external command a stub, fails each call in turn, and proves every halt is explicit and that the block passes only on the profile `7 0 0` with an `R12_FIRES` row and a transcript free of uuid fragments, at signs and nine-digit runs.

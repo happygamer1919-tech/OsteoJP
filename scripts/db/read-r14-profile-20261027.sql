@@ -222,7 +222,7 @@ ov as (
   select ap.yr, ap.oc,
          ap.starts_at < max(ap.ends_at) over (
            partition by ap.practitioner_id order by ap.starts_at, ap.id
-           rows between unbounded preceding and 1 preceding) as overlaps
+           rows between unbounded preceding and 1 preceding) as ovl
     from ap
    where ap.status not in ('cancelled', 'no_show')
 ),
@@ -650,7 +650,7 @@ r_32 as (
 r_33 as (
   select 33 as n,
          'B3/P19 rows (not cancelled, not no_show) that overlap an earlier row of the same practitioner, by year and origin: ' || yr::text || ', ' || oc as chk,
-         (count(*) filter (where overlaps))::text || ' of ' || count(*)::text as obs
+         (count(*) filter (where ovl))::text || ' of ' || count(*)::text as obs
     from ov group by yr, oc
 ),
 r_34 as (
@@ -834,25 +834,25 @@ r_60 as (
 ),
 r_61 as (
   select 61 as n,
-         'B6/P14 bookable people (not shared resources): ' || m.measure || ': 0, 1, 2, 3 or more services' as chk,
+         'B6/P14 bookable people (not shared resources): ' || m.measure as chk,
          m.v as obs
     from (
-      select 'a. services mapped (therapist_services)' as measure,
+      select 'a. services mapped (therapist_services): people with 0, 1, 2, 3 or more' as measure,
              (count(*) filter (where mapped = 0))::text || ', ' || (count(*) filter (where mapped = 1))::text || ', '
                || (count(*) filter (where mapped = 2))::text || ', ' || (count(*) filter (where mapped >= 3))::text as v
         from ther
       union all
-      select 'b. distinct services in completed visits, all time',
+      select 'b. distinct services in completed visits, all time: people with 0, 1, 2, 3 or more',
              (count(*) filter (where delivered_all = 0))::text || ', ' || (count(*) filter (where delivered_all = 1))::text || ', '
                || (count(*) filter (where delivered_all = 2))::text || ', ' || (count(*) filter (where delivered_all >= 3))::text
         from ther
       union all
-      select 'c. distinct services in completed visits, last 365 days',
+      select 'c. distinct services in completed visits, last 365 days: people with 0, 1, 2, 3 or more',
              (count(*) filter (where delivered_12m = 0))::text || ', ' || (count(*) filter (where delivered_12m = 1))::text || ', '
                || (count(*) filter (where delivered_12m = 2))::text || ', ' || (count(*) filter (where delivered_12m >= 3))::text
         from ther
       union all
-      select 'd. of them active (count)', (count(*) filter (where is_active))::text
+      select 'd. of them active', (count(*) filter (where is_active))::text
         from ther
     ) m
 ),
