@@ -44,8 +44,9 @@ import { heldLocationIds } from "./online-booking-hold";
  * NOT STARTED YET COUNTS because that is somebody bookable with hours there,
  * and the slot query honours the row for days inside its window. THE COST: a
  * location given hours ahead of its opening day is listed from the day they
- * are typed, and the therapist step's roster (which requires the row to start
- * within the slot horizon, strategy R15) is empty for it until then. A `valid_from`
+ * are typed, and the therapist step's roster stays empty for it until the start
+ * date is within the 14-day slot horizon (`OPEN_SLOTS_HORIZON_DAYS`, strategy
+ * R15), when the therapist step fills. A `valid_from`
  * test here would hide exactly that location. It would also hide a working
  * clinic for as long as its schedule was being replaced by one that starts
  * later, if the old rows were switched off rather than left to expire.

@@ -459,6 +459,13 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // "Owner may override" needs no switch in code: ticking a therapist in
     // Equipa brings the service back at that therapist's clinics (DECISIONS.md,
     // Q-R).
+    //
+    // THE SCHEDULE DATES ARE READ AGAINST THE SLOT HORIZON (R15), as in the
+    // roster: a row counts when its window overlaps [today, today +
+    // OPEN_SLOTS_HORIZON_DAYS]. The overlap reads dates, not weekdays, so a
+    // service listed here is not a promise of a slot: a weekly row whose part
+    // of the horizon holds none of its weekday lists the service and offers
+    // nothing. Known and pinned; the full note is at `listBookableTherapists`.
     const staffed = new Set<string>();
     if (candidates.length > 0 && allLocationIds.length > 0) {
       const notShared = await sharedResourceExclusion();
@@ -836,6 +843,16 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // and on any day nobody works there (a Sunday) it hid a clinic whose hours
     // are dated rows, one per day worked (the day-by-day schedule), although
     // the slot step offers that clinic's next days.
+    //
+    // LISTED IS NOT A PROMISE OF A SLOT. The overlap reads DATES, not weekdays:
+    // a weekly row whose part of the horizon holds none of its weekday (a
+    // Wednesday-only row starting on day 13, a Sunday) puts its therapist on
+    // this roster, and `listOpenSlots` then offers nothing from it. The same was
+    // already true at the other end before R15: a row ending before its
+    // weekday next comes round. No weekday term was added, by strategy's choice
+    // (R15 review); catalog-slot-horizon.db.test.ts pins the case as a known
+    // limitation. `getCatalog` carries the same two lines, so the same holds
+    // there.
     //
     // THE TWO BOUNDS ARE NOT SYMMETRIC IN RISK, and that is worth knowing before
     // anyone "tidies" one of them away. `valid_until` is the DEFECT: an expired

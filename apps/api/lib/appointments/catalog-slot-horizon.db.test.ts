@@ -26,6 +26,10 @@
  *   NORMAL     open-ended weekly rows: listed, as before
  *   HELD       open-ended weekly rows, held by ONLINE_BOOKING_HELD_LOCATION_IDS
  *              (R10): hidden while held
+ *   WEEKDAYGAP ONE weekly row starting on the horizon's second-to-last day, for
+ *              a weekday that falls on neither of the two days left: a KNOWN
+ *              LIMITATION, pinned below. The rule reads dates, not weekdays,
+ *              so this clinic is listed and offers no slot.
  * One therapist, ticked for one service bound to that clinic, per clinic.
  *
  * THE SLOT STEP RUNS ON THE DATABASE'S CLOCK TOO: `now` is read from Postgres,
@@ -47,7 +51,7 @@ import type { AppointmentsStore } from "./booking";
 const live = Boolean(process.env.DATABASE_URL);
 const d = live ? describe : describe.skip;
 
-const CLINICS = ["TOMORROW", "DAYBYDAY", "EDGE", "BEYOND", "EXPIRED", "NORMAL", "HELD"] as const;
+const CLINICS = ["TOMORROW", "DAYBYDAY", "EDGE", "BEYOND", "EXPIRED", "NORMAL", "HELD", "WEEKDAYGAP"] as const;
 type Clinic = (typeof CLINICS)[number];
 
 /** Lisbon calendar date of an instant, yyyy-mm-dd. */
@@ -149,6 +153,17 @@ d("R15: the catalog and the therapist step use the slot step's date horizon", ()
     await weekly("EXPIRED", -60, -1);
     await weekly("NORMAL", null, null);
     await weekly("HELD", null, null);
+    // One row: starts on day H - 1, for the weekday of day H + 1, which is
+    // neither day H - 1's nor day H's.
+    await db.execute(raw`
+      with today as (select (now() at time zone 'Europe/Lisbon')::date as d)
+      insert into availability_templates
+          (id, tenant_id, user_id, location_id, weekday, start_time, end_time, is_active,
+           valid_from, valid_until)
+      select ${randomUUID()}, ${tenantId}, ${therapist.WEEKDAYGAP}, ${loc.WEEKDAYGAP},
+             extract(dow from today.d + ${H + 1}::int)::int, '09:00', '18:00', true,
+             today.d + ${H - 1}::int, null
+        from today`);
   });
 
   afterEach(() => {
@@ -176,8 +191,8 @@ d("R15: the catalog and the therapist step use the slot step's date horizon", ()
              )::int as covering_today
         from availability_templates where tenant_id = ${tenantId}
     `)) as unknown as [{ rows: number; covering_today: number }];
-    // Six weekly clinics of seven rows, and two dated rows.
-    expect(counts).toEqual({ rows: 6 * 7 + 2, covering_today: 0 });
+    // Six weekly clinics of seven rows, two dated rows, and WEEKDAYGAP's one.
+    expect(counts).toEqual({ rows: 6 * 7 + 2 + 1, covering_today: 0 });
   });
 
   describe("THE GATE: hours that start tomorrow, and the Sunday shape", () => {
@@ -255,10 +270,32 @@ d("R15: the catalog and the therapist step use the slot step's date horizon", ()
     });
   });
 
-  it("parity, with no hold: for every clinic, the service is listed exactly when the therapist step names somebody and slots are offered", async () => {
+  it("KNOWN LIMITATION, WEEKDAYGAP: a weekly row whose part of the horizon holds none of its weekday is listed and offers no slot", async () => {
+    // The rule reads dates, not weekdays (strategy chose no weekday term), so
+    // "listed" does not promise a slot. The same was already true at the other
+    // end: a row that ends before its weekday next comes round. Pinned so that
+    // a change here is a decision, not a side effect.
+    const [premise] = (await db.execute(raw`
+      select weekday,
+             extract(dow from (now() at time zone 'Europe/Lisbon')::date + ${H - 1}::int)::int as day1,
+             extract(dow from (now() at time zone 'Europe/Lisbon')::date + ${H}::int)::int as day2
+        from availability_templates where tenant_id = ${tenantId} and location_id = ${loc.WEEKDAYGAP}
+    `)) as unknown as [{ weekday: number; day1: number; day2: number }];
+    expect(premise.weekday).not.toBe(premise.day1);
+    expect(premise.weekday).not.toBe(premise.day2);
+
+    const cat = await catalog();
+    expect(cat.services.find((s) => s.id === service.WEEKDAYGAP)?.locationIds).toEqual([loc.WEEKDAYGAP]);
+    expect((await roster("WEEKDAYGAP")).map((t) => t.id)).toEqual([therapist.WEEKDAYGAP]);
+    expect(await slots("WEEKDAYGAP")).toEqual([]);
+  });
+
+  it("parity on this fixture, with no hold: where every weekly clinic carries all 7 weekdays and each dated row its own date's, the service is listed exactly when the therapist step names somebody and slots are offered", async () => {
+    // NOT a general claim: WEEKDAYGAP above is the known case where listed and
+    // offered differ, and it is left out here for that reason.
     const cat = await catalog();
     const mismatches: string[] = [];
-    for (const c of CLINICS) {
+    for (const c of CLINICS.filter((x) => x !== "WEEKDAYGAP")) {
       const listed = cat.services.some((s) => s.id === service[c] && s.locationIds.includes(loc[c]));
       const named = (await roster(c)).length > 0;
       const offered = (await slots(c)).length > 0;

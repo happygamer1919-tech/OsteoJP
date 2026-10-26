@@ -5328,10 +5328,21 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
 - **Q-ROSTER, amended.** Its "now" becomes "the slot horizon from now". Hours
   starting beyond the horizon (next month) stay hidden, as Q-ROSTER had them;
   hours starting inside it are listed. Expired hours stay hidden.
+- **Known limitation: listed is not a promise of a slot.** The overlap reads
+  dates, not weekdays. A weekly row whose part of the horizon holds none of its
+  weekday (a Wednesday-only row starting on day 13, a Sunday) lists the service
+  and its therapist, and the slot step offers nothing from it. The same was
+  already true at the other end (a row ending before its weekday next comes
+  round). No weekday term was added, by choice (R15 review); the case is pinned
+  by a known-limitation arm in `catalog-slot-horizon.db.test.ts`, whose parity
+  arm claims "listed exactly when slots are offered" only for its own fixtures,
+  where every weekly clinic carries all 7 weekdays.
 - **Unchanged:** R45's dateless clinic rule (`location-bookable.ts`), the R10
   hold, the guest form, the slot query, booking writes, reminders and the sweep.
   `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` still counts hours
-  valid today; its frozen test only pins the shape of the two bounds and passes.
+  valid today, a narrower count than the portal's since R15 (its header says
+  so); its frozen test only pins the shape of the two bounds and passes.
+  Aligning it is a follow-up.
 - **Proof.** `apps/api/lib/appointments/catalog-slot-horizon.db.test.ts`
   (DB-gated, real store), the updated mirror
   `packages/db/tests/portal-roster-template-validity.db.test.ts`, and source arms
