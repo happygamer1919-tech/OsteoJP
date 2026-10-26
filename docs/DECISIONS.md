@@ -5311,3 +5311,28 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   e2e spec `apps/web/e2e/portal-booking-request-mode.spec.ts` gains a Q-R arm,
   and its Decision C arms tick a therapist for Drenagem Linfatica for their own
   length, since the seed ticks nobody for it.
+
+## 2026-10-26 - R15: the portal's service list and therapist step read schedule dates against the slot step's horizon
+
+- **Ruling (strategy R15).** "PORTAL SERVICE-LIST DATE ... Fix it: the list uses
+  the same date horizon as the slots. Read path only." A schedule row now counts
+  for the logged-in catalogue's (service, clinic) pairs (Q-R) and for the
+  therapist step's roster when its [valid_from, valid_until] window overlaps
+  [today, today + `OPEN_SLOTS_HORIZON_DAYS`] in Lisbon, the same constant and
+  the same inclusive days `listOpenSlots` expands. Both bounds were against
+  today alone.
+- **What it fixes.** A clinic whose hours start tomorrow, or whose hours are
+  day-by-day rows (one dated row per day worked) on a day nobody works, such as
+  a Sunday, was listed (R45 reads no date) with no service and an empty
+  therapist step, while the slot step had days to offer.
+- **Q-ROSTER, amended.** Its "now" becomes "the slot horizon from now". Hours
+  starting beyond the horizon (next month) stay hidden, as Q-ROSTER had them;
+  hours starting inside it are listed. Expired hours stay hidden.
+- **Unchanged:** R45's dateless clinic rule (`location-bookable.ts`), the R10
+  hold, the guest form, the slot query, booking writes, reminders and the sweep.
+  `packages/db/scripts/staff-11-jp-one-clinic-check.mjs` still counts hours
+  valid today; its frozen test only pins the shape of the two bounds and passes.
+- **Proof.** `apps/api/lib/appointments/catalog-slot-horizon.db.test.ts`
+  (DB-gated, real store), the updated mirror
+  `packages/db/tests/portal-roster-template-validity.db.test.ts`, and source arms
+  in `therapist-choice.test.ts` and `catalog-roster-parity.test.ts`.

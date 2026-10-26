@@ -77,6 +77,8 @@ describe("Q-R: the catalog asks the therapist step's own question", () => {
       "av.is_active = true",
       "av.valid_from is null",
       "av.valid_until is null",
+      // R15: the window is read against the slot step's horizon, not today alone.
+      "::date + ${OPEN_SLOTS_HORIZON_DAYS}::int)",
       "deliversServiceExists(",
     ]) {
       expect(roster).toContain(term);
@@ -100,6 +102,14 @@ describe("Q-R: the catalog asks the therapist step's own question", () => {
       [
         "the catalog drops the validity window",
         (s) => inCatalog(s, (b) => b.replace(/\n\s*and \(av\.valid_until is null[^\n]*/, "")),
+      ],
+      [
+        "the catalog drops the slot horizon (R15)",
+        (s) => inCatalog(s, (b) => b.replace(" + ${OPEN_SLOTS_HORIZON_DAYS}::int", "")),
+      ],
+      [
+        "the roster drops the slot horizon (R15)",
+        (s) => inRoster(s, (b) => b.replace(" + ${OPEN_SLOTS_HORIZON_DAYS}::int", "")),
       ],
       ["the catalog drops is_bookable", (s) => inCatalog(s, (b) => b.replace("and u.is_bookable = true", ""))],
       [
