@@ -163,6 +163,21 @@ const PRODUCTION_PROGRAMS = [
   "scripts/production-target.mjs",
   "scripts/check-journal.mjs",
   "scripts/sync-supabase-migrations.mjs",
+  "packages/db/seed/roles.ts",
+  "packages/db/seed/form-templates.ts",
+  "apps/web/scripts/sign-reminder-token.mjs",
+  // The owner-run Fisiozero import tools, every one of them.
+  ...fs
+    .readdirSync(path.join(ROOT, "scripts/import"))
+    .filter((f) => f.endsWith(".mjs") && !f.endsWith(".test.mjs"))
+    .map((f) => `scripts/import/${f}`),
+];
+
+// Left unguarded on purpose, each with its reason.
+const DELIBERATELY_UNGUARDED = [
+  // A read-only target check: it reads the environment, writes and connects
+  // nowhere, and the runbooks branch on its own 0 and 1.
+  "packages/db/scripts/assert-not-prod.ts",
 ];
 
 /** Spawn a script by its kind, with an environment that reaches nothing. */
@@ -190,18 +205,41 @@ for (const [rel, code] of GUARDED) {
   });
 }
 
-test("a guarded script started from elsewhere, but living in the apply checkout, is refused", () => {
+/** Copies of two guarded scripts (and the guard) inside the fake checkout. */
+function prodCopies() {
   const scripts = path.join(PROD, "scripts");
   fs.mkdirSync(scripts, { recursive: true });
   for (const f of ["lane-stack.mjs", "refuse-prod-apply-cwd.mjs", "merge-on-green.sh"]) {
     fs.copyFileSync(path.join(ROOT, "scripts", f), path.join(scripts, f));
   }
+  return scripts;
+}
+
+test("a guarded script started from elsewhere, but living in the apply checkout, is refused", () => {
+  const scripts = prodCopies();
   const node = spawnScript("scripts/lane-stack.mjs", NORMAL, path.join(LINK, "scripts", "lane-stack.mjs"));
   assert.equal(node.status, REFUSE_EXIT_CODE, show(node));
   assert.equal(node.stderr, `REFUSE: scripts/lane-stack.mjs does not run in the production apply checkout (${path.join(scripts, "lane-stack.mjs")}).\n`, show(node));
   const sh = spawnScript("scripts/merge-on-green.sh", NORMAL, path.join(LINK, "scripts", "merge-on-green.sh"));
   assert.equal(sh.status, REFUSE_EXIT_CODE, show(sh));
   assert.equal(sh.stderr, `REFUSE: scripts/merge-on-green.sh does not run in the production apply checkout (${scripts}).\n`, show(sh));
+});
+
+test("a symlink to a guarded FILE in the checkout, run from another folder, is refused, by node and by the shell check", () => {
+  const scripts = prodCopies();
+  const elsewhere = fs.mkdtempSync(path.join(NORMAL, "links-"));
+  // Point the shell link through the typed upper-case name where the volume
+  // ignores case (the Mac), so the case-insensitive match is held too.
+  const typed = path.join(BASE, PROD_APPLY_SEGMENT.toUpperCase());
+  const shTarget = fs.existsSync(typed) ? path.join(typed, "scripts", "merge-on-green.sh") : path.join(scripts, "merge-on-green.sh");
+  fs.symlinkSync(shTarget, path.join(elsewhere, "merge-on-green.sh"));
+  fs.symlinkSync(path.join(scripts, "lane-stack.mjs"), path.join(elsewhere, "lane-stack.mjs"));
+  const sh = spawnScript("scripts/merge-on-green.sh", elsewhere, "./merge-on-green.sh");
+  assert.equal(sh.status, REFUSE_EXIT_CODE, show(sh));
+  assert.equal(sh.stderr, `REFUSE: scripts/merge-on-green.sh does not run in the production apply checkout (${scripts}).\n`, show(sh));
+  const node = spawnScript("scripts/lane-stack.mjs", elsewhere, "./lane-stack.mjs");
+  assert.equal(node.status, REFUSE_EXIT_CODE, show(node));
+  assert.equal(node.stderr, `REFUSE: scripts/lane-stack.mjs does not run in the production apply checkout (${path.join(scripts, "lane-stack.mjs")}).\n`, show(node));
 });
 
 test("a symlinked working directory into the checkout is refused, by node and by the shell check", () => {
@@ -224,16 +262,51 @@ test("NEGATIVE ARM: started in a sibling or an ordinary directory, a guarded scr
   }
 });
 
-test("the list above is every file that carries the guard, and no apply lane program carries it", () => {
-  const carriers = spawnSync("git", ["grep", "-l", "-E", "refuseProdApplyCwd\\(import\\.meta\\.url|production apply checkout \\(\\$\\{r17_dir\\}\\)", "--", "scripts", "packages", "apps", "docs"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-  assert.equal(carriers.status, 0, carriers.stderr);
-  const found = carriers.stdout.split("\n").filter(Boolean).filter((f) => !f.endsWith(".test.mjs")).sort();
-  assert.deepEqual(found, GUARDED.map(([rel]) => rel).sort());
-  for (const rel of PRODUCTION_PROGRAMS) {
-    assert.ok(fs.existsSync(path.join(ROOT, rel)), `${rel} is gone: update this list`);
-    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, rel), "utf8"), /refuse-prod-apply-cwd|osteojp-prod-apply\/\*/, `${rel} runs in the apply checkout and must not carry the guard`);
+/** Tracked and untracked files under the code folders whose text matches `re` (git grep -E). */
+function filesMatching(re) {
+  const r = spawnSync("git", ["grep", "--untracked", "-l", "-E", re, "--", "scripts", "packages", "apps", "docs"], { cwd: ROOT, encoding: "utf8" });
+  assert.ok(r.status === 0 || r.status === 1, r.stderr);
+  return r.stdout.split("\n").filter(Boolean).filter((f) => !f.endsWith(".test.mjs")).sort();
+}
+
+const GUARD_FILES = new Set(["scripts/refuse-prod-apply-cwd.mjs", "scripts/refuse-prod-apply-cwd.d.mts"]);
+const GUARDED_SET = new Set(GUARDED.map(([rel]) => rel));
+
+test("the list above is every file that calls the guard, and every file that imports it", () => {
+  const callers = filesMatching("refuseProdApplyCwd\\(import\\.meta\\.url|production apply checkout \\(\\$\\{r17_dir\\}\\)");
+  assert.deepEqual(callers, [...GUARDED_SET].sort());
+  // An import without the call (or with a call written another way) is a
+  // script that thinks it is guarded: it must be on the list, where the spawn
+  // case above proves the refusal.
+  const importers = filesMatching("refuse-prod-apply-cwd\\.mjs").filter((f) => !GUARD_FILES.has(f));
+  assert.deepEqual(importers.filter((f) => !GUARDED_SET.has(f)), [], "these import the guard but are not in GUARDED");
+});
+
+/** The files a module's STATIC relative imports name, resolved like tsx and node would. */
+function relativeImports(rel) {
+  const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
+  const specs = [...src.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s*["'](\.{1,2}\/[^"']+)["']|^\s*import\s*["'](\.{1,2}\/[^"']+)["']/gm)].map((m) => m[1] ?? m[2]);
+  const out = [];
+  for (const spec of specs) {
+    const base = path.join(path.dirname(rel), spec);
+    const hit = [base, `${base}.ts`, `${base}.mjs`, `${base}.js`, path.join(base, "index.ts")].find((c) => fs.existsSync(path.join(ROOT, c)) && fs.statSync(path.join(ROOT, c)).isFile());
+    if (hit) out.push(path.normalize(hit));
   }
+  return out;
+}
+
+test("no production program carries the guard, or imports a guarded file", () => {
+  assert.ok(PRODUCTION_PROGRAMS.some((r) => r.startsWith("scripts/import/")), "scripts/import was not read");
+  for (const rel of [...PRODUCTION_PROGRAMS, ...DELIBERATELY_UNGUARDED]) {
+    assert.ok(fs.existsSync(path.join(ROOT, rel)), `${rel} is gone: update this list`);
+    assert.ok(!GUARDED_SET.has(rel), `${rel} is on both lists`);
+    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, rel), "utf8"), /refuse-prod-apply-cwd|osteojp-prod-apply\/\*/, `${rel} must not carry the guard`);
+    // ONE level of imports, not the whole graph: a guarded file imported
+    // directly would refuse the production program on import. A guarded file
+    // reached two levels down is not caught here.
+    const reached = relativeImports(rel).filter((f) => GUARDED_SET.has(f));
+    assert.deepEqual(reached, [], `${rel} imports a guarded file, which would refuse it in the apply checkout`);
+  }
+  // Control: the import reader does find a real relative import.
+  assert.ok(relativeImports("packages/db/scripts/rehearsal-import.ts").includes(path.normalize("packages/db/scripts/import-core.ts")), "the import reader found nothing");
 });

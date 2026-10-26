@@ -83,7 +83,11 @@ set -uo pipefail
 # R17: never in the production apply checkout. The same line and exit code as
 # scripts/refuse-prod-apply-cwd.mjs. `/bin/pwd -P`, not the shell builtin: on
 # the Mac's case-insensitive volume the builtin keeps the letter case as typed.
-for r17_dir in "$(/bin/pwd -P)" "$(cd -P "$(dirname "$0")" && /bin/pwd -P)"; do
+# `readlink -f` first: `cd -P` resolves a symlinked DIRECTORY but not a
+# symlinked FILE, so a link elsewhere pointing at this file in the checkout
+# would otherwise be checked at the link's folder.
+r17_self=$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")
+for r17_dir in "$(/bin/pwd -P)" "$(cd -P "$(dirname "${r17_self}")" && /bin/pwd -P)"; do
   case "/${r17_dir}/" in
     */osteojp-prod-apply/*)
       echo "REFUSE: scripts/merge-on-green.sh does not run in the production apply checkout (${r17_dir})." >&2
