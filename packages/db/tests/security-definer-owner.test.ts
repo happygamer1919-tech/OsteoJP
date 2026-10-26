@@ -57,6 +57,11 @@ import { pairingProblems, readSecdef, readSecdefFromDir } from "./secdef-from-mi
 // 26 -> 27 in its own GATE-CHANGE (a frozen gate) that the owner merges after
 // the apply, so on this branch the count arm reads derived 27 against frozen 26
 // until main is merged in after that GATE-CHANGE: one red, expected.
+// 0108 (the pack read function) is the same order again: its migration creates
+// `pack_instance_consuming_sessions(uuid)`, the 37th, with its own owner pin;
+// EXPECTED_COUNT moves 36 -> 37 in its own GATE-CHANGE after the apply, so on
+// the held branch the count arms read derived 37 against frozen 36 (7 arms
+// red, every one the count; 28 of 28 with the count at 37, measured).
 const MIGRATIONS = readSecdefFromDir(join(__dirname, "..", "migrations"));
 
 const EXPECTED_FUNCTIONS = MIGRATIONS.definers.map((name) => ({ name, owner: EXPECTED_OWNER }));
