@@ -33,6 +33,11 @@
 //
 // Exit codes: 0 ok · 1 missing/unusable credentials · 2 proof failure.
 
+import { refuseProdApplyCwd } from "./refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
+
 // Proof 2 imports apps/web/lib/reminders/templates.ts directly. Node has to
 // reparse it as ESM and warns (MODULE_TYPELESS_PACKAGE_JSON) because the
 // nearest package.json (apps/web/package.json) declares no "type". Adding
