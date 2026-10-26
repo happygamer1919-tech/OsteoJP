@@ -33,7 +33,7 @@
     ".github/workflows/held-for-apply-blocks-merge.yml": "1874ed14cdbf61261e0d5da952a78f65828c3f81a179b7b309853054a0b57566",
     ".github/workflows/inngest-auto-sync.yml": "1fb522732a2eae7fcea6fc28eca451534ab7204fc7107a169c5abd0561b586f5",
     ".github/workflows/openapi-drift.yml": "79fa51f5d2be2861bd193559610a7d1b762913c20df7a017a1e0e6131b6eb68a",
-    ".github/workflows/prod-drift-check.yml": "b1007535c2cce199ff59e1720b4270f84443aeffc4feff80c2d2d4856a50ec0f",
+    ".github/workflows/prod-drift-check.yml": "b2d1f57bf49f86c47dc118d16026cff0e834d95c371ebbc78823e9b998b2c31e",
     ".github/workflows/prod-migrate.yml": "be46608dbcd2a4ec1c96a28207b10e73b5f666e526a47e540e59bbecde21b760",
     ".github/workflows/supabase-branch-sync.yml": "572cf30126e10a6a2b43815a93b0d091efc15ea8d82af6c5d9c2161c5588e449",
     "apps/web/lib/guide/guide-names.test.ts": "f4e5d7f0e99baaa03e2387f943543a649f647ba593083b33c96336728e88d476",
