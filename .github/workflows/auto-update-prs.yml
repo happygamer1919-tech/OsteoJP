@@ -1,7 +1,8 @@
 name: Auto-update PR branches
 
-# When main moves, bring every open, non-draft PR that is behind main up to
-# date automatically, so nobody has to click "Update branch" all day.
+# When main moves, bring every open, non-draft PR that is ARMED for auto-merge
+# and behind main up to date automatically, and bring a PR up to date the moment
+# it is armed (R1, 2026-10-25, below), so nobody has to click "Update branch".
 #
 # IMPORTANT: branch updates made with the default GITHUB_TOKEN do NOT re-trigger
 # the PR's CI (GitHub anti-recursion), leaving the PR stuck on "expected" checks
@@ -58,24 +59,78 @@ name: Auto-update PR branches
 # honest alternative is to DELETE this workflow and update branches by hand -
 # not to leave it installed with a token that cannot succeed.
 
+# ONLY ARMED PULL REQUESTS ARE UPDATED. Strategy's ruling R1 of 2026-10-25,
+# option (b). Before it, every merge to main merged main into EVERY open PR and
+# so started every open PR's CI at once; the lane had to cancel about ten runs by
+# hand after each merge to keep one PR in checks. Now:
+#   - when main moves (push), only PRs armed for auto-merge are brought up to
+#     date. An unarmed PR is left BEHIND and starts no CI;
+#   - when a PR is armed (pull_request_target, auto_merge_enabled) and it is
+#     already behind main, that one PR is brought up to date at once, so it does
+#     not wait for the next merge to main before it can go green;
+#   - by hand (workflow_dispatch): the same pass as a push, or, with the `pr`
+#     input, the same single-PR update as arming. The `base` input names
+#     another base branch, so the gate is proven on a throwaway base, never by
+#     arming a throwaway PR into main.
+# A PR labelled held-for-apply is still never updated, armed or not.
+#
+# pull_request_target IS SAFE HERE BECAUSE NOTHING OF THE PR RUNS. It runs this
+# file as it is on main, with the repository's secrets, so it must never check
+# out or execute the PR's code. This job checks nothing out: it reads the PR's
+# number from the event and makes three GitHub API calls. The PR is re-read from
+# the API and must still be open, non-draft, into main, not held and not headed
+# by main when the pass looks at it. Only its ARMED state is taken from the event
+# when a lagging read says unarmed (the step's "armed by this very event").
 on:
   push:
     branches: [main]
+  pull_request_target:
+    types: [auto_merge_enabled]
   workflow_dispatch:
+    inputs:
+      pr:
+        description: "Only this PR number (it must be armed). Empty: every armed PR."
+        required: false
+        default: ""
+      base:
+        description: "The base branch whose PRs are considered. main, except for a throwaway test."
+        required: false
+        default: "main"
 
+# The job uses AUTO_UPDATE_TOKEN for every call and needs nothing from the
+# default token, so the default token gets no permission at all. That matters
+# most for pull_request_target, whose default token could otherwise write.
+permissions: {}
+
+# One group for the passes on a push (a newer main supersedes an older pass), one
+# per PR for arming, and one per (base, pr) for a dispatch, so arming never
+# cancels a pass, and a proof dispatch never cancels a pass on main or the
+# other way round.
 concurrency:
-  group: auto-update-prs
+  group: ${{ github.event_name == 'pull_request_target' && format('auto-update-pr-{0}', github.event.pull_request.number) || github.event_name == 'workflow_dispatch' && format('auto-update-dispatch-{0}-{1}', inputs.base, inputs.pr) || 'auto-update-prs' }}
   cancel-in-progress: true
 
 jobs:
   auto-update:
-    name: Update open PR branches behind main
+    name: Update armed PR branches behind main
     runs-on: ubuntu-latest
     steps:
-      - name: Update open, non-draft PRs that are behind main
+      - name: Update open, non-draft, armed PRs that are behind main
         env:
           AUTO_UPDATE_TOKEN: ${{ secrets.AUTO_UPDATE_TOKEN }}
           REPO: ${{ github.repository }}
+          # Empty on a push: every armed PR. A number when one PR was armed, or
+          # when the dispatch names one.
+          ONLY_PR: ${{ github.event.pull_request.number || inputs.pr || '' }}
+          # main on a push. On arming, the armed PR's own base (main in every
+          # real case: only main has the protection that makes arming wait). By
+          # hand, the `base` input, so the gate can be run on a throwaway base
+          # and never on main.
+          BASE: ${{ github.event.pull_request.base.ref || inputs.base || 'main' }}
+          # The arming event itself (pull_request_target + auto_merge_enabled).
+          # On it, the PR WAS just armed, whatever a lagging read says.
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           if [ -z "${AUTO_UPDATE_TOKEN}" ]; then
             echo "AUTO_UPDATE_TOKEN secret not set, skipping. This workflow no-ops safely until the owner adds the PAT."
@@ -119,12 +174,55 @@ jobs:
           # the PR arms, so an armed PR is updated as before. `.labels // []`
           # because a PR object without a labels array must mean "no label", not
           # a jq error that silently empties the whole pass.
+          #
+          # ONLY AN ARMED PR IS UPDATED (R1, 2026-10-25). `.auto_merge` is null
+          # unless auto-merge is enabled on the PR; `// null` so a PR object
+          # without the field reads as unarmed, never as armed.
+          #
+          # ONLY_PR, when set, must be a PR number; anything else stops the pass
+          # rather than widening it to every PR.
+          case "${ONLY_PR}" in
+            '') ;;
+            *[!0-9]*) echo "::error::ONLY_PR is not a PR number: '${ONLY_PR}'"; exit 1 ;;
+          esac
+          case "${BASE}" in
+            ''|*[!A-Za-z0-9._/-]*) echo "::error::BASE is not a branch name: '${BASE}'"; exit 1 ;;
+          esac
+          # ARMED BY THIS VERY EVENT. On pull_request_target/auto_merge_enabled the
+          # PR has just been armed. The list call can still read auto_merge as
+          # null for a moment, and skipping it then would leave it BEHIND: the
+          # exact case R1 exists for. So on that event, and for that PR only,
+          # an unarmed read is treated as armed (the same answer e2e.yml gives
+          # its own "armed by this very event, read as unarmed"). Every other
+          # check still applies: open, non-draft, into the base, not held, head
+          # not main. A dispatch never gets this: it trusts the read.
+          arming_event=false
+          if [ "${EVENT_NAME:-}" = "pull_request_target" ] && [ "${EVENT_ACTION:-}" = "auto_merge_enabled" ]; then
+            arming_event=true
+            # Arming is acted on for PRs into main only. A throwaway base is
+            # proved by dispatch, never by an arming event.
+            if [ "${BASE}" != "main" ]; then
+              echo "PR #${ONLY_PR} was armed into ${BASE}, not main - not updated, by rule."
+              exit 0
+            fi
+          fi
+          if [ "${BASE}" != "main" ]; then
+            echo "Base branch: ${BASE} (not main)."
+          fi
+          if [ -n "${ONLY_PR}" ]; then
+            echo "Only PR #${ONLY_PR} is considered."
+            found=$(printf '%s' "${list_body}" | jq --arg only "${ONLY_PR}" --arg base "${BASE}" '[.[] | select(.draft == false) | select(.base.ref == $base) | select((.number | tostring) == $only)] | length') || { echo "::error::Could not read the PR list."; exit 1; }
+            if [ "${found}" = "0" ]; then
+              echo "PR #${ONLY_PR} is not an open, non-draft PR into ${BASE} - nothing to do."
+            fi
+          fi
           printf '%s' "${list_body}" \
-            | jq -c '.[] | select(.draft == false) | select(.base.ref == "main") | {number, ref: .head.ref, label: .head.label, held: (((.labels // []) | map(.name) | index("held-for-apply")) != null)}' \
+            | jq -c --arg only "${ONLY_PR}" --arg base "${BASE}" '.[] | select(.draft == false) | select(.base.ref == $base) | select($only == "" or (.number | tostring) == $only) | {number, ref: .head.ref, label: .head.label, armed: ((.auto_merge // null) != null), held: (((.labels // []) | map(.name) | index("held-for-apply")) != null)}' \
             | while read -r pr; do
                 num=$(printf '%s' "${pr}" | jq -r '.number')
                 ref=$(printf '%s' "${pr}" | jq -r '.ref')
                 label=$(printf '%s' "${pr}" | jq -r '.label')
+                armed=$(printf '%s' "${pr}" | jq -r '.armed')
                 held=$(printf '%s' "${pr}" | jq -r '.held')
 
                 if [ "${held}" = "true" ]; then
@@ -132,8 +230,22 @@ jobs:
                   continue
                 fi
 
+                if [ "${ref}" = "main" ]; then
+                  echo "PR #${num} (${ref}): its head branch is main - never updated, by rule."
+                  continue
+                fi
+
+                if [ "${armed}" != "true" ]; then
+                  if [ "${arming_event}" = "true" ] && [ "${num}" = "${ONLY_PR}" ]; then
+                    echo "PR #${num} (${ref}): armed by this very event, read as unarmed - treated as armed."
+                  else
+                    echo "PR #${num} (${ref}): not armed for auto-merge - not updated, by rule (R1). It is brought up to date when it is armed."
+                    continue
+                  fi
+                fi
+
                 # How far behind main is this PR's head?
-                cmp=$(api "https://api.github.com/repos/${REPO}/compare/main...${label}")
+                cmp=$(api "https://api.github.com/repos/${REPO}/compare/${BASE}...${label}")
                 cmp_body=$(printf '%s' "${cmp}" | sed '$d')
                 cmp_code=$(printf '%s' "${cmp}" | tail -n1)
                 if [ "${cmp_code}" != "200" ]; then
