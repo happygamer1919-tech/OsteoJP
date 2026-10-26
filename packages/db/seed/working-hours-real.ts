@@ -37,6 +37,10 @@ import { LOC_CB, LOC_LAV } from "./dev-ids";
 import { resolveDevUsers } from "./dev-users";
 import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 export const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 

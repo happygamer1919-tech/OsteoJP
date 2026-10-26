@@ -76,8 +76,21 @@
 #   9  UNKNOWN: the arm call ran but the re-read failed or had an unexpected
 #      shape, so whether the PR is armed is not known. It may merge on green.
 # Every refusal (4 to 8) makes no `gh pr merge` call at all.
+# 86 is the production apply checkout refusal below (R17): it runs before `gh`.
 
 set -uo pipefail
+
+# R17: never in the production apply checkout. The same line and exit code as
+# scripts/refuse-prod-apply-cwd.mjs. `/bin/pwd -P`, not the shell builtin: on
+# the Mac's case-insensitive volume the builtin keeps the letter case as typed.
+for r17_dir in "$(/bin/pwd -P)" "$(cd -P "$(dirname "$0")" && /bin/pwd -P)"; do
+  case "/${r17_dir}/" in
+    */osteojp-prod-apply/*)
+      echo "REFUSE: scripts/merge-on-green.sh does not run in the production apply checkout (${r17_dir})." >&2
+      exit 86
+      ;;
+  esac
+done
 
 usage() {
   echo "usage: merge-on-green.sh <PR_NUMBER>" >&2
