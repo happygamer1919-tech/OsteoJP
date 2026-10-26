@@ -120,7 +120,7 @@ see the appointment, so it cannot half-fail. Card:
 ---
 
 **Live board:** https://claude.ai/code/artifact/279ea20f-0b64-4abc-9e64-676803f7740a
-**580 cards on the board. 394 shipped, 186 open. Launch readiness 9/9, every launch gate passes.**
+**598 cards on the board. 408 shipped, 190 open. Launch readiness 9/9, every launch gate passes.**
 Plus **76 recorded rulings**, which are decisions and not work: they carry no
 status, nothing finishes them, and they are in none of the numbers above. That is
 the RENDERED count, the same convention as the card line above it: the file holds
@@ -147,6 +147,43 @@ because you track those on your own agenda. They are listed in
 report quoting 195 instead of 190 is quoting the file rather than your screen,
 and `scripts/handover-counts-match-the-render.test.mjs` now fails the build when
 this line and the board disagree.*
+
+> ### Where things stand, 2026-10-26
+>
+> **Migration 0107 is applied** (Sunday 2026-10-25, 22:10 to 22:14 WET, journal
+> 104 to 105, every check OK). The annulment insert policy now holds the ruled
+> expression; nothing else changed.
+>
+> **The reminder sweep runs in shadow.** You pressed Resync on 2026-10-25 at
+> 15:15, and from that night every production deploy syncs osteojp-reminders by
+> itself (R6): the first run and each one after read 7 functions. You no longer
+> press Resync. Q-N's confirmation key is live. **Your check today:** Inngest,
+> osteojp-reminders, Runs, `sweep-due-reminders`, a run every 15 minutes from
+> 07:00. If there are none, tell SOLO: the shadow days would be lost and Thursday
+> moves. Before Thursday 2026-10-29 the shadow comparison read becomes a
+> repository file with OK, VACUOUS and FAIL verdicts.
+>
+> **Montemor:** a clinic can now be held off online booking by one setting
+> (R10, #1647); it does nothing until you set it, and you set it only if the read
+> MN-READ prints `hold_needed=true`. Its first run, on Sunday, stopped safely
+> (VACUOUS: its control clinic had no template valid that day). GREEN reruns it
+> unchanged on a weekday after 09:00.
+>
+> **Merged since the last board update:** the Stylus design note (roadmap 10;
+> the write path waits on five questions to Stylus); the Montemor hold and its
+> read; the clinical pages print the Lisbon hour (DST iii); the PDF pages state
+> their 300 s limit (item 12); Equipa saves check the admin's clinics (PL-09);
+> 0107; R6; the bot updates armed pull requests only (R1, proven both ways); the
+> pre-push scan refuses conflict markers (R3); the drift check's comment (DST
+> ii); the link-codes test counts work instead of timing it (R2); a test that no
+> app code calls the Data API (item 13); "Exportar ficha" records its duration
+> (item 11). What staff or patients see stays open until you have looked at it
+> deployed.
+>
+> **For you:** the sweep check above; the R6 entries under Syncs; Sentry
+> OSTEOJP-WEB-H, resolve; items 10 and 15; the Data API switch-off, item 13 being
+> on main since 14:47; the SAT-01 canary, any afternoon before 21:00; Montemor's opening
+> date.
 
 > ### Where things stand, 2026-10-25, after the merges
 >
