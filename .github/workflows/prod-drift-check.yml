@@ -17,8 +17,9 @@ name: Prod Schema Drift Check
 
 on:
   schedule:
-    # 07:00 UTC = 08:00 Lisbon (winter) / 08:00 Lisbon (summer, WEST +1).
-    # Off-peak for the clinic; fresh at the start of the work day.
+    # 07:00 UTC = 07:00 Lisbon in winter (WET, UTC+0) and 08:00 Lisbon in
+    # summer (WEST, UTC+1). Before the clinics open either way; fresh at the
+    # start of the work day.
     - cron: '0 7 * * *'
   workflow_dispatch:
 
