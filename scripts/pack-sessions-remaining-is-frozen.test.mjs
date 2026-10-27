@@ -114,6 +114,17 @@ const ALLOWED = new Set([
   // pack_insufficient - computed with pack-balance.ts's own linked count. This
   // guard caught the file on its first test:scripts run.
   "apps/web/lib/scheduling/estado-uncancel.db.test.ts",
+  // ======================================================================
+  // 0108. The fixture for the pack read function.
+  // ======================================================================
+  // Same case as the entries above, admitted on the same terms and no wider:
+  // pack-instance-consuming-sessions.db.test.ts INSERTS brand-new instances so
+  // the function has a pack to answer for, because the column is NOT NULL with
+  // no default. It never UPDATEs and never READS it. What that suite asserts is
+  // which linked visits the function returns, and to whom. The file lands with
+  // 0108's own pull request; this guard checks no file's existence, so the entry
+  // can merge first.
+  "packages/db/tests/pack-instance-consuming-sessions.db.test.ts",
 ]);
 
 function sources() {
