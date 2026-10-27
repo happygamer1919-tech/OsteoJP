@@ -66,20 +66,21 @@
 -- unexplained mismatch on a full day fails that day's agreement verdict.
 -- shadow only (the sweep would send, the sleeping job made no on-time claim):
 --   S1  the sleeping job claimed this start EARLY (woke at an older time)
---   S2  the sleeping job claimed this reminder for another start, at or before
---       the shadow row (the visit moved between the job's claim and the pass)
+--   S2  WITHDRAWN in R4 round 2: a claim of another start does not explain a
+--       shadow-only row (it is also the shape of a lost re-armed run)
 --   S3  the 21:45 pass took the mark ahead, and the visit was moved (an
 --       `appointment.reschedule` save) after that pass and at or before the mark;
 --       its start now differs
---   S4  a reminder ledger row exists for it with no claim (the claim fails
---       open: reminder-claim.ts "IT FAILS OPEN")
+--   S4  a reminder ledger row exists for it, and no claim of this reminder of
+--       any start was written at or before that row (the claim fails open:
+--       reminder-claim.ts "IT FAILS OPEN")
 --   S5  the shadow row says the visit was saved after its mark, and a
---       scheduling save or a change to a status that is not remindable lies
---       between the mark and the pass (the sweep takes it, by the late rule;
---       the sleeping job had dropped that mark)
---   S6  the 21:45 pass took the mark ahead, and a scheduling save or a change
---       to a status that is not remindable lies after that pass, at or before
---       the mark
+--       scheduling save lies between the mark and the pass (the sweep takes any
+--       untaken mark while the visit is still ahead, sweep.ts "NO GRACE"; the
+--       re-armed job dropped the past mark)
+--   S6  WITHDRAWN in R4 round 2: the job claims before every gate
+--       (dispatch.ts) and a cancel emits no event, so such a row can only come
+--       from a lost or never-armed run
 --   S7  due in the 15 minutes before the read
 -- run only (the sleeping job claimed, the shadow has no row for that start):
 --   R1  the visit was moved (an `appointment.reschedule` save) after the claim
@@ -93,8 +94,11 @@
 --   R4  no scheduling save on its audit trail: left out by the switch
 --       REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER = false (reminder-population.ts)
 --   R5  no pass of the sweep for that tenant at or after its mark
---   R6  a scheduling save or a change to a status that is not remindable lies
---       after its mark, at or before the first pass at or after it
+--   R6  a change to a status that is not remindable lies after its mark, at or
+--       before the first pass at or after it (a scheduling save never makes the
+--       sweep skip a mark)
+-- A category that cannot be shown from rows is not a category: a stricter read
+-- leaves more mismatches UNEXPLAINED rather than explain away a lost reminder.
 -- "A scheduling save" is reminder-population.ts hasSchedulingEvent, predicate by
 -- predicate; "a status that is not remindable" is an audit row whose
 -- metadata toStatus is set and is neither `scheduled` nor `confirmed`. A
@@ -271,13 +275,6 @@ pc as (
              and e.kind = 'claim' and e.taker = 'run' and e.early = true
              and e.offset_id = p.offset_id and e.channel = p.channel and e.starts_at = p.starts_at)
           then 'S1 the sleeping job claimed this start early'
-        when exists (
-          select 1 from public.reminder_claims e
-           where e.tenant_id = p.tenant_id and e.appointment_id = p.appointment_id
-             and e.kind = 'claim' and e.taker = 'run' and e.early is distinct from true
-             and e.offset_id = p.offset_id and e.channel = p.channel and e.starts_at <> p.starts_at
-             and e.created_at >= win.t0c and e.created_at <= p.shadow_at)
-          then 'S2 the sleeping job claimed another start, before the shadow row'
         when a.id is null then 'UNEXPLAINED'
         when date_trunc('milliseconds', a.starts_at) <> p.starts_at
              and p.shadow_at < p.due_at
@@ -290,22 +287,23 @@ pc as (
           select 1 from public.reminder_dispatches x
            where x.tenant_id = p.tenant_id and x.appointment_id = p.appointment_id
              and x.channel = p.channel and x.template_id like 'reminder.' || p.offset_id || '.%'
-             and x.created_at >= p.due_at - interval '10 minutes' and x.created_at <= p.starts_at)
+             and x.created_at >= p.due_at - interval '10 minutes' and x.created_at <= p.starts_at
+             -- No claim of this reminder, of ANY start, at or before that row: a row
+             -- that another start's claim can own is not a claim that failed open.
+             and not exists (
+               select 1 from public.reminder_claims e
+                where e.tenant_id = p.tenant_id and e.appointment_id = p.appointment_id
+                  and e.kind = 'claim' and e.taker = 'run'
+                  and e.offset_id = p.offset_id and e.channel = p.channel
+                  and e.created_at >= win.t0c and e.created_at <= x.created_at))
           then 'S4 a ledger row with no claim (the claim failed open)'
         when p.saved_after_mark
              and exists (
                select 1 from saves v
                 where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
-                  and (v.scheduling or v.unremindable)
+                  and v.scheduling
                   and v.created_at > p.due_at and v.created_at <= p.shadow_at)
           then 'S5 saved after its mark, before the pass'
-        when p.shadow_at < p.due_at
-             and exists (
-               select 1 from saves v
-                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
-                  and (v.scheduling or v.unremindable)
-                  and v.created_at > p.shadow_at and v.created_at <= p.due_at)
-          then 'S6 saved after the 21:45 pass took its mark ahead'
         when p.due_at > win.t1 - interval '15 minutes' then 'S7 due in the 15 minutes before the read'
         else 'UNEXPLAINED'
       end
@@ -337,9 +335,9 @@ pc as (
         when exists (
           select 1 from saves v
            where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
-             and (v.scheduling or v.unremindable)
+             and v.unremindable
              and v.created_at > p.due_at and v.created_at <= f.first_pass)
-          then 'R6 saved between its mark and the next pass'
+          then 'R6 made not remindable between its mark and the next pass'
         else 'UNEXPLAINED'
       end
     end as category

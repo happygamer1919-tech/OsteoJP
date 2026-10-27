@@ -514,7 +514,7 @@ const CASES = [
     want: only({ 3: "FAIL" }),
   },
   {
-    name: "explained mismatches: R1 (twice), R2, R4, S2, S3 and S5",
+    name: "explained mismatches: R1, R2, R4, R6, S3 and S5",
     seed: [
       // R4: no scheduling save; the sleeping job claimed and sent; no shadow row.
       visit(appt(0xa1), "2026-10-27 12:00", { saved: false }),
@@ -537,17 +537,15 @@ const CASES = [
       visit(appt(0xa5), "2026-10-29 22:30"),
       shadowRow(appt(0xa5), "24h", "sms", "2026-10-27 22:30", "2026-10-26 22:30", "2026-10-26 21:45"),
       audit(appt(0xa5), "appointment.reschedule", "2026-10-26 22:00"),
-      // S2 and R1: claimed at its old start (11:20) at 11:20:02, moved to 11:30 at 11:25, the shadow
-      // took the new start at the 11:30 pass.
-      visit(appt(0xa6), "2026-10-27 11:30"),
-      runClaim(appt(0xa6), "24h", "sms", "2026-10-27 11:20", "2026-10-26 11:20"),
-      audit(appt(0xa6), "appointment.reschedule", "2026-10-26 11:25"),
-      shadowRow(appt(0xa6), "24h", "sms", "2026-10-27 11:30", "2026-10-26 11:30", "2026-10-26 11:30"),
+      // R6: claimed and sent at its mark (Monday 13:05), cancelled at 13:08, before the 13:15 pass.
+      visit(appt(0xa7), "2026-10-27 13:05", { status: "cancelled" }),
+      runClaim(appt(0xa7), "24h", "sms", "2026-10-27 13:05", "2026-10-26 13:05"),
+      audit(appt(0xa7), "appointment.cancel", "2026-10-26 13:08", '{"toStatus":"cancelled"}'),
     ].join("\n"),
     want: only({}),
     info: [
-      [31, /full days, run_only: R1 moved after the claim, before the next pass \| 2 \|/],
-      [31, /full days, shadow_only: S2 the sleeping job claimed another start, before the shadow row \| 1 \|/],
+      [31, /full days, run_only: R1 moved after the claim, before the next pass \| 1 \|/],
+      [31, /full days, run_only: R6 made not remindable between its mark and the next pass \| 1 \|/],
       [31, /full days, shadow_only: S3 moved after the 21:45 pass took its mark ahead \| 1 \|/],
       [31, /full days, run_only: R2 suppressed by the sleeping job as not remindable \| 1 \|/],
       [31, /full days, run_only: R4 never reminded: no scheduling save \(switch off\) \| 1 \|/],
@@ -575,7 +573,51 @@ const CASES = [
     info: [[50, new RegExp(`${appt(0xb3)} \\| UNEXPLAINED`)]],
   },
   {
-    name: "S2 negative: the other start's claim written a day after the shadow row stays UNEXPLAINED",
+    name: "S2 withdrawn: claimed at the old start, moved, the shadow at the new start: the shadow row stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xa6), "2026-10-27 11:30"),
+      runClaim(appt(0xa6), "24h", "sms", "2026-10-27 11:20", "2026-10-26 11:20"),
+      audit(appt(0xa6), "appointment.reschedule", "2026-10-26 11:25"),
+      shadowRow(appt(0xa6), "24h", "sms", "2026-10-27 11:30", "2026-10-26 11:30", "2026-10-26 11:30"),
+    ].join("\n"),
+    want: only({ 12: "FAIL" }),
+    info: [
+      [50, new RegExp(`${appt(0xa6)} \\| UNEXPLAINED`)],
+      [51, new RegExp(`${appt(0xa6)} \\| R1 moved after the claim`)],
+    ],
+  },
+  {
+    name: "S6 withdrawn: taken ahead, cancelled before its mark, stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb6), "2026-10-27 22:40", { status: "cancelled" }),
+      shadowRow(appt(0xb6), "24h", "sms", "2026-10-27 22:40", "2026-10-26 22:40", "2026-10-26 21:45"),
+      audit(appt(0xb6), "appointment.cancel", "2026-10-26 22:00", '{"toStatus":"cancelled"}'),
+    ].join("\n"),
+    want: only({ 12: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "R6 negative: a save with no status change between the mark and the next pass stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb7), "2026-10-27 13:05"),
+      runClaim(appt(0xb7), "24h", "sms", "2026-10-27 13:05", "2026-10-26 13:05"),
+      audit(appt(0xb7), "appointment.update", "2026-10-26 13:08"),
+    ].join("\n"),
+    want: only({ 12: "FAIL" }),
+    info: [[51, new RegExp(`${appt(0xb7)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "S5 negative: saved after its mark with no scheduling save stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb8), "2026-10-29 13:00", { updated: "2026-10-28 13:05" }),
+      audit(appt(0xb8), "appointment.update", "2026-10-28 13:05"),
+      shadowRow(appt(0xb8), "24h", "sms", "2026-10-29 13:00", "2026-10-28 13:00", "2026-10-28 13:15", true),
+    ].join("\n"),
+    want: only({ 16: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb8)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "a claim of another start written a day after the shadow row explains nothing",
     seed: [
       visit(appt(0xb2), "2026-10-27 11:00"),
       shadowRow(appt(0xb2), "24h", "sms", "2026-10-27 11:00", "2026-10-26 11:00", "2026-10-26 11:00"),
