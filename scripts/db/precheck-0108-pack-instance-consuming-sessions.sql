@@ -92,13 +92,16 @@
 --          md5. A NULL relacl reads as acldefault() of the relation's own object
 --          type;
 --   CARRY  probe_instances: how many pack instances the post-check's behaviour
---          verdict will call the function for: those with at least one linked
---          visit of their own tenant that is not cancelled, at most 20. Zero
---          makes that verdict VACUOUS, and stage 2 then requires that profile;
+--          verdict will call the function for: those whose patient is of the
+--          instance's own tenant (patients joined on id AND tenant, as the
+--          function joins it) and with at least one linked visit of that tenant
+--          that is not cancelled, at most 20. The post-check selects them by the
+--          same terms. Zero makes that verdict VACUOUS, and stage 2 then
+--          requires that profile;
 --   INFO   the server version;
---   INFO   the packs as they are, counts only: instances; instances with a
---          consuming visit; linked visits that consume; linked visits
---          cancelled;
+--   INFO   the packs as they are, counts only: instances; instances whose
+--          patient is of another tenant; instances with a consuming visit;
+--          linked visits that consume; linked visits cancelled;
 --   INFO   idle_in_transaction_session_timeout, as this session reads it.
 --
 -- A MISSING SUBJECT IS A STOP, NEVER A QUIET VERDICT: without a table, a role or
@@ -190,6 +193,8 @@ WITH rel_items AS (
     FROM (VALUES ('patient_pack_instances'), ('patients'), ('appointments')) AS t(rel)
 ), packs AS (
   SELECT i.id,
+         EXISTS (SELECT 1 FROM public.patients p
+                  WHERE p.id = i.patient_id AND p.tenant_id = i.tenant_id) AS own_patient,
          (SELECT count(*) FROM public.appointments a
            WHERE a.pack_instance_id = i.id AND a.tenant_id = i.tenant_id AND a.status <> 'cancelled') AS consuming,
          (SELECT count(*) FROM public.appointments a
@@ -262,8 +267,9 @@ WITH rel_items AS (
               || privilege_type || ':' || is_grantable::text,
               ';' ORDER BY rel, grantee, privilege_type, grantor), ''))
        FROM rel_items)                                                                         AS rel_md5,
-    (SELECT least(20, count(*))::int FROM packs WHERE consuming > 0)                            AS probe_instances,
+    (SELECT least(20, count(*))::int FROM packs WHERE consuming > 0 AND own_patient)            AS probe_instances,
     (SELECT 'instances ' || count(*)
+            || '; patient of another tenant ' || count(*) FILTER (WHERE NOT own_patient)
             || '; with a consuming visit ' || count(*) FILTER (WHERE consuming > 0)
             || '; linked visits consuming ' || coalesce(sum(consuming), 0)
             || ', cancelled ' || coalesce(sum(cancelled), 0)

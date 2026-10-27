@@ -423,7 +423,7 @@ export function armProblems(block, stage) {
     : /^if \[ "\$\{CLOCK\}\$\{CLINICS\}" = closedinside \]; then echo "R9: closed hours by the weekday table, and every active clinic's own hours lie inside it\. [^"]*"; else echo "STOP: [^"]*"; exit 1; fi$/;
   if (decision.length !== 1 || !want.test(decision[0])) problems.push("the decision is not closed hours or STOP");
   if (stage === 1) {
-    if (!block.includes("(opens_at < time '08:00' or closes_at > time '21:00')")) problems.push("stage 1 does not hold the clinics' own rows against the table's widest row");
+    if (!block.includes("(opens_at < time '08:00' or closes_at > time '21:00' or opens_at is null or closes_at is null)")) problems.push("stage 1 does not hold the clinics' own rows against the table's widest row, counting a clinic whose hours are not set");
     if (!/from public\.locations/.test(block)) problems.push("stage 1 does not read the clinics' own rows");
     const arm = block.indexOf("THE CLOCK AND THE CLINICS (R9)");
     if (!(arm > block.indexOf(`-f ${PRE} -c "rollback" 2>&1`))) problems.push("the arm does not follow the pre-check");
@@ -910,6 +910,7 @@ test("THE WEEKDAY TABLE: the arm stands in stage 0 and stage 1, with no override
   assert.deepEqual(one(s0, 0, "D3=no\n", "D3=no\nif true; then D3=yes; fi\n"), ["something can turn proof 3 to yes"]);
   assert.deepEqual(one(s0, 0, 'if [ "${CLOCK}" = closed ]; then', 'if [ "${CLOCK}" = closed ] || [ "${D1}${D2}${D3}" = yesyesyes ]; then'), ["a daytime path that opens on the proofs", "the decision is not closed hours or STOP"]);
   assert.deepEqual(one(s1, 1, 'if [ "${CLOCK}${CLINICS}" = closedinside ]; then', 'if [ "${CLOCK}" = closed ]; then'), ["the decision is not closed hours or STOP"]);
+  assert.deepEqual(one(s1, 1, " or opens_at is null or closes_at is null)", ")"), ["stage 1 does not hold the clinics' own rows against the table's widest row, counting a clinic whose hours are not set"]);
   for (const [from, to] of [["t >= 2100", "t >= 2000"], ["t >= 1300", "t >= 1200"], ["d == 7", "d >= 6"]]) {
     assert.deepEqual(one(s0, 0, from, to), ["closed is not decided by the weekday table"], from);
   }

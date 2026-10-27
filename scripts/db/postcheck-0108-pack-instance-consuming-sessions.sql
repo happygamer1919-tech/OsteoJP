@@ -37,9 +37,11 @@
 --          CONTROL: postgres, its owner, yes. The ACL itself is printed;
 --   5      its comment is the migration's, by md5;
 --   6      WHAT IT ANSWERS, on production's own packs, inside this READ ONLY
---          transaction: for each pack instance with at least one linked
---          visit of its own tenant that is not cancelled (at most 20, by
---          id), the claims are set, transaction-locally, to the owner of the
+--          transaction: for each pack instance whose patient is of its own
+--          tenant (patients joined on id AND tenant, as the function joins
+--          it) and with at least one linked visit of that tenant that is not
+--          cancelled (at most 20, by id; the pre-check's probe_instances
+--          counts by the same terms), the claims are set, transaction-locally, to the owner of the
 --          instance's tenant, and the function must return exactly that
 --          instance's consuming visits, in starts_at then id order (compared
 --          as one ordered list of ids against a direct read); then to a
@@ -163,6 +165,9 @@ BEGIN
   FOR v_inst IN
     SELECT i.id, i.tenant_id, i.patient_id
       FROM public.patient_pack_instances i
+      JOIN public.patients p
+        ON p.id = i.patient_id
+       AND p.tenant_id = i.tenant_id
      WHERE EXISTS (SELECT 1 FROM public.appointments a
                     WHERE a.pack_instance_id = i.id AND a.tenant_id = i.tenant_id AND a.status <> 'cancelled')
      ORDER BY i.id

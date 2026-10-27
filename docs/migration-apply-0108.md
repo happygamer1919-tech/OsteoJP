@@ -56,8 +56,8 @@ The number is the next free one after 0107, given at authoring (strategy, S-1012
 | Must follow | `0107`, sha256 `56c310cd99add5a4d6dfa3df3ed1e49251988ce4bc0d4e291ac818bd0fef047a`, journal `idx 104`, `when` 1788502800000. Stage 0 finds it by its journal tag and asserts its bytes; the pre-check finds it by hash as production's newest row |
 | Runs from | **the pull request's HELD head, `origin/db/0108-pack-read-function`, never a merge commit on main.** BEFORE YOU START checks it against HELD. Stage 0 records the sha in `/tmp/0108-head.sha`; every later stage checks out that recorded sha, and the CLOCK CHECK and stage 1 HALT if the held head has moved since |
 | This document | `docs/migration-apply-0108.md`, pinned by `docs/migration-apply-0108.sha256` and asserted by every block; GREEN's dispatch pins its sha256 on its own (DOCSHA) |
-| Pre-check | `scripts/db/precheck-0108-pack-instance-consuming-sessions.sql`, READ ONLY, 13 verdicts (12 is the row `journal_rows_before`), 7 more CARRY rows and 3 INFO rows, run inside the block's own `begin read only`. sha256 `ac0765325157257fc5ddee1281222f359d35eb526d76b0ebda62d8caa9f7fd80` |
-| Post-check | `scripts/db/postcheck-0108-pack-instance-consuming-sessions.sql`, READ ONLY, 13 verdicts (verdict 6 may read VACUOUS, and only when `probe_instances` is 0), eight carries in, run inside the block's own `begin read only`. sha256 `c70e5258c951ec5c32c477e9e31da50a159c036afc616da23ddc452ad14989cc` |
+| Pre-check | `scripts/db/precheck-0108-pack-instance-consuming-sessions.sql`, READ ONLY, 13 verdicts (12 is the row `journal_rows_before`), 7 more CARRY rows and 3 INFO rows, run inside the block's own `begin read only`. sha256 `889081581c4e8319957d370ce7e92737ec85a5c819b8dbc51368a3d228445e75` |
+| Post-check | `scripts/db/postcheck-0108-pack-instance-consuming-sessions.sql`, READ ONLY, 13 verdicts (verdict 6 may read VACUOUS, and only when `probe_instances` is 0), eight carries in, run inside the block's own `begin read only`. sha256 `1d3797d90c3a30e738c61d3829972e1eddcb36d9a9e242010149859c42d3817a` |
 | The programs that run with production credentials | `packages/db/scripts/verified-migrate.mjs`, sha256 `ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261`; `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`; `packages/db/scripts/read-applied-migrations.mjs` (BEFORE YOU START's journal read and the closing read), sha256 `825b7818c8e0f0f2c313a42a8a14ee6af7c2ee1e3ec101f90a20dd64e9a02387`; and the module the last two import, `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c`. The same bytes 0107's document pins; every block that runs one compares it first |
 | The program that runs without credentials | `scripts/check-journal.mjs`, run by stage 0 only, sha256 `7f89e49a11bdeb0d6f8a6fa40d0edbb0f95082f972af040cccf5667f63b96c59` |
 | The R9 pin | `SHAGATE`, the sha256 of `scripts/migration-timeouts.test.mjs`: `e150a805983e476ea74bfae609d31c57c184b24e09c2f828eddb9df5a09fcef6`. It feeds a line that is printed and decides nothing here |
@@ -71,7 +71,7 @@ The number is the next free one after 0107, given at authoring (strategy, S-1012
 
 ## Closed hours, and the locks
 
-**Closed hours only.** This file creates one function and touches no table, so R9's second proof holds (catalog-only); its first holds when the SET LOCAL gate is on the head. **Its third does not: the read-only pre-check has not run on production in an earlier sitting** (strategy's S-1002-A R9), so a clinic-hours sitting is not allowed and the blocks have no daytime path. The weekday table (Lisbon): open Monday to Friday 08:00 to 21:00 and Saturday 08:00 to 13:00; closed Sunday. BEFORE YOU START and the CLOCK CHECK check the clock by machine against it and against strategy's start windows; stage 0 and stage 1 check it against the table, and stage 1 also reads every active clinic's own hours.
+**Closed hours only.** This file creates one function and touches no table, so R9's second proof holds (catalog-only); its first holds when the SET LOCAL gate is on the head. **Its third does not: the read-only pre-check has not run on production in an earlier sitting** (strategy's S-1002-A R9), so a clinic-hours sitting is not allowed and the blocks have no daytime path. The weekday table (Lisbon): open Monday to Friday 08:00 to 21:00 and Saturday 08:00 to 13:00; closed Sunday. BEFORE YOU START and the CLOCK CHECK check the clock by machine against it and against strategy's start windows; stage 0 and stage 1 check it against the table, and stage 1 also reads every active clinic's own hours (a clinic whose `opens_at` or `closes_at` is not set counts as outside them, and stops the sitting).
 
 **The locks, measured on lane amber (2026-10-26, PostgreSQL 17.6).** The file's statements, run as `postgres` in one transaction, hold no lock on any table of `public`: ACCESS EXCLUSIVE and SHARE UPDATE EXCLUSIVE on the new function's own object, ACCESS SHARE on four role objects, and the catalogue locks of a CREATE FUNCTION and a COMMENT (`pg_proc`, `pg_description`). The body is plpgsql, so it is checked for syntax only at CREATE time and no table it reads is opened (a SQL-language body would take ACCESS SHARE on the tables it reads, until the COMMIT). **What waits while they are held:** nothing an application session does. A lock this transaction cannot take in 5 seconds fails it clean, with nothing applied.
 
@@ -123,8 +123,8 @@ WSTART='PENDING: set with the run window'
 WEND='PENDING: set with the run window'
 SHA0108=7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb
 SHAPREV=56c310cd99add5a4d6dfa3df3ed1e49251988ce4bc0d4e291ac818bd0fef047a
-SHAPRE=ac0765325157257fc5ddee1281222f359d35eb526d76b0ebda62d8caa9f7fd80
-SHAPOST=c70e5258c951ec5c32c477e9e31da50a159c036afc616da23ddc452ad14989cc
+SHAPRE=889081581c4e8319957d370ce7e92737ec85a5c819b8dbc51368a3d228445e75
+SHAPOST=1d3797d90c3a30e738c61d3829972e1eddcb36d9a9e242010149859c42d3817a
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -259,8 +259,8 @@ DOCPIN=docs/migration-apply-0108.sha256
 MIG=packages/db/migrations/0108_pack_instance_consuming_sessions.sql
 SHA0108=7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb
 SHAPREV=56c310cd99add5a4d6dfa3df3ed1e49251988ce4bc0d4e291ac818bd0fef047a
-SHAPRE=ac0765325157257fc5ddee1281222f359d35eb526d76b0ebda62d8caa9f7fd80
-SHAPOST=c70e5258c951ec5c32c477e9e31da50a159c036afc616da23ddc452ad14989cc
+SHAPRE=889081581c4e8319957d370ce7e92737ec85a5c819b8dbc51368a3d228445e75
+SHAPOST=1d3797d90c3a30e738c61d3829972e1eddcb36d9a9e242010149859c42d3817a
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -428,7 +428,7 @@ set -o pipefail
 MIG=packages/db/migrations/0108_pack_instance_consuming_sessions.sql
 SHA0108=7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb
 SHAPREV=56c310cd99add5a4d6dfa3df3ed1e49251988ce4bc0d4e291ac818bd0fef047a
-SHAPRE=ac0765325157257fc5ddee1281222f359d35eb526d76b0ebda62d8caa9f7fd80
+SHAPRE=889081581c4e8319957d370ce7e92737ec85a5c819b8dbc51368a3d228445e75
 SHAVM=ea0902f839af6e72acd625dad8fc09f2297d7e6aa7d434538a277cc8f5893261
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -521,8 +521,8 @@ DT=$(echo "${DTZ}" | cut -c1-5)
 echo "${DT}" | grep -qxE '[1-7][0-2][0-9][0-5][0-9]' || { echo "STOP: the Lisbon weekday and time did not split out of the clock reading. Nothing was applied"; exit 1; }
 if awk -v s="${DT}" 'BEGIN { d = substr(s, 1, 1) + 0; t = substr(s, 2, 4) + 0; if (d == 7) exit 0; if (d >= 1 && d <= 5 && (t < 800 || t >= 2100)) exit 0; if (d == 6 && (t < 800 || t >= 1300)) exit 0; exit 1 }'; then CLOCK=closed; else CLOCK=open; fi
 echo "Lisbon weekday and time ${DT} (the first digit is the weekday, 1 Monday to 7 Sunday, then HHMM; the clock read ${DTZ}): ${CLOCK} by the weekday table"
-CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (opens_at < time '08:00' or closes_at > time '21:00')) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1) || { echo "STOP: the clinics' own hours could not be read (psql's lines are above). Nothing was applied"; exit 1; }
-echo "active clinics whose own hours reach outside 08:00 to 21:00, the table's widest row: ${CL}"
+CL=$(psql "${DATABASE_URL_DIRECT}" -X -At -v ON_ERROR_STOP=1 -c "begin read only" -c "select count(*) filter (where is_active and (opens_at < time '08:00' or closes_at > time '21:00' or opens_at is null or closes_at is null)) || ' of ' || count(*) filter (where is_active) from public.locations" | tail -1) || { echo "STOP: the clinics' own hours could not be read (psql's lines are above). Nothing was applied"; exit 1; }
+echo "active clinics whose own hours reach outside 08:00 to 21:00, the table's widest row, or are not set: ${CL}"
 if awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] == "0" && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/) exit 0; exit 1 }'; then CLINICS=inside; elif awk -v s="${CL}" 'BEGIN { n = split(s, a, " "); if (n == 3 && a[1] ~ /^[1-9][0-9]*$/ && a[2] == "of" && a[3] ~ /^[1-9][0-9]*$/ && (a[1] + 0) <= (a[3] + 0)) exit 0; exit 1 }'; then CLINICS=outside; else echo "STOP: the clinics' own hours did not read as <k> of <n> with at least one active clinic [${CL}]. Nothing was applied"; exit 1; fi
 echo "the clinics' own rows against the weekday table: ${CLINICS}"
 D1=no
@@ -562,7 +562,7 @@ echo "0108 APPLIED. Paste stage 2 now."
 (
 set -o pipefail
 SHA0108=7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb
-SHAPOST=c70e5258c951ec5c32c477e9e31da50a159c036afc616da23ddc452ad14989cc
+SHAPOST=1d3797d90c3a30e738c61d3829972e1eddcb36d9a9e242010149859c42d3817a
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 
@@ -727,7 +727,7 @@ echo "CLOSING READ: the journal reads 106, 0108 is APPLIED, and nothing is pendi
 | Pre-check | `13 OK / 0 VACUOUS / 0 FAIL` | Any FAIL, any VACUOUS, or an OK count that is not 13: stage 1's own STOP, nothing applied. A psql exit that is not 0: STOP, nothing applied |
 | Post-check | `13 OK / 0 VACUOUS / 0 FAIL` when `probe_instances` is above 0; `12 OK / 1 VACUOUS / 0 FAIL` when it is 0 | Any FAIL: STOP, the state is UNKNOWN. An OK or VACUOUS count that is not the one the carry names: STOP, the write stands. A psql exit that is not 0: STOP, which says it read nothing |
 
-**The pre-check, `scripts/db/precheck-0108-pack-instance-consuming-sessions.sql`: 13 verdicts OK, 7 more CARRY rows, 3 INFO rows.** READ ONLY. Verdicts 0 to 2: the transaction is read only; the session is `postgres` (control: `authenticated` is not); it reads `patient_pack_instances`, `patients` and `appointments` past their policies (control: `authenticated` does not). 3: no function of the new name exists (control: `jwt_role()` resolves). 4: `patients_select`, whose terms the function restates, is as 0096 left it, by md5. 5: every function the body calls, by its flags, owner, EXECUTE and body md5, and `auth.uid()`. 6: the eleven columns the body reads, the two output types and the label `cancelled`. 7: the five roles and plpgsql. 8: Postgres 17. 9: the SECURITY DEFINER functions are 36, all owned by `postgres`. **The journal:** 0108 absent by hash with 0107 found once as the control (10), 0107 the newest row by hash at its `when` 1788502800000 (11), and 105 rows (12, the row `journal_rows_before`, which stage 2 carries). The seven other carries: `policies_before`, `policies_md5`, `functions_before`, `functions_md5`, `secdef_before`, `relation_acl_md5`, `probe_instances`. The INFO rows: the server version; the packs as they are (counts only); `idle_in_transaction_session_timeout`.
+**The pre-check, `scripts/db/precheck-0108-pack-instance-consuming-sessions.sql`: 13 verdicts OK, 7 more CARRY rows, 3 INFO rows.** `probe_instances` counts the instances whose patient is of the instance's own tenant and that have a consuming visit, at most 20; the post-check calls the function for exactly those. READ ONLY. Verdicts 0 to 2: the transaction is read only; the session is `postgres` (control: `authenticated` is not); it reads `patient_pack_instances`, `patients` and `appointments` past their policies (control: `authenticated` does not). 3: no function of the new name exists (control: `jwt_role()` resolves). 4: `patients_select`, whose terms the function restates, is as 0096 left it, by md5. 5: every function the body calls, by its flags, owner, EXECUTE and body md5, and `auth.uid()`. 6: the eleven columns the body reads, the two output types and the label `cancelled`. 7: the five roles and plpgsql. 8: Postgres 17. 9: the SECURITY DEFINER functions are 36, all owned by `postgres`. **The journal:** 0108 absent by hash with 0107 found once as the control (10), 0107 the newest row by hash at its `when` 1788502800000 (11), and 105 rows (12, the row `journal_rows_before`, which stage 2 carries). The seven other carries: `policies_before`, `policies_md5`, `functions_before`, `functions_md5`, `secdef_before`, `relation_acl_md5`, `probe_instances`. The INFO rows: the server version; the packs as they are (counts only); `idle_in_transaction_session_timeout`.
 
 **The post-check, `scripts/db/postcheck-0108-pack-instance-consuming-sessions.sql`: 13 verdicts.** READ ONLY. 0 and 1 repeat the pre-check's frame. 2 to 5: the function's signature and result, its flags and body md5, EXECUTE by `has_function_privilege` (authenticated only; no PUBLIC item; the ACL printed), and its comment. 6: its answers on production's own packs (OK, VACUOUS when there is none to call it for, or FAIL). 7 to 10 compare the carries: one function more and every other unchanged, the SECURITY DEFINER count one more, every policy and every relation privilege unchanged. **The journal:** 0108 present once by hash as the newest row at its `when` 1788502900000, with 0107 found once as the control (11), and the journal moved by exactly one from `journal_rows_before` (12).
 
@@ -830,3 +830,4 @@ After the two refusals the journal still read 106: nothing more was applied.
 ## Review history
 
 - **2026-10-26:** authored at its number, with its check files, its suite, its blocks, its sidecar and its script test. One mutation sweep over the function's predicate on lane amber: 20 mutants, 20 killed by the suite (three survived the first pass, all three fixture gaps, closed in the fixture). Not yet reviewed.
+- **2026-10-27: one R4 round** on the migration, the check files, the suite and the blocks: no BLOCKER, one MAJOR and two MINOR, all fixed. MAJOR: nothing in the suite told the clinic-limited care-team set (0096) from the unlimited one (0091); a therapist at clinic A on the care team of a patient seen only at B now gets nothing, and the function with its therapist arm swapped to the 0091 set (on the lane only) turns exactly that arm red (2 of 47). MINOR: the post-check's probe and the pre-check's `probe_instances` join the patient on id AND tenant, as the function does, so an instance whose patient is of another tenant cannot make verdict 6 read FAIL after the commit. MINOR: stage 1 counts a clinic whose `opens_at` or `closes_at` is not set as outside the table, so it stops. The two MINORs change bytes that run against production: the pre-check, the post-check and stage 1 were rehearsed again (see "Rehearsal").

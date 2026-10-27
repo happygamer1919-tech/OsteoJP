@@ -39,7 +39,12 @@
  *   therapistB (treats P and Q)  B             yes     yes
  *   therapistNoClinic (treats P) none          yes     no
  *   careTeam (P's care team)     A             yes     no
+ *   careTeamQ (Q's care team)    A             no      no
  *   therapistA2 (no tie)         A             no      no
+ *
+ * careTeamQ is on Q's care team but has clinic rows at A only, and Q is seen
+ * only at B: the clinic-limited care-team set (0096) does not reach Q, while
+ * the unlimited set of 0091 would. That row is what tells the two apart.
  *
  * Every staff answer is asserted twice: against that table, and against the
  * caller's own read of `patients` under `patients_select` in the same
@@ -103,6 +108,7 @@ const F = {
   therapistB: randomUUID(),
   therapistNoClinic: randomUUID(),
   careTeam: randomUUID(),
+  careTeamQ: randomUUID(),
   therapistA2: randomUUID(),
   p: randomUUID(),
   q: randomUUID(),
@@ -167,6 +173,7 @@ const STAFF: Principal[] = [
   { name: "therapist at clinic B who treats P and Q", role: "therapist", user: F.therapistB, seesP: true, seesQ: true },
   { name: "therapist with no clinic row who treats P", role: "therapist", user: F.therapistNoClinic, seesP: true, seesQ: false },
   { name: "therapist on P's care team at clinic A", role: "therapist", user: F.careTeam, seesP: true, seesQ: false },
+  { name: "therapist at clinic A on Q's care team (Q is seen only at B)", role: "therapist", user: F.careTeamQ, seesP: false, seesQ: false },
   { name: "therapist at clinic A with no tie to P or Q", role: "therapist", user: F.therapistA2, seesP: false, seesQ: false },
 ];
 
@@ -190,6 +197,7 @@ d("0108: the consuming sessions of one pack instance", () => {
     await person(F.therapistB, "Terapeuta B");
     await person(F.therapistNoClinic, "Terapeuta Sem Clinica");
     await person(F.careTeam, "Terapeuta Equipa");
+    await person(F.careTeamQ, "Terapeuta Equipa Q");
     await person(F.therapistA2, "Terapeuta A Dois");
 
     await sql`insert into staff_locations (tenant_id, user_id, location_id) values
@@ -199,13 +207,15 @@ d("0108: the consuming sessions of one pack instance", () => {
       (${F.tenant}, ${F.therapistA}, ${F.a}),
       (${F.tenant}, ${F.therapistB}, ${F.b}),
       (${F.tenant}, ${F.careTeam}, ${F.a}),
+      (${F.tenant}, ${F.careTeamQ}, ${F.a}),
       (${F.tenant}, ${F.therapistA2}, ${F.a})`;
 
     await sql`insert into patients (id, tenant_id, full_name) values (${F.p}, ${F.tenant}, 'Paciente Pacote P')`;
     await sql`insert into patients (id, tenant_id, full_name, primary_location_id, created_by)
               values (${F.q}, ${F.tenant}, 'Paciente Pacote Q', ${F.b}, ${F.receptionA})`;
     await sql`insert into patient_care_team (tenant_id, patient_id, user_id, assigned_by)
-              values (${F.tenant}, ${F.p}, ${F.careTeam}, ${F.owner})`;
+              values (${F.tenant}, ${F.p}, ${F.careTeam}, ${F.owner}),
+                     (${F.tenant}, ${F.q}, ${F.careTeamQ}, ${F.owner})`;
 
     await sql`insert into services (id, tenant_id, name) values (${F.service}, ${F.tenant}, 'Osteopatia (teste)')`;
     await sql`insert into service_packs (id, tenant_id, base_service_id, name, session_count, price_cents)
