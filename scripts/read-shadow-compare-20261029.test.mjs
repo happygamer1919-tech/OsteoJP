@@ -12,13 +12,14 @@
 //   * the document's verdict table names the 17 verdicts the read prints, in order;
 //   * the block: line 2 is `set -o pipefail`, no `set -e`, no `#` line, no continuation; its only psql
 //     call is `begin read only` ... `rollback`; it carries exactly its two PENDING value lines and STOPs
-//     on them before anything runs; its transcript goes to the handover folder only;
+//     on them before anything runs; psql writes its transcript to the handover folder only, with
+//     `> ${OUT} 2>&1` and no `tee`, and the block prints only the verdict counts and the R11 rows;
 //   * EVERY HALT IS EXPLICIT: the block runs in GREEN's tool shape (`true && eval '<block>' < /dev/null
 //     && echo TOOL-CHAIN-CONTINUED`), every external command a stub, and each call is made to fail in
 //     turn: each run ends with exit 1, exactly one STOP line, no pass line, and the tool chain stopped;
 //   * the block passes only on the profile 17 OK / 0 VACUOUS / 0 FAIL with a SHADOW_SUMMARY row, and
-//     STOPs on a VACUOUS, a FAIL, a missing summary row, a transaction that is not read only, a Lisbon
-//     clock before 2026-10-29 07:00 or in another zone, a pinned file that differs, a dirty worktree, a
+//     STOPs on a VACUOUS, a FAIL, a missing summary row, missing R11 rows, a transaction that is not
+//     read only, a Lisbon clock before 2026-10-29 07:15 or in another zone, a pinned file that differs, a dirty worktree, a
 //     merge commit that is not on origin/main, a missing apply directory, a missing handover folder
 //     and a missing environment file.
 // Under bash always; under zsh wherever zsh is installed (it is not on the GitHub runner).
@@ -26,8 +27,8 @@
 // WITH A LOCAL DATABASE (SHADOW_READ_TEST_PGURL names one on 127.0.0.1 or localhost, whose `public`
 // schema is the repository's): the read is run on a seeded throwaway per case, as the block runs it,
 // with its one clock line set to a fixed instant, and every verdict is asserted per case: the clean
-// profile, the empty window, the NULL window, each verdict's own fault, the explained categories, and
-// two mutants of the read. Any other host is refused. Without the variable those cases are skipped.
+// profile, the empty window, the NULL window, each verdict's own fault, the explained categories, a
+// negative arm per time-bounded category (a save a day later explains nothing), and two mutants. Any other host is refused. Without the variable those cases are skipped.
 //
 // Run: node --test scripts/read-shadow-compare-20261029.test.mjs
 
@@ -129,7 +130,10 @@ test("the block's shape: pipefail on line 2, no set -e, no # line, no continuati
   assert.equal(psql.length, 1);
   assert.match(psql[0], /-c "begin read only" -c "set local statement_timeout = '120s'"/);
   assert.match(psql[0], /-f \$\{READFILE\} -c "rollback"/);
-  assert.match(psql[0], /\| tee \$\{OUT\} \|\|/);
+  assert.match(psql[0], / > \$\{OUT\} 2>&1 \|\| \{/, "psql does not write its transcript straight to the file");
+  assert.doesNotMatch(psql[0], /\btee\b/, "psql's output goes through tee, so the mismatch list would reach the terminal");
+  assert.doesNotMatch(block, /\btee\b/, "the block uses tee");
+  assert.doesNotMatch(block, /\bcat\b[^\n]*\$\{OUT\}/, "the block prints the transcript");
   assert.equal((block.match(/=PENDING$/gm) || []).length, 2, "exactly two PENDING value lines");
   assert.ok(lines[2] === "MERGED=PENDING" && lines[3] === "DOCSHA=PENDING");
   assert.ok(lines.includes(`OUT=${OUT_DIR}/shadow-read-20261029.out`), "the transcript does not go to the handover folder");
@@ -148,7 +152,7 @@ const realOf = (name) => {
   if (r.status !== 0 || !p.startsWith("/")) throw new Error(`the harness needs ${name} on ${SYSTEM_PATH}`);
   return p;
 };
-const STUBBED = ["git", "node", "psql", "date", "tee", "grep", "awk", "cut", "shasum", "rm"];
+const STUBBED = ["git", "node", "psql", "date", "grep", "awk", "cut", "shasum", "rm"];
 const FAKED = ["git", "node", "psql", "date"];
 
 const VERDICT_ROWS = Array.from({ length: 17 }, (_, n) => ` ${String(n).padStart(2)} | ${n}. a verdict | x | y | OK`);
@@ -159,9 +163,12 @@ const TABLE_OK = [
   "----+-------+----------+----------+---------",
   ...VERDICT_ROWS,
   " 20 | window: first shadow heartbeat | 2026-10-25 15:30:03 | 2026-10-29 07:30:00 | 2026-10-29 07:15:03 | information | INFO",
+  " 22 | passes on 2026-10-26 (R11) | 60, 60, 0, 1 to 1, 4 | information | INFO",
+  " 22 | passes on 2026-10-27 (R11) | 60, 60, 0, 1 to 1, 4 | information | INFO",
+  " 22 | passes on 2026-10-28 (R11) | 60, 60, 0, 1 to 1, 4 | information | INFO",
   " 40 | SHADOW_SUMMARY | full days 2026-10-26 to 2026-10-28: both=12 shadow_only=0 run_only=0 matched_share=100.0% | unexplained 0 | INFO",
   " 51 | run_only 2026-10-28 10:00 48h email | 00000000-0000-4000-8000-0000000000a9 | R4 never reminded | information | INFO",
-  "(20 rows)", "", "ROLLBACK",
+  "(23 rows)", "", "ROLLBACK",
 ].join("\n");
 const FIXTURES = {
   ok: TABLE_OK,
@@ -169,6 +176,7 @@ const FIXTURES = {
   fail: TABLE_OK.replace(" 14 | 14. a verdict | x | y | OK", " 14 | 14. a verdict | x | y | FAIL"),
   short: TABLE_OK.replace(/^ 16 \|[^\n]*\n/m, ""),
   nosummary: TABLE_OK.replace(/^ 40 \| SHADOW_SUMMARY[^\n]*\n/m, ""),
+  nor11: TABLE_OK.replace(/^ 22 \|[^\n]*\n/gm, ""),
   notreadonly: TABLE_OK.replace(" read only: on", " read only: off"),
 };
 
@@ -180,7 +188,7 @@ echo "$n" > "$d/count.${name}"
 printf '%s:%s %s\\n' "${name}" "$n" "$*" >> "$d/calls"
 if [ "$HARNESS_FAIL" = "${name}:$n" ]; then
   echo "${name}: harness fault" >&2
-  ${["tee", "grep", "awk", "cut", "shasum"].includes(name) ? `"${real}" "$@" > /dev/null 2>&1 < /dev/null` : ":"}
+  ${["grep", "awk", "cut", "shasum"].includes(name) ? `"${real}" "$@" > /dev/null 2>&1 < /dev/null` : ":"}
   exit ${name === "grep" ? 2 : 1}
 fi
 case "${name}" in
@@ -265,9 +273,14 @@ function runOnce(shell, base, text, env = {}) {
   return { ...r, out: `${r.stdout}${r.stderr}`, calls };
 }
 
+const MISMATCH_ID = "00000000-0000-4000-8000-0000000000a9";
+
 function assertPass(r) {
   assert.equal(r.status, 0, r.out);
-  assert.match(r.stdout, /^SHADOW-READ PASSED: 17 OK \/ 0 VACUOUS \/ 0 FAIL\. .*SHADOW_SUMMARY/m);
+  assert.match(r.stdout, /^SHADOW-READ PASSED: 17 OK \/ 0 VACUOUS \/ 0 FAIL\. The whole table is in /m);
+  assert.equal(r.stdout.split("\n").filter((l) => /^ 22 \| passes on 2026-10-2[678] \(R11\)/.test(l)).length, 3, "the R11 rows were not printed");
+  assert.ok(!r.out.includes(MISMATCH_ID), "an appointment id from the mismatch list reached the terminal");
+  assert.doesNotMatch(r.out, /SHADOW_SUMMARY|read only: on/, "the table itself reached the terminal");
   assert.match(r.stdout, /TOOL-CHAIN-CONTINUED/);
   assert.doesNotMatch(r.out, /^STOP:/m);
   assert.doesNotMatch(r.out, /harness: unexpected/);
@@ -279,6 +292,7 @@ function assertStop(r, re, label) {
   assert.equal(stops.length, 1, `${label}: expected exactly one STOP line\n${r.out}`);
   if (re) assert.match(stops[0], re, label);
   assert.doesNotMatch(r.stdout, /SHADOW-READ PASSED/, `${label}: a pass line after a fault`);
+  assert.ok(!r.out.includes(MISMATCH_ID), `${label}: an appointment id from the mismatch list reached the terminal`);
   assert.doesNotMatch(r.stdout, /TOOL-CHAIN-CONTINUED/, `${label}: the tool chain went on`);
   assert.doesNotMatch(r.out, /harness: unexpected/, `${label}: an unexpected call`);
 }
@@ -294,7 +308,7 @@ for (const shell of shells) {
       const text = block.replaceAll(APPLY_DIR, join(base, "apply"));
       const r = runOnce(shell, base, text);
       assertStop(r, /still reads PENDING, so it is NOT READY/, "PENDING");
-      assert.ok(!/^(git|node|psql|date|shasum|rm|tee|awk|cut):/m.test(r.calls), `a command ran before the PENDING check: ${r.calls}`);
+      assert.ok(!/^(git|node|psql|date|shasum|rm|awk|cut):/m.test(r.calls), `a command ran before the PENDING check: ${r.calls}`);
     } finally { rmSync(base, { recursive: true, force: true }); }
   });
 
@@ -306,8 +320,9 @@ for (const shell of shells) {
       assertPass(clean);
       const out = readFileSync(join(base, "handover", "shadow-read-20261029.out"), "utf8");
       assert.match(out, /SHADOW_SUMMARY/, "the transcript is not in the handover folder");
+      assert.ok(out.includes(MISMATCH_ID), "the mismatch list is not in the transcript");
       const calls = clean.calls.trim().split("\n").map((l) => l.split(" ")[0]);
-      assert.ok(calls.length >= 17, `too few calls were stubbed: ${calls.length}`);
+      assert.ok(calls.length >= 16, `too few calls were stubbed: ${calls.length}`);
       for (const n of STUBBED) {
         assert.ok(calls.some((c) => c.startsWith(`${n}:`)), `${n} was never called, so its failure is not proven`);
       }
@@ -327,13 +342,14 @@ for (const shell of shells) {
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "fail" }), profile, "fail");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "short" }), profile, "a verdict missing");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nosummary" }), /no SHADOW_SUMMARY row/, "no summary");
+      assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nor11" }), /no R11 rows/, "no R11 rows");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
-      for (const now of ["202610290659", "202610282359", "202610260900"]) {
+      for (const now of ["202610290714", "202610290700", "202610282359", "202610260900"]) {
         const r = runOnce(shell, base, text, { HARNESS_NOW: now });
-        assertStop(r, /earlier than 2026-10-29 07:00 Lisbon/, `clock ${now}`);
+        assertStop(r, /earlier than 2026-10-29 07:15 Lisbon/, `clock ${now}`);
         assert.ok(!/^(git|node|psql):/m.test(r.calls), `a command ran before the clock check: ${r.calls}`);
       }
-      assertPass(runOnce(shell, base, text, { HARNESS_NOW: "202610290700" }));
+      assertPass(runOnce(shell, base, text, { HARNESS_NOW: "202610290715" }));
       assertStop(runOnce(shell, base, text, { HARNESS_NOW: "soon" }), null, "a clock that is not a number");
       for (const zone of ["EST", "EDT", "UTC", ""]) {
         assertStop(runOnce(shell, base, text, { HARNESS_ZONE: zone }), /not WET or WEST/, `zone ${zone}`);
@@ -352,7 +368,7 @@ for (const shell of shells) {
       }
       const r1 = runOnce(shell, base, filled(base).replaceAll(join(base, "apply"), join(base, "no-such-apply-dir")));
       assertStop(r1, /the apply worktree is not there/, "missing apply directory");
-      assert.ok(!/^(git|node|psql|shasum|rm|tee|awk|cut):/m.test(r1.calls), `a command ran after the cd failed: ${r1.calls}`);
+      assert.ok(!/^(git|node|psql|shasum|rm|awk|cut):/m.test(r1.calls), `a command ran after the cd failed: ${r1.calls}`);
       const r2 = runOnce(shell, base, filled(base).replaceAll(join(base, "prod.env"), join(base, "no-such.env")));
       assertStop(r2, /production environment file could not be loaded/, "missing env file");
       assert.ok(!/^(node|psql):/m.test(r2.calls), `the guard or psql ran without the env file: ${r2.calls}`);
@@ -446,6 +462,14 @@ insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, 
   values ('${TENANT}', '${id}', 'claim', '${offset}', '${channel}', ${at(start)}, ${at(due)}, 'run', false, 1, ${at(due)} + interval '2 seconds');
 insert into public.reminder_dispatches (tenant_id, appointment_id, channel, template_id, outcome, suppression_reason, created_at)
   values ('${TENANT}', '${id}', '${channel}', 'reminder.${offset}.${channel}', '${outcome}', ${reason ? `'${reason}'` : "null"}, ${at(due)} + interval '3 seconds');`;
+/** An audit row on a visit (no person, metadata of labels only). */
+const audit = (id, action, when, metadata = "{}") => `
+insert into public.audit_log (tenant_id, action, entity_type, entity_id, metadata, created_at)
+  values ('${TENANT}', '${action}', 'appointment', '${id}', '${metadata}', ${at(when)});`;
+/** A sleeping-job claim of another start, written at `when`, whose mark is past the read (so it pairs with nothing). */
+const strayClaim = (id, start, due, when) => `
+insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
+  values ('${TENANT}', '${id}', 'claim', '24h', 'sms', ${at(start)}, ${at(due)}, 'run', false, 1, ${at(when)});`;
 /** A shadow row in the transaction of the pass at `pass`, and that heartbeat's counts raised by one. */
 const shadowRow = (id, offset, channel, start, due, pass, saved = false) => `
 insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, minutes_after_mark, saved_after_mark, pass_id, created_at)
@@ -490,7 +514,7 @@ const CASES = [
     want: only({ 3: "FAIL" }),
   },
   {
-    name: "explained mismatches: R1, R2, R4 and S5",
+    name: "explained mismatches: R1 (twice), R2, R4, S2, S3 and S5",
     seed: [
       // R4: no scheduling save; the sleeping job claimed and sent; no shadow row.
       visit(appt(0xa1), "2026-10-27 12:00", { saved: false }),
@@ -498,22 +522,76 @@ const CASES = [
       // R2: claimed, then suppressed `status`; cancelled now; no shadow row.
       visit(appt(0xa2), "2026-10-28 12:00", { status: "cancelled" }),
       runClaim(appt(0xa2), "24h", "sms", "2026-10-28 12:00", "2026-10-27 12:00", "suppressed", "status"),
-      // R1: claimed at its old start (Tuesday 16:00), moved to 17:00; shadow and claim at the new start.
+      // R1: claimed at its old start (Tuesday 16:05) at Monday 16:05:02, moved to 17:00 at Monday 16:10,
+      // before the next pass (16:15); shadow and claim at the new start.
       visit(appt(0xa3), "2026-10-27 17:00"),
-      runClaim(appt(0xa3), "24h", "sms", "2026-10-27 16:00", "2026-10-26 16:00"),
+      runClaim(appt(0xa3), "24h", "sms", "2026-10-27 16:05", "2026-10-26 16:05"),
+      audit(appt(0xa3), "appointment.reschedule", "2026-10-26 16:10"),
       runClaim(appt(0xa3), "24h", "sms", "2026-10-27 17:00", "2026-10-26 17:00"),
       shadowRow(appt(0xa3), "24h", "sms", "2026-10-27 17:00", "2026-10-26 17:00", "2026-10-26 17:00"),
-      // S5: saved after its mark, taken by the shadow, no claim.
+      // S5: moved in at Wednesday 12:05, after its mark (12:00), taken by the 12:15 pass, no claim.
       visit(appt(0xa4), "2026-10-29 12:00", { updated: "2026-10-28 12:05" }),
+      audit(appt(0xa4), "appointment.reschedule", "2026-10-28 12:05"),
       shadowRow(appt(0xa4), "24h", "sms", "2026-10-29 12:00", "2026-10-28 12:00", "2026-10-28 12:15", true),
+      // S3: taken ahead by Monday's 21:45 pass for a 22:30 mark, moved at 22:00, before the mark.
+      visit(appt(0xa5), "2026-10-29 22:30"),
+      shadowRow(appt(0xa5), "24h", "sms", "2026-10-27 22:30", "2026-10-26 22:30", "2026-10-26 21:45"),
+      audit(appt(0xa5), "appointment.reschedule", "2026-10-26 22:00"),
+      // S2 and R1: claimed at its old start (11:20) at 11:20:02, moved to 11:30 at 11:25, the shadow
+      // took the new start at the 11:30 pass.
+      visit(appt(0xa6), "2026-10-27 11:30"),
+      runClaim(appt(0xa6), "24h", "sms", "2026-10-27 11:20", "2026-10-26 11:20"),
+      audit(appt(0xa6), "appointment.reschedule", "2026-10-26 11:25"),
+      shadowRow(appt(0xa6), "24h", "sms", "2026-10-27 11:30", "2026-10-26 11:30", "2026-10-26 11:30"),
     ].join("\n"),
     want: only({}),
     info: [
-      [31, /full days, run_only: R1 the start changed since the claim \| 1 \|/],
+      [31, /full days, run_only: R1 moved after the claim, before the next pass \| 2 \|/],
+      [31, /full days, shadow_only: S2 the sleeping job claimed another start, before the shadow row \| 1 \|/],
+      [31, /full days, shadow_only: S3 moved after the 21:45 pass took its mark ahead \| 1 \|/],
       [31, /full days, run_only: R2 suppressed by the sleeping job as not remindable \| 1 \|/],
       [31, /full days, run_only: R4 never reminded: no scheduling save \(switch off\) \| 1 \|/],
       [31, /full days, shadow_only: S5 saved after its mark, before the pass \| 1 \|/],
     ],
+  },
+  {
+    name: "R1 negative: moved a day after its claim stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb1), "2026-10-30 16:05"),
+      runClaim(appt(0xb1), "24h", "sms", "2026-10-27 16:05", "2026-10-26 16:05"),
+      audit(appt(0xb1), "appointment.reschedule", "2026-10-27 16:10"),
+    ].join("\n"),
+    want: only({ 12: "FAIL" }),
+    info: [[51, new RegExp(`${appt(0xb1)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "S3 negative: taken ahead, moved a day after its mark, stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb3), "2026-10-30 22:30"),
+      shadowRow(appt(0xb3), "24h", "sms", "2026-10-27 22:30", "2026-10-26 22:30", "2026-10-26 21:45"),
+      audit(appt(0xb3), "appointment.reschedule", "2026-10-27 22:00"),
+    ].join("\n"),
+    want: only({ 12: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb3)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "S2 negative: the other start's claim written a day after the shadow row stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb2), "2026-10-27 11:00"),
+      shadowRow(appt(0xb2), "24h", "sms", "2026-10-27 11:00", "2026-10-26 11:00", "2026-10-26 11:00"),
+      strayClaim(appt(0xb2), "2026-10-31 11:00", "2026-10-30 11:00", "2026-10-27 11:00:02"),
+    ].join("\n"),
+    want: only({ 12: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb2)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "R2 negative: suppressed unconfirmed stays UNEXPLAINED",
+    seed: [
+      visit(appt(0xb4), "2026-10-28 12:00"),
+      runClaim(appt(0xb4), "24h", "sms", "2026-10-28 12:00", "2026-10-27 12:00", "suppressed", "unconfirmed"),
+    ].join("\n"),
+    want: only({ 14: "FAIL" }),
+    info: [[51, new RegExp(`${appt(0xb4)} \\| UNEXPLAINED`)]],
   },
   {
     name: "a send heartbeat",
@@ -548,7 +626,7 @@ const CASES = [
            values ('${TENANT}', '${appt(6)}', 'claim', '72h', 'sms', ${at("2026-10-28 15:00")}, 'run', 1, ${at("2026-10-27 09:00")});`,
     want: only({ 10: "FAIL" }),
   },
-  { name: "the read's clock before Thursday 07:00", seed: "", clock: "2026-10-28 20:00:00", want: only({ 1: "FAIL" }) },
+  { name: "the read's clock before Thursday 07:15", seed: "", clock: "2026-10-29 07:10:00", want: only({ 1: "FAIL" }) },
   {
     name: "a window that starts late: every heartbeat before Monday 09:00 removed",
     seed: `delete from public.reminder_sweep_passes where pass_at < ${at("2026-10-26 09:00")};`,
