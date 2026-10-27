@@ -697,6 +697,51 @@ const CASES = [
     info: [[51, new RegExp(`${appt(0xc6)} \\| UNEXPLAINED`)]],
   },
   {
+    name: "sent with neither: a reminder send with no claim (it failed open) and no shadow row FAILs its day",
+    seed: [
+      visit(appt(0xd1), "2026-10-28 15:30"),
+      ledger(appt(0xd1), "24h", "sms", "2026-10-27 15:30:03"),
+    ].join("\n"),
+    want: only({ 14: "FAIL" }),
+    info: [[52, new RegExp(`${appt(0xd1)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "R7: a reminder claimed only early, with no shadow row, is never dropped and reads REVIEW",
+    seed: [
+      visit(appt(0xd2), "2026-10-27 15:40"),
+      `insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
+         values ('${TENANT}', '${appt(0xd2)}', 'claim', '24h', 'sms', ${at("2026-10-27 15:40")}, ${at("2026-10-26 15:40")}, 'run', true, 1, ${at("2026-10-26 09:00")});`,
+      ledger(appt(0xd2), "24h", "sms", "2026-10-26 09:00:01"),
+    ].join("\n"),
+    want: only({ 12: "REVIEW" }),
+    info: [[51, new RegExp(`${appt(0xd2)} \\| R7 claimed early only`)]],
+  },
+  {
+    name: "a malformed startsAt (month 13, a word) cannot stop the read",
+    seed: [
+      visit(appt(0xd3), "2026-10-27 18:00"),
+      runClaim(appt(0xd3), "24h", "sms", "2026-10-27 17:40", "2026-10-26 17:40"),
+      audit(appt(0xd3), "appointment.reschedule", "2026-10-26 17:42", '{"startsAt":"2026-13-27T18:00:00.000Z"}'),
+      audit(appt(0xd3), "appointment.reschedule", "2026-10-26 17:43", '{"startsAt":"not a date"}'),
+    ].join("\n"),
+    want: only({ 12: "REVIEW" }),
+    info: [[51, new RegExp(`${appt(0xd3)} \\| R1 moved after the claim`)]],
+  },
+  {
+    name: "a row in the window with an unknown reminder, written before t0, FAILs verdict 10",
+    seed: [
+      visit(appt(0xd4), "2026-10-28 11:40"),
+      `insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
+         values ('${TENANT}', '${appt(0xd4)}', 'claim', '48h', 'sms', ${at("2026-10-28 11:40")}, ${at("2026-10-26 11:40")}, 'run', false, 1, ${at("2026-10-20 09:00")});`,
+    ].join("\n"),
+    want: only({ 10: "FAIL" }),
+  },
+  {
+    name: "a reminder send of an unknown reminder in the window FAILs verdict 10",
+    seed: [visit(appt(0xd5), "2026-10-30 09:00"), ledger(appt(0xd5), "72h", "sms", "2026-10-27 09:00")].join("\n"),
+    want: only({ 10: "FAIL" }),
+  },
+  {
     name: "S6 withdrawn: taken ahead, cancelled before its mark, stays UNEXPLAINED",
     seed: [
       visit(appt(0xb6), "2026-10-27 22:40", { status: "cancelled" }),

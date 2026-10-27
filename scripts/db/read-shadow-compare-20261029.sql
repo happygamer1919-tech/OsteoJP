@@ -86,6 +86,9 @@
 --       (sweep.ts, NO GRACE); the re-armed job dropped the past mark
 --   S6  WITHDRAWN in R4 round 2 (a save after a look-ahead)
 --   S7  due in the 15 minutes before the read
+-- sent with neither (live only): a reminder ledger row inside the window with no
+--   claim of that reminder in the hour before it and no shadow row of it (the
+--   claim fails open, reminder-claim.ts). Always UNEXPLAINED: the day FAILs.
 -- run only (the sleeping job claimed, the shadow has no row for that start):
 --   R1  an `appointment.reschedule` save whose new start differs from this start
 --       lies after the claim and at or before the first pass at or after the
@@ -102,11 +105,13 @@
 --   R6  a change to a status that is not remindable lies after its mark, at or
 --       before the first pass at or after it, and no save set it back to
 --       `scheduled` or `confirmed` after the claim and before the start
+--   R7  the sleeping job claimed this start ONLY early: no on-time claim and no
+--       shadow row (never dropped; at least REVIEW)
 -- "A scheduling save" is reminder-population.ts hasSchedulingEvent, predicate by
 -- predicate; "a status that is not remindable" is an audit row whose metadata
 -- toStatus is set and is neither `scheduled` nor `confirmed`. A reschedule's new
--- start is read only when metadata startsAt is an ISO instant; otherwise it is
--- not a move. A label's time bounds are read on the database clock.
+-- start is compared as TEXT, exactly as toISOString() writes it, and never cast,
+-- so a malformed audit row cannot stop the read; any other shape is not a move. A label's time bounds are read on the database clock.
 --
 -- VERDICTS (OK, REVIEW, VACUOUS or FAIL; the block succeeds on 0 FAIL, 0
 -- VACUOUS and verdicts 0 to 10 all OK, and only 17 OK / 0 VACUOUS / 0 FAIL is a
@@ -122,8 +127,9 @@
 --    7  no pass over the ceiling on the three full days
 --    8  the heartbeats account for every shadow row (same transaction)
 --    9  no mark taken twice by the shadow
---   10  every shadow row and sleeping-job claim since t0 has a mark and a
---       known offset and channel (nothing falls out of the comparison)
+--   10  nothing falls out of the comparison: every shadow row and sleeping-job
+--       claim since t0 has a mark and a known offset and channel, and so does
+--       every such row and every reminder send inside the window
 -- 11-16 agreement, per full day and per reminder (48h email, 24h sms): OK with
 --       at least one match and no mismatch; REVIEW, FAIL or VACUOUS as above
 --
@@ -216,6 +222,45 @@ r as (
     from c_all where kind = 'claim' and early is distinct from true
    group by tenant_id, appointment_id, offset_id, channel, starts_at
 ),
+r_early as (
+  -- Reminders the sleeping job claimed ONLY early: no on-time claim and no
+  -- shadow row for the same key. Never matched, never dropped: a run-only
+  -- mismatch with its own label.
+  select e.tenant_id, e.appointment_id, e.offset_id, e.channel, e.starts_at,
+         min(e.due_at) as due_at, min(e.day) as day, min(e.created_at) as claimed_at
+    from c_all e
+   where e.kind = 'claim' and e.early = true
+     and not exists (select 1 from r where r.tenant_id = e.tenant_id and r.appointment_id = e.appointment_id
+                       and r.offset_id = e.offset_id and r.channel = e.channel and r.starts_at = e.starts_at)
+     and not exists (select 1 from s where s.tenant_id = e.tenant_id and s.appointment_id = e.appointment_id
+                       and s.offset_id = e.offset_id and s.channel = e.channel and s.starts_at = e.starts_at)
+   group by e.tenant_id, e.appointment_id, e.offset_id, e.channel, e.starts_at
+),
+live as (
+  -- THE CLAIM FAILS OPEN (reminder-claim.ts): on an error or a lock timeout the
+  -- reminder is still handed over with no claim row. So every reminder ledger
+  -- row inside the window with no claim of that appointment, offset and channel
+  -- in the hour before it, and no shadow row of that reminder whose mark lies
+  -- from 12 hours before it to 1 hour after it, is a send neither side holds:
+  -- a live-only mismatch, always UNEXPLAINED. One per reminder and Lisbon day.
+  select x.tenant_id, x.appointment_id, rm.offset_id, rm.channel,
+         min(x.created_at) as sent_at, (x.created_at at time zone 'Europe/Lisbon')::date as day
+    from public.reminder_dispatches x
+    join reminder rm on rm.channel = x.channel and x.template_id like 'reminder.' || rm.offset_id || '.%'
+   cross join win
+   where x.created_at >= win.t0 and x.created_at <= win.t1
+     and not exists (
+       select 1 from public.reminder_claims e
+        where e.tenant_id = x.tenant_id and e.appointment_id = x.appointment_id
+          and e.kind = 'claim' and e.offset_id = rm.offset_id and e.channel = rm.channel
+          and e.created_at <= x.created_at and e.created_at >= x.created_at - interval '1 hour')
+     and not exists (
+       select 1 from public.reminder_claims sh
+        where sh.tenant_id = x.tenant_id and sh.appointment_id = x.appointment_id
+          and sh.kind = 'shadow' and sh.offset_id = rm.offset_id and sh.channel = rm.channel
+          and sh.due_at >= x.created_at - interval '12 hours' and sh.due_at <= x.created_at + interval '1 hour')
+   group by x.tenant_id, x.appointment_id, rm.offset_id, rm.channel, (x.created_at at time zone 'Europe/Lisbon')::date
+),
 pair as (
   select coalesce(s.tenant_id, r.tenant_id) as tenant_id,
          coalesce(s.appointment_id, r.appointment_id) as appointment_id,
@@ -224,14 +269,24 @@ pair as (
          coalesce(s.starts_at, r.starts_at) as starts_at,
          coalesce(s.due_at, r.due_at) as due_at,
          coalesce(s.day, r.day) as day,
-         s.shadow_at, s.saved_after_mark, r.claimed_at,
+         s.shadow_at, s.saved_after_mark, r.claimed_at, false as early_only,
          case when s.appointment_id is null then 'run_only'
               when r.appointment_id is null then 'shadow_only'
-              else 'both' end as side
+              else 'both' end as side,
+         to_char(coalesce(s.starts_at, r.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as iso_start
     from s
     full join r
       on r.tenant_id = s.tenant_id and r.appointment_id = s.appointment_id
      and r.offset_id = s.offset_id and r.channel = s.channel and r.starts_at = s.starts_at
+  union all
+  select tenant_id, appointment_id, offset_id, channel, starts_at, due_at, day,
+         null::timestamptz, null::boolean, claimed_at, true, 'run_only',
+         to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+    from r_early
+  union all
+  select tenant_id, appointment_id, offset_id, channel, null::timestamptz, sent_at, day,
+         null::timestamptz, null::boolean, null::timestamptz, false, 'live_only', null::text
+    from live
 ),
 r_out as (
   -- What each of the sleeping job's claims ended as: the first reminder row of
@@ -263,9 +318,11 @@ saves as (
   -- The audit trail of the visits that mismatch: each save's database time and
   -- what kind of save it was. Its metadata is read here and never printed.
   select l.tenant_id, l.entity_id as appointment_id, l.created_at,
+         -- The new start as text, exactly as toISOString() writes it, and never cast:
+         -- a malformed audit row (a month 13, a word) cannot stop the read.
          case when l.action = 'appointment.reschedule'
-                   and l.metadata->>'startsAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})$'
-              then date_trunc('milliseconds', (l.metadata->>'startsAt')::timestamptz) end as new_start,
+                   and l.metadata->>'startsAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
+              then l.metadata->>'startsAt' end as new_start,
          (l.metadata->>'toStatus' in ('scheduled', 'confirmed')) as restored,
          (l.action = 'appointment.update' and l.metadata->>'via' = 'portal_request_confirm') as portal_confirm,
          (l.metadata->>'toStatus' is not null
@@ -295,7 +352,7 @@ pc as (
              and exists (
                select 1 from saves v
                 where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
-                  and v.new_start <> p.starts_at
+                  and v.new_start <> p.iso_start
                   and v.created_at > p.shadow_at and v.created_at <= p.due_at)
           then 'S3 moved after the 21:45 pass took its mark ahead'
         when exists (
@@ -317,7 +374,7 @@ pc as (
                select 1 from saves v
                 where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
                   and v.created_at > p.due_at and v.created_at <= p.shadow_at
-                  and (v.new_start = p.starts_at
+                  and (v.new_start = p.iso_start
                        or (v.portal_confirm
                            and not exists (
                              select 1 from saves w
@@ -327,14 +384,16 @@ pc as (
         when p.due_at > win.t1 - interval '15 minutes' then 'S7 due in the 15 minutes before the read'
         else 'UNEXPLAINED'
       end
+    when 'live_only' then 'UNEXPLAINED'
     else
       case
+        when p.early_only then 'R7 claimed early only: no on-time claim, no shadow row'
         when a.id is null then 'UNEXPLAINED'
         when date_trunc('milliseconds', a.starts_at) <> p.starts_at
              and exists (
                select 1 from saves v
                 where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
-                  and v.new_start <> p.starts_at
+                  and v.new_start <> p.iso_start
                   and v.created_at > p.claimed_at and v.created_at <= f.first_pass)
           then 'R1 moved after the claim, before the next pass'
         when exists (
@@ -385,7 +444,8 @@ agree as (
          count(m.appointment_id) filter (where m.side = 'shadow_only') as shadow_only,
          count(m.appointment_id) filter (where m.side = 'shadow_only' and m.category = 'UNEXPLAINED') as shadow_unexplained,
          count(m.appointment_id) filter (where m.side = 'run_only') as run_only,
-         count(m.appointment_id) filter (where m.side = 'run_only' and m.category = 'UNEXPLAINED') as run_unexplained
+         count(m.appointment_id) filter (where m.side = 'run_only' and m.category = 'UNEXPLAINED') as run_unexplained,
+         count(m.appointment_id) filter (where m.side = 'live_only') as live_only
     from full_day fd
    cross join reminder rm
     left join pc m on m.day = fd.d and m.offset_id = rm.offset_id and m.channel = rm.channel
@@ -439,7 +499,17 @@ marked as (
   select count(*) as rows_written,
          count(*) filter (where z.due_at is null
                             or not exists (select 1 from reminder rm
-                                            where rm.offset_id = z.offset_id and rm.channel = z.channel)) as unplaced
+                                            where rm.offset_id = z.offset_id and rm.channel = z.channel)) as unplaced,
+         -- The comparison window (by mark) must drop nothing either.
+         (select count(*) from c_all c
+           where not exists (select 1 from reminder rm
+                              where rm.offset_id = c.offset_id and rm.channel = c.channel)) as window_unplaced,
+         -- Nor may a reminder send of an offset and channel the read does not know.
+         (select count(*) from public.reminder_dispatches x cross join win
+           where x.created_at >= win.t0 and x.created_at <= win.t1
+             and x.template_id like 'reminder.%'
+             and not exists (select 1 from reminder rm
+                              where rm.channel = x.channel and x.template_id like 'reminder.' || rm.offset_id || '.%')) as ledger_unplaced
     from since_t0 z
 ),
 summary as (
@@ -447,7 +517,8 @@ summary as (
          coalesce(sum(shadow_only), 0) as shadow_only,
          coalesce(sum(shadow_unexplained), 0) as shadow_unexplained,
          coalesce(sum(run_only), 0) as run_only,
-         coalesce(sum(run_unexplained), 0) as run_unexplained
+         coalesce(sum(run_unexplained), 0) as run_unexplained,
+         coalesce(sum(live_only), 0) as live_only
     from agree
 ),
 lisbon as (
@@ -528,10 +599,13 @@ select n, "check", observed, expected, verdict from (
     from twice
   union all
   select 10,
-         '10. every shadow row and sleeping-job claim written since t0 has a mark and a known offset and channel',
-         'rows ' || rows_written::text || '; without a mark or with an unknown reminder ' || unplaced::text,
-         'rows > 0; 0',
-         case when unplaced > 0 then 'FAIL' when rows_written = 0 then 'VACUOUS' else 'OK' end
+         '10. nothing falls out of the comparison: every row written since t0 has a mark and a known reminder, and so does every row and reminder send in the window',
+         'rows ' || rows_written::text || '; without a mark or with an unknown reminder ' || unplaced::text
+           || '; window rows with an unknown reminder ' || window_unplaced::text
+           || '; reminder sends with an unknown reminder ' || ledger_unplaced::text,
+         'rows > 0; 0; 0; 0',
+         case when unplaced > 0 or window_unplaced > 0 or ledger_unplaced > 0 then 'FAIL'
+              when rows_written = 0 then 'VACUOUS' else 'OK' end
     from marked
   union all
   select 11 + a.dn * 2 + a.rn,
@@ -539,10 +613,10 @@ select n, "check", observed, expected, verdict from (
            || ': the shadow and the sleeping job took the same reminders (OK only with no mismatch)',
          'both ' || a.matched::text || '; shadow only ' || a.shadow_only::text
            || ' (unexplained ' || a.shadow_unexplained::text || '); run only ' || a.run_only::text
-           || ' (unexplained ' || a.run_unexplained::text || ')',
-         'both > 0; shadow only 0; run only 0',
+           || ' (unexplained ' || a.run_unexplained::text || '); sent with neither ' || a.live_only::text,
+         'both > 0; shadow only 0; run only 0; sent with neither 0',
          case when (select t0 from win) is null then 'VACUOUS'
-              when a.shadow_unexplained > 0 or a.run_unexplained > 0 then 'FAIL'
+              when a.shadow_unexplained > 0 or a.run_unexplained > 0 or a.live_only > 0 then 'FAIL'
               when a.matched = 0 then 'VACUOUS'
               when a.shadow_only > 0 or a.run_only > 0 then 'REVIEW'
               else 'OK' end
@@ -632,14 +706,15 @@ select n, "check", observed, expected, verdict from (
          'full days 2026-10-26 to 2026-10-28: both=' || matched::text
            || ' shadow_only=' || shadow_only::text || ' shadow_unexplained=' || shadow_unexplained::text
            || ' run_only=' || run_only::text || ' run_unexplained=' || run_unexplained::text
-           || ' matched_share=' || case when matched + shadow_only + run_only = 0 then 'none'
-                                       else round(100.0 * matched / (matched + shadow_only + run_only), 1)::text || '%' end,
-         'OK only with no mismatch; the candidate labels are rows 31, every mismatch is in rows 50 and 51',
+           || ' sent_with_neither=' || live_only::text
+           || ' matched_share=' || case when matched + shadow_only + run_only + live_only = 0 then 'none'
+                                       else round(100.0 * matched / (matched + shadow_only + run_only + live_only), 1)::text || '%' end,
+         'OK only with no mismatch; the candidate labels are rows 31, every mismatch is in rows 50 to 52',
          'INFO'
     from summary
   union all
   select n, "check", observed, 'information', 'INFO' from (
-    select case side when 'shadow_only' then 50 else 51 end as n,
+    select case side when 'shadow_only' then 50 when 'run_only' then 51 else 52 end as n,
            side || ' ' || to_char(due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' ' || offset_id || ' ' || channel as "check",
            appointment_id::text || ' | ' || category as observed,
            row_number() over (partition by side
