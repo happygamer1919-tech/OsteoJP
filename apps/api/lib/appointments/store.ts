@@ -27,6 +27,7 @@ import type {
   ServiceForBooking,
   WindowConflict,
 } from "./booking";
+import { OPEN_SLOTS_HORIZON_DAYS } from "./booking";
 import type { TherapistCandidate } from "./therapist";
 import { acquireSlotLocks } from "./slot-lock";
 import { locationHasBookableTherapist } from "@/lib/booking/location-bookable";
@@ -458,6 +459,13 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // "Owner may override" needs no switch in code: ticking a therapist in
     // Equipa brings the service back at that therapist's clinics (DECISIONS.md,
     // Q-R).
+    //
+    // THE SCHEDULE DATES ARE READ AGAINST THE SLOT HORIZON (R15), as in the
+    // roster: a row counts when its window overlaps [today, today +
+    // OPEN_SLOTS_HORIZON_DAYS]. The overlap reads dates, not weekdays, so a
+    // service listed here is not a promise of a slot: a weekly row whose part
+    // of the horizon holds none of its weekday lists the service and offers
+    // nothing. Known and pinned; the full note is at `listBookableTherapists`.
     const staffed = new Set<string>();
     if (candidates.length > 0 && allLocationIds.length > 0) {
       const notShared = await sharedResourceExclusion();
@@ -485,7 +493,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             and av.user_id = u.id
             and av.location_id = l.id
             and av.is_active = true
-            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
+            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date + ${OPEN_SLOTS_HORIZON_DAYS}::int)
             and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
         )
         and ${deliversServiceExists(principal.tenantId, sql`u.id`, sql`s.id`)}
@@ -809,7 +817,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // cannot see them there, so they are excluded by the EXISTS below - which is
     // roster membership at the location, not free/busy.
     //
-    // AND THE TEMPLATE'S VALIDITY MUST COVER TODAY, which is the half this query
+    // AND THE TEMPLATE'S VALIDITY WINDOW IS READ, which is the half this query
     // was missing (PORTAL-ROSTER, GREEN G8 T1). `availability_templates` carries
     // an optional [valid_from, valid_until] window for seasonal and temporary
     // schedules, and this EXISTS ignored it: a template whose window had CLOSED
@@ -822,21 +830,40 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // oversight rather than a decision: `availabilityCoversExists` and slot
     // generation both compare these two columns against the day being booked.
     //
-    // WHY TODAY AND NOT THE DAY BEING BOOKED. There IS no day here - this step
-    // runs before the patient picks one, which is the whole reason this method is
-    // not `listAvailableTherapists`. Owner ruling Q-ROSTER (2026-09-17) settles
-    // which instant to use: NOW. So the window is tested against the clinic's own
-    // today, in Lisbon, matching every other date comparison in this file.
+    // WHY THE SLOT HORIZON AND NOT THE DAY BEING BOOKED. There IS no day here -
+    // this step runs before the patient picks one, which is the whole reason
+    // this method is not `listAvailableTherapists`. So the window is tested
+    // against the days the next step can offer: [today, today +
+    // OPEN_SLOTS_HORIZON_DAYS], Lisbon dates, the same constant and the same
+    // inclusive days `listOpenSlots` expands. A template counts when its window
+    // overlaps that range. (Strategy R15, 2026-10-26.)
+    //
+    // THIS REPLACES TESTING AGAINST TODAY ALONE (owner ruling Q-ROSTER,
+    // 2026-09-17, "NOW"). Today alone hid a clinic whose hours start tomorrow,
+    // and on any day nobody works there (a Sunday) it hid a clinic whose hours
+    // are dated rows, one per day worked (the day-by-day schedule), although
+    // the slot step offers that clinic's next days.
+    //
+    // LISTED IS NOT A PROMISE OF A SLOT. The overlap reads DATES, not weekdays:
+    // a weekly row whose part of the horizon holds none of its weekday (a
+    // Wednesday-only row starting on day 13, a Sunday) puts its therapist on
+    // this roster, and `listOpenSlots` then offers nothing from it. The same was
+    // already true at the other end before R15: a row ending before its
+    // weekday next comes round. No weekday term was added, by strategy's choice
+    // (R15 review); catalog-slot-horizon.db.test.ts pins the case as a known
+    // limitation. `getCatalog` carries the same two lines, so the same holds
+    // there.
     //
     // THE TWO BOUNDS ARE NOT SYMMETRIC IN RISK, and that is worth knowing before
     // anyone "tidies" one of them away. `valid_until` is the DEFECT: an expired
     // row can never be offered at any date, so excluding it is strictly correct.
-    // `valid_from` is the RULING: a template that starts next month is excluded
-    // from today's roster even though the slot query would honour it for a date
-    // inside its window. That is Q-ROSTER's answer, and the test named "a
-    // template that has not STARTED yet" in
-    // packages/db/tests/portal-roster-template-validity.db.test.ts is the single
-    // place a change of that ruling has to land.
+    // `valid_from` is the RULING: a template that starts beyond the horizon (next
+    // month) is still excluded, because the slot step would offer nothing from
+    // it either; one that starts inside the horizon is listed. The test named
+    // "a template that has not STARTED yet" in
+    // packages/db/tests/portal-roster-template-validity.db.test.ts is where a
+    // change of that ruling has to land. `getCatalog` carries the same two
+    // lines (catalog-roster-parity.test.ts).
     const notShared = await sharedResourceExclusion();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
@@ -851,7 +878,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             and av.user_id = u.id
             and av.location_id = ${locationId}
             and av.is_active = true
-            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date)
+            and (av.valid_from  is null or av.valid_from  <= (now() at time zone ${LISBON})::date + ${OPEN_SLOTS_HORIZON_DAYS}::int)
             and (av.valid_until is null or av.valid_until >= (now() at time zone ${LISBON})::date)
         )
         and ${deliversServiceExists(principal.tenantId, sql`u.id`, serviceId)}

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { connect, live } from "./rls-harness";
@@ -47,6 +49,18 @@ import { connect, live } from "./rls-harness";
  * sessions, so a global count here would be a race.
  */
 
+/**
+ * R15 (strategy, 2026-10-26): the roster reads the template window against the
+ * slot step's horizon, [today, today + OPEN_SLOTS_HORIZON_DAYS]. The number is
+ * READ from apps/api/lib/appointments/booking.ts rather than restated, so this
+ * mirror cannot keep an old horizon after the constant moves.
+ */
+const HORIZON_DAYS = Number(
+  readFileSync(join(__dirname, "..", "..", "..", "apps", "api", "lib", "appointments", "booking.ts"), "utf8").match(
+    /export const OPEN_SLOTS_HORIZON_DAYS = (\d+);/,
+  )?.[1],
+);
+
 const F = {
   tenant: "00000000-0000-0000-0000-0000000b1101",
   role: "00000000-0000-0000-0000-0000000b1102",
@@ -61,17 +75,42 @@ const F = {
   notBookable: "00000000-0000-0000-0000-0000000b1115",
   sharedResource: "00000000-0000-0000-0000-0000000b1116",
   otherClinic: "00000000-0000-0000-0000-0000000b1117",
+  beyondHorizon: "00000000-0000-0000-0000-0000000b1118",
 };
 
 /**
  * The roster predicate from store.ts `listBookableTherapists`, verbatim in
- * shape, WITH the validity bounds this change adds.
+ * shape, WITH the validity bounds, `valid_from` read against the slot horizon
+ * (R15).
  *
  * DATES ARE COMPUTED IN POSTGRES, not in JavaScript, and relative to the clinic's
  * own today. A fixture with absolute dates ages into meaninglessness, and one
  * that reads the machine clock measures the machine rather than the database.
  */
 async function roster(sql: Sql, locationId: string): Promise<string[]> {
+  const rows = await sql<{ practitioner_id: string }[]>`
+    select distinct u.id as practitioner_id, u.full_name as full_name
+    from users u
+    where u.tenant_id = ${F.tenant}
+      and u.is_active = true
+      and u.is_bookable = true
+      and u.is_shared_resource = false
+      and exists (
+        select 1 from availability_templates av
+        where av.tenant_id = ${F.tenant}
+          and av.user_id = u.id
+          and av.location_id = ${locationId}
+          and av.is_active = true
+          and (av.valid_from  is null or av.valid_from  <= (now() at time zone 'Europe/Lisbon')::date + ${HORIZON_DAYS}::int)
+          and (av.valid_until is null or av.valid_until >= (now() at time zone 'Europe/Lisbon')::date)
+      )
+    order by u.full_name
+  `;
+  return rows.map((r) => r.practitioner_id);
+}
+
+/** The predicate as Q-ROSTER left it, before R15: both bounds against today alone. */
+async function rosterTodayOnly(sql: Sql, locationId: string): Promise<string[]> {
   const rows = await sql<{ practitioner_id: string }[]>`
     select distinct u.id as practitioner_id, u.full_name as full_name
     from users u
@@ -93,7 +132,7 @@ async function roster(sql: Sql, locationId: string): Promise<string[]> {
   return rows.map((r) => r.practitioner_id);
 }
 
-/** The predicate EXACTLY as it stood before this change: no validity bounds. */
+/** The predicate EXACTLY as it stood before PORTAL-ROSTER: no validity bounds. */
 async function rosterBeforeTheFix(sql: Sql, locationId: string): Promise<string[]> {
   const rows = await sql<{ practitioner_id: string }[]>`
     select distinct u.id as practitioner_id, u.full_name as full_name
@@ -142,6 +181,7 @@ async function seed(sql: Sql): Promise<void> {
   await user(F.notBookable, "F Nao Bookable", { bookable: false });
   await user(F.sharedResource, "G Recurso", { shared: true });
   await user(F.otherClinic, "H Outra Clinica", {});
+  await user(F.beyondHorizon, "I Alem do Horizonte");
 
   /** Offsets are days from the clinic's today, resolved by Postgres. */
   const tpl = (
@@ -163,9 +203,13 @@ async function seed(sql: Sql): Promise<void> {
   await tpl(F.current, F.cb, -30, 30);
   // THE DEFECT ROW: the window closed yesterday, the flag was never cleared.
   await tpl(F.expired, F.cb, -60, -1);
-  // Starts tomorrow. Excluded by owner ruling Q-ROSTER (= now), and the test
-  // named for it below is where a change of that ruling lands.
+  // Starts tomorrow: inside the slot horizon, so listed since R15 (Q-ROSTER,
+  // = now, excluded it). The test named for it below is where a change of that
+  // ruling lands.
   await tpl(F.future, F.cb, 1, 60);
+  // Starts the day after the horizon's last day: no slot can come from it, so
+  // it stays off the roster.
+  await tpl(F.beyondHorizon, F.cb, HORIZON_DAYS + 1, HORIZON_DAYS + 60);
   await tpl(F.archived, F.cb, null, null, false);
   await tpl(F.notBookable, F.cb, null, null);
   await tpl(F.sharedResource, F.cb, null, null);
@@ -186,7 +230,11 @@ describe.skipIf(!live)("PORTAL-ROSTER - template validity, as the portal's SQL s
     await sql.end();
   });
 
-  it("PREMISE: all eight therapists and eight templates really seeded", async () => {
+  it("PREMISE: the horizon was read from booking.ts", () => {
+    expect(Number.isInteger(HORIZON_DAYS) && HORIZON_DAYS > 0).toBe(true);
+  });
+
+  it("PREMISE: all nine therapists and nine templates really seeded", async () => {
     // Without this, every "is not listed" below could be a fixture that never
     // inserted, and the suite would pass while proving nothing.
     const users = await sql<{ n: number }[]>`
@@ -195,8 +243,8 @@ describe.skipIf(!live)("PORTAL-ROSTER - template validity, as the portal's SQL s
     const tpls = await sql<{ n: number }[]>`
       select count(*)::int as n from availability_templates where tenant_id = ${F.tenant}
     `;
-    expect(users[0]?.n).toBe(8);
-    expect(tpls[0]?.n).toBe(8);
+    expect(users[0]?.n).toBe(9);
+    expect(tpls[0]?.n).toBe(9);
   });
 
   it("AN EXPIRED TEMPLATE NO LONGER LISTS ITS THERAPIST - the defect", async () => {
@@ -212,14 +260,17 @@ describe.skipIf(!live)("PORTAL-ROSTER - template validity, as the portal's SQL s
     expect(await roster(sql, F.cb)).toContain(F.current);
   });
 
-  it("a template that has not STARTED yet does not list (owner ruling Q-ROSTER = now)", async () => {
+  it("a template that has not STARTED yet lists when it starts inside the slot horizon, and not beyond it (R15)", async () => {
     // THE ASYMMETRY WORTH KNOWING. `valid_until` is the defect: an expired row can
     // never be offered at any date, so excluding it is strictly correct.
-    // `valid_from` is the RULING: this therapist would be offered by the slot
-    // query for a date inside their window, but the roster step has no date and
-    // Q-ROSTER settles it as now. If that ruling changes, THIS test is the one
+    // `valid_from` is the RULING: the roster step has no date, and R15 (strategy,
+    // 2026-10-26, replacing Q-ROSTER's "now") settles it as the days the slot
+    // step can offer. A template starting tomorrow is listed; one starting after
+    // the horizon's last day is not. If that ruling changes, THIS test is the one
     // place that has to change with it.
-    expect(await roster(sql, F.cb)).not.toContain(F.future);
+    const listed = await roster(sql, F.cb);
+    expect(listed).toContain(F.future);
+    expect(listed).not.toContain(F.beyondHorizon);
   });
 
   it("the rules that were already there are untouched", async () => {
@@ -235,12 +286,18 @@ describe.skipIf(!live)("PORTAL-ROSTER - template validity, as the portal's SQL s
     expect(atLv).toEqual([F.otherClinic]);
   });
 
-  it("the whole roster at CB is exactly the two therapists who should be there", async () => {
-    // Ordered by full_name: "A Aberta" then "B Corrente".
-    expect(await roster(sql, F.cb)).toEqual([F.openEnded, F.current]);
+  it("the whole roster at CB is exactly the three therapists who should be there", async () => {
+    // Ordered by full_name: "A Aberta", "B Corrente", "D Futura".
+    expect(await roster(sql, F.cb)).toEqual([F.openEnded, F.current, F.future]);
   });
 
-  it("NEGATIVE CONTROL: the OLD predicate lists the expired therapist, and the future one", async () => {
+  it("CONTROL FOR R15: today alone (Q-ROSTER) leaves out the therapist who starts tomorrow", async () => {
+    // The fixture discriminates the R15 change: under the old instant the same
+    // rows give the roster without "D Futura".
+    expect(await rosterTodayOnly(sql, F.cb)).toEqual([F.openEnded, F.current]);
+  });
+
+  it("NEGATIVE CONTROL: the OLD predicate lists the expired therapist, and both future ones", async () => {
     // THE FIXTURE IS DISCRIMINATING, PROVED BOTH WAYS. Run the pre-change shape
     // against these same rows and the two excluded therapists come straight back.
     // Without this arm, every "not listed" above would also pass against a
@@ -249,6 +306,7 @@ describe.skipIf(!live)("PORTAL-ROSTER - template validity, as the portal's SQL s
     const before = await rosterBeforeTheFix(sql, F.cb);
     expect(before).toContain(F.expired);
     expect(before).toContain(F.future);
-    expect(before).toEqual([F.openEnded, F.current, F.expired, F.future]);
+    expect(before).toContain(F.beyondHorizon);
+    expect(before).toEqual([F.openEnded, F.current, F.expired, F.future, F.beyondHorizon]);
   });
 });

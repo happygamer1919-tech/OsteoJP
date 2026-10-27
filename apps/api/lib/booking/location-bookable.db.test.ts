@@ -244,13 +244,14 @@ d("R45: a location with no bookable therapist is not offered to a patient", () =
     expect(catalog.services.map((s) => s.id)).not.toContain(serviceId);
   });
 
-  it("door 1, with every user of this tenant ticked for it, a service is offered only at listed locations whose therapist step names somebody today", async () => {
+  it("door 1, with every user of this tenant ticked for it, a service is offered only at listed locations whose therapist step names somebody", async () => {
     // Every user of this tenant, the inactive, non-bookable and shared ones
     // included: the therapist step's own rule (its predicate, copied into getCatalog) must still keep
-    // them out. Of the three listed locations only `staffed` has hours valid
-    // today; `expiredHours` and `notStartedHours` are listed (R45 carries no
-    // date) but their therapist step is empty (Q-ROSTER), so Q-R offers the
-    // service at neither.
+    // them out. Of the three listed locations only `staffed` has hours inside
+    // the slot horizon; `expiredHours` and `notStartedHours` are listed (R45
+    // carries no date) but their therapist step is empty (R15: it fills only
+    // once the start date is within the 14-day slot horizon, and 2999 is not;
+    // an expired row never fills it), so Q-R offers the service at neither.
     await db.execute(raw`insert into therapist_services (tenant_id, therapist_user_id, service_id)
       select tenant_id, id, ${serviceId} from users where tenant_id = ${tenantId}`);
     try {

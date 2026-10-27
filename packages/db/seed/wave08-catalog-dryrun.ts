@@ -22,6 +22,10 @@ import {
   CATALOG_PACKS,
   type CatalogLocation,
 } from "./wave08-catalog";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 const url = process.env.DATABASE_URL;
 if (!url) {
