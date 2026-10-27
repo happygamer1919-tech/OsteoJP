@@ -13,7 +13,7 @@
 -- Verdicts are OK, VACUOUS or FAIL; rows that only inform read INFO and are
 -- never counted. It prints counts, Lisbon times, the fixed labels of offsets,
 -- channels, ledger outcomes and suppression reasons, and, in the mismatch list
--- only, appointment ids (at most 50 a side). No tenant id, no patient id, no
+-- only, appointment ids (at most 500 a side). No tenant id, no patient id, no
 -- staff id, no name, no phone, no email address, no message text, no note.
 --
 -- WHAT IT COMPARES (apps/web/lib/reminders on origin/main at 38721f0b; a change
@@ -62,49 +62,55 @@
 -- guarded: when no shadow heartbeat exists, t0 is NULL, every set built on it
 -- is empty, and the verdicts that read those sets say VACUOUS, never OK.
 --
--- A MISMATCH IS EXPLAINED BY A NAMED CATEGORY OR IT IS UNEXPLAINED, and one
--- unexplained mismatch on a full day fails that day's agreement verdict.
+-- NO CATEGORY CAN MAKE A VERDICT OK (R4 round 3). An agreement verdict is OK only
+-- with at least one match and ZERO mismatches of any kind. A mismatch carries a
+-- CANDIDATE label, a reading for the human who reads it, or UNEXPLAINED:
+--   REVIEW  at least one match, mismatches present, every one labelled. REVIEW
+--           is not a pass: SOLO and strategy read every listed mismatch.
+--   FAIL    any UNEXPLAINED mismatch.   VACUOUS  no match.
+-- The labels (letters are kept stable; a withdrawn letter is never reused):
 -- shadow only (the sweep would send, the sleeping job made no on-time claim):
---   S1  the sleeping job claimed this start EARLY (woke at an older time)
---   S2  WITHDRAWN in R4 round 2: a claim of another start does not explain a
---       shadow-only row (it is also the shape of a lost re-armed run)
---   S3  the 21:45 pass took the mark ahead, and the visit was moved (an
---       `appointment.reschedule` save) after that pass and at or before the mark;
---       its start now differs
+--   S1  WITHDRAWN in R4 round 3 (an early claim of this start); counted, row 34
+--   S2  WITHDRAWN in R4 round 2 (a claim of another start)
+--   S3  the 21:45 pass took the mark ahead, and an `appointment.reschedule` save
+--       whose new start (metadata startsAt) differs from this start lies after
+--       that pass and at or before the mark; the start now differs
 --   S4  a reminder ledger row exists for it, and no claim of this reminder of
 --       any start was written at or before that row (the claim fails open:
 --       reminder-claim.ts "IT FAILS OPEN")
---   S5  the shadow row says the visit was saved after its mark, and a
---       scheduling save lies between the mark and the pass (the sweep takes any
---       untaken mark while the visit is still ahead, sweep.ts "NO GRACE"; the
---       re-armed job dropped the past mark)
---   S6  WITHDRAWN in R4 round 2: the job claims before every gate
---       (dispatch.ts) and a cancel emits no event, so such a row can only come
---       from a lost or never-armed run
+--   S5  the shadow row says the visit was saved after its mark, and between the
+--       mark and the pass lies either an `appointment.reschedule` TO this start
+--       (metadata startsAt equal to it), or an `appointment.update` via
+--       `portal_request_confirm` on a visit with no scheduling save before the
+--       mark. The sweep takes any untaken mark while the visit is still ahead
+--       (sweep.ts, NO GRACE); the re-armed job dropped the past mark
+--   S6  WITHDRAWN in R4 round 2 (a save after a look-ahead)
 --   S7  due in the 15 minutes before the read
 -- run only (the sleeping job claimed, the shadow has no row for that start):
---   R1  the visit was moved (an `appointment.reschedule` save) after the claim
---       and at or before the first pass at or after its mark; its start now
---       differs
+--   R1  an `appointment.reschedule` save whose new start differs from this start
+--       lies after the claim and at or before the first pass at or after the
+--       mark; the start now differs
 --   R2  the sleeping job suppressed it with reason `status` (not remindable at
---       its mark), which the sweep's selection also leaves out. Only `status`:
---       the sweep does not apply the unaccepted-request gate (sweep.ts, "WHAT A
---       SHADOW ROW MEANS"), so `unconfirmed` is not a reason it would skip
+--       its mark), and no save set it back to `scheduled` or `confirmed` after
+--       the claim and before the start. Only `status`: the sweep does not apply
+--       the unaccepted-request gate (sweep.ts, "WHAT A SHADOW ROW MEANS")
 --   R3  the visit was created at or after its mark (the sweep's rule)
 --   R4  no scheduling save on its audit trail: left out by the switch
 --       REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER = false (reminder-population.ts)
---   R5  no pass of the sweep for that tenant at or after its mark
+--   R5  partial days only: no pass of the sweep for that tenant at or after its
+--       mark
 --   R6  a change to a status that is not remindable lies after its mark, at or
---       before the first pass at or after it (a scheduling save never makes the
---       sweep skip a mark)
--- A category that cannot be shown from rows is not a category: a stricter read
--- leaves more mismatches UNEXPLAINED rather than explain away a lost reminder.
+--       before the first pass at or after it, and no save set it back to
+--       `scheduled` or `confirmed` after the claim and before the start
 -- "A scheduling save" is reminder-population.ts hasSchedulingEvent, predicate by
--- predicate; "a status that is not remindable" is an audit row whose
--- metadata toStatus is set and is neither `scheduled` nor `confirmed`. A
--- category's time bounds are read on the database clock.
+-- predicate; "a status that is not remindable" is an audit row whose metadata
+-- toStatus is set and is neither `scheduled` nor `confirmed`. A reschedule's new
+-- start is read only when metadata startsAt is an ISO instant; otherwise it is
+-- not a move. A label's time bounds are read on the database clock.
 --
--- VERDICTS (expected profile 17 OK / 0 VACUOUS / 0 FAIL):
+-- VERDICTS (OK, REVIEW, VACUOUS or FAIL; the block succeeds on 0 FAIL, 0
+-- VACUOUS and verdicts 0 to 10 all OK, and only 17 OK / 0 VACUOUS / 0 FAIL is a
+-- PASS; any REVIEW is reported as REVIEW):
 --    0  the transaction is READ ONLY
 --    1  the clock: the read runs at or after 2026-10-29 07:15 Lisbon
 --    2  the window: a shadow heartbeat exists after the Resync, no later than
@@ -118,8 +124,8 @@
 --    9  no mark taken twice by the shadow
 --   10  every shadow row and sleeping-job claim since t0 has a mark and a
 --       known offset and channel (nothing falls out of the comparison)
--- 11-16 agreement, per full day and per reminder (48h email, 24h sms): at
---       least one match, and no unexplained mismatch
+-- 11-16 agreement, per full day and per reminder (48h email, 24h sms): OK with
+--       at least one match and no mismatch; REVIEW, FAIL or VACUOUS as above
 --
 -- Run (the document's block does exactly this, with a 120 second bound):
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
@@ -240,6 +246,16 @@ r_out as (
          and x.channel = r.channel
          and x.template_id like 'reminder.' || r.offset_id || '.%'
          and x.created_at >= r.claimed_at
+         -- and before the next live claim of this reminder, of any start.
+         and not exists (
+           select 1 from public.reminder_claims nx
+            where nx.tenant_id = r.tenant_id and nx.appointment_id = r.appointment_id
+              and nx.kind = 'claim' and nx.offset_id = r.offset_id and nx.channel = r.channel
+              and nx.created_at > r.claimed_at and nx.created_at <= x.created_at
+              and not exists (
+                select 1 from public.reminder_claims rl
+                 where rl.tenant_id = nx.tenant_id and rl.appointment_id = nx.appointment_id
+                   and rl.kind = 'release' and rl.claim_id = nx.id))
        order by x.created_at, x.id
        limit 1) d on true
 ),
@@ -247,7 +263,11 @@ saves as (
   -- The audit trail of the visits that mismatch: each save's database time and
   -- what kind of save it was. Its metadata is read here and never printed.
   select l.tenant_id, l.entity_id as appointment_id, l.created_at,
-         (l.action = 'appointment.reschedule') as moved,
+         case when l.action = 'appointment.reschedule'
+                   and l.metadata->>'startsAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})$'
+              then date_trunc('milliseconds', (l.metadata->>'startsAt')::timestamptz) end as new_start,
+         (l.metadata->>'toStatus' in ('scheduled', 'confirmed')) as restored,
+         (l.action = 'appointment.update' and l.metadata->>'via' = 'portal_request_confirm') as portal_confirm,
          (l.metadata->>'toStatus' is not null
           and l.metadata->>'toStatus' not in ('scheduled', 'confirmed')) as unremindable,
          -- reminder-population.ts hasSchedulingEvent, predicate by predicate.
@@ -269,18 +289,13 @@ pc as (
     when 'both' then null
     when 'shadow_only' then
       case
-        when exists (
-          select 1 from public.reminder_claims e
-           where e.tenant_id = p.tenant_id and e.appointment_id = p.appointment_id
-             and e.kind = 'claim' and e.taker = 'run' and e.early = true
-             and e.offset_id = p.offset_id and e.channel = p.channel and e.starts_at = p.starts_at)
-          then 'S1 the sleeping job claimed this start early'
         when a.id is null then 'UNEXPLAINED'
         when date_trunc('milliseconds', a.starts_at) <> p.starts_at
              and p.shadow_at < p.due_at
              and exists (
                select 1 from saves v
-                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id and v.moved
+                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
+                  and v.new_start <> p.starts_at
                   and v.created_at > p.shadow_at and v.created_at <= p.due_at)
           then 'S3 moved after the 21:45 pass took its mark ahead'
         when exists (
@@ -295,14 +310,19 @@ pc as (
                 where e.tenant_id = p.tenant_id and e.appointment_id = p.appointment_id
                   and e.kind = 'claim' and e.taker = 'run'
                   and e.offset_id = p.offset_id and e.channel = p.channel
-                  and e.created_at >= win.t0c and e.created_at <= x.created_at))
+                  and e.created_at <= x.created_at))
           then 'S4 a ledger row with no claim (the claim failed open)'
         when p.saved_after_mark
              and exists (
                select 1 from saves v
                 where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
-                  and v.scheduling
-                  and v.created_at > p.due_at and v.created_at <= p.shadow_at)
+                  and v.created_at > p.due_at and v.created_at <= p.shadow_at
+                  and (v.new_start = p.starts_at
+                       or (v.portal_confirm
+                           and not exists (
+                             select 1 from saves w
+                              where w.tenant_id = p.tenant_id and w.appointment_id = p.appointment_id
+                                and w.scheduling and w.created_at < p.due_at))))
           then 'S5 saved after its mark, before the pass'
         when p.due_at > win.t1 - interval '15 minutes' then 'S7 due in the 15 minutes before the read'
         else 'UNEXPLAINED'
@@ -313,7 +333,8 @@ pc as (
         when date_trunc('milliseconds', a.starts_at) <> p.starts_at
              and exists (
                select 1 from saves v
-                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id and v.moved
+                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
+                  and v.new_start <> p.starts_at
                   and v.created_at > p.claimed_at and v.created_at <= f.first_pass)
           then 'R1 moved after the claim, before the next pass'
         when exists (
@@ -321,6 +342,10 @@ pc as (
            where o.tenant_id = p.tenant_id and o.appointment_id = p.appointment_id
              and o.offset_id = p.offset_id and o.channel = p.channel and o.starts_at = p.starts_at
              and o.outcome = 'suppressed' and o.reason = 'status')
+             and not exists (
+               select 1 from saves v
+                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id and v.restored
+                  and v.created_at > p.claimed_at and v.created_at < p.starts_at)
           then 'R2 suppressed by the sleeping job as not remindable'
         when a.created_at >= p.due_at then 'R3 created at or after its mark'
         when not exists (
@@ -331,12 +356,17 @@ pc as (
           select 1 from hb h
            where h.tenant_id = p.tenant_id and h.mode = 'shadow'
              and (h.pass_at >= p.due_at or h.look_ahead_before > p.due_at))
+             and p.day not in (select d from full_day)
           then 'R5 no pass of the sweep since its mark'
         when exists (
           select 1 from saves v
            where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
              and v.unremindable
              and v.created_at > p.due_at and v.created_at <= f.first_pass)
+             and not exists (
+               select 1 from saves v
+                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id and v.restored
+                  and v.created_at > p.claimed_at and v.created_at < p.starts_at)
           then 'R6 made not remindable between its mark and the next pass'
         else 'UNEXPLAINED'
       end
@@ -506,14 +536,15 @@ select n, "check", observed, expected, verdict from (
   union all
   select 11 + a.dn * 2 + a.rn,
          (11 + a.dn * 2 + a.rn)::text || '. agreement, marks due ' || a.d::text || ', ' || a.offset_id || ' ' || a.channel
-           || ': the shadow and the sleeping job took the same reminders, every mismatch explained',
+           || ': the shadow and the sleeping job took the same reminders (OK only with no mismatch)',
          'both ' || a.matched::text || '; shadow only ' || a.shadow_only::text
            || ' (unexplained ' || a.shadow_unexplained::text || '); run only ' || a.run_only::text
            || ' (unexplained ' || a.run_unexplained::text || ')',
-         'both > 0; unexplained 0 and 0',
+         'both > 0; shadow only 0; run only 0',
          case when (select t0 from win) is null then 'VACUOUS'
               when a.shadow_unexplained > 0 or a.run_unexplained > 0 then 'FAIL'
               when a.matched = 0 then 'VACUOUS'
+              when a.shadow_only > 0 or a.run_only > 0 then 'REVIEW'
               else 'OK' end
     from agree a
   union all
@@ -557,12 +588,13 @@ select n, "check", observed, expected, verdict from (
     from pc p
    group by p.day, p.offset_id, p.channel
   union all
-  select 31, 'mismatch category, ' || case when p.day in (select d from full_day) then 'full days' else 'partial days' end
-           || ', ' || p.side || ': ' || p.category,
-         count(*)::text, 'information', 'INFO'
+  select 31, 'mismatch label, marks due ' || p.day::text || ', ' || p.offset_id || ' ' || p.channel || ', ' || p.side || ': ' || p.category,
+         count(*)::text,
+         case when p.day in (select d from full_day) then 'full day: a candidate label, read every one' else 'partial day' end,
+         'INFO'
     from pc p
    where p.side <> 'both'
-   group by case when p.day in (select d from full_day) then 'full days' else 'partial days' end, p.side, p.category
+   group by p.day, p.offset_id, p.channel, p.side, p.category
   union all
   select 32, 'sleeping-job claims, marks due ' || o.day::text || ', ' || o.offset_id || ' ' || o.channel || ', ended as: '
            || o.outcome || case when o.reason <> '' then ' (' || o.reason || ')' else '' end,
@@ -584,13 +616,25 @@ select n, "check", observed, expected, verdict from (
                                where cc.kind = 'claim' and cl.id = rl.claim_id))::text,
          'information', 'INFO'
   union all
+  select 34, 'shadow-only rows whose start the sleeping job claimed early (the withdrawn S1), full days and partial days',
+         (count(*) filter (where p.day in (select d from full_day)))::text || ', '
+           || (count(*) filter (where p.day not in (select d from full_day)))::text,
+         'information', 'INFO'
+    from pc p
+   where p.side = 'shadow_only'
+     and exists (
+       select 1 from public.reminder_claims e
+        where e.tenant_id = p.tenant_id and e.appointment_id = p.appointment_id
+          and e.kind = 'claim' and e.taker = 'run' and e.early = true
+          and e.offset_id = p.offset_id and e.channel = p.channel and e.starts_at = p.starts_at)
+  union all
   select 40, 'SHADOW_SUMMARY',
          'full days 2026-10-26 to 2026-10-28: both=' || matched::text
            || ' shadow_only=' || shadow_only::text || ' shadow_unexplained=' || shadow_unexplained::text
            || ' run_only=' || run_only::text || ' run_unexplained=' || run_unexplained::text
            || ' matched_share=' || case when matched + shadow_only + run_only = 0 then 'none'
                                        else round(100.0 * matched / (matched + shadow_only + run_only), 1)::text || '%' end,
-         'unexplained 0 and 0; the explained categories are rows 31',
+         'OK only with no mismatch; the candidate labels are rows 31, every mismatch is in rows 50 and 51',
          'INFO'
     from summary
   union all
@@ -603,6 +647,6 @@ select n, "check", observed, expected, verdict from (
       from pc
      where side <> 'both'
   ) m
-   where rk <= 50
+   where rk <= 500
 ) out
 order by n, "check";

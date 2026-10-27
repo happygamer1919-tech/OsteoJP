@@ -1,7 +1,7 @@
 # SHADOW-READ, 2026-10-29: did the reminder sweep's shadow agree with the sleeping job, Monday 10-26 to Wednesday 10-28
 
 **READ ONLY. One block. No apply, no write.**
-**Status: AUTHORED 2026-10-26; THE SQL REHEARSED ON THROWAWAYS ON THE LOCAL STACK (lane purple, synthetic rows, the cases below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-shadow-compare-20261029.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). R4 ROUND 1 (2026-10-26): FIX FIRST, NO BLOCKER; ITS FINDINGS ANSWERED IN THE SQL, THE BLOCK AND THE TEST (see "R4 round 1"); THE 21 DATABASE CASES RE-RUN ON THE CHANGED SQL THE SAME DAY (lane purple): EVERY CASE AS EXPECTED. R4 ROUND 2 (2026-10-26): FIX FIRST, 3 MAJOR, ANSWERED (see "R4 round 2"); 25 DATABASE CASES RE-RUN ON ITS SQL, EVERY CASE AS EXPECTED.** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `MERGED` is the merge commit SOLO names.
+**Status: AUTHORED 2026-10-26; THE SQL REHEARSED ON THROWAWAYS ON THE LOCAL STACK (lane purple, synthetic rows, the cases below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-shadow-compare-20261029.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). R4 ROUND 1 (2026-10-26): FIX FIRST, NO BLOCKER; ITS FINDINGS ANSWERED IN THE SQL, THE BLOCK AND THE TEST (see "R4 round 1"); THE 21 DATABASE CASES RE-RUN ON THE CHANGED SQL THE SAME DAY (lane purple): EVERY CASE AS EXPECTED. R4 ROUND 2 (2026-10-26): FIX FIRST, 3 MAJOR, ANSWERED (see "R4 round 2"); 25 DATABASE CASES RE-RUN ON ITS SQL, EVERY CASE AS EXPECTED. R4 ROUND 3 (2026-10-26): FIX FIRST, 4 MAJOR; THE DESIGN CHANGED SO THAT NO LABEL CAN MAKE A VERDICT OK (see "R4 round 3"); 32 DATABASE CASES RE-RUN, EVERY CASE AS EXPECTED.** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `MERGED` is the merge commit SOLO names.
 
 ## Why this read exists
 
@@ -9,7 +9,7 @@ Strategy's R20 of 2026-10-26: the shadow comparison becomes a repository file wi
 
 ## What it reads
 
-`scripts/db/read-shadow-compare-20261029.sql`, sha256 `db423b55a04af541feec1aed7ceb2fb19ca44cae061b80ed516db2df8eba9657`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, Lisbon times, the fixed labels of offsets (`48h`, `24h`), channels (`email`, `sms`), ledger outcomes (`sent`, `suppressed`, `provider_error`) and suppression reasons (`status`, `no_contact`, and the rest of the dispatcher's fixed list), and, in the mismatch list only, appointment ids (at most 50 a side). No tenant id, patient id or staff id, no name, phone, email address, message text or note. The predicates are copied from `apps/web/lib/reminders` on `origin/main` at `38721f0b`; the SQL file's header names each source.
+`scripts/db/read-shadow-compare-20261029.sql`, sha256 `71d47f03d37bfc35f241be144231d1f69f4b62d2115ff8e4ef78dda45566732c`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, Lisbon times, the fixed labels of offsets (`48h`, `24h`), channels (`email`, `sms`), ledger outcomes (`sent`, `suppressed`, `provider_error`) and suppression reasons (`status`, `no_contact`, and the rest of the dispatcher's fixed list), and, in the mismatch list only, appointment ids (at most 50 a side). No tenant id, patient id or staff id, no name, phone, email address, message text or note. The predicates are copied from `apps/web/lib/reminders` on `origin/main` at `38721f0b`; the SQL file's header names each source.
 
 **The window.** From `t0`, the first `shadow` heartbeat at or after 2026-10-25 15:15:19 Lisbon, to the read's clock. The verdicts cover the marks due on the three full Lisbon days, Monday 2026-10-26, Tuesday 2026-10-27 and Wednesday 2026-10-28. Sunday 10-25 (from `t0`) and Thursday 10-29 (to the read) are partial and print as INFO only. A mark is the visit's start minus the offset (48 hours for the email, 24 hours for the SMS); both writers store it as `due_at`, so a mark has the same Lisbon day on both sides. The comparison key is tenant, appointment, offset, channel and start, as both writers store it.
 
@@ -19,7 +19,7 @@ Strategy's R20 of 2026-10-26: the shadow comparison becomes a repository file wi
 
 ## THE VERDICTS, AND WHAT EACH EXPECTS
 
-The expected profile is **17 OK / 0 VACUOUS / 0 FAIL**. A zero is never a pass: a verdict whose subject is empty reads VACUOUS, and a fault seen directly reads FAIL first.
+A PASS is **17 OK / 0 VACUOUS / 0 FAIL**. A verdict is OK, REVIEW (agreement verdicts 11 to 16 only), VACUOUS or FAIL. The block exits 0 when there is no FAIL, no VACUOUS and verdicts 0 to 10 are all OK; with any REVIEW it says REVIEW, never PASSED. A zero is never a pass: a verdict whose subject is empty reads VACUOUS, and a fault seen directly reads FAIL first.
 
 | n | Verdict | EXPECT (OK) | VACUOUS when | FAIL when |
 |---|---|---|---|---|
@@ -32,27 +32,27 @@ The expected profile is **17 OK / 0 VACUOUS / 0 FAIL**. A zero is never a pass: 
 | 8 | the heartbeats account for every shadow row | each pass's `recorded_count` equals the shadow rows written in its own transaction (same tenant, same `created_at`), every row has its heartbeat, since `t0c` (both sides on the database clock) | no heartbeat or no shadow row since `t0c` | any row without a heartbeat, any heartbeat missing rows, any count that differs |
 | 9 | no mark taken twice by the shadow | 0 marks with more than one shadow row, since `t0` | no shadow row since `t0` | any |
 | 10 | nothing falls out of the comparison | every shadow row and sleeping-job claim written since `t0` has a mark and a known offset and channel (`48h email`, `24h sms`) | no row since `t0` | any row without a mark or with another offset or channel |
-| 11 to 16 | agreement, per full day and per reminder: 11 Monday 48h email, 12 Monday 24h sms, 13 Tuesday 48h email, 14 Tuesday 24h sms, 15 Wednesday 48h email, 16 Wednesday 24h sms | at least one reminder taken by both, and **0 unexplained** mismatches either way | `t0` is NULL, or nothing taken by both | any unexplained mismatch |
+| 11 to 16 | agreement, per full day and per reminder: 11 Monday 48h email, 12 Monday 24h sms, 13 Tuesday 48h email, 14 Tuesday 24h sms, 15 Wednesday 48h email, 16 Wednesday 24h sms | OK: at least one reminder taken by both and **no mismatch of any kind**. REVIEW: at least one match, mismatches present, every one with a candidate label (not a pass: SOLO and strategy read every one) | `t0` is NULL, or nothing taken by both | any UNEXPLAINED mismatch |
 
-**What "agree" means here.** The sweep's own design says what a shadow row is and is not (`apps/web/lib/reminders/sweep.ts`, header): "every mark the sleeping job claimed should have a shadow row beside it, and a shadow row with no `run` claim is a reminder the sleeping job never sent". A shadow row means "the sweep would have handed this reminder to the dispatcher", NOT "a message would have gone out": the dispatcher asks gates the sweep's selection does not (no contact, a channel switched off, a deleted patient). So the match is on the sleeping job's CLAIM, which it takes before every gate (`dispatch.ts` `dispatchReminderInner`), never on its `sent` rows. The threshold is **zero unexplained mismatches**: a mismatch either falls into one of the named categories below, each of which the code says it should, or it fails that day's verdict. There is no percentage threshold (see "For strategy to confirm").
+**What "agree" means here.** The sweep's own design says what a shadow row is and is not (`apps/web/lib/reminders/sweep.ts`, header): "every mark the sleeping job claimed should have a shadow row beside it, and a shadow row with no `run` claim is a reminder the sleeping job never sent". A shadow row means "the sweep would have handed this reminder to the dispatcher", NOT "a message would have gone out": the dispatcher asks gates the sweep's selection does not (no contact, a channel switched off, a deleted patient). So the match is on the sleeping job's CLAIM, which it takes before every gate (`dispatch.ts` `dispatchReminderInner`), never on its `sent` rows. **No label can make a verdict OK** (SOLO's change to Q1 after R4 round 3, for strategy to confirm): three review rounds each found another way a category explained away a lost run or a sweep miss, so OK now means no mismatch at all, a labelled mismatch makes the day REVIEW, and an unlabelled one makes it FAIL. There is no percentage threshold (see "For strategy to confirm").
 
-**The categories.** First match wins, in this order.
+**The candidate labels.** First match wins, in this order. A label is a reading for the person who goes through the mismatch list, never a pass. Letters stay stable; a withdrawn letter is never reused.
 
 | Side | Category | Why it is not a disagreement |
 |---|---|---|
-| shadow only | S1 the sleeping job claimed this start early | it woke at an older time of a visit since moved later (`early`, more than 10 minutes before the mark) |
+| shadow only | S1 (withdrawn in R4 round 3) | not a label: an early claim of this start can sit beside a lost on-time run. The count of such shadow-only rows stays as INFO row 34 |
 | shadow only | S2 (withdrawn in R4 round 2) | not a category. A claim of another start is also the shape of a lost re-armed run (the job claims the old mark, the visit moves to a mark still ahead, the re-armed run is lost), so such a row stays UNEXPLAINED |
-| shadow only | S3 moved after the 21:45 pass took its mark ahead | the shadow row was written before its mark (the look-ahead), an `appointment.reschedule` save lies after the shadow row and at or before the mark, and the start now differs: the old start's sleeping job was cancelled before it woke |
-| shadow only | S4 a ledger row with no claim | a reminder ledger row for it, and no sleeping-job claim of this reminder of ANY start written at or before that row: the claim fails open (`reminder-claim.ts`) and the job acted with no claim row. A row another start's claim can own explains nothing (found by round 2's former S2 arm) |
-| shadow only | S5 saved after its mark, before the pass | the shadow row says `saved_after_mark`, and a scheduling save lies after the mark and at or before the shadow row: the sweep takes any untaken mark while the visit is still ahead (`sweep.ts`, NO GRACE); the re-armed job dropped the past mark (`computeDueReminders`) |
+| shadow only | S3 moved after the 21:45 pass took its mark ahead | the shadow row was written before its mark (the look-ahead), an `appointment.reschedule` save whose new start (its metadata `startsAt`, read only when it is an ISO instant) differs from this start lies after the shadow row and at or before the mark, and the start now differs. A reschedule that keeps the start (a therapist, clinic or duration change) re-arms the job but is not a move (`actions.ts` reschedule audit, `functions.ts`) |
+| shadow only | S4 a ledger row with no claim | a reminder ledger row for it (from 10 minutes before the mark to the start), and no sleeping-job claim of this reminder, of ANY start and at any time, written at or before that row: the claim fails open (`reminder-claim.ts`) and the job acted with no claim row |
+| shadow only | S5 saved after its mark, before the pass | the shadow row says `saved_after_mark`, and between the mark and the shadow row lies either an `appointment.reschedule` TO this start (metadata `startsAt` equal to it), or an `appointment.update` via `portal_request_confirm` on a visit with no scheduling save before the mark. A hand-set Confirmada emits nothing (`reminder-population.ts`), so it is not enough. The sweep takes any untaken mark while the visit is still ahead (`sweep.ts`, NO GRACE); the re-armed job dropped the past mark |
 | shadow only | S6 (withdrawn in R4 round 2) | not a category. The job claims before every gate (`dispatch.ts`), a cancel emits no event and a confirm on a staff booking emits nothing, so a shadow-only row after a look-ahead can only come from a lost or never-armed run: it stays UNEXPLAINED |
 | shadow only | S7 due in the 15 minutes before the read | the job may not have woken yet (never on a full day read on Thursday) |
-| run only | R1 moved after the claim, before the next pass | an `appointment.reschedule` save lies after the claim and at or before the first pass at or after the mark, and the start now differs: the sweep keys on the visit's current start |
-| run only | R2 suppressed by the sleeping job as not remindable | its first ledger row after the claim is `suppressed` with reason `status`: the visit was not remindable at its mark, and the sweep's selection leaves those visits out too. `unconfirmed` is NOT a reason here: the sweep does not apply the unaccepted-request gate (`sweep.ts`, "WHAT A SHADOW ROW MEANS"), so a run-only row suppressed `unconfirmed` stays UNEXPLAINED |
+| run only | R1 moved after the claim, before the next pass | an `appointment.reschedule` save whose new start differs from this start lies after the claim and at or before the first pass at or after the mark, and the start now differs |
+| run only | R2 suppressed by the sleeping job as not remindable | its first ledger row after the claim (and before the next live claim of this reminder) is `suppressed` with reason `status`, and no save set the visit back to `scheduled` or `confirmed` after the claim and before the start. `unconfirmed` is NOT enough: the sweep does not apply the unaccepted-request gate (`sweep.ts`, "WHAT A SHADOW ROW MEANS") |
 | run only | R3 created at or after its mark | the sweep takes a visit only if it was created before its mark |
 | run only | R4 never reminded: no scheduling save | `REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER = false` (`reminder-population.ts`): the shadow pass leaves out a visit with no save that handed it to the reminder job; `excluded_count` on the heartbeat counts the same set as a level |
-| run only | R5 no pass of the sweep since its mark | the window's end; on a full day it would also fail verdicts 3 to 5 |
-| run only | R6 made not remindable between its mark and the next pass | a change to a status that is not remindable lies after the mark and at or before the first pass at or after it: the job sent at the mark, the sweep then skipped a visit that was no longer remindable. A scheduling save is not enough: it never makes the sweep skip a mark |
+| run only | R5 no pass of the sweep since its mark | partial days only (the window's end). On a full day a missing pass is never a label: it fails verdicts 3 to 5 |
+| run only | R6 made not remindable between its mark and the next pass | a change to a status that is not remindable lies after the mark and at or before the first pass at or after it, and no save set the visit back to `scheduled` or `confirmed` after the claim and before the start. A scheduling save is not enough: it never makes the sweep skip a mark |
 | either | UNEXPLAINED | none of the above. One on a full day fails that day's agreement verdict |
 
 Each category is read from rows, not from a story, and each time-bounded one is bounded to its own mechanism on the database clock, so a later save cannot explain away an earlier mismatch: the appointment's current start and creation time, the audit trail's saves (`audit_log`; "a scheduling save" is `reminder-population.ts` `hasSchedulingEvent` predicate by predicate, "a status that is not remindable" is a row whose metadata `toStatus` is set and is neither `scheduled` nor `confirmed`, "moved" is `appointment.reschedule`; metadata is read and never printed), the ledger, and the heartbeats. **Their limit, said plainly:** a category is evidence that the code path exists for that visit, not a replay of the moment. R2 rests on the sleeping job's own record of the status at its mark. A visit's status NOW is not used, because by Thursday every Monday-to-Wednesday visit has moved on to `completed`, `no_show` or `cancelled`.
@@ -65,11 +65,12 @@ Each category is read from rows, not from a story, and each time-bounded one is 
 | 21 | per Lisbon day, Sunday to Thursday: tenants with heartbeats, heartbeat rows, shadow heartbeats, distinct slots, heartbeats outside 07:00 to 21:45, sums of due, recorded, over the ceiling and left out (`excluded_count`, a level: the same visit is counted again by every pass) |
 | 22 | **R11, per full day:** distinct pass ids, heartbeat rows, heartbeats with no pass id, distinct tenants per pass (min and max), shadow rows written that day. Executions per pass in shadow mode are 1 run + 1 step `list-tenants` + 1 step per tenant (`apps/web/lib/reminders/sweep.ts:569` and `:582`), so these rows give SOLO the projection's inputs from production |
 | 30 | per Lisbon day of the mark and per reminder, Sunday to Thursday: both, shadow only, run only |
-| 31 | the count of each mismatch category, per side, for the full days and the partial days |
+| 31 | the count of each candidate label, per Lisbon day of the mark, reminder and side |
 | 32 | what each sleeping-job claim ended as, per day and reminder: `sent`, `suppressed (reason)`, `provider_error`, or `no ledger row` |
 | 33 | sleeping-job claims in the window: early claims, reminders claimed more than once for one start (retries), releases |
+| 34 | shadow-only rows whose start the sleeping job claimed early (the withdrawn S1), full days and partial days |
 | 40 | `SHADOW_SUMMARY`: the full days' totals, both, shadow only and run only with their unexplained counts, and the matched share |
-| 50, 51 | the mismatches, shadow only (50) and run only (51): Lisbon mark, offset, channel, appointment id and category; at most 50 a side, the unexplained ones first |
+| 50, 51 | the mismatches, shadow only (50) and run only (51): Lisbon mark, offset, channel, appointment id and label; at most 500 a side, the unexplained ones first. In the file only: the block never prints them |
 
 ## R4 round 1 (2026-10-26): FIX FIRST, no BLOCKER, and what changed
 
@@ -91,6 +92,18 @@ Round 1's items 3 to 6 passed. The rule applied: a stricter read that leaves mor
 - Found while re-running: S4 credited a ledger row that another start's claim owns (the former S2 arm read S4). S4 now needs no claim of this reminder, of any start, at or before the ledger row.
 - Tests: R6 and S5 each have a positive arm and a negative arm whose save lies outside the predicate (an `appointment.update` with no `toStatus`), which stays UNEXPLAINED.
 
+## R4 round 3 (2026-10-26): FIX FIRST, 4 MAJOR, and the design change
+
+S1, S3 and R1, S5, and R2 with R6 could each still hide a lost run or a sweep miss. Three rounds showed the same pattern, so the design changed: **no label can make a verdict OK.** OK means no mismatch; labelled mismatches make the day REVIEW; an unlabelled one makes it FAIL. The block succeeds on no FAIL, no VACUOUS and verdicts 0 to 10 all OK, and prints REVIEW, never PASSED, when any agreement verdict is REVIEW. The labels were corrected all the same, so they read true for the person who reads them:
+
+- S1 withdrawn (its count stays as INFO row 34).
+- S3 and R1: the save must be a move, its metadata `startsAt` different from this start (a reschedule that keeps the start re-arms but is not a move).
+- S5: only a reschedule TO this start, or a `portal_request_confirm` on a visit with no scheduling save before the mark.
+- R2 and R6: no save setting the visit back to `scheduled` or `confirmed` after the claim and before the start.
+- R5: partial days only.
+- MINOR: the claim outcome (row 32, R2) stops at the next live claim of this reminder, of any start; S4 counts a claim of any time; the mismatch list holds up to 500 a side, in the file only; the labels are counted per day (row 31).
+- New database arms: a positive S4; negatives for S4 (another start's claim before the ledger row), S3 and R1 (a same-start reschedule), S5 (a hand-set Confirmada after the mark), R2 and R6 (set back to Agendada after the claim), S1 (an early claim of this start); the explained case now reads REVIEW on its three days, never OK; and the block prints REVIEW, not PASSED, for a REVIEW table.
+
 ## THE HALT RULE
 
 Any STOP line ends the block: nothing after it is pasted or run again, and GREEN reports the output as printed. A REFUSE line from the target guard, and any harness or classifier refusal, is a STOP. **Nothing in this block writes to production, so no STOP leaves anything changed there.** A VACUOUS or FAIL verdict stops the block after the table has printed: report the table as printed. Its INFO rows are not to be relied on.
@@ -99,7 +112,7 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-shadow-compare-20261029.sql`, sha256 `db423b55a04af541feec1aed7ceb2fb19ca44cae061b80ed516db2df8eba9657` |
+| The read | `scripts/db/read-shadow-compare-20261029.sql`, sha256 `71d47f03d37bfc35f241be144231d1f69f4b62d2115ff8e4ef78dda45566732c` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes MN-READ's document pins) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-shadow-compare-20261029.sha256` pins it |
@@ -122,7 +135,7 @@ GREEN pastes its dispatch's filled copy, whole and on its own, from `/Users/ivan
 set -o pipefail
 MERGED=PENDING
 DOCSHA=PENDING
-SHAREAD=db423b55a04af541feec1aed7ceb2fb19ca44cae061b80ed516db2df8eba9657
+SHAREAD=71d47f03d37bfc35f241be144231d1f69f4b62d2115ff8e4ef78dda45566732c
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-shadow-compare-20261029.sql
@@ -163,19 +176,21 @@ node scripts/assert-production-target.mjs || { echo "STOP: the target guard refu
 rm -f ${OUT} || { echo "STOP: the old transcript could not be removed. Nothing was read"; exit 1; }
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -c "begin read only" -c "set local statement_timeout = '120s'" -c "select 'read only: ' || current_setting('transaction_read_only') as shadow_read_transaction" -f ${READFILE} -c "rollback" > ${OUT} 2>&1 || { echo "STOP: the read did not complete (an error, or longer than 120 seconds; psql's lines are in ${OUT}), or its transcript could not be written. Nothing was written: the transaction is read only"; exit 1; }
 grep -q 'read only: on' ${OUT} || { echo "STOP: the read did not run inside a transaction that read as READ ONLY (psql's lines are in ${OUT}), so its table is not reported"; exit 1; }
-CNT=$(awk -F'|' '{ v = $NF; gsub(/[[:space:]]/, "", v); if (v == "OK") o++; else if (v == "VACUOUS") a++; else if (v == "FAIL") f++ } END { printf "%d %d %d", o, a, f }' ${OUT}) || { echo "STOP: the verdicts could not be counted. The table is in ${OUT}"; exit 1; }
-echo "verdicts (OK VACUOUS FAIL): ${CNT}"
+CNT=$(awk -F'|' '{ v = $NF; gsub(/[[:space:]]/, "", v); if (v == "OK") o++; else if (v == "REVIEW") w++; else if (v == "VACUOUS") a++; else if (v == "FAIL") f++ } END { printf "%d OK / %d REVIEW / %d VACUOUS / %d FAIL", o, w, a, f }' ${OUT}) || { echo "STOP: the verdicts could not be counted. The table is in ${OUT}"; exit 1; }
+echo "verdicts: ${CNT}"
 R11=$(grep -E '^[[:space:]]*22[[:space:]]*[|]' ${OUT}) || { echo "STOP: the read printed no R11 rows (row 22). The table is in ${OUT}"; exit 1; }
 echo "${R11}"
-[ "${CNT}" = "17 0 0" ] || { echo "STOP: the read's verdicts are not 17 OK / 0 VACUOUS / 0 FAIL. The table is in ${OUT}; its INFO rows are not to be relied on"; exit 1; }
+RES=$(awk -F'|' '{ n = $1; gsub(/[[:space:]]/, "", n); v = $NF; gsub(/[[:space:]]/, "", v); if (v == "OK") { o++; if (n ~ /^[0-9]+$/ && n + 0 <= 10) h++ } else if (v == "REVIEW") { w++; if (!(n ~ /^[0-9]+$/ && n + 0 >= 11 && n + 0 <= 16)) x++ } else if (v == "VACUOUS") a++; else if (v == "FAIL") f++ } END { if (f + a + x == 0 && h == 11 && o + w == 17) print (w == 0 ? "PASS" : "REVIEW"); else print "STOP" }' ${OUT}) || { echo "STOP: the verdicts could not be judged. The table is in ${OUT}"; exit 1; }
+[ "${RES}" = "PASS" ] || [ "${RES}" = "REVIEW" ] || { echo "STOP: the read has a FAIL or a VACUOUS verdict, verdicts 0 to 10 are not all OK, or a verdict is missing. The table is in ${OUT}; its INFO rows are not to be relied on"; exit 1; }
 grep -qE '^[[:space:]]*40[[:space:]]*[|][[:space:]]*SHADOW_SUMMARY[[:space:]]*[|]' ${OUT} || { echo "STOP: the read printed no SHADOW_SUMMARY row. The table is in ${OUT}"; exit 1; }
-echo "SHADOW-READ PASSED: 17 OK / 0 VACUOUS / 0 FAIL. The whole table is in ${OUT}"
+[ "${RES}" = "REVIEW" ] || echo "SHADOW-READ PASSED: 17 OK / 0 VACUOUS / 0 FAIL. The whole table is in ${OUT}"
+[ "${RES}" = "PASS" ] || echo "SHADOW-READ REVIEW: no FAIL, no VACUOUS, verdicts 0 to 10 OK, and mismatches that each carry a candidate label. This is NOT a pass: SOLO and strategy read every mismatch in ${OUT} (rows 31, 50 and 51)"
 )
 ```
 
-**EXPECT:** `lisbon now:  <a time at or after 202610290715> WET`; `checked out: <MERGED>`; `document:`, then `docs/read-shadow-compare-20261029.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; `verdicts (OK VACUOUS FAIL): 17 0 0`; three R11 lines (`22 | passes on 2026-10-26 ...`, `-27`, `-28`); then `SHADOW-READ PASSED: 17 OK / 0 VACUOUS / 0 FAIL. The whole table is in ...`. Exit 0. psql prints nothing to the terminal: the table is in `/Users/ivan/osteojp-handover/shadow-read-20261029.out` only. **REPORT THESE LINES AND THE FILE'S PATH.** It writes nothing to production.
+**EXPECT:** `lisbon now:  <a time at or after 202610290715> WET`; `checked out: <MERGED>`; `document:`, then `docs/read-shadow-compare-20261029.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; `verdicts: <o> OK / <r> REVIEW / 0 VACUOUS / 0 FAIL`; three R11 lines (`22 | passes on 2026-10-26 ...`, `-27`, `-28`); then EITHER `SHADOW-READ PASSED: 17 OK / 0 VACUOUS / 0 FAIL. ...` (every agreement verdict OK: no mismatch at all) OR `SHADOW-READ REVIEW: ...` (verdicts 0 to 10 OK, no FAIL, no VACUOUS, and one or more agreement verdicts REVIEW). Exit 0 for both. **REVIEW is not a pass:** SOLO and strategy read every mismatch in the file before anything is decided. psql prints nothing to the terminal: the table is in `/Users/ivan/osteojp-handover/shadow-read-20261029.out` only. **REPORT THESE LINES AND THE FILE'S PATH.** It writes nothing to production.
 
-**STOP:** any `STOP:` line. The likely ones and what they mean: `NOT READY` (the dispatch was not filled in); `earlier than 2026-10-29 07:15` (wait, paste again after 07:15); `not 17 OK / 0 VACUOUS / 0 FAIL` (the read ran: report the printed lines and the file's path; SOLO reads the failing verdict and its mismatch rows 50 and 51 in the file before anything is decided).
+**STOP:** any `STOP:` line. The likely ones and what they mean: `NOT READY` (the dispatch was not filled in); `earlier than 2026-10-29 07:15` (wait, paste again after 07:15); `a FAIL or a VACUOUS verdict` (the read ran: report the printed lines and the file's path; SOLO reads the failing verdict and its mismatch rows 50 and 51 in the file before anything is decided).
 
 ## The owner's fallback: the Supabase SQL editor
 
@@ -184,7 +199,7 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly: `set transaction read only; set local statement_timeout = '120s';`
 3. Below it, paste the whole of `scripts/db/read-shadow-compare-20261029.sql`. To copy it exactly, once the clone is on main, type this in Claude Code. It copies the file only if it is the reviewed one, and otherwise prints a STOP and copies nothing:
-   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-shadow-compare-20261029.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "db423b55a04af541feec1aed7ceb2fb19ca44cae061b80ed516db2df8eba9657" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-shadow-compare-20261029.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "71d47f03d37bfc35f241be144231d1f69f4b62d2115ff8e4ef78dda45566732c" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run, on Thursday 2026-10-29 at or after 07:15 Lisbon. EXPECT one table. Row 0 must read `on` and `OK`: if it does not, stop and send a screenshot, nothing else. Rows 1 to 16 must read `OK`.
 5. Send the whole table to SOLO privately (it holds counts, Lisbon times and, in rows 50 and 51, appointment ids; no name, phone or email). Do not post it anywhere public.
 
@@ -194,7 +209,7 @@ The editor runs the text as one transaction, so the first line makes the server 
 
 The `public` schema copied from the lane's database with `pg_dump --schema-only`, into a throwaway database per case, made from one seeded base. One synthetic tenant; 12 synthetic visits (Monday 10-26 to Saturday 10-31, 10:00 and 15:00 Lisbon), each with an `appointment.create` audit row dated 10-01; heartbeats every 15 minutes from Sunday 15:30 to Thursday 07:15; for every mark in the window a sleeping-job claim at the mark plus 2 seconds and a `sent` ledger row, and a shadow row written in the transaction of the first pass at or after the mark; each heartbeat's counts equal its rows. Three appointment foreign keys (patient, practitioner, location) were dropped in the throwaway so no synthetic person or clinic had to be made; the read reads none of those tables. The read ran as the block runs it (`begin read only`, 120 seconds, `rollback`), with ONE substitution: its single clock line `select now() as t1` replaced by a fixed instant (2026-10-29 07:30 Lisbon unless the case says otherwise), because the window is in the future of today. The fault-injection test runs the same cases whenever `SHADOW_READ_TEST_PGURL` names a local database, and refuses any other host.
 
-**The results below are the run of 2026-10-26 on the SQL after R4 round 2** (25 cases, the test's database part 1 of 1 passing, lane purple; the throwaways dropped by the test). Rows marked NEW, CHANGED or round 2 came with the reviews; the other rows read the same throughout.
+**The results below are the run of 2026-10-26 on the SQL after R4 round 3** (32 cases, the test's database part 1 of 1 passing, lane purple; the throwaways dropped by the test). Rows marked NEW, CHANGED, round 2 or round 3 came with the reviews; the other rows read the same throughout. A row that reads "all others OK" has no labelled mismatch.
 
 | Case | What was seeded | Verdicts | Notes |
 |---|---|---|---|
@@ -204,7 +219,14 @@ The `public` schema copied from the lane's database with `pg_dump --schema-only`
 | shadow-only | the sleeping job's claim and ledger row for Tuesday's 24h SMS at 10:00 removed | 14 FAIL, all others OK | category UNEXPLAINED; its appointment id printed in row 50 |
 | run-only | the shadow row for Wednesday's 48h email at 10:00 removed, its heartbeat's counts lowered by one | 15 FAIL, all others OK | category UNEXPLAINED; row 51 |
 | missing-heartbeat | Monday's 12:00 heartbeat removed | 3 FAIL, all others OK | `heartbeats 59 to 59; slots 59 to 59` |
-| explained (CHANGED in rounds 1 and 2) | six extra visits: one with no scheduling save (claimed and sent, no shadow row); one claimed and suppressed `status`, now `cancelled`; one claimed at its old start and moved 5 minutes later, before the next pass (shadow and claim at the new start); one moved in after its mark, its shadow row `saved_after_mark`, no claim; one taken ahead by the 21:45 pass and moved before its mark; one claimed and sent at its mark and cancelled 3 minutes later, before the next pass | 17 OK | row 31: R1, R2, R4, R6, S3 and S5 once each |
+| labelled only (CHANGED in rounds 1 to 3) | seven extra visits: one with no scheduling save (claimed and sent, no shadow row); one claimed and suppressed `status`, now `cancelled`; one claimed at its old start and moved (new start in the save) 5 minutes later, before the next pass, shadow and claim at the new start; one moved TO its start after its mark, its shadow row `saved_after_mark`, no claim; one taken ahead by the 21:45 pass and moved before its mark; one claimed and sent at its mark and cancelled 3 minutes later, before the next pass; one taken by the shadow with a ledger row and no claim of any start | 12, 14 and 16 REVIEW, all others OK | never OK on a day with a labelled mismatch. Row 31 per day: R1, R4, R6, S3, S4 on Monday 24h; R2 on Tuesday; S5 on Wednesday |
+| S1 withdrawn (round 3) | a shadow-only row beside an early claim of the same start | 12 FAIL, all others OK | row 50 UNEXPLAINED; row 34 `1, 0` |
+| S4 negative (round 3) | a shadow-only row, a ledger row, and another start's claim written before that ledger row | 12 FAIL, all others OK | row 50 UNEXPLAINED |
+| S3 negative (round 3) | taken ahead, a reschedule that keeps the start before the mark, the real move a day later | 12 FAIL, all others OK | row 50 UNEXPLAINED |
+| R1 negative (round 3) | claimed, a reschedule that keeps the start before the next pass, the real move a day later | 12 FAIL, all others OK | row 51 UNEXPLAINED |
+| S5 negative (round 3) | shadow row `saved_after_mark`, the only save a hand-set Confirmada after the mark | 16 FAIL, all others OK | row 50 UNEXPLAINED |
+| R2 negative (round 3) | suppressed `status`, then set back to Agendada after the claim | 14 FAIL, all others OK | row 51 UNEXPLAINED |
+| R6 negative (round 3) | claimed and sent, cancelled before the next pass, then set back to Agendada | 12 FAIL, all others OK | row 51 UNEXPLAINED |
 | R1 negative (NEW) | claimed, then moved a day after the claim | 12 FAIL, all others OK | row 51 UNEXPLAINED |
 | S3 negative (NEW) | taken ahead by the 21:45 pass, moved a day after its mark | 12 FAIL, all others OK | row 50 UNEXPLAINED |
 | another start's claim (NEW) | a sleeping-job claim of another start written a day after the shadow row | 12 FAIL, all others OK | row 50 UNEXPLAINED |
@@ -234,7 +256,7 @@ Not measured: the read's run time on production's row counts. Its largest inputs
 
 The read is built to the three defaults below. Each is SOLO's default, not a ruling, and is marked for strategy to confirm or change before GREEN runs the read.
 
-**Q1. The agreement threshold.** Options: (a) zero unexplained mismatches per full day and reminder, every explained category printed (this document); (b) a matched share of at least 95% per day and reminder, without categories; (c) both. **DEFAULT TAKEN: (a), FOR STRATEGY TO CONFIRM.** At this clinic's volume a day holds a few dozen to a few hundred marks per reminder, so 5% is several patients a day whose reminder the sweep would miss or send twice, and a percentage hides exactly the one case worth reading. The categories carry the known, coded divergences instead, and an unexplained one is a defect to read before send mode, not noise.
+**Q1. The agreement threshold.** Options: (a) zero unexplained mismatches per full day and reminder, every explained category printed; (b) a matched share of at least 95% per day and reminder, without categories; (c) both. The default SOLO took first was (a). **CHANGED BY SOLO AFTER R4 ROUND 3, FOR STRATEGY TO CONFIRM: OK only with no mismatch of any kind; labelled mismatches make the day REVIEW (not a pass, every one read by SOLO and strategy); any unlabelled one makes it FAIL.** Three rounds each found another way a category explained away a lost run or a sweep miss, and that loop does not converge, so no category may ever make a verdict OK. A percentage is still rejected: at this clinic's volume 5% is several patients a day.
 
 **Q2. The explained categories' size.** R4 (visits never reminded, left out while the switch is off) is expected to be large if imported visits were re-armed on 2026-10-12; Q-T turns that switch on together with send mode, so R4 is the population the sweep starts reminding on Thursday. **DEFAULT TAKEN: no ceiling on any explained category in this read, FOR STRATEGY TO CONFIRM.** SOLO reports R4's count beside `excluded_count` (row 21) in the Thursday report, and strategy decides on the number.
 
