@@ -135,12 +135,28 @@ function selectLists(s) {
   return lists;
 }
 
-/** What is left of a select list once subqueries (checked on their own), counts, filters and exists go. */
+/** The select lists at depth 0 of a text (a CTE's own output, union branches included). */
+function topSelectLists(s) {
+  const out = [];
+  const re = /\bselect\b/gi;
+  let m;
+  while ((m = re.exec(s))) {
+    let d = 0;
+    for (let i = 0; i < m.index; i++) { if (s[i] === "(") d++; else if (s[i] === ")") d--; }
+    if (d === 0) out.push(selectLists(s.slice(m.index))[0]);
+  }
+  return out;
+}
+
+/** What is left of a select list once subqueries (checked on their own), counts, filters, exists,
+ * window specifications and DISTINCT ON keys go: none of them reaches an output column. */
 function bare(list) {
   let s = removeGroups(list, /\(\s*(?=select\b)/i);
   s = removeGroups(s, /\bcount\s*\(/i);
   s = removeGroups(s, /\bfilter\s*\(/i);
   s = removeGroups(s, /\bexists\s*\(/i);
+  s = removeGroups(s, /\bover\s*\(/i);
+  s = removeGroups(s, /\bdistinct\s+on\s*\(/i);
   s = s.replace(/\b(raw|metadata)\s*->>\s*''/gi, " ").replace(/\bmetadata\s*\?\s*''/gi, " ");
   return s;
 }
@@ -156,6 +172,8 @@ function sqlFindings(text) {
   const masked = maskStrings(code);
   const writes = masked.match(/\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke|copy|call|do|set|begin|commit|rollback|savepoint|lock|vacuum|analyze|refresh|notify|listen|prepare|execute)\b/i);
   if (writes) found.push(`a statement word it must not carry: ${writes[0]}`);
+  const idText = masked.match(/\b[a-z_0-9.]*id\s*::\s*(text|varchar|character varying)\b/i);
+  if (idText) found.push(`an id is cast to text: ${idText[0]}`);
   for (const m of code.matchAll(/\braw\b(\s*->>?\s*'([^']*)')?/gi)) {
     if (!m[1] || !m[1].includes("->>") || !RAW_KEYS.includes(m[2])) found.push(`raw read other than through ${RAW_KEYS.join(", ")}: ${m[0]}`);
   }
@@ -173,6 +191,23 @@ function sqlFindings(text) {
     for (const l of selectLists(c.body)) {
       const p = bare(l).match(IDS);
       if (p) found.push(`${c.name}: a select list names an id column: ${p[0]}`);
+    }
+  }
+  // Every CTE a printed CTE reads must itself output no id column.
+  const names = new Set(list.map((c) => c.name));
+  const readers = new Map();
+  for (const c of printed) {
+    for (const m of c.body.matchAll(/\b(?:from|join)\s+([a-z_][a-z_0-9]*)\b/gi)) {
+      const n = m[1].toLowerCase();
+      if (names.has(n) && !/^(r|v)_/.test(n)) readers.set(n, [...(readers.get(n) || []), c.name]);
+    }
+  }
+  if (readers.size < 10) found.push(`too few CTEs read by printed CTEs (${readers.size}): the reader did not parse the read`);
+  for (const [n, by] of readers) {
+    const c = list.find((x) => x.name === n);
+    for (const l of topSelectLists(c.body)) {
+      const p = bare(l).match(IDS);
+      if (p) found.push(`${n} (read by ${by[0]}): a select list names an id column: ${p[0]}`);
     }
   }
   const outCte = list.find((c) => c.name === "out");
@@ -221,6 +256,9 @@ test("each select-list rule catches its own seeded fault", () => {
     ["a NIF in a select list", sql.replace("select count(distinct p.id) as rows_in_group, count(distinct pc.location_id) as clinics\n    from public.patients p\n    left join pclin pc on pc.patient_id = p.id\n   where p.deleted_at is null and p.merged_into_id is null\n     and regexp_replace", "select count(distinct p.id) as rows_in_group, max(p.nif) as clinics\n    from public.patients p\n    left join pclin pc on pc.patient_id = p.id\n   where p.deleted_at is null and p.merged_into_id is null\n     and regexp_replace"), /personal column: nif/],
     ["an appointment id printed", sql.replace("count(*)::text || ', ' || to_char(min(starts_at", "min(id::text) || count(*)::text || ', ' || to_char(min(starts_at"), /r_10: a select list names an id column: id/],
     ["a patient id printed", sql.replace("'B5/P27 patients by year, clinic and origin of their FIRST completed visit: ' || yr::text", "'B5/P27 patients by year, clinic and origin of their FIRST completed visit: ' || max(patient_id::text) || yr::text"), /r_53: a select list names an id column: patient_id/],
+    ["an id in a helper a printed CTE reads", sql.replace("  select ap.oc, ap.clinic, ap.status, ap.cstate, ap.starts_at,", "  select ap.patient_id, ap.oc, ap.clinic, ap.status, ap.cstate, ap.starts_at,"), /apx \(read by [a-z_0-9]+\): a select list names an id column: patient_id/],
+    ["an id cast to text in a helper", sql.replace("  select distinct on (ap.patient_id) ap.yr, ap.clinic, ap.oc", "  select distinct on (ap.patient_id) ap.patient_id::text as k, ap.yr, ap.clinic, ap.oc"), /an id is cast to text: ap\.patient_id::text/],
+    ["a patient id in the patients helper", sql.replace("  select x.linked_clinics, x.appt_clinics,", "  select x.linked_clinics, x.merged_into_id, x.appt_clinics,"), /pat_clinics \(read by r_5\d\): a select list names an id column: merged_into_id/],
     ["the cancel reason read", sql.replace("al.metadata->>'outcome' in", "al.metadata->>'reason' in"), /metadata read other than through a named key/],
     ["metadata read whole", sql.replace("(al.metadata ? 'clonedFrom') as cloned", "al.metadata::text as cloned"), /metadata read other than through a named key/],
     ["a source row key that is not allowed", sql.replace("lower(trim(m.raw->>'tipo_servico'))", "lower(trim(m.raw->>'nome'))"), /raw read other than through/],
@@ -271,6 +309,18 @@ test("the block's shape: pipefail on line 2, no set -e, no # line, no continuati
   assert.ok(lines[2] === "MERGED=PENDING" && lines[3] === "DOCSHA=PENDING");
   assert.ok(block.includes(`OUT=${OUT_FILE}\n`), "the transcript does not go to the handover folder");
   assert.ok(block.indexOf("PD=$(awk") < block.indexOf("CNT=$(awk"), "the transcript is not checked for personal data before the verdicts are counted");
+  assert.doesNotMatch(block, /\btee\b/, "the block streams the transcript to the screen");
+  assert.match(psql[0], / > \$\{OUT\} 2>&1 \|\| \{ echo "STOP: /, "psql's output does not go to the transcript file only");
+  assert.doesNotMatch(block, /\b(cat|head|tail|sed|less|more|column)\b[^\n]*\$\{OUT\}/, "a line prints the transcript");
+  const at = lines.findIndex((l) => /^psql /.test(l));
+  const echoes = lines.slice(at + 1).filter((l) => /^echo /.test(l));
+  assert.deepEqual(echoes, [
+    'echo "personal-data scan: ${PD} lines carry a uuid fragment, an at sign or nine digits in a row"',
+    'echo "verdicts (OK VACUOUS FAIL): ${CNT}"',
+    'echo "R14-PROFILE PASSED: 7 OK / 0 VACUOUS / 0 FAIL. R12: ${L}"',
+  ], "after psql the block echoes something other than the scan count, the verdict counts and the R12 line");
+  const scan = lines.findIndex((l) => l.startsWith('[ "${PD}" = "0" ]'));
+  assert.ok(scan > at && lines.slice(at + 1, scan).every((l) => !/^echo /.test(l)), "a line is echoed after psql before the personal-data scan passes");
   for (const l of lines) {
     if (/\|\| \{/.test(l)) assert.match(l, /\|\| \{ echo "STOP: [^"]+"; exit 1; \}$/, `a halt that is not one STOP and exit 1: ${l}`);
   }
@@ -285,7 +335,7 @@ const realOf = (name) => {
   if (r.status !== 0 || !p.startsWith("/")) throw new Error(`the harness needs ${name} on ${SYSTEM_PATH}`);
   return p;
 };
-const STUBBED = ["git", "node", "psql", "tee", "grep", "awk", "cut", "shasum", "rm"];
+const STUBBED = ["git", "node", "psql", "grep", "awk", "cut", "shasum", "rm"];
 
 const VERDICTS = [
   "  0 | 0. this transaction is READ ONLY | on | on | OK",
@@ -327,7 +377,7 @@ echo "$n" > "$d/count.${name}"
 printf '%s:%s %s\\n' "${name}" "$n" "$*" >> "$d/calls"
 if [ "$HARNESS_FAIL" = "${name}:$n" ]; then
   echo "${name}: harness fault" >&2
-  ${name === "tee" || name === "grep" || name === "awk" || name === "cut" || name === "shasum" ? `"${real}" "$@" > /dev/null 2>&1 < /dev/null` : ":"}
+  ${name === "grep" || name === "awk" || name === "cut" || name === "shasum" ? `"${real}" "$@" > /dev/null 2>&1 < /dev/null` : ":"}
   exit ${name === "grep" ? 2 : 1}
 fi
 case "${name}" in
@@ -404,13 +454,22 @@ function runOnce(shell, base, text, env = {}) {
 
 function assertPass(r) {
   assert.equal(r.status, 0, r.out);
-  assert.match(r.stdout, /^R14-PROFILE PASSED: 7 OK \/ 0 VACUOUS \/ 0 FAIL, .*R12_FIRES/m);
+  assert.match(r.stdout, /^R14-PROFILE PASSED: 7 OK \/ 0 VACUOUS \/ 0 FAIL\. R12: .*R12_FIRES/m);
+  assertNoTable(r, "pass");
   assert.match(r.stdout, /TOOL-CHAIN-CONTINUED/);
   assert.doesNotMatch(r.out, /^STOP:/m);
   assert.doesNotMatch(r.out, /harness: unexpected/);
 }
 
+/** Nothing of psql's table reaches the screen; only the R12 row may, inside the PASSED line. */
+function assertNoTable(r, label) {
+  for (const marker of ["BEGIN", "ROLLBACK", "read only: on", "0. this transaction", "B1/P1", "someone", "912345678", "0c1a0000-0000-4000"]) {
+    assert.ok(!r.out.includes(marker), `${label}: the table reached the screen (${marker})\n${r.out}`);
+  }
+}
+
 function assertStop(r, re, label) {
+  assertNoTable(r, label);
   assert.notEqual(r.status, 0, `${label}: the block went on\n${r.out}`);
   const stops = r.stdout.split("\n").filter((l) => l.startsWith("STOP:"));
   assert.equal(stops.length, 1, `${label}: expected exactly one STOP line\n${r.out}`);
@@ -431,7 +490,7 @@ for (const shell of shells) {
       const text = block.replaceAll(APPLY_DIR, join(base, "apply")).replaceAll(OUT_FILE, join(base, "out.txt"));
       const r = runOnce(shell, base, text);
       assertStop(r, /still reads PENDING, so it is NOT READY/, "PENDING");
-      assert.ok(!/^(git|node|psql|shasum|rm|tee|awk|cut):/m.test(r.calls), `a command ran before the PENDING check: ${r.calls}`);
+      assert.ok(!/^(git|node|psql|shasum|rm|awk|cut):/m.test(r.calls), `a command ran before the PENDING check: ${r.calls}`);
     } finally { rmSync(base, { recursive: true, force: true }); }
   });
 
@@ -463,7 +522,7 @@ for (const shell of shells) {
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "noline" }), /no R12_FIRES row/, "no R12_FIRES");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
       for (const k of ["uuid", "at", "digits"]) {
-        assertStop(runOnce(shell, base, text, { HARNESS_TABLE: k }), /carry a uuid fragment, an at sign or nine digits in a row\. Do NOT report the table/, `transcript ${k}`);
+        assertStop(runOnce(shell, base, text, { HARNESS_TABLE: k }), /carry a uuid fragment, an at sign or nine digits in a row\. Do NOT open, print or paste the transcript/, `transcript ${k}`);
       }
       assertStop(runOnce(shell, base, text, { HARNESS_DIRTY: "yes" }), /not clean/, "dirty");
       assertStop(runOnce(shell, base, text, { HARNESS_ANCESTOR: "no" }), /is not on origin\/main/, "not on main");
@@ -478,7 +537,7 @@ for (const shell of shells) {
       }
       const r1 = runOnce(shell, base, filled(base).replaceAll(join(base, "apply"), join(base, "no-such-apply-dir")));
       assertStop(r1, /the apply worktree is not there/, "missing apply directory");
-      assert.ok(!/^(git|node|psql|shasum|rm|tee|awk|cut):/m.test(r1.calls), `a command ran after the cd failed: ${r1.calls}`);
+      assert.ok(!/^(git|node|psql|shasum|rm|awk|cut):/m.test(r1.calls), `a command ran after the cd failed: ${r1.calls}`);
       const r2 = runOnce(shell, base, filled(base).replaceAll(join(base, "prod.env"), join(base, "no-such.env")));
       assertStop(r2, /production environment file could not be loaded/, "missing env file");
       assert.ok(!/^(node|psql):/m.test(r2.calls), `the guard or psql ran without the env file: ${r2.calls}`);

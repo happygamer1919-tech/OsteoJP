@@ -1,7 +1,7 @@
 # R14-PROFILE, 2026-10-27: the appointments profile, counts and dates only
 
 **READ ONLY. One block. No window, no apply, no write.**
-**Status: AUTHORED 2026-10-26; THE SQL REHEARSED 2026-10-26 ON A THROWAWAY WITH SYNTHETIC ROWS (twelve cases, below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-r14-profile-20261027.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"); NOT YET REVIEWED (R4).** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, which names `<MERGED>` and this document's sha256.
+**Status: AUTHORED 2026-10-26; THE SQL REHEARSED 2026-10-26 ON A THROWAWAY WITH SYNTHETIC ROWS (twelve cases, below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-r14-profile-20261027.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"); R4 ROUND 1 (FIX FIRST, seven findings) ANSWERED 2026-10-26 AND RE-REHEARSED (round 2, below); R4 ROUND 2 PENDING.** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, which names `<MERGED>` and this document's sha256.
 
 ## Why this read exists
 
@@ -11,7 +11,7 @@ It is information, not a gate on anything else. It writes nothing.
 
 ## What it reads
 
-`scripts/db/read-r14-profile-20261027.sql`, sha256 `84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284`. One result set, columns `n | check | observed | expected | verdict`, ordered by `n` then `check`.
+`scripts/db/read-r14-profile-20261027.sql`, sha256 `d6d3fa0b88567893e82de3635fa0991c135b1ca0bba010eab49b4688ee76d9da`. One result set, columns `n | check | observed | expected | verdict`, ordered by `n` then `check`.
 
 **What may be printed:** counts, Lisbon dates and months, a clinic CODE (`LV`, `CB`, `MN`, found by name as MN-READ finds them), and words from fixed lists: the appointment `status` and `confirmation_state` values, the origin class (`imported`, `native_staff`, `native_portal`), the source `estado` (`realizada`, `falta`, `marcada`, else `other`), the block `reason`, the consultation state (`pending`, `fired`, `needs_attention`, else `other`), the SMS outcome (`confirmed`, `cancelled`, `opt_out`, `review`, else `other`). **Never printed:** a name of a person, a patient id, an appointment id, a staff id, a phone, an email, a NIF, a date of birth, a note, a source row, an audit metadata value outside the named keys, an error text, a service name. Names are matched inside SQL only (the person-rows rule, the duplicate-looking patients, the placeholder patients), and only counts leave the match.
 
@@ -25,7 +25,7 @@ It is information, not a gate on anything else. It writes nothing.
 | 1 | every location is one of LV, CB, MN by name: LV once, CB once, MN at most once, no OTHER, no AMBIGUOUS | as stated | FAIL |
 | 2 | there is something to measure: imported appointments, native appointments, live patients, appointments whose service has a default length | each > 0 | VACUOUS |
 | 3 | the reschedule measure can see a move: native rows whose first create row carries `startsAt` | > 0 | VACUOUS |
-| 4 | schedule coverage has rows: `availability_templates`, `time_off` | each > 0 | VACUOUS |
+| 4 | schedule coverage has rows: ACTIVE `availability_templates` rows (as rows 34 and 40 read them), `time_off` rows | each > 0 | VACUOUS |
 | 5 | the person-rows rule finds the known splits: the two JP rows (their ids are in `docs/data-op-staff-10-v2.md`) fall in one group, and every row named like NESA (two or more) falls in one group | as stated | VACUOUS |
 | 6 | no printed row carries a uuid fragment (`-xxxx-xxxx-`), an at sign or nine digits in a row (a phone or a NIF) | `0 of N`, N > 0 | FAIL |
 
@@ -60,13 +60,13 @@ The `check` text of every INFO row starts with the bullet it answers (B1 to B7; 
 | 32 | B3, P17 (Q5) | imported one-minute rows, past or future, by status |
 | 33 | B3, P19 (Q5) | rows (not cancelled, not no_show) overlapping an earlier row of the same practitioner, by year and origin |
 | 34 | B3, P20 (Q5) | native rows not cancelled whose start falls outside every active schedule row of that practitioner, clinic and weekday (TODAY's rows), by month |
-| 40 | B4 | schedule rows in force (active, created by then, valid in the month), by month from the first month to two months ahead, and clinic: person rows, holders, weekly hours; shared rows |
+| 40 | B4 | schedule rows in force (created by then, valid in the month), by month from the first month to two months ahead, and clinic: person rows, holders and weekly hours, each twice: ALL rows, and those whose is_active is true TODAY (labelled "today's is_active"; an archive has no date, so a row archived since that month counts in ALL only); shared rows the same two ways |
 | 41 | B4 | blocks overlapping the month, by month from the first month to two months ahead, and reason: person blocks, people, hours inside the month; shared blocks |
 | 42 | B4, P22 (Q6) | schedule rows by kind, active, `valid_from` set, `valid_until` set: rows and created date range |
 | 43 | B4, P23 P24 (Q6) | schedule audit rows by Lisbon month (template create, update, archive, day removal, alternating, day by day; block create, update, delete; staff delete; location update) |
 | 44 | B4, P24 (Q6) | blocks by kind, reason and length |
 | 45 | B4, P25 (Q6) | each clinic's hours: active, opens, closes, midday closure, slot minutes |
-| 50 | B5 | DUPLICATE-LOOKING PATIENTS: six candidate rules, groups and rows each (below) |
+| 50 | B5 | DUPLICATE-LOOKING PATIENTS: seven candidate rules, groups and rows each (below) |
 | 51 | B5, P26 (Q7) | patients: live, merged, deleted; live linked to 2+ clinics; live with appointments at 2+ clinics; imported |
 | 52 | B5, P26 (Q7) | patients by Lisbon year of `created_at` and imported or native |
 | 53 | B5, P27 (Q7) | patients by year, clinic and origin of their FIRST completed visit |
@@ -84,13 +84,14 @@ The `check` text of every INFO row starts with the bullet it answers (B1 to B7; 
 
 ### B5: the 2,288 rule is not on record
 
-No rule for the earlier 2,288 figure was found: not in the repository on any branch (`git grep` for `2288`, `2,288` and `2.288` across every remote branch, `docs/`, `scripts/`, `packages/db/scripts` and `docs/board/portal-board.json`), not in the handover folder, and not in the lane's memory. Row 50 therefore prints six candidate rules side by side, so the one that reproduces 2,288 names itself, and the rule needs a ruling. All of them read live rows only (not deleted, not merged), and a row's clinics are its `patient_locations` links plus the clinics of its appointments:
+No rule for the earlier 2,288 figure was found: not in the repository on any branch (`git grep` for `2288`, `2,288` and `2.288` across every remote branch, `docs/`, `scripts/`, `packages/db/scripts` and `docs/board/portal-board.json`), not in the handover folder, and not in the lane's memory. Row 50 therefore prints seven candidate rules side by side, so the one that reproduces 2,288 names itself, and the rule needs a ruling. All of them read live rows only (not deleted, not merged), and a row's clinics are its `patient_locations` links plus the clinics of its appointments:
 
 | Rule | Groups of two or more live rows sharing |
 |---|---|
 | D1 | the normalised full name, and the group touches two or more clinics |
 | D2 | the normalised full name and the date of birth, two or more clinics |
 | D3 | the normalised full name, any clinic |
+| D3b | as D3, with the placeholder-looking patients (row 54's pattern) left out |
 | D4 | the normalised full name and the date of birth, any clinic |
 | D5 | the NIF (digits only) |
 | D6 | the mobile number (context only: families share numbers) |
@@ -99,7 +100,7 @@ The read chooses none of them. GREEN's output shows which candidate, if any, rea
 
 ## THE HALT RULE
 
-Any STOP line ends the block: nothing after it is pasted or run again, and GREEN reports the output as printed, except where the STOP line says to report only that line. A REFUSE line from the target guard, and any harness or classifier refusal, is a STOP. **Nothing in this block writes to the database, so no STOP leaves anything changed.** A VACUOUS or FAIL verdict stops the block after the table has printed: report the table from the transcript file.
+Any STOP line ends the block: nothing after it is pasted or run again, and GREEN reports the lines the block printed, never the transcript's content. A REFUSE line from the target guard, and any harness or classifier refusal, is a STOP. **Nothing in this block writes to the database, so no STOP leaves anything changed.** A VACUOUS or FAIL verdict stops the block after the verdicts line: GREEN reports that line and the STOP line, and SOLO reads the transcript file.
 
 ## THE GATE
 
@@ -107,13 +108,13 @@ The ruling's gate: "CHECK the profile output. EXPECT no personal data and no pat
 
 1. the read prints only what the list above allows, and the test (`scripts/read-r14-profile-20261027.test.mjs`) refuses any select list that names a personal column, any printed CTE that names an id column, and any `raw` or `metadata` key outside the named ones;
 2. verdict 6 reads every printed row for a uuid fragment, an at sign or nine digits in a row, inside the transaction;
-3. the block reads the transcript file for the same three before it counts the verdicts, and STOPs with "report this line only" when any is there.
+3. the block writes psql's whole output to the transcript file only, never to the screen (no `tee`), reads that file for the same three before it counts the verdicts, and STOPs with "report this line only" when any is there. After that scan, the screen shows only three lines: the scan count, the verdict counts and the PASSED line carrying the `R12_FIRES` row.
 
 ## Pins
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-r14-profile-20261027.sql`, sha256 `84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284` |
+| The read | `scripts/db/read-r14-profile-20261027.sql`, sha256 `d6d3fa0b88567893e82de3635fa0991c135b1ca0bba010eab49b4688ee76d9da` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes MN-READ pins) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-r14-profile-20261027.sha256` pins it |
@@ -133,7 +134,7 @@ GREEN pastes its dispatch's filled copy, whole and on its own, from `/Users/ivan
 set -o pipefail
 MERGED=PENDING
 DOCSHA=PENDING
-SHAREAD=84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284
+SHAREAD=d6d3fa0b88567893e82de3635fa0991c135b1ca0bba010eab49b4688ee76d9da
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-r14-profile-20261027.sql
@@ -165,19 +166,20 @@ echo "module:      ${M}"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport || { echo "STOP: the production environment file could not be loaded. Nothing was read"; exit 1; }
 node scripts/assert-production-target.mjs || { echo "STOP: the target guard refused or failed (its lines are above). Nothing was read"; exit 1; }
 rm -f ${OUT} || { echo "STOP: the old transcript could not be removed. Nothing was read"; exit 1; }
-psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -c "begin read only" -c "set local statement_timeout = '300s'" -c "select 'read only: ' || current_setting('transaction_read_only') as profile_read_transaction" -f ${READFILE} -c "rollback" 2>&1 | tee ${OUT} || { echo "STOP: the read did not complete (an error, or longer than 300 seconds; psql's lines are above), or its transcript could not be written. Nothing was written: the transaction is read only"; exit 1; }
-grep -q 'read only: on' ${OUT} || { echo "STOP: the read did not run inside a transaction that read as READ ONLY (psql's lines are above), so its table is not reported"; exit 1; }
-PD=$(awk '/@/ || /-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-/ || /[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/ { c++ } END { printf "%d", c }' ${OUT}) || { echo "STOP: the transcript could not be checked for personal data. Report this line only"; exit 1; }
-[ "${PD}" = "0" ] || { echo "STOP: ${PD} transcript line(s) carry a uuid fragment, an at sign or nine digits in a row. Do NOT report the table; report this line only"; exit 1; }
-CNT=$(awk -F'|' '{ v = $NF; gsub(/[[:space:]]/, "", v); if (v == "OK") o++; else if (v == "VACUOUS") a++; else if (v == "FAIL") f++ } END { printf "%d %d %d", o, a, f }' ${OUT}) || { echo "STOP: the verdicts could not be counted. Report the table from the transcript file"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -c "begin read only" -c "set local statement_timeout = '300s'" -c "select 'read only: ' || current_setting('transaction_read_only') as profile_read_transaction" -f ${READFILE} -c "rollback" > ${OUT} 2>&1 || { echo "STOP: the read did not complete (psql exit $?: an error, or longer than 300 seconds). Its output is in the transcript file and may hold an error text: do NOT open, print or paste it. Report this line only. Nothing was written: the transaction is read only"; exit 1; }
+grep -q 'read only: on' ${OUT} || { echo "STOP: the transcript does not show a transaction that read as READ ONLY. Do NOT open, print or paste the transcript; report this line only"; exit 1; }
+PD=$(awk '/@/ || /-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-/ || /[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/ { c++ } END { printf "%d", c }' ${OUT}) || { echo "STOP: the transcript could not be checked for personal data. Do NOT open, print or paste it; report this line only"; exit 1; }
+[ "${PD}" = "0" ] || { echo "STOP: ${PD} transcript line(s) carry a uuid fragment, an at sign or nine digits in a row. Do NOT open, print or paste the transcript; report this line only"; exit 1; }
+echo "personal-data scan: ${PD} lines carry a uuid fragment, an at sign or nine digits in a row"
+CNT=$(awk -F'|' '{ v = $NF; gsub(/[[:space:]]/, "", v); if (v == "OK") o++; else if (v == "VACUOUS") a++; else if (v == "FAIL") f++ } END { printf "%d %d %d", o, a, f }' ${OUT}) || { echo "STOP: the verdicts could not be counted. Report this line only; SOLO reads the transcript file"; exit 1; }
 echo "verdicts (OK VACUOUS FAIL): ${CNT}"
-[ "${CNT}" = "7 0 0" ] || { echo "STOP: the read's verdicts are not 7 OK / 0 VACUOUS / 0 FAIL. Report the table from the transcript file; its INFO rows are not to be relied on"; exit 1; }
-L=$(grep -E '^[[:space:]]*70[[:space:]]*[|][[:space:]]*R12_FIRES[[:space:]]*[|]' ${OUT}) || { echo "STOP: the read printed no R12_FIRES row. Report the table from the transcript file"; exit 1; }
-echo "R14-PROFILE PASSED: 7 OK / 0 VACUOUS / 0 FAIL, and no uuid fragment, at sign or nine-digit run in the transcript. The whole table is in ${OUT}. R12: ${L}"
+[ "${CNT}" = "7 0 0" ] || { echo "STOP: the read's verdicts are not 7 OK / 0 VACUOUS / 0 FAIL. Report this line and the verdicts line only; SOLO reads the transcript file"; exit 1; }
+L=$(grep -E '^[[:space:]]*70[[:space:]]*[|][[:space:]]*R12_FIRES[[:space:]]*[|]' ${OUT}) || { echo "STOP: the read printed no R12_FIRES row. Report this line only; SOLO reads the transcript file"; exit 1; }
+echo "R14-PROFILE PASSED: 7 OK / 0 VACUOUS / 0 FAIL. R12: ${L}"
 )
 ```
 
-**EXPECT:** `checked out: <MERGED>`; `document:`, then `docs/read-r14-profile-20261027.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; psql's `BEGIN`, `SET`, the row `read only: on`, the table (verdicts 0 to 6 OK, then the INFO rows), `ROLLBACK`; `verdicts (OK VACUOUS FAIL): 7 0 0`; then `R14-PROFILE PASSED: ...` with the `R12_FIRES` row. Exit 0. The table stays in `/Users/ivan/osteojp-handover/r14-profile-20261027.out`; GREEN reports the PASSED line and the path, and SOLO reads the file. It writes nothing to production.
+**EXPECT:** `checked out: <MERGED>`; `document:`, then `docs/read-r14-profile-20261027.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; then NOTHING from psql (its whole output goes to the transcript file); `personal-data scan: 0 lines carry ...`; `verdicts (OK VACUOUS FAIL): 7 0 0`; then `R14-PROFILE PASSED: 7 OK / 0 VACUOUS / 0 FAIL. R12: ...` with the `R12_FIRES` row. Exit 0. The table stays in `/Users/ivan/osteojp-handover/r14-profile-20261027.out`; GREEN reports the lines above and never opens the file, and SOLO reads it. It writes nothing to production.
 
 ## The owner's fallback: the Supabase SQL editor
 
@@ -186,7 +188,7 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly: `set transaction read only; set local statement_timeout = '300s';`
 3. Below it, paste the whole of `scripts/db/read-r14-profile-20261027.sql`. To copy it exactly, once the clone is on main, type this in Claude Code. It copies the file only if it is the reviewed one, and otherwise prints a STOP and copies nothing:
-   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-r14-profile-20261027.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-r14-profile-20261027.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "d6d3fa0b88567893e82de3635fa0991c135b1ca0bba010eab49b4688ee76d9da" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run. EXPECT one table. Row 0 must read `on` and `OK`: if it does not, stop and send a screenshot, nothing else. Rows 1 to 6 must read `OK`.
 5. Download the result as CSV into `/Users/ivan/osteojp-handover/`, and tell SOLO the file name. It holds counts, dates and codes only.
 
@@ -210,6 +212,26 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 | mutant: a dead move measure | `first_start` always NULL | 6 1 0 | 0 | 3 VACUOUS (`0`) |
 
 What the clean case printed, checked against the seed: row 21 counts the one native row moved since its create row (with its reschedule audit row); row 23 counts one copy, two timed cancels and the one rebooked within 24 hours; row 33 the one overlapping pair; rows 50 D1 to D6 one group of two rows each; row 60 four rows in two groups (JP at two clinics, NESA holding the shared resources); `R12_FIRES` three consultations in 90 days (one each pending, sent, needs attention) and two sent all time. The read took under a second on these rows; its time on production is not measured.
+
+The twelve cases above ran on the read as it stood before R4 round 1 (sha256 `84ca843ed7d8b2b5dc1b335bf9ebafa9bef9b2840e039e8de44c0cde3b0d9284`).
+
+### R4 round 1 (2026-10-26): FIX FIRST, seven findings, and what changed
+
+- BLOCKER: the block piped psql through `tee`, so the table reached GREEN's screen before the personal-data scan. Now psql writes to the transcript file only; after the scan the block echoes only the scan count, the verdict counts and the PASSED line with the `R12_FIRES` row; a psql failure STOPs with its exit code and tells GREEN not to open the file. The test refuses `tee` and any other echo, and checks in the harness that no table line reaches the screen.
+- MAJOR: row 40 filtered past months on TODAY's `is_active`, so archived rows vanished from history. It now prints ALL rows beside the rows with today's `is_active`.
+- Row 72 reads `coalesce(last_attempt_at, created_at)`. Verdict 4 counts active schedule rows only, as rows 34 and 40 read them.
+- The test runs the id rule on every CTE a printed CTE reads (the read gained `apx`, `rsx`, `clinic_code`, `loc_hours`, `ph_n`, all with no id column) and refuses an id cast to text anywhere.
+- Row 50 gained D3b (D3 without the placeholder-looking patients). It still chooses none.
+- origin/main merged into the branch.
+
+Round 2 (the read at this document's pin, a fresh throwaway `r14prof`, the same synthetic rows):
+
+| Case | Verdicts | Hits | Notes |
+|---|---|---|---|
+| clean | 7 0 0 | 0 | 152 rows; no synthetic name, note, reason or error text; verdict 4 reads 10 active rows; row 40 shows the archived Linda-a-Velha row in ALL (July: all 1, today's is_active 0) |
+| mutant: a ledger id printed (row 19) | 6 0 1 | 1 | verdict 6 FAIL (`1 of 151`) |
+| mutant: a NIF printed (row 54) | 6 0 1 | 1 | verdict 6 FAIL (`1 of 151`) |
+| a second placeholder named alike | 7 0 0 | 0 | D3 reads 2 groups, 4 rows; D3b reads 1 group, 2 rows |
 
 ## NOT REHEARSED
 

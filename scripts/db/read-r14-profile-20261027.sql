@@ -57,7 +57,7 @@
 --   duplicate-looking patients
 --            NO RULE IS ON RECORD for the earlier 2,288 figure (searched: the
 --            repository, every branch, the handover folder, the memory). Row 50
---            prints SIX candidate rules side by side, each as groups and rows,
+--            prints SEVEN candidate rules side by side, each as groups and rows,
 --            so the one that reproduces 2,288 (if any) names itself. The rule
 --            needs a ruling.
 --
@@ -70,7 +70,7 @@
 --      default length > 0. VACUOUS otherwise;
 --   3  the reschedule measure can see a move: native appointments with a first
 --      `appointment.create` row carrying startsAt > 0. VACUOUS otherwise;
---   4  schedule coverage has rows: availability_templates > 0 and time_off > 0.
+--   4  schedule coverage has rows: active availability_templates > 0 and time_off > 0.
 --      VACUOUS otherwise;
 --   5  the person-rows rule finds the known splits (above). VACUOUS otherwise;
 --   6  no printed row carries a uuid fragment, an `@` or nine digits in a row.
@@ -104,6 +104,14 @@ clinic as (
   select g.id, case when count(*) > 1 then 'AMBIGUOUS' else min(g.code) end as code
     from loc g group by g.id
 ),
+clinic_code as (
+  select c.code from clinic c
+),
+loc_hours as (
+  select c.code, l.is_active, l.opens_at, l.closes_at, l.midday_closed_from,
+         l.midday_closed_to, l.slot_granularity_min
+    from public.locations l join clinic c on c.id = l.id
+),
 imp as (
   select distinct m.imported_entity_id as id
     from public.migration_staging_rows m
@@ -117,6 +125,9 @@ imp_estado as (
     from public.migration_staging_rows m
    where m.source_system = 'fisiozero' and m.entity_type = 'appointment'
      and m.status = 'imported' and m.imported_entity_id is not null
+),
+imp_estado1 as (
+  select e.id, min(e.estado) as estado from imp_estado e group by e.id
 ),
 ap as (
   select a.id, a.patient_id, a.practitioner_id, a.location_id, a.service_id,
@@ -148,9 +159,12 @@ ap as (
          a.patient_2_id is not null as has_p2,
          a.practitioner_2_id is not null as has_pr2,
          a.booking_group_id is not null as has_group,
-         coalesce(u.is_shared_resource, false) as pr_shared
+         coalesce(u.is_shared_resource, false) as pr_shared,
+         a.service_id is null as no_service,
+         coalesce(ie.estado, 'none') as estado
     from public.appointments a
     left join imp i on i.id = a.id
+    left join imp_estado1 ie on ie.id = a.id
     left join clinic c on c.id = a.location_id
     left join public.services s on s.id = a.service_id
     left join public.users u on u.id = a.practitioner_id
@@ -163,7 +177,8 @@ fc as (
   select distinct on (al.entity_id) al.entity_id as appt_id,
          case when al.metadata->>'startsAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}'
               then (al.metadata->>'startsAt')::timestamptz end as first_start,
-         (al.metadata ? 'clonedFrom') as cloned
+         (al.metadata ? 'clonedFrom') as cloned,
+         true as hit
     from public.audit_log al
    where al.action = 'appointment.create' and al.entity_type = 'appointment'
      and al.entity_id is not null
@@ -176,8 +191,13 @@ rs as (
      and al.entity_id is not null
    group by al.entity_id
 ),
+rsx as (
+  select rs.n_res,
+         exists (select 1 from public.appointments a where a.id = rs.appt_id) as present
+    from rs
+),
 anyaudit as (
-  select distinct al.entity_id as appt_id
+  select distinct al.entity_id as appt_id, true as hit
     from public.audit_log al
    where al.entity_type = 'appointment' and al.entity_id is not null
 ),
@@ -196,14 +216,21 @@ sn as (
    group by n.appointment_id
 ),
 nat as (
-  select ap.id, ap.patient_id, ap.oc, ap.status, ap.starts_at, ap.created_at,
-         fc.appt_id is not null as has_create,
+  select ap.oc, ap.status, ap.starts_at, ap.created_at,
+         coalesce(fc.hit, false) as has_create,
          fc.first_start,
          coalesce(fc.cloned, false) as cloned,
          coalesce(rs.n_res, 0) as n_res,
          coalesce(sn.res, false) as sn_res,
-         aa.appt_id is not null as has_any_audit,
+         coalesce(aa.hit, false) as has_any_audit,
          coalesce(ca.cancel_at, sn.cancel_at) as cancel_at,
+         ap.status = 'cancelled' and coalesce(ca.cancel_at, sn.cancel_at) is not null
+           and exists (
+             select 1 from public.appointments b
+              where b.patient_id = ap.patient_id and b.id <> ap.id
+                and b.created_at >= coalesce(ca.cancel_at, sn.cancel_at) - interval '5 minutes'
+                and b.created_at < coalesce(ca.cancel_at, sn.cancel_at) + interval '24 hours'
+                and not exists (select 1 from imp where imp.id = b.id)) as rebooked,
          fc.first_start is not null
            and date_trunc('minute', ap.starts_at) <> date_trunc('minute', fc.first_start) as moved
     from ap
@@ -237,7 +264,7 @@ months_t as (
       x.this_month + interval '2 months', interval '1 month') as g(m)
 ),
 tplx as (
-  select av.user_id, coalesce(c.code, 'NONE') as code, av.is_active,
+  select dense_rank() over (order by av.user_id) as holder, coalesce(c.code, 'NONE') as code, av.is_active,
          u.is_shared_resource as shared,
          (av.created_at at time zone 'Europe/Lisbon')::date as created_d,
          av.valid_from, av.valid_until,
@@ -255,7 +282,7 @@ months_b as (
       x.this_month + interval '2 months', interval '1 month') as g(m)
 ),
 tox as (
-  select t.user_id, t.reason::text as reason, u.is_shared_resource as shared,
+  select dense_rank() over (order by t.user_id) as holder, t.reason::text as reason, u.is_shared_resource as shared,
          t.starts_at, t.ends_at
     from public.time_off t
     join public.users u on u.id = t.user_id
@@ -290,6 +317,20 @@ dup_name_x as (
               'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')), '[[:space:]]+', ' ', 'g'))
   having count(distinct p.id) >= 2
 ),
+dup_name_noph as (
+  -- D3b: as D3, placeholder-looking patients (ph) left out.
+  select count(distinct p.id) as rows_in_group
+    from public.patients p
+   where p.deleted_at is null and p.merged_into_id is null
+     and not exists (select 1 from ph where ph.id = p.id)
+   group by lower(regexp_replace(trim(translate(p.full_name,
+              'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ',
+              'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn')), '[[:space:]]+', ' ', 'g'))
+  having count(distinct p.id) >= 2
+),
+ph_n as (
+  select count(*) as n from ph
+),
 dup_name_dob as (
   -- D2 and D4: the same, and the same date of birth (set on every row).
   select count(distinct p.id) as rows_in_group, count(distinct pc.location_id) as clinics
@@ -322,22 +363,25 @@ dup_phone as (
   having count(distinct p.id) >= 2
 ),
 pat_clinics as (
-  select p.id,
-         (select count(distinct pl.location_id) from public.patient_locations pl
-           where pl.patient_id = p.id) as linked_clinics,
-         (select count(distinct a.location_id) from public.appointments a
-           where a.patient_id = p.id) as appt_clinics,
-         p.deleted_at is null and p.merged_into_id is null as live,
-         p.merged_into_id is not null as merged,
-         p.deleted_at is not null as deleted,
-         extract(year from p.created_at at time zone 'Europe/Lisbon')::int as created_yr,
-         exists (select 1 from public.migration_staging_rows m
-                  where m.source_system = 'fisiozero' and m.entity_type = 'patient'
-                    and m.status = 'imported' and m.imported_entity_id = p.id) as imported
-    from public.patients p
+  -- One row per patient, no id: the flags are computed in the inner select.
+  select x.linked_clinics, x.appt_clinics, x.live, x.merged, x.deleted, x.created_yr, x.imported
+    from (
+      select (select count(distinct pl.location_id) from public.patient_locations pl
+               where pl.patient_id = p.id) as linked_clinics,
+             (select count(distinct a.location_id) from public.appointments a
+               where a.patient_id = p.id) as appt_clinics,
+             p.deleted_at is null and p.merged_into_id is null as live,
+             p.merged_into_id is not null as merged,
+             p.deleted_at is not null as deleted,
+             extract(year from p.created_at at time zone 'Europe/Lisbon')::int as created_yr,
+             exists (select 1 from public.migration_staging_rows m
+                      where m.source_system = 'fisiozero' and m.entity_type = 'patient'
+                        and m.status = 'imported' and m.imported_entity_id = p.id) as imported
+        from public.patients p
+    ) x
 ),
 firstv as (
-  select distinct on (ap.patient_id) ap.patient_id, ap.yr, ap.clinic, ap.oc
+  select distinct on (ap.patient_id) ap.yr, ap.clinic, ap.oc
     from ap
    where ap.status = 'completed'
    order by ap.patient_id, ap.starts_at, ap.id
@@ -379,6 +423,24 @@ ther as (
    where u.is_bookable and not u.is_shared_resource
 ),
 
+apx as (
+  -- ap without any id column: the only appointment rows the printed CTEs read.
+  select ap.oc, ap.clinic, ap.status, ap.cstate, ap.starts_at, ap.ends_at, ap.created_at,
+         ap.yr, ap.mon, ap.last13, ap.mins, ap.dur_bucket, ap.dur_fine, ap.has_default,
+         ap.has_p2, ap.has_pr2, ap.has_group, ap.pr_shared, ap.no_service, ap.estado,
+         exists (select 1 from ph where ph.id = ap.patient_id) as is_ph,
+         not exists (
+           select 1 from public.availability_templates av
+            where av.user_id = ap.practitioner_id and av.location_id = ap.location_id
+              and av.is_active
+              and av.weekday = extract(dow from (ap.starts_at at time zone 'Europe/Lisbon'))::int
+              and (av.valid_from is null or av.valid_from <= (ap.starts_at at time zone 'Europe/Lisbon')::date)
+              and (av.valid_until is null or av.valid_until >= (ap.starts_at at time zone 'Europe/Lisbon')::date)
+              and av.start_time <= (ap.starts_at at time zone 'Europe/Lisbon')::time
+              and av.end_time >= (ap.ends_at at time zone 'Europe/Lisbon')::time) as outside_tpl
+    from ap
+),
+
 -- ================================================================ VERDICTS
 v_0 as (
   select 0 as n,
@@ -401,7 +463,7 @@ v_1 as (
                and (count(*) filter (where code = 'MN')) <= 1
                and (count(*) filter (where code in ('OTHER', 'AMBIGUOUS'))) = 0
               then 'OK' else 'FAIL' end as verdict
-    from clinic
+    from clinic_code
 ),
 v_2_counts as (
   select (count(*) filter (where oc = 'imported')) as imported,
@@ -409,7 +471,7 @@ v_2_counts as (
          (count(*) filter (where has_default)) as with_default,
          (select count(*) from public.patients p
            where p.deleted_at is null and p.merged_into_id is null) as patients
-    from ap
+    from apx
 ),
 v_2 as (
   select 2 as n,
@@ -430,11 +492,11 @@ v_3 as (
 ),
 v_4 as (
   select 4 as n,
-         '4. schedule coverage has rows: availability_templates rows, time_off rows' as chk,
-         (select count(*) from public.availability_templates)::text || ', '
+         '4. schedule coverage has rows: active availability_templates rows, time_off rows' as chk,
+         (select count(*) from public.availability_templates where is_active)::text || ', '
            || (select count(*) from public.time_off)::text as obs,
          'each > 0' as exp,
-         case when (select count(*) from public.availability_templates) > 0
+         case when (select count(*) from public.availability_templates where is_active) > 0
                and (select count(*) from public.time_off) > 0
               then 'OK' else 'VACUOUS' end as verdict
 ),
@@ -458,26 +520,26 @@ r_10 as (
          'B1/P1 appointments by origin and clinic: ' || oc || ', ' || clinic || ': rows, first and last Lisbon start date' as chk,
          count(*)::text || ', ' || to_char(min(starts_at at time zone 'Europe/Lisbon'), 'YYYY-MM-DD')
            || ', ' || to_char(max(starts_at at time zone 'Europe/Lisbon'), 'YYYY-MM-DD') as obs
-    from ap group by oc, clinic
+    from apx group by oc, clinic
 ),
 r_11 as (
   select 11 as n,
          'B1/P2 by year, clinic, origin, status: ' || yr::text || ', ' || clinic || ', ' || oc || ', ' || status as chk,
          count(*)::text as obs
-    from ap group by yr, clinic, oc, status
+    from apx group by yr, clinic, oc, status
 ),
 r_12 as (
   select 12 as n,
          'B1/P2 by month (the last 13 months), clinic, origin, status: ' || mon || ', ' || clinic || ', ' || oc || ', ' || status as chk,
          count(*)::text as obs
-    from ap where last13 group by mon, clinic, oc, status
+    from apx where last13 group by mon, clinic, oc, status
 ),
 r_13 as (
   select 13 as n,
-         'B1/P3 imported by source estado, mapped status, clinic: ' || e.estado || ' -> ' || ap.status || ', ' || ap.clinic as chk,
+         'B1/P3 imported by source estado, mapped status, clinic: ' || estado || ' -> ' || status || ', ' || clinic as chk,
          count(*)::text as obs
-    from imp_estado e join ap on ap.id = e.id
-   group by e.estado, ap.status, ap.clinic
+    from apx where oc = 'imported'
+   group by estado, status, clinic
 ),
 r_14 as (
   select 14 as n,
@@ -487,14 +549,14 @@ r_14 as (
                  to_char(min(created_at at time zone 'Europe/Lisbon'), 'YYYY-MM-DD') as first_d,
                  to_char(max(created_at at time zone 'Europe/Lisbon'), 'YYYY-MM-DD') as last_d,
                  count(distinct (created_at at time zone 'Europe/Lisbon')::date) as days
-            from ap where oc = 'imported' group by clinic) x
+            from apx where oc = 'imported' group by clinic) x
 ),
 r_15 as (
   select 15 as n,
          'B1/P5 past and still scheduled or confirmed (outcome unknown), by period, clinic, origin: '
            || case when last13 then mon else yr::text end || ', ' || clinic || ', ' || oc as chk,
          count(*)::text as obs
-    from ap
+    from apx
    where ends_at < now() and status in ('scheduled', 'confirmed')
    group by case when last13 then mon else yr::text end, clinic, oc
 ),
@@ -502,7 +564,7 @@ r_16 as (
   select 16 as n,
          'B1/P6 native rows by confirmation_state and status: ' || cstate || ', ' || status as chk,
          count(*)::text as obs
-    from ap where oc <> 'imported' group by cstate, status
+    from apx where oc <> 'imported' group by cstate, status
 ),
 r_17 as (
   select 17 as n,
@@ -510,7 +572,7 @@ r_17 as (
            || ': shared-resource practitioner, practitioner_2 set, booking group set, patient_2 set' as chk,
          (count(*) filter (where pr_shared))::text || ', ' || (count(*) filter (where has_pr2))::text || ', '
            || (count(*) filter (where has_group))::text || ', ' || (count(*) filter (where has_p2))::text as obs
-    from ap group by yr, oc
+    from apx group by yr, oc
 ),
 r_18 as (
   select 18 as n,
@@ -521,8 +583,8 @@ r_18 as (
                 join public.appointments a on a.id = m.imported_entity_id
                where m.source_system = 'fisiozero' and m.entity_type = 'appointment'
                  and m.status = 'imported' and a.service_id is null)::text as obs
-    from (select clinic, count(*) as n from ap
-           where oc = 'imported' and service_id is null group by clinic) x
+    from (select clinic, count(*) as n from apx
+           where oc = 'imported' and no_service group by clinic) x
 ),
 r_19 as (
   select 19 as n,
@@ -554,23 +616,18 @@ r_21 as (
 r_22 as (
   select 22 as n,
          'B2/P9 appointment.reschedule: audit rows, distinct appointments, appointments moved once, twice, three times or more; of the appointments, still present' as chk,
-         coalesce(sum(rs.n_res), 0)::text || ', ' || count(*)::text || ', '
-           || (count(*) filter (where rs.n_res = 1))::text || ', ' || (count(*) filter (where rs.n_res = 2))::text || ', '
-           || (count(*) filter (where rs.n_res >= 3))::text || '; '
-           || (count(*) filter (where exists (select 1 from public.appointments a where a.id = rs.appt_id)))::text as obs
-    from rs
+         coalesce(sum(n_res), 0)::text || ', ' || count(*)::text || ', '
+           || (count(*) filter (where n_res = 1))::text || ', ' || (count(*) filter (where n_res = 2))::text || ', '
+           || (count(*) filter (where n_res >= 3))::text || '; '
+           || (count(*) filter (where present))::text as obs
+    from rsx
 ),
 r_23 as (
   select 23 as n,
          'B2 NEW ROW: native rows created as a copy (Marcar novamente, clonedFrom); cancels with a known time (audit or notification); of those, followed within 24 hours by a new native row for the same patient' as chk,
          (count(*) filter (where cloned))::text || '; '
            || (count(*) filter (where status = 'cancelled' and cancel_at is not null))::text || ', '
-           || (count(*) filter (where status = 'cancelled' and cancel_at is not null and exists (
-                select 1 from public.appointments b
-                 where b.patient_id = nat.patient_id and b.id <> nat.id
-                   and b.created_at >= nat.cancel_at - interval '5 minutes'
-                   and b.created_at < nat.cancel_at + interval '24 hours'
-                   and not exists (select 1 from imp where imp.id = b.id))))::text as obs
+           || (count(*) filter (where rebooked))::text as obs
     from nat
 ),
 r_24 as (
@@ -631,20 +688,20 @@ r_30 as (
   select 30 as n,
          'B3 duration by origin: ' || oc || ', ' || dur_bucket as chk,
          count(*)::text as obs
-    from ap group by oc, dur_bucket
+    from apx group by oc, dur_bucket
 ),
 r_31 as (
   select 31 as n,
          'B3/P16 duration in minutes by origin and clinic: ' || oc || ', ' || clinic || ', ' || dur_fine as chk,
          count(*)::text as obs
-    from ap group by oc, clinic, dur_fine
+    from apx group by oc, clinic, dur_fine
 ),
 r_32 as (
   select 32 as n,
          'B3/P17 imported one-minute rows by past or future and status: '
            || case when starts_at < now() then 'past' else 'future' end || ', ' || status as chk,
          count(*)::text as obs
-    from ap where oc = 'imported' and mins = 1
+    from apx where oc = 'imported' and mins = 1
    group by case when starts_at < now() then 'past' else 'future' end, status
 ),
 r_33 as (
@@ -656,17 +713,9 @@ r_33 as (
 r_34 as (
   select 34 as n,
          'B3/P20 native rows not cancelled whose start falls outside every active schedule row of that practitioner, clinic and weekday (TODAY''s rows), by month: ' || mon as chk,
-         (count(*) filter (where not exists (
-            select 1 from public.availability_templates av
-             where av.user_id = ap.practitioner_id and av.location_id = ap.location_id
-               and av.is_active
-               and av.weekday = extract(dow from (ap.starts_at at time zone 'Europe/Lisbon'))::int
-               and (av.valid_from is null or av.valid_from <= (ap.starts_at at time zone 'Europe/Lisbon')::date)
-               and (av.valid_until is null or av.valid_until >= (ap.starts_at at time zone 'Europe/Lisbon')::date)
-               and av.start_time <= (ap.starts_at at time zone 'Europe/Lisbon')::time
-               and av.end_time >= (ap.ends_at at time zone 'Europe/Lisbon')::time)))::text
+         (count(*) filter (where outside_tpl))::text
            || ' of ' || count(*)::text as obs
-    from ap
+    from apx
    where oc <> 'imported' and status <> 'cancelled'
    group by mon
 ),
@@ -674,16 +723,20 @@ r_34 as (
 -- ================================================================ B4
 r_40 as (
   select 40 as n,
-         'B4 schedule rows in force (active, created by then, valid in the month), by month and clinic: '
+         'B4 schedule rows in force (created by then, valid in the month), by month and clinic, all rows and those with today''s is_active: '
            || to_char(g.m, 'YYYY-MM') || ', ' || cc.code as chk,
-         'person rows=' || (count(t.code) filter (where not t.shared))::text
-           || ' holders=' || (count(distinct t.user_id) filter (where not t.shared))::text
-           || ' weekly_hours=' || coalesce(round(sum(t.hours) filter (where not t.shared))::int, 0)::text
-           || '; shared rows=' || (count(t.code) filter (where t.shared))::text as obs
+         'person rows all=' || (count(t.code) filter (where not t.shared))::text
+           || ' of_them_today''s_is_active=' || (count(t.code) filter (where not t.shared and t.is_active))::text
+           || ' holders all=' || (count(distinct t.holder) filter (where not t.shared))::text
+           || ' today''s_is_active=' || (count(distinct t.holder) filter (where not t.shared and t.is_active))::text
+           || ' weekly_hours all=' || coalesce(round(sum(t.hours) filter (where not t.shared))::int, 0)::text
+           || ' today''s_is_active=' || coalesce(round(sum(t.hours) filter (where not t.shared and t.is_active))::int, 0)::text
+           || '; shared rows all=' || (count(t.code) filter (where t.shared))::text
+           || ' today''s_is_active=' || (count(t.code) filter (where t.shared and t.is_active))::text as obs
     from months_t g
-    cross join (select distinct code from clinic where code in ('LV', 'CB', 'MN')) cc
+    cross join (select distinct code from clinic_code where code in ('LV', 'CB', 'MN')) cc
     left join tplx t
-      on t.code = cc.code and t.is_active
+      on t.code = cc.code
      and t.created_d <= (g.m + interval '1 month' - interval '1 day')::date
      and (t.valid_from is null or t.valid_from <= (g.m + interval '1 month' - interval '1 day')::date)
      and (t.valid_until is null or t.valid_until >= g.m)
@@ -693,7 +746,7 @@ r_41 as (
   select 41 as n,
          'B4 blocks overlapping the month, by month and reason: ' || to_char(g.m, 'YYYY-MM') || ', ' || rr.reason as chk,
          'person blocks=' || (count(t.reason) filter (where not t.shared))::text
-           || ' people=' || (count(distinct t.user_id) filter (where not t.shared))::text
+           || ' people=' || (count(distinct t.holder) filter (where not t.shared))::text
            || ' hours_in_month=' || coalesce(round(sum(extract(epoch from (
                 least(t.ends_at, (g.m + interval '1 month')::timestamp at time zone 'Europe/Lisbon')
                 - greatest(t.starts_at, g.m::timestamp at time zone 'Europe/Lisbon'))) / 3600.0)
@@ -750,13 +803,13 @@ r_44 as (
 ),
 r_45 as (
   select 45 as n,
-         'B4/P25 clinic hours: ' || c.code || ': is_active, opens, closes, midday closed from, to, slot minutes' as chk,
-         l.is_active::text || ', ' || coalesce(left(l.opens_at::text, 5), 'none') || ', '
-           || coalesce(left(l.closes_at::text, 5), 'none') || ', '
-           || coalesce(left(l.midday_closed_from::text, 5), 'none') || ', '
-           || coalesce(left(l.midday_closed_to::text, 5), 'none') || ', '
-           || coalesce(l.slot_granularity_min::text, 'none') as obs
-    from public.locations l join clinic c on c.id = l.id
+         'B4/P25 clinic hours: ' || h.code || ': is_active, opens, closes, midday closed from, to, slot minutes' as chk,
+         h.is_active::text || ', ' || coalesce(left(h.opens_at::text, 5), 'none') || ', '
+           || coalesce(left(h.closes_at::text, 5), 'none') || ', '
+           || coalesce(left(h.midday_closed_from::text, 5), 'none') || ', '
+           || coalesce(left(h.midday_closed_to::text, 5), 'none') || ', '
+           || coalesce(h.slot_granularity_min::text, 'none') as obs
+    from loc_hours h
 ),
 
 -- ================================================================ B5
@@ -775,6 +828,9 @@ r_50 as (
       union all
       select 'D3 same normalised name, any clinic', count(*), coalesce(sum(rows_in_group), 0)
         from dup_name_x
+      union all
+      select 'D3b same normalised name, any clinic, placeholder-looking patients left out', count(*), coalesce(sum(rows_in_group), 0)
+        from dup_name_noph
       union all
       select 'D4 same normalised name and date of birth, any clinic', count(*), coalesce(sum(rows_in_group), 0)
         from dup_name_dob
@@ -812,10 +868,10 @@ r_53 as (
 r_54 as (
   select 54 as n,
          'B5/P21 placeholder-looking patients (cb-reconciliation pattern): patients; their appointments by year and status' as chk,
-         (select count(*) from ph)::text || '; ' || coalesce(string_agg(x.yr::text || ' ' || x.status || ' ' || x.n::text, ', '
+         (select n from ph_n)::text || '; ' || coalesce(string_agg(x.yr::text || ' ' || x.status || ' ' || x.n::text, ', '
             order by x.yr, x.status), 'none') as obs
-    from (select ap.yr, ap.status, count(*) as n from ap join ph on ph.id = ap.patient_id
-           group by ap.yr, ap.status) x
+    from (select yr, status, count(*) as n from apx where is_ph
+           group by yr, status) x
 ),
 
 -- ================================================================ B6
@@ -894,7 +950,7 @@ r_71 as (
 r_72 as (
   select 72 as n,
          'B7/P29 pending with the last attempt over 1 hour ago; needs_attention oldest and newest Lisbon created date' as chk,
-         (count(*) filter (where c.fire_status = 'pending' and c.last_attempt_at < now() - interval '1 hour'))::text || '; '
+         (count(*) filter (where c.fire_status = 'pending' and coalesce(c.last_attempt_at, c.created_at) < now() - interval '1 hour'))::text || '; '
            || coalesce(to_char(min(c.created_at at time zone 'Europe/Lisbon') filter (where c.fire_status = 'needs_attention'), 'YYYY-MM-DD'), 'none') || ', '
            || coalesce(to_char(max(c.created_at at time zone 'Europe/Lisbon') filter (where c.fire_status = 'needs_attention'), 'YYYY-MM-DD'), 'none') as obs
     from public.consultations c
