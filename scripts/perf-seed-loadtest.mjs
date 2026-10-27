@@ -38,6 +38,10 @@ import { performance } from "node:perf_hooks";
 import { dirname, join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { assertLocalTarget } from "./local-target.mjs";
+import { refuseProdApplyCwd } from "./refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 // ── Safety ─────────────────────────────────────────────────────────────────────
 // POSITIVE IDENTIFICATION, AND IT RUNS BEFORE THE DRIVER IS EVEN LOADED. Exits 1

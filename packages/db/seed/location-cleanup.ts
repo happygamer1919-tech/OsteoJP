@@ -25,6 +25,10 @@ import postgres from "postgres";
 import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
 import { LOC_LAV, LOC_CB, LOC_MTN } from "./dev-ids";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 // Manual in-app rows (created outside the fixtures), identified by id per the
 // owner ruling ("those rows only, identified by id").

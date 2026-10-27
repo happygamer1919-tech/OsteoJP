@@ -18,6 +18,10 @@ import postgres from "postgres";
 import { patients } from "../src/schema";
 import { loadSeedEnv } from "./load-env";
 import { resolveSeedDatabaseUrl } from "./seed-guard";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 const TENANT_ID = "3a2d0711-fbdb-4ce9-b940-b6a87e3d3560";
 

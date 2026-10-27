@@ -14,6 +14,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { refuseProdApplyCwd } from './refuse-prod-apply-cwd.mjs'
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url)
 
 // sharp is intentionally NOT a project dependency (see header). After
 // `pnpm add -D -w sharp` the bare require below resolves; SHARP_PATH is an

@@ -48,6 +48,10 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { assertLocalTarget } from "./local-target.mjs";
+import { refuseProdApplyCwd } from "./refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 const DB_URL = process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL;
 assertLocalTarget(DB_URL, process.env.DATABASE_URL_DIRECT ? "DATABASE_URL_DIRECT" : "DATABASE_URL");

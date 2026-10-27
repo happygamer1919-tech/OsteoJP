@@ -29,6 +29,10 @@ import {
   SVC_OST, SVC_FIS, SVC_MAS, SVC_PIL, SVC_NES,
   USR_1, USR_2, USR_3, USR_4, USR_5,
 } from "./dev-ids";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 // Re-export so consumers that previously imported from here still work.
 export {
