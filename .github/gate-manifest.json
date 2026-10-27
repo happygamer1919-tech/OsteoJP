@@ -117,6 +117,7 @@
     "scripts/portal-i18n-dead-keys.test.mjs": "fef0b33d3fb6a352240130e4ad506fa97f9b33a2ffa31f2feb554f3ece1c8bb8",
     "scripts/read-applied-migrations-target.test.mjs": "36bf852d991daa908c6c0ac23723f226e38337480c38a9a4a553df0a2087fa50",
     "scripts/read-montemor-online-20261025.test.mjs": "9977f780f8009daa5f9dbdd1cc6ffc3801104c27879f5e74c61b5544222379b0",
+    "scripts/read-r14-profile-20261027.test.mjs": "503a7e3fd5d13d2b436fce0ecaa6f60f478b12e20c1b6a3cddbf2077ab16dd15",
     "scripts/refuse-prod-apply-cwd.test.mjs": "3fb829f2a701eb92921ec6a303b74c9144dd5d22b3d57f13a3cc2f7c98922dec",
     "scripts/registo-episode-key-0105.test.mjs": "7c46f3b59fc7013a6cf0d3d75c4474948a4dae7f5eeddcf17756a34a5c84b472",
     "scripts/registo-writes-0097.test.mjs": "066a843ab350612642229d8b9f2e172275b2ac87fba983643fca9131e0001944",
