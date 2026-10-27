@@ -2,7 +2,7 @@
 
 **NOT READY. Nothing in this document may be pasted yet.** The migration is written at its number after 0107, on its held branch, and this document carries its six blocks, proven by their fault-injection test. Open, in order: the R4 round on the migration, the check files and the blocks; SOLO's READY line; the pull request, opened held; and GREEN's dispatch, which carries the values this document cannot hold (the held head's sha as HELD, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). **The sitting runs from the pull request's HELD head, before the merge** (it creates a SECURITY DEFINER function; see "Applied from the held head"), **and in closed hours only** (see "Closed hours, and the locks").
 
-**Status: AUTHORED 2026-10-26 AT ITS NUMBER (`packages/db/migrations/0108_pack_instance_consuming_sessions.sql`, journal idx 105); BLOCKS WRITTEN 2026-10-26 AND PROVEN BY THEIR FAULT-INJECTION TEST; REHEARSED 2026-10-27 (00:56 TO 01:05 LISBON, WET, CLOSED HOURS) BY THEIR AUTHOR ONLY, ON LANE AMBER AT PRODUCTION'S POSITION: STAGES 0, 1 AND 2 AND THE CLOCK CHECK RAN WHOLE, BEFORE YOU START AND THE CLOSING READ TO THEIR READER LINES (see "Rehearsal"). NOT REVIEWED. NOT REHEARSED BY AN AGENT THAT DID NOT WRITE THE BLOCKS. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb`, seven statements.
+**Status: AUTHORED 2026-10-26 AT ITS NUMBER (`packages/db/migrations/0108_pack_instance_consuming_sessions.sql`, journal idx 105); BLOCKS WRITTEN 2026-10-26 AND PROVEN BY THEIR FAULT-INJECTION TEST; REHEARSED 2026-10-27 (00:56 TO 01:05 LISBON, WET, CLOSED HOURS) BY THEIR AUTHOR ONLY, ON LANE AMBER AT PRODUCTION'S POSITION: STAGES 0, 1 AND 2 AND THE CLOCK CHECK RAN WHOLE, BEFORE YOU START AND THE CLOSING READ TO THEIR READER LINES (see "Rehearsal"); ONE R4 ROUND 2026-10-27 (NO BLOCKER, ONE MAJOR, TWO MINOR, ALL FIXED), AND THE PRE-CHECK, STAGE 1 AND STAGE 2 REHEARSED AGAIN AFTER IT, THE SAME NIGHT. NOT REVIEWED. NOT REHEARSED BY AN AGENT THAT DID NOT WRITE THE BLOCKS. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb`, seven statements.
 
 **In plain language.** A pack's balance and the number "Sessao N de M" on each visit come from the visits linked to the pack that are not cancelled. This migration adds one database function that returns those visits for one pack, as two columns (the visit's id and when it starts), to a member of staff who may already open that pack's patient. Who may open a patient is decided exactly as the patient list decides it today. Nobody else gets anything from it. It changes no table, no row, no policy and no other function, and no application code reads it yet: the balance, the booking path, the pack link guard and the per-visit number move to it in their own pull requests, after the apply.
 
@@ -779,6 +779,27 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 ## Rehearsal
 
+### The rehearsal after the R4 round, 2026-10-27: the changed bytes, by their author
+
+**Why it ran.** The R4 round's two MINOR fixes changed bytes that run against production: the pre-check (`probe_instances` joins the patient on id and tenant), the post-check (its probe joins the same way) and stage 1 (a clinic whose hours are not set counts as outside the table). They were rehearsed again on the same lane, by the same method and the same four substitutions as the rehearsal below, Tuesday 2026-10-27 between 01:18 and 01:30 Lisbon (WET), closed hours.
+
+**The bytes.** The document at `fb316de9` (sha256 `8096b364884a42a473f3309b753a74d0b41a898a40542b93415175c50c01db1e`, matching its sidecar). The commit that records this run changed only prose; its six blocks are byte for byte those of `fb316de9` (compared by machine).
+
+**The position.** The lane rebuilt from this branch's migrations, then put at production's position as below (the function dropped, 36 SECURITY DEFINER functions, a journal of 105 rows, the synthetic packs), with ONE more synthetic row: a pack instance of the rehearsal tenant whose patient belongs to another tenant, with one consuming visit, so the new terms had something to exclude.
+
+**The chain.** BEFORE YOU START stopped at its reader line as predicted (the hand step as below), stage 0 and the CLOCK CHECK exit 0 for the new head; then:
+
+| Block | Result | Exit |
+|---|---|---|
+| Stage 1 | REHEARSED-OK: pre-check `13 OK / 0 VACUOUS / 0 FAIL`, `probe_instances` 2 (the cross-tenant instance not counted; the INFO row reads `instances 4; patient of another tenant 1; with a consuming visit 3; ...`); `active clinics whose own hours reach outside 08:00 to 21:00, the table's widest row, or are not set: 0 of 4`, inside; `journal 105 -> 106 (delta 1)`; `0108 APPLIED. Paste stage 2 now.` | 0 |
+| Stage 2 | REHEARSED-OK: the profile `13 OK / 0 VACUOUS / 0 FAIL` (probe_instances=2); verdict 6 `2 instances called; 2 answered in full and in order; 2 refused all four others`; `0108 POST-CHECK PASSED. ...` | 0 |
+| The closing read | REHEARSED TO THE READER LINE, then the predicted STOP | 1 |
+| Stage 1, pasted again | `STOP: stage 1 has ALREADY APPLIED 0108 in this sitting ...` | 1 |
+
+**The changed predicates, each mutated once on the same lane.** The pre-check without the own-tenant term counts `probe_instances` 3 (the cross-tenant instance included). The post-check without the patient join reads verdict 6 FAIL (`3 instances called; 2 answered in full and in order`), `12 OK / 0 VACUOUS / 1 FAIL`; the real file, on the same database, 13 OK. **The clinic-hours term for a NULL `opens_at` or `closes_at` was not measured on the lane:** both columns are NOT NULL there; the script test holds the term in stage 1 by its text, with a red arm.
+
+**The suite,** on the applied lane: `pack-instance-consuming-sessions.db.test.ts` 47 of 47, with the therapist on the care team of a patient seen only at another clinic. With the function's therapist arm swapped to the unlimited 0091 set (on the lane only, from a scratch copy; never the committed file), exactly that therapist's two arms went red (2 failed of 47); the body was restored and its md5 read back. The sweep of the function's predicate is 21 of 21 killed.
+
 ### The author's rehearsal, 2026-10-27: the blocks, by their author (not an independent rehearsal)
 
 **No STOP that the document does not predict, and no finding against a block.** Run on Tuesday 2026-10-27, 00:56 to 01:05 Lisbon (WET), closed hours, inside the start window Monday 21:00 to Tuesday 06:29, by SOLO's build agent, the author of the blocks. **It is not the independent rehearsal NOT READY step 5 asks for,** and it does not replace it.
@@ -809,13 +830,13 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 After the two refusals the journal still read 106: nothing more was applied.
 
-**The suites,** on the applied lane, one file at a time: `pack-instance-consuming-sessions.db.test.ts` 44 of 44, `security-definer-execute-acl.db.test.ts` 7 of 7.
+**The suites,** on the applied lane, one file at a time: `pack-instance-consuming-sessions.db.test.ts` 44 of 44 (47 of 47 after the R4 round), `security-definer-execute-acl.db.test.ts` 7 of 7.
 
 **Going back** (the statement in "Rollback", after the two SET LOCAL lines, in one transaction), then the pre-check: `10 OK / 0 VACUOUS / 3 FAIL`, the three journal verdicts, because the journal row stays; with that row removed on the throwaway, `13 OK / 0 VACUOUS / 0 FAIL` and all seven other carries equal to the first run's.
 
 **The fault sitting, on that restored position** (the same substitutions and the same hand step; BEFORE YOU START stopped at the reader grep, stage 0 and the CLOCK CHECK exit 0). With `EXECUTE` on `public.viewer_visible_patient_ids()` revoked from `authenticated`, stage 1's pre-check read verdict 5 FAIL, `12 OK / 0 VACUOUS / 1 FAIL`, then `STOP: the pre-check printed [1] FAIL verdicts ... Nothing was applied`, exit 1: the journal still 105, the function absent, no applied marker. The grant was restored and the pre-check read 13 OK again.
 
-**Before the rehearsal, on the same lane (2026-10-26):** the whole `packages/db` DB-gated set with 0108 applied, 1766 passed and 7 failed, all seven the SECURITY DEFINER count (see "GATE-CHANGES"); a mutation sweep of 20 mutants of the function's predicate, 20 killed by the suite; the file's statements took no lock on any table of `public`.
+**Before the rehearsal, on the same lane (2026-10-26):** the whole `packages/db` DB-gated set with 0108 applied, 1766 passed and 7 failed, all seven the SECURITY DEFINER count (see "GATE-CHANGES"); a mutation sweep of 20 mutants of the function's predicate, 20 killed by the suite (21 of 21 after the R4 round); the file's statements took no lock on any table of `public`.
 
 **The script test:** `scripts/pack-instance-consuming-sessions-0108.test.mjs` 46 of 46; the fault injection 361 faults in bash with errexit off and 361 in zsh, every one halting or, for the network-time and R9 proof 1 calls, going on as the document allows.
 
