@@ -2,7 +2,7 @@
 
 **NOT READY. Nothing in this document may be pasted yet.** The migration is written at its number after 0107, on its held branch, and this document carries its six blocks, proven by their fault-injection test. Open, in order: the R4 round on the migration, the check files and the blocks; SOLO's READY line; the pull request, opened held; and GREEN's dispatch, which carries the values this document cannot hold (the held head's sha as HELD, this document's sha256 as DOCSHA, and the run window as WOPEN, WSTART and WEND). **The sitting runs from the pull request's HELD head, before the merge** (it creates a SECURITY DEFINER function; see "Applied from the held head"), **and in closed hours only** (see "Closed hours, and the locks").
 
-**Status: AUTHORED 2026-10-26 AT ITS NUMBER (`packages/db/migrations/0108_pack_instance_consuming_sessions.sql`, journal idx 105); BLOCKS WRITTEN 2026-10-26 AND PROVEN BY THEIR FAULT-INJECTION TEST; REHEARSED 2026-10-27 (00:56 TO 01:05 LISBON, WET, CLOSED HOURS) BY THEIR AUTHOR ONLY, ON LANE AMBER AT PRODUCTION'S POSITION: STAGES 0, 1 AND 2 AND THE CLOCK CHECK RAN WHOLE, BEFORE YOU START AND THE CLOSING READ TO THEIR READER LINES (see "Rehearsal"); ONE R4 ROUND 2026-10-27 (NO BLOCKER, ONE MAJOR, TWO MINOR, ALL FIXED), AND THE PRE-CHECK, STAGE 1 AND STAGE 2 REHEARSED AGAIN AFTER IT, THE SAME NIGHT. NOT REVIEWED. NOT REHEARSED BY AN AGENT THAT DID NOT WRITE THE BLOCKS. NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb`, seven statements.
+**Status: AUTHORED 2026-10-26 AT ITS NUMBER (`packages/db/migrations/0108_pack_instance_consuming_sessions.sql`, journal idx 105); BLOCKS WRITTEN 2026-10-26 AND PROVEN BY THEIR FAULT-INJECTION TEST; REHEARSED 2026-10-27 (00:56 TO 01:05 LISBON, WET, CLOSED HOURS) BY THEIR AUTHOR ONLY, ON LANE AMBER AT PRODUCTION'S POSITION: STAGES 0, 1 AND 2 AND THE CLOCK CHECK RAN WHOLE, BEFORE YOU START AND THE CLOSING READ TO THEIR READER LINES (see "Rehearsal"); R4 ROUND 1 2026-10-27 (NO BLOCKER, ONE MAJOR, TWO MINOR, ALL FIXED), AND THE PRE-CHECK, STAGE 1 AND STAGE 2 REHEARSED AGAIN AFTER IT, THE SAME NIGHT; R4 ROUND 2 ON THE FIXES 2026-10-27: SHIP; REHEARSED INDEPENDENTLY 2026-10-27 (01:39 TO 01:41 LISBON) AT `ed6dad9c` BY A SESSION THAT DID NOT AUTHOR THE BLOCKS: REHEARSED-OK (see "The independent rehearsal"). NOT APPLIED ANYWHERE BUT A THROWAWAY.** One migration, sha256 `7f481ae4a61a7eb97f828414ae23e4ea3f9d30d32ae8539a6205d5b53ecfd6cb`, seven statements.
 
 **In plain language.** A pack's balance and the number "Sessao N de M" on each visit come from the visits linked to the pack that are not cancelled. This migration adds one database function that returns those visits for one pack, as two columns (the visit's id and when it starts), to a member of staff who may already open that pack's patient. Who may open a patient is decided exactly as the patient list decides it today. Nobody else gets anything from it. It changes no table, no row, no policy and no other function, and no application code reads it yet: the balance, the booking path, the pack link guard and the per-visit number move to it in their own pull requests, after the apply.
 
@@ -31,8 +31,8 @@ is the lead's call, never the runner's.
 1. **DONE: `0107` is applied to production and merged.** GREEN applied it on Sunday 2026-10-25 between 22:10 and 22:14 WET; production's journal reads 105, `0107` at idx 104 (#1651 merged before its sitting).
 2. **DONE 2026-10-26: the migration, at its number** (the next section), with its journal entry and its mirror; the two check files; the DB-gated suite; this document's blocks, its sidecar and its fault-injection test (`scripts/pack-instance-consuming-sessions-0108.test.mjs`).
 3. **DONE 2026-10-27: the author's rehearsal** on lane amber at production's position (see "Rehearsal").
-4. **OPEN: one R4 round** on the migration, the two check files, the suite, the blocks and the script test.
-5. **OPEN: the rehearsal of the blocks by an agent that did not write them,** on a throwaway at production's position, under the lead's rule of 2026-09-30, with the substitutions "Rehearsal" names.
+4. **DONE 2026-10-27: the R4 rounds** on the migration, the two check files, the suite, the blocks and the script test: round 1 found no BLOCKER, one MAJOR and two MINOR, all fixed (see "Review history"); round 2, on the fixes: SHIP.
+5. **DONE 2026-10-27: the rehearsal of the blocks by a session that did not write them,** on a throwaway at production's position, under the lead's rule of 2026-09-30, with the substitutions "Rehearsal" names: REHEARSED-OK at `ed6dad9c` (see "The independent rehearsal").
 6. **OPEN: SOLO's READY line; the pull request, opened held (`held-for-apply`, unarmed).** Its CI reads red on the SECURITY DEFINER count, by construction (see "GATE-CHANGES").
 7. **OPEN: SOLO fills GREEN's dispatch:** HELD (the held head's sha), DOCSHA (this document's sha256 at that head) and a run window while both clinics are closed, whose end is not in a repeated hour.
 
@@ -779,9 +779,38 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 ## Rehearsal
 
+### The independent rehearsal, 2026-10-27: REHEARSED-OK
+
+**By a session that did not author the blocks,** on lane amber (a local Supabase stack, PostgreSQL 17.6), never production, at production's position built as below (the function dropped, 36 SECURITY DEFINER functions, a drizzle journal of 105 rows, synthetic packs). Tuesday 2026-10-27, 01:39 to 01:41 Lisbon (WET), closed hours. The document at `ed6dad9c`; the line numbers below are that document's. Its outputs are the rehearser's, outside the repository.
+
+**The substitutions, five, and two environment steps, as the rehearser was told.**
+- (a) `DATABASE_URL_DIRECT` came from the environment (127.0.0.1, lane amber).
+- (b) Removed whole, NOT REHEARSED: lines 243 and 712 (the reader), 497 and 633 (the environment file), 498 and 634 (the target guard).
+- (c) The `cd` into the apply worktree went to a scratch clone whose `origin` is a local bare repository holding `db/0108-pack-read-function` at `ed6dad9c`.
+- (d) Every `/tmp/0108-` went to a scratch folder.
+- (e) The hand step: after BEFORE YOU START stopped at its reader grep, the lane's journal was read READ ONLY (105) and the held head's sha written into `0108-start-head.sha` by hand.
+- Environment: the scratch clone's dependencies installed with `pnpm install --frozen-lockfile` (`node_modules` is gitignored, so the clean-worktree check holds), and libpq's `psql` on `PATH`.
+- The two dispatch blocks were run FILLED: HELD `ed6dad9c`, DOCSHA its document's sha256, a window holding the start window Monday 21:00 to Tuesday 08:00.
+
+| Block | Result |
+|---|---|
+| BEFORE YOU START, filled | REHEARSED TO THE READER LINE: closed by the weekday table, the night inside the run window, every pin equal; then `STOP: the journal read does not say 105. Nothing was applied` at the grep on line 244, as predicted |
+| Stage 0 | RUN: `0108 HELD HEAD, NUMBER, FILES AND CLOCK VERIFIED` |
+| CLOCK CHECK, filled | RUN: `CLOCK: ... Paste stage 1 now.` |
+| Stage 1 | RUN: pre-check `13 OK / 0 VACUOUS / 0 FAIL`; clinics `0 of 4`, inside; `journal 105 -> 106 (delta 1)`; `0108 APPLIED. Paste stage 2 now.` |
+| Stage 2 | RUN: post-check `13 OK / 0 VACUOUS / 0 FAIL`; verdict 6 `2 instances called; 2 answered in full and in order; 2 refused all four others`; verdict 8 `37, 0 not owned by postgres`; `0108 POST-CHECK PASSED. ...` |
+| The closing read | REHEARSED TO THE READER LINE: `STOP: the journal read after the apply does not say 106. ...` at the grep on line 713, as predicted |
+| Stage 1, pasted again | `STOP: stage 1 has ALREADY APPLIED 0108 in this sitting ...` |
+
+**Its NOT REHEARSED:** lines 243 to 247, 497, 498, 633, 634 and 712 to 717.
+
+**Two earlier runs of the same night did not finish,** and are not the rehearsal of record:
+- run 1 halted at the hand step, which its prompt had not named;
+- run 2 halted because the scratch clone's dependencies were not installed.
+
 ### The rehearsal after the R4 round, 2026-10-27: the changed bytes, by their author
 
-**Why it ran.** The R4 round's two MINOR fixes changed bytes that run against production: the pre-check (`probe_instances` joins the patient on id and tenant), the post-check (its probe joins the same way) and stage 1 (a clinic whose hours are not set counts as outside the table). They were rehearsed again on the same lane, by the same method and the same four substitutions as the rehearsal below, Tuesday 2026-10-27 between 01:18 and 01:30 Lisbon (WET), closed hours.
+**Why it ran.** The R4 round's two MINOR fixes changed bytes that run against production: the pre-check (`probe_instances` joins the patient on id and tenant), the post-check (its probe joins the same way) and stage 1 (a clinic whose hours are not set counts as outside the table). They were rehearsed again on the same lane, by the same method, the same five substitutions and the same environment steps as the rehearsal below, Tuesday 2026-10-27 between 01:18 and 01:30 Lisbon (WET), closed hours.
 
 **The bytes.** The document at `fb316de9` (sha256 `8096b364884a42a473f3309b753a74d0b41a898a40542b93415175c50c01db1e`, matching its sidecar). The commit that records this run changed only prose; its six blocks are byte for byte those of `fb316de9` (compared by machine).
 
@@ -808,11 +837,13 @@ Proven as assigned principals (`authenticated`, with the tenant, the role and th
 
 **The throwaway and the method (0107's).** Lane amber (a local Supabase stack, PostgreSQL 17.6), built from this branch's migrations `0000` to `0108`, then put at production's position by hand: the function dropped (36 SECURITY DEFINER functions); a drizzle journal of 105 rows built from the files (each `hash` its file's sha256, each `created_at` its `when`); one synthetic tenant with two clinics, two patients, three pack instances and six linked visits written as `postgres` (two of them cancelled, and two at the same instant), so verdict 6 had packs to call the function for (`probe_instances` 2); four active clinics, 08:00 to 20:00, read `inside`. A read-only pre-check by hand read `13 OK / 0 VACUOUS / 0 FAIL` before any block ran. Each block was cut from the document by machine and run in a fresh `zsh -f` with a cleared environment, in GREEN's shape (`true && eval '<block>' < /dev/null && ...`).
 
-**The substitutions, exactly four, and the dispatch fills.**
+**The substitutions, five (the hand step below is the fifth), two environment steps, and the dispatch fills.**
 - (a) `DATABASE_URL_DIRECT` came from the environment (127.0.0.1, lane amber); no block line was edited for it.
 - (b) Removed whole, NOT REHEARSED: the reader line of BEFORE YOU START and of the closing read; the environment-file line and the target guard's line of stages 1 and 2.
 - (c) The `cd` into the apply worktree went to a scratch clone whose `origin` is a local bare repository holding `db/0108-pack-read-function` at `c37678ac`.
 - (d) Every `/tmp/0108-` went to a scratch folder.
+- (e) The hand step, below.
+- Environment: the scratch clone's dependencies installed with `pnpm install --frozen-lockfile` (`node_modules` is gitignored, so the clean-worktree check holds), and libpq's `psql` on `PATH`.
 - The two dispatch blocks were run FILLED: HELD `c37678ac`, DOCSHA as above, the window 202610262100, 202610270629, 202610270800.
 
 **The hand step, stated plainly.** With the reader line removed, BEFORE YOU START stops at the grep after it and so never writes `/tmp/0108-start-head.sha`, which the CLOCK CHECK needs. The author read the lane's journal count READ ONLY (`105`) and wrote the held head's sha into that file by hand, as 0107's rehearsals did. No guard line was altered or run: the guard lines were removed whole under (b) and are NOT REHEARSED.
@@ -846,7 +877,8 @@ After the two refusals the journal still read 106: nothing more was applied.
 - **The lines that load the production environment file and the target guard's lines** in stages 1 and 2: they refuse any throwaway by design, which is their purpose, and the lead's rule forbids getting past them.
 - **BEFORE YOU START and the CLOCK CHECK as GREEN pastes them:** their PENDING lines stop them first on any throwaway; the filled copies run only in GREEN's dispatch. Their window-end test is proven by the script test, not on a throwaway.
 - **Production:** its function set, its `patients_select` text, its packs and its counts were not read. The pre-check pins every one it depends on, so a difference stops the sitting at the pre-check rather than passing unseen. Verdict 6's VACUOUS arm (no pack with a consuming visit) is proven by the script test only.
-- **An independent rehearsal** by an agent that did not write the blocks, and DOCSHA at the held head GREEN will run from.
+- **What the independent rehearsal names as NOT REHEARSED** (lines at `ed6dad9c`): 243 to 247 and 712 to 717 (the production reader and the tail of BEFORE YOU START and of the closing read after it), 497 and 498, 633 and 634 (the environment file and the target guard of stages 1 and 2).
+- **DOCSHA at the held head GREEN will run from.**
 
 ## Review history
 
