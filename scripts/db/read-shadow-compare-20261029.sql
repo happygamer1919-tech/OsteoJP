@@ -87,8 +87,11 @@
 --   S6  WITHDRAWN in R4 round 2 (a save after a look-ahead)
 --   S7  due in the 15 minutes before the read
 -- sent with neither (live only): a reminder ledger row inside the window with no
---   claim of that reminder in the hour before it and no shadow row of it (the
---   claim fails open, reminder-claim.ts). Always UNEXPLAINED: the day FAILs.
+--   claim of that appointment, offset and channel, of any start, in the hour
+--   before it, and no shadow row of that reminder, of any start, with its mark
+--   from 12 hours before to 1 hour after the send (the claim fails open,
+--   reminder-claim.ts). Always UNEXPLAINED: its day FAILs on a full day, and
+--   verdict 10 FAILs on any such row in [t0, t1], whatever day it falls on.
 -- run only (the sleeping job claimed, the shadow has no row for that start):
 --   R1  an `appointment.reschedule` save whose new start differs from this start
 --       lies after the claim and at or before the first pass at or after the
@@ -129,7 +132,8 @@
 --    9  no mark taken twice by the shadow
 --   10  nothing falls out of the comparison: every shadow row and sleeping-job
 --       claim since t0 has a mark and a known offset and channel, and so does
---       every such row and every reminder send inside the window
+--       every such row and every reminder send inside the window; and no
+--       reminder in [t0, t1] was sent with neither a claim nor a shadow row
 -- 11-16 agreement, per full day and per reminder (48h email, 24h sms): OK with
 --       at least one match and no mismatch; REVIEW, FAIL or VACUOUS as above
 --
@@ -509,7 +513,10 @@ marked as (
            where x.created_at >= win.t0 and x.created_at <= win.t1
              and x.template_id like 'reminder.%'
              and not exists (select 1 from reminder rm
-                              where rm.channel = x.channel and x.template_id like 'reminder.' || rm.offset_id || '.%')) as ledger_unplaced
+                              where rm.channel = x.channel and x.template_id like 'reminder.' || rm.offset_id || '.%')) as ledger_unplaced,
+         -- Sent with neither, on ANY day of the window (a send dated Thursday for
+         -- a Wednesday mark belongs to no full day and would fail no agreement).
+         (select count(*) from live) as sent_with_neither
     from since_t0 z
 ),
 summary as (
@@ -599,12 +606,13 @@ select n, "check", observed, expected, verdict from (
     from twice
   union all
   select 10,
-         '10. nothing falls out of the comparison: every row written since t0 has a mark and a known reminder, and so does every row and reminder send in the window',
+         '10. nothing falls out of the comparison: every row written since t0 has a mark and a known reminder, so does every row and reminder send in the window, and no reminder in the window was sent with neither a claim nor a shadow row',
          'rows ' || rows_written::text || '; without a mark or with an unknown reminder ' || unplaced::text
            || '; window rows with an unknown reminder ' || window_unplaced::text
-           || '; reminder sends with an unknown reminder ' || ledger_unplaced::text,
-         'rows > 0; 0; 0; 0',
-         case when unplaced > 0 or window_unplaced > 0 or ledger_unplaced > 0 then 'FAIL'
+           || '; reminder sends with an unknown reminder ' || ledger_unplaced::text
+           || '; sent with neither, any day ' || sent_with_neither::text,
+         'rows > 0; 0; 0; 0; 0',
+         case when unplaced > 0 or window_unplaced > 0 or ledger_unplaced > 0 or sent_with_neither > 0 then 'FAIL'
               when rows_written = 0 then 'VACUOUS' else 'OK' end
     from marked
   union all

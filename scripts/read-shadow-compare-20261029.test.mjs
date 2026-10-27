@@ -702,8 +702,17 @@ const CASES = [
       visit(appt(0xd1), "2026-10-28 15:30"),
       ledger(appt(0xd1), "24h", "sms", "2026-10-27 15:30:03"),
     ].join("\n"),
-    want: only({ 14: "FAIL" }),
+    want: only({ 10: "FAIL", 14: "FAIL" }),
     info: [[52, new RegExp(`${appt(0xd1)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "sent with neither on a partial day: a send dated Thursday 01:00 for a Wednesday mark FAILs verdict 10",
+    seed: [
+      visit(appt(0xd6), "2026-10-29 22:00"),
+      ledger(appt(0xd6), "24h", "sms", "2026-10-29 01:00"),
+    ].join("\n"),
+    want: only({ 10: "FAIL" }),
+    info: [[52, new RegExp(`${appt(0xd6)} \\| UNEXPLAINED`)]],
   },
   {
     name: "R7: a reminder claimed only early, with no shadow row, is never dropped and reads REVIEW",
