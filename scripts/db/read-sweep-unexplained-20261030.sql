@@ -42,10 +42,16 @@
 --                 before the pass, when one was moved later; the start now, when none was
 --                 moved after the pass. `?` when it cannot be reconstructed.
 --   P3 status     the status at the pass is `scheduled` or `confirmed` (SWEEP_REMINDABLE_STATUSES).
---                 Reconstructed: the `fromStatus` of the first audit row after the pass that
---                 carries a `toStatus`; the status now when there is none. `?` when that row
---                 records no `fromStatus`. A status change that wrote no audit row with a
---                 `toStatus` cannot be seen.
+--                 Reconstructed from the first status change written after the pass: an audit
+--                 row carrying a `toStatus` (its `fromStatus`, `?` when it records none); an
+--                 `appointment.patient_sms_reply` with outcome `cancelled` or `confirmed`, or an
+--                 `appointment.sms_reply_reviewed` applied with resolution `confirmed` or
+--                 `cancelled` (both paths move only a `scheduled` visit: inbound-reply.ts line
+--                 311, inbound-store.ts line 290, so `scheduled`); a `patient_audit_log` row
+--                 `cancel` with outcome `success` (the patient's link, redeem.ts: only a
+--                 `scheduled` or `confirmed` visit, so remindable). With no such change after
+--                 the pass: the status now, EXCEPT that a status now that is not remindable,
+--                 on a row updated after the pass, reads `?` (a change that left no trail).
 --   P4 ahead      the claimed start is after the pass's clock (`pass_at`) (sweepStartRange.after).
 --   P5 due        the claimed start is at or before `pass_at` plus the offset, or, for the day's
 --                 last pass, before 23:00 Lisbon of that day plus the offset (sweepStartRange,
@@ -90,10 +96,11 @@
 --      offsets; any start)
 --   23 every reminder ledger row of the appointment: time, template, outcome, reason
 --   24 every audit row of the appointment: time, action, and the scheduling fields only
+--   25 every patient_audit_log row of the appointment (the patient's link): time, action, outcome
 --   26 one row per pass: P1 to P8, each T, F or ?, and the heartbeat's counts
 --   27 the summary: per predicate, at how many passes it was false while the pass's range
---      covered the mark (P4 and P5 true); the predicates false at EVERY such pass; and the first
---      pass, if any, at which every predicate held
+--      covered the mark (P4 and P5 true); the predicates false at EVERY such pass; those unknown
+--      (`?`) at every such pass; and the first pass, if any, at which every predicate held
 --
 -- Run (the document's block does exactly this, with a 120 second bound):
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
@@ -425,7 +432,7 @@ ev as (
   -- Only the fields the reminder code reads, each reduced to a fixed word.
   select l.id, v.tenant_id, l.entity_id as appointment_id, l.created_at,
          (l.tenant_id = v.tenant_id) as same_tenant,
-         case when l.action ~ '^appointment[.][a-z_]+$' then l.action else 'other' end as action,
+         case when l.action ~ '^appointment([.][a-z_]+)+$' then l.action else 'other' end as action,
          case when l.metadata->>'toStatus' is null then null
               when l.metadata->>'toStatus' in ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show')
                 then l.metadata->>'toStatus'
@@ -447,7 +454,12 @@ ev as (
          (l.action = 'appointment.update' and l.metadata->>'via' = 'portal_request_confirm') as arm_portal,
          (l.action = 'appointment.sms_reply_reviewed'
           and l.metadata->>'resolution' = 'confirmed' and l.metadata->>'applied' = 'true') as arm_review,
-         (l.action = 'appointment.patient_sms_reply' and l.metadata->>'outcome' = 'confirmed') as arm_reply
+         (l.action = 'appointment.patient_sms_reply' and l.metadata->>'outcome' = 'confirmed') as arm_reply,
+         -- A status change that carries no toStatus: inbound-reply.ts (cancelled line 326, confirmed
+         -- line 410) and inbound-store.ts (line 272); both move only a `scheduled` visit.
+         ((l.action = 'appointment.patient_sms_reply' and l.metadata->>'outcome' in ('cancelled', 'confirmed'))
+          or (l.action = 'appointment.sms_reply_reviewed' and l.metadata->>'applied' = 'true'
+              and l.metadata->>'resolution' in ('confirmed', 'cancelled'))) as sms_status
     from public.audit_log l
     join uv v on v.appointment_id = l.entity_id
    where l.entity_type = 'appointment'
@@ -455,6 +467,25 @@ ev as (
 ev2 as (
   select e.*, (e.arm_save or e.arm_status or e.arm_portal or e.arm_review or e.arm_reply) as scheduling
     from ev e
+),
+pal as (
+  -- The patient's own link (redeem.ts) writes patient_audit_log only. Fixed code words only.
+  select pa.id, pa.appointment_id, pa.occurred_at,
+         case when pa.action ~ '^[a-z_]+$' then pa.action else 'other' end as action,
+         case when pa.outcome ~ '^[a-z_]+$' then pa.outcome else 'other' end as outcome
+    from public.patient_audit_log pa
+    join uv v on v.appointment_id = pa.appointment_id and v.tenant_id = pa.tenant_id
+),
+sc as (
+  -- Every status change of those visits, with the status it left.
+  select e.appointment_id, e.created_at, e.id::text as k, coalesce(e.from_status, '?') as from_status
+    from ev2 e where e.to_status is not null
+  union all
+  select e.appointment_id, e.created_at, e.id::text, 'scheduled'
+    from ev2 e where e.to_status is null and e.sms_status
+  union all
+  select p.appointment_id, p.occurred_at, p.id::text, 'scheduled or confirmed'
+    from pal p where p.action = 'cancel' and p.outcome = 'success'
 ),
 pp as (
   -- One row per unexplained mark and per shadow pass of its tenant from 75 minutes before the
@@ -482,10 +513,12 @@ pp as (
          -- P3: the status at the pass.
          case
            when a.id is null then '?'
-           else coalesce((select coalesce(e.from_status, '?') from ev2 e
-                           where e.appointment_id = u.appointment_id and e.to_status is not null
-                             and e.created_at > h.created_at
-                           order by e.created_at, e.id limit 1), a.status::text)
+           else coalesce((select c.from_status from sc c
+                           where c.appointment_id = u.appointment_id
+                             and c.created_at > h.created_at
+                           order by c.created_at, c.k limit 1),
+                         case when a.status::text not in ('scheduled', 'confirmed') and a.updated_at > h.created_at
+                              then '?' else a.status::text end)
          end as status_at_pass,
          u.starts_at > h.pass_at as p4,
          a.created_at < u.due_at as p6,
@@ -517,7 +550,7 @@ pq as (
   select p.*,
          case when p.start_at_pass = '?' then '?' when p.start_at_pass = p.iso_start then 'T' else 'F' end as f2,
          case when p.status_at_pass = '?' then '?'
-              when p.status_at_pass in ('scheduled', 'confirmed') then 'T' else 'F' end as f3,
+              when p.status_at_pass in ('scheduled', 'confirmed', 'scheduled or confirmed') then 'T' else 'F' end as f3,
          case when p.la_calc is null then p.starts_at <= p.pass_at + make_interval(mins => p.minutes)
               else p.starts_at < p.la_calc + make_interval(mins => p.minutes) end as p5,
          (p.la_calc is not distinct from p.look_ahead_before) as la_same
@@ -632,7 +665,9 @@ select n, "check", observed, expected, verdict from (
            || ' | mark ' || to_char(u.due_at at time zone 'Europe/Lisbon', lt.f) || ' ' || u.offset_id || ' ' || u.channel
            || ' | claimed start ' || to_char(u.starts_at at time zone 'Europe/Lisbon', lt.f)
            || ' | claimed ' || to_char(u.claimed_at at time zone 'Europe/Lisbon', lt.f)
-           || ' | the claim ended as ' || coalesce((select o.outcome || case when o.reason <> '' then ' (' || o.reason || ')' else '' end
+           || ' | the claim ended as ' || coalesce((select o.outcome || case when o.reason = '' then ''
+                                                                     when o.reason ~ '^[a-z_]+$' then ' (' || o.reason || ')'
+                                                                     else ' (other)' end
                                                      from r_out o
                                                     where o.tenant_id = u.tenant_id and o.appointment_id = u.appointment_id
                                                       and o.offset_id = u.offset_id and o.channel = u.channel
@@ -717,6 +752,15 @@ select n, "check", observed, expected, verdict from (
     from u cross join lt
     join ev2 e on e.appointment_id = u.appointment_id
   union all
+  select u.uk, 25,
+         u.uk || ' patient_audit_log ' || to_char(p.occurred_at at time zone 'Europe/Lisbon', lt.f) || ' ' || p.action,
+         'outcome ' || p.outcome
+           || case when p.occurred_at > u.due_at then ' | after the mark' else ' | before the mark' end,
+         'action names only',
+         'INFO'
+    from u cross join lt
+    join pal p on p.appointment_id = u.appointment_id
+  union all
   select r.uk, 26,
          r.uk || ' pass ' || to_char(r.pass_at at time zone 'Europe/Lisbon', lt.f),
          'P1 tenant ' || case when r.p1 then 'T' else 'F' end
@@ -753,6 +797,11 @@ select n, "check", observed, expected, verdict from (
                           case when s.f6 = s.in_range then 'P6 created' end,
                           case when s.f7 = s.in_range then 'P7 scheduling' end,
                           case when s.f8 = s.in_range then 'P8 not taken' end), ''), 'none') end
+           || ' | unknown (?) at EVERY pass in range: '
+           || case when s.in_range = 0 then 'no pass had the mark in range'
+                   else coalesce(nullif(concat_ws(', ',
+                          case when s.u2 = s.in_range then 'P2 start' end,
+                          case when s.u3 = s.in_range then 'P3 status' end), ''), 'none') end
            || ' | every predicate held at ' || s.every_t::text || ' passes'
            || case when s.first_every is not null
                    then ', first ' || to_char(s.first_every at time zone 'Europe/Lisbon', lt.f) else '' end,

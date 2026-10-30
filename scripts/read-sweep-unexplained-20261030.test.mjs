@@ -479,7 +479,7 @@ const CASES = [
     ].join("\n"),
     want: { 0: "OK", 1: "OK", 2: "OK", 3: "OK", 4: "OK" },
     info: [
-      [27, new RegExp(`^U001 summary \\| .*false at EVERY pass in range: none \\| every predicate held at [1-9][0-9]* passes, first 2026-10-26 11:00:03`)],
+      [27, new RegExp(`^U001 summary \\| .*false at EVERY pass in range: none \\| unknown \\(\\?\\) at EVERY pass in range: none \\| every predicate held at [1-9][0-9]* passes, first 2026-10-26 11:00:03`)],
       [20, new RegExp(`appointment ${appt(0xa3)} \\| day 2026-10-26 \\(full day\\) \\| mark 2026-10-26 11:00:00 48h email`)],
       [21, /status scheduled \| origin staff \| location 00000000-0000-4000-8000-00000000c001 Synthetic clinic \| start now 2026-10-28 11:00:00 \(the claimed start\) \| created 2026-10-01 09:00:00 \| created minus mark -36\d{3} min/],
       [23, /reminder\.48h\.email \| email \| outcome sent \| reason none/],
@@ -588,7 +588,60 @@ const CASES = [
         where pass_at >= ${at("2026-10-27 13:00")} and pass_at < ${at("2026-10-28 13:00")};`,
     ].join("\n"),
     want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
-    info: [[27, /over the ceiling [1-9]\d* \| false at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/]],
+    info: [[27, /over the ceiling [1-9]\d* \| false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/]],
+  },
+  {
+    name: "P3, an SMS reply cancels an hour before the start: the passes before it read scheduled, not cancelled (R4 MAJOR 1)",
+    seed: [
+      lost(appt(0xc1), "2026-10-28 13:00", ["24h"]),
+      `update public.appointments set status = 'cancelled', updated_at = ${at("2026-10-28 12:00")} where id = '${appt(0xc1)}';`,
+      audit(appt(0xc1), "appointment.patient_sms_reply", "2026-10-28 12:00", `{"outcome":"cancelled"}`),
+      audit(appt(0xc1), "appointment.confirm.sms_code", "2026-10-27 15:00"),
+    ].join("\n"),
+    want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
+    info: [
+      [26, /pass 2026-10-27 13:00:03 \| .*P3 status T \(scheduled\)/],
+      [26, /pass 2026-10-28 12:15:03 \| .*P3 status F \(cancelled\)/],
+      [27, /false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/],
+      [24, /audit 2026-10-27 15:00:00 appointment\.confirm\.sms_code \| the visit's tenant/],
+    ],
+  },
+  {
+    name: "P3, the patient's link cancels an hour before the start (patient_audit_log only)",
+    seed: [
+      lost(appt(0xc2), "2026-10-28 13:00", ["24h"]),
+      `update public.appointments set status = 'cancelled', updated_at = ${at("2026-10-28 12:00")} where id = '${appt(0xc2)}';`,
+      `insert into public.patient_audit_log (tenant_id, appointment_id, auth_means, action, outcome, occurred_at)
+         values ('${TENANT}', '${appt(0xc2)}', 'signed_token', 'cancel', 'success', ${at("2026-10-28 12:00")});`,
+    ].join("\n"),
+    want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
+    info: [
+      [26, /pass 2026-10-27 13:00:03 \| .*P3 status T \(scheduled or confirmed\)/],
+      [25, /patient_audit_log 2026-10-28 12:00:00 cancel \| outcome success \| after the mark/],
+      [27, /false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/],
+    ],
+  },
+  {
+    name: "P3 unknown: cancelled now with no trail, the row updated after the start: `?` at every pass, never F",
+    seed: [
+      lost(appt(0xc3), "2026-10-28 13:00", ["24h"]),
+      `update public.appointments set status = 'cancelled', updated_at = ${at("2026-10-28 14:30")} where id = '${appt(0xc3)}';`,
+    ].join("\n"),
+    want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
+    info: [
+      [26, /P3 status \? \(\?\)/],
+      [27, /false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: P3 status \| every predicate held at 0 passes/],
+    ],
+  },
+  {
+    name: "P5 look-ahead: a mark at 22:30 is due at the 21:45 pass and not at 21:30",
+    seed: lost(appt(0xc4), "2026-10-28 22:30", ["24h"]),
+    want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
+    info: [
+      [26, /pass 2026-10-27 21:45:03 \| .*P5 due T \(look-ahead\)/],
+      [26, /pass 2026-10-27 21:30:03 \| .*P5 due F/],
+      [27, /false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: none \| every predicate held at [1-9]\d* passes, first 2026-10-27 21:45:03/],
+    ],
   },
   {
     name: "MUTANT: P7 without its as-of-the-pass bound (a save after the start counts)",
@@ -599,7 +652,7 @@ const CASES = [
     ].join("\n"),
     mutate: (s) => s.replace("and e.same_tenant and e.scheduling\n                    and e.created_at <= h.created_at) as p7,", "and e.same_tenant and e.scheduling) as p7,"),
     want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
-    info: [[27, /false at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/]],
+    info: [[27, /false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/]],
   },
   {
     name: "MUTANT: P3 reads the status now (no reconstruction)",
@@ -608,9 +661,9 @@ const CASES = [
       audit(appt(0xbc), "appointment.update", "2026-10-28 14:30", `{"fromStatus":"cancelled","toStatus":"scheduled"}`),
       runClaim(appt(0xbc), "24h", "2026-10-28 13:00"),
     ].join("\n"),
-    mutate: (s) => s.replace("and e.created_at > h.created_at\n                           order by e.created_at, e.id limit 1), a.status::text)", "and false\n                           order by e.created_at, e.id limit 1), a.status::text)"),
+    mutate: (s) => s.replace("                             and c.created_at > h.created_at\n", "                             and false\n"),
     want: { 0: "OK", 1: "OK", 2: "FAIL", 3: "FAIL", 4: "OK" },
-    info: [[27, /false at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/]],
+    info: [[27, /false at EVERY pass in range: none \| unknown \(\?\) at EVERY pass in range: none \| every predicate held at [1-9]\d* passes/]],
   },
 ];
 

@@ -11,11 +11,11 @@ R20 (`scripts/db/read-shadow-compare-20261029.sql`, `docs/read-shadow-compare-20
 
 ## What it reads
 
-`scripts/db/read-sweep-unexplained-20261030.sql`, sha256 `c47dd7284d4aa7a5fb2214814de140096135d4a676d78a5cbe667f20143d2af9`. One result set, columns `n | check | observed | expected | verdict`, ordered by mark and then by `n`.
+`scripts/db/read-sweep-unexplained-20261030.sql`, sha256 `3d8fe65302dde0b5fba39fb0559da4ae5d9a6fb3518c55b9f406a8e0f20a50d7`. One result set, columns `n | check | observed | expected | verdict`, ordered by mark and then by `n`.
 
-**The set is R20's, recomputed, never typed in.** Lines 103 to 402 of the read are a byte-for-byte copy of R20's lines 145 to 444 (from `clock as (` to the end of `pc`, at `e604854b`, merged as #1670): the window, the sides, the comparison key and the candidate labels, unchanged. The test fails if one byte of that span differs. An unexplained mark is a `pc` row with side `run_only` and category `UNEXPLAINED`, on ANY Lisbon day from `t0` to the read's clock (R20 judged only Monday to Wednesday). No appointment id is written in the repository.
+**The set is R20's, recomputed, never typed in.** Lines 110 to 409 of the read are a byte-for-byte copy of R20's lines 145 to 444 (from `clock as (` to the end of `pc`, at `e604854b`, merged as #1670): the window, the sides, the comparison key and the candidate labels, unchanged. The test fails if one byte of that span differs. An unexplained mark is a `pc` row with side `run_only` and category `UNEXPLAINED`, on ANY Lisbon day from `t0` to the read's clock (R20 judged only Monday to Wednesday). No appointment id is written in the repository.
 
-**What it prints.** Lisbon times, minutes, counts, the fixed labels of offsets, channels, statuses, origins, audit action names, ledger outcomes and suppression reasons, appointment ids, location ids and location names. No tenant id, patient id or staff id, no name of a person, no phone, no email address, no message text, no note. Of the audit metadata it prints only the fields the reminder code reads, each as a fixed word or `other`: `toStatus` and `fromStatus` (one of the five statuses), whether `startsAt` is this start or another one, `via` (`portal_request_confirm` or `other`), and whether each scheduling-save arm matched. It never prints stored metadata text.
+**What it prints.** Lisbon times, minutes, counts, the fixed labels of offsets, channels, statuses, origins, audit action names, ledger outcomes and suppression reasons, appointment ids, location ids and location names. No tenant id, patient id or staff id, no name of a person, no phone, no email address, no message text, no note. Of the audit metadata it prints only the fields the reminder code reads, each as a fixed word or `other`: `toStatus` and `fromStatus` (one of the five statuses), whether `startsAt` is this start or another one, `via` (`portal_request_confirm` or `other`), and whether each scheduling-save arm matched. It never prints stored metadata text. Of `patient_audit_log` it prints the action and outcome words only (`[a-z_]+`, else `other`).
 
 **What the sweep's selection reads, and how each is evaluated here.** `apps/web/lib/reminders/sweep.ts` `selectDueMarks` takes, per tenant and per offset, the visits where `dueVisits`, `hasSchedulingEvent` (because `REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER` is `false`) and `notTakenBySweep` all hold, at most 50 a pass (oldest mark first), inside `withReminderTenantContext` (`context.ts`: role `authenticated`, claims `tenant_id` and `user_role` `admin`, no user id). Each predicate is evaluated as of each pass, from the rows that existed then:
 
@@ -23,7 +23,7 @@ R20 (`scripts/db/read-shadow-compare-20261029.sql`, `docs/read-shadow-compare-20
 |---|---|---|
 | P1 tenant | `dueVisits`: `appointments.tenant_id` = the pass's tenant | the visit row under the claim's tenant |
 | P2 start | the selection reads the start the visit has at the pass; another start is another key | the `startsAt` of the latest `appointment.create` or `appointment.reschedule` row written at or before the pass, when the visit was moved after the pass; the start now when it was not. `?` when it cannot be reconstructed |
-| P3 status | `dueVisits`: status `scheduled` or `confirmed` | the `fromStatus` of the first audit row after the pass that carries a `toStatus`; the status now when there is none. `?` when that row records no `fromStatus` |
+| P3 status | `dueVisits`: status `scheduled` or `confirmed` | the status left by the first status change written after the pass: an audit row carrying a `toStatus` (its `fromStatus`; `?` when it records none); an `appointment.patient_sms_reply` with outcome `cancelled` or `confirmed`, or an applied `appointment.sms_reply_reviewed` with resolution `confirmed` or `cancelled` (`scheduled`: both paths move only a `scheduled` visit, `inbound-reply.ts` line 311, `inbound-store.ts` line 290); a `patient_audit_log` row `cancel` with outcome `success` (the patient's link, `redeem.ts`: only a `scheduled` or `confirmed` visit, so remindable). With no such change after the pass, the status now, EXCEPT that a status now that is not remindable on a row updated after the pass reads `?`: a change that left no trail is never read as the status at the pass |
 | P4 ahead | `sweepStartRange.after`: the start is after the pass's clock | the claimed start against `pass_at` |
 | P5 due | `sweepStartRange.limit`, `sweepLookAheadLimit`: start at or before `pass_at` plus the offset; for the 21:45 pass, before 23:00 Lisbon plus the offset | recomputed from `pass_at`; a row says when it differs from the `look_ahead_before` the pass recorded |
 | P6 created | `dueVisits`: `created_at` before the mark | the claimed start minus the offset |
@@ -61,14 +61,15 @@ The counts in verdicts 2 and 3 are R20's result as relayed in the brief for this
 | 22 | per mark: every `reminder_claims` row of the appointment, both offsets, any start (claims with taker, early and attempt; releases; shadow rows with `saved_after_mark`) |
 | 23 | per mark: every reminder ledger row of the appointment: time, template, outcome, suppression reason |
 | 24 | per mark: every audit row of the appointment: time, action, tenant match, and the scheduling fields only |
+| 25 | per mark: every `patient_audit_log` row of the appointment (the patient's confirm or cancel link): time, action name, outcome. Fixed code words only, nothing else of the row |
 | 26 | per mark and pass: P1 to P8, each `T`, `F` or `?`, `EVERY`, and the heartbeat's counts |
-| 27 | per mark, the summary: passes, passes with the mark in range (P4 and P5), how many of those each predicate was false at, **the predicates false at EVERY pass in range** (the cause), and the first pass, if any, at which every predicate held |
+| 27 | per mark, the summary: passes, passes with the mark in range (P4 and P5), how many of those each predicate was false at, **the predicates false at EVERY pass in range** (the cause), the predicates unknown (`?`) at every pass in range, and the first pass, if any, at which every predicate held |
 
-**How to read row 27.** A predicate false at every pass in range is the reason the selection never returned the mark. "none" with `every predicate held at 0 passes` means different predicates failed at different passes; read rows 26. `every predicate held at N passes` with N above 0 means that, as reconstructed, the selection would have returned it: then the cause lies outside the reconstructed predicates (the ceiling, a pass that read before a row committed, or the NOW rows), and rows 26 show the passes.
+**How to read row 27.** A predicate false at every pass in range is the reason the selection never returned the mark. A predicate listed under `unknown (?) at EVERY pass in range` could not be reconstructed at any of those passes: it may be the cause, and the read cannot say. "none" on both lists with `every predicate held at 0 passes` means different predicates failed, or were unknown, at different passes; read rows 26. `every predicate held at N passes` with N above 0 means that, as reconstructed, the selection would have returned it: then the cause lies outside the reconstructed predicates (the ceiling, a pass that read before a row committed, or the NOW rows), and rows 26 show the passes.
 
 ## Known limits
 
-- A status change that wrote no audit row with a `toStatus` cannot be seen (P3 reads the status now for every pass after the last such row).
+- A status change that wrote none of the rows P3 reads cannot be placed in time. P3 then reads the status now, and reads `?` instead whenever the status now is not remindable and the visit row was updated after the pass. A change that left no trail and was later overwritten by a remindable status cannot be seen at all.
 - A move that wrote no `appointment.reschedule` row cannot be seen (P2).
 - The ceiling is read from the heartbeat only: which marks a pass over the ceiling deferred is not recorded anywhere.
 - Row-level security is read NOW, as policy names, not evaluated as the job's principal.
@@ -82,7 +83,7 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-sweep-unexplained-20261030.sql`, sha256 `c47dd7284d4aa7a5fb2214814de140096135d4a676d78a5cbe667f20143d2af9` |
+| The read | `scripts/db/read-sweep-unexplained-20261030.sql`, sha256 `3d8fe65302dde0b5fba39fb0559da4ae5d9a6fb3518c55b9f406a8e0f20a50d7` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes R20's document pins) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-sweep-unexplained-20261030.sha256` pins it |
@@ -108,7 +109,7 @@ set -o pipefail
 PRHEAD=PENDING
 DOCSHA=PENDING
 PRNUM=1672
-SHAREAD=c47dd7284d4aa7a5fb2214814de140096135d4a676d78a5cbe667f20143d2af9
+SHAREAD=3d8fe65302dde0b5fba39fb0559da4ae5d9a6fb3518c55b9f406a8e0f20a50d7
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-sweep-unexplained-20261030.sql
@@ -156,7 +157,7 @@ echo "R22-READ PASSED: 5 OK / 0 VACUOUS / 0 FAIL. The whole table is in ${OUT}; 
 )
 ```
 
-**EXPECT:** `lisbon now:  <the time> WET`; `checked out: <PRHEAD>`; `document:`, then `docs/read-sweep-unexplained-20261030.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; `verdicts: 5 OK / 0 VACUOUS / 0 FAIL`; `R22-READ PASSED: ...`. Exit 0. psql prints nothing to the terminal: the table is in `/Users/ivan/osteojp-handover/r22-unexplained-read-20261030.out` only. **REPORT THESE LINES AND THE FILE'S PATH.** It writes nothing to production.
+**EXPECT:** `lisbon now:  <the time> WET`; `checked out: <PRHEAD>`; `document:`, then `docs/read-sweep-unexplained-20261030.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; `verdicts: 5 OK / 0 VACUOUS / 0 FAIL`; `R22-READ PASSED: ...`. Exit 0. psql prints nothing to the terminal: the table is in `/Users/ivan/osteojp-handover/r22-unexplained-read-20261030.out` only. **REPORT THESE LINES AND THE FILE'S PATH.** It writes nothing to production. The apply worktree is left detached at `PRHEAD` after the read: the next sitting does its own checkout and checks its own commit.
 
 **STOP:** any `STOP:` line. The likely ones: `NOT READY` (the dispatch was not filled in); `the pull request's head is [...]` (the pull request moved after the dispatch was written: SOLO writes a new dispatch); `a FAIL or a VACUOUS verdict` (the read ran and the table is in the file: report the printed lines and the path, and SOLO reads the file).
 
@@ -164,7 +165,7 @@ echo "R22-READ PASSED: 5 OK / 0 VACUOUS / 0 FAIL. The whole table is in ${OUT}; 
 
 The `public` schema copied from lane blue's database (`node scripts/lane-stack.mjs up --lane blue`, the repository's migrations) with `pg_dump --schema-only`, into a throwaway database per case, made from one seeded base: R20's base carried to Friday. One synthetic tenant (and a second with no visit of its own), one synthetic clinic row, 14 synthetic visits (Monday 10-26 to Sunday 11-01, 10:00 and 15:00 Lisbon) each with an `appointment.create` audit row, a shadow heartbeat every 15 minutes from Sunday 15:30 to Friday 18:45, and for every mark in the window a sleeping-job claim, a `sent` ledger row and a shadow row in the first pass at or after the mark. Every base mark is taken by both sides. The three appointment foreign keys to people and clinics were dropped in the throwaway so no synthetic person had to be made. The read ran as the block runs it (`begin read only`, 120 seconds, `rollback`), with ONE substitution: its single clock line `select now() as t1` replaced by 2026-10-30 19:00 Lisbon. Each case adds one visit with a sleeping-job claim and no shadow row, built so that exactly one predicate is false. The test runs these cases whenever `R22_READ_TEST_PGURL` names a local database, and refuses any other host.
 
-**Run of 2026-10-30 (lane blue): 13 cases, the test's database part 1 of 1 passing.**
+**Run of 2026-10-30 after R4 round 1 (lane blue): 17 cases, the test's database part 1 of 1 passing.** Row 27 now also prints `unknown (?) at EVERY pass in range: ...`; it reads `none` in every case below unless the case says otherwise.
 
 | Case | What was seeded | Verdicts | Row 27 printed |
 |---|---|---|---|
@@ -179,8 +180,12 @@ The `public` schema copied from lane blue's database (`node scripts/lane-stack.m
 | P7, another tenant | the only scheduling save is under another tenant | 0 OK, 1 to 4 VACUOUS | not in the set: R20's R4 reads only the visit's own tenant's saves, so it labels this R4 |
 | P8 not taken | a live claim of taker `sweep` of the same key before the mark | 0, 1, 4 OK; 2, 3 FAIL | `P8 not taken` |
 | the ceiling | every predicate holds, every pass in range over the ceiling | 0, 1, 4 OK; 2, 3 FAIL | `over the ceiling 60`, `none`, `every predicate held at 60 passes` |
+| P3, SMS reply cancels (R4 round 1, MAJOR 1) | a lost visit cancelled by `appointment.patient_sms_reply` (outcome `cancelled`, no `toStatus`) an hour before its start; status now `cancelled`; plus an `appointment.confirm.sms_code` row | 0, 1, 4 OK; 2, 3 FAIL | `none`, `every predicate held at 56 passes`: the passes before the reply read `P3 status T (scheduled)`, the 4 after it `F (cancelled)`. Before the fix every pass read `F (cancelled)` and row 27 named P3 falsely. Row 24 prints `appointment.confirm.sms_code` (it read `other` before) |
+| P3, the patient's link cancels (R4 round 1) | the same, cancelled by a `patient_audit_log` row `cancel` / `success` only | 0, 1, 4 OK; 2, 3 FAIL | `none`, `every predicate held at 56 passes`; passes before it read `P3 status T (scheduled or confirmed)`; row 25 prints the row |
+| P3 unknown (R4 round 1) | a lost visit, `cancelled` now with no trail, its row updated after the start | 0, 1, 4 OK; 2, 3 FAIL | false `none`, `unknown (?) at EVERY pass in range: P3 status`, `every predicate held at 0 passes`: never named as the cause |
+| P5 look-ahead (R4 round 1) | a lost visit starting Wednesday 22:30, its 24h mark Tuesday 22:30 | 0, 1, 4 OK; 2, 3 FAIL | `every predicate held at 61 passes, first 2026-10-27 21:45:03`; row 26 reads `P5 due T (look-ahead)` at 21:45 and `P5 due F` at 21:30 |
 | MUTANT 1 | the P7 case, with P7's as-of-the-pass bound removed | 0, 1, 4 OK; 2, 3 FAIL | `none`, `every predicate held at 60 passes`: without the bound the cause disappears |
-| MUTANT 2 | the P3 case, with the status read NOW instead of reconstructed | 0, 1, 4 OK; 2, 3 FAIL | `none`: without the reconstruction the cause disappears |
+| MUTANT 2 | the P3 case, with the status changes after the pass ignored (the status read NOW) | 0, 1, 4 OK; 2, 3 FAIL | `none`: without the reconstruction the cause disappears |
 
 Verdicts 2 and 3 read FAIL in the single-mark cases because their counts are R20's production counts (8 and 2), which only the profile case reproduces.
 
