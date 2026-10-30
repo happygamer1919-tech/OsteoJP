@@ -1,7 +1,7 @@
 # R22 READ, 2026-10-30: why the reminder sweep did not take the marks the sleeping job took
 
 **READ ONLY. One block. No apply, no write.**
-**Status: AUTHORED 2026-10-30 by SOLO's builder; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-sweep-unexplained-20261030.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). NOT YET REVIEWED (R4).** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit SOLO names.
+**Status: AUTHORED 2026-10-30 by SOLO's builder; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-sweep-unexplained-20261030.test.mjs`); THE BLOCK REHEARSED IN A FAKE APPLY LAYOUT WITH REAL git AND shasum UP TO THE TARGET GUARD, WHICH REFUSED THE LOCAL TARGET, AS IT MUST; ITS PRODUCTION PATH NOT REHEARSED (see "NOT REHEARSED"). NOT YET REVIEWED (R4).** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit SOLO names.
 
 ## Why this read exists
 
@@ -184,6 +184,14 @@ The `public` schema copied from lane blue's database (`node scripts/lane-stack.m
 
 Verdicts 2 and 3 read FAIL in the single-mark cases because their counts are R20's production counts (8 and 2), which only the profile case reproduces.
 
+## The block in a fake apply layout (2026-10-30, 19:15 Lisbon)
+
+The block, filled with `PRHEAD=c715e0cb930c185ffa41905da90ab0d12e1f0435` (this pull request's head at the time) and that commit's document sha256, was run in GREEN's tool shape (`true && eval '<block>' < /dev/null && echo TOOL-CHAIN-CONTINUED`, `bash --noprofile --norc`) with real `git`, `shasum`, `node` and `date`. Three substitutions, and only these: the apply checkout was a clone of a local bare repository in the scratch folder (holding only `refs/pull/1672/head`, no branch), the handover folder a scratch folder, and the environment file a scratch file naming the lane blue database on 127.0.0.1. What it showed:
+
+- `lisbon now:  202610301915 WET`; `git fetch origin "refs/pull/1672/head"` fetched it to `FETCH_HEAD`; `checked out: c715e0cb930c185ffa41905da90ab0d12e1f0435`; the document, sidecar (`docs/read-sweep-unexplained-20261030.md: OK`), read, guard and module hashes all matched their pins.
+- The target guard printed `REFUSING: project ref is "postgres", not the production project.` and the block STOPped: `STOP: the target guard refused or failed`. It is not got past (the lead's rule of 2026-09-30).
+- With `refs/pull/1672/head` pointed at the branch's first commit, the block STOPped: `the pull request's head is [175a134e...], not the commit the dispatch names`. With the ref deleted: `fatal: couldn't find remote ref` and `STOP: the pull request's head could not be fetched`.
+
 ## NOT REHEARSED
 
-The block itself reads only production: its target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway ("A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so"). So the block's production path is NOT REHEARSED: the environment file, the target guard against the real target, the connection, and `git fetch origin refs/pull/<N>/head` against GitHub in the apply checkout. What stands in for it: the SQL run above with exactly the block's psql arguments and one named clock substitution, and the fault-injection test, which runs the block in GREEN's tool shape in bash and zsh with every external command a stub, fails each call in turn, and proves every halt is explicit and that the block passes only on `5 OK / 0 VACUOUS / 0 FAIL`.
+The block itself reads only production: its target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway ("A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so"). So the block's production path is NOT REHEARSED: the environment file, the target guard against the real target, the connection and the psql call through the block, and `git fetch origin refs/pull/1672/head` against GitHub in the real apply checkout (it was rehearsed against a local bare repository, above). What stands in for it: the SQL run above with exactly the block's psql arguments and one named clock substitution, and the fault-injection test, which runs the block in GREEN's tool shape in bash and zsh with every external command a stub, fails each call in turn, and proves every halt is explicit and that the block passes only on `5 OK / 0 VACUOUS / 0 FAIL`.
