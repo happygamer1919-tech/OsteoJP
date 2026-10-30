@@ -86,9 +86,9 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes R20's document pins) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-sweep-unexplained-20261030.sha256` pins it |
-| The commit | the dispatch names the pull request's head commit in `PRHEAD`; the block fetches `refs/pull/PRNUM_VALUE/head` and refuses any other sha |
+| The commit | the dispatch names the pull request's head commit in `PRHEAD`; the block fetches `refs/pull/1672/head` and refuses any other sha |
 
-**Why the pull request's head and not `main`.** `main` is frozen until another pull request merges, so this one is not merged before GREEN runs it. The block fetches `refs/pull/PRNUM_VALUE/head`, which GitHub keeps after a branch is deleted, and checks out the head commit by its full sha.
+**Why the pull request's head and not `main`.** `main` is frozen until another pull request merges, so this one is not merged before GREEN runs it. The block fetches `refs/pull/1672/head`, which GitHub keeps after a branch is deleted, and checks out the head commit by its full sha.
 
 ## When
 
@@ -107,7 +107,7 @@ GREEN pastes its dispatch's filled copy, whole and on its own, from `/Users/ivan
 set -o pipefail
 PRHEAD=PENDING
 DOCSHA=PENDING
-PRNUM=PRNUM_VALUE
+PRNUM=1672
 SHAREAD=c47dd7284d4aa7a5fb2214814de140096135d4a676d78a5cbe667f20143d2af9
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c

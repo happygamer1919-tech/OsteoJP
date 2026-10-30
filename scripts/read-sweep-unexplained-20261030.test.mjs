@@ -195,7 +195,7 @@ case "${name}" in
   git)
     case "$1" in
       status) [ "$HARNESS_DIRTY" = yes ] && echo " M somefile"; exit 0;;
-      fetch) [ "$2" = origin ] && [ "$3" = "refs/pull/$HARNESS_PRNUM/head" ] || { echo "harness: unexpected git $*" >&2; exit 97; }; exit 0;;
+      fetch) [ "$2" = origin ] || { echo "harness: unexpected git $*" >&2; exit 97; }; [ "$3" = "refs/pull/$HARNESS_PRNUM/head" ] || { echo "fatal: couldn't find remote ref $3" >&2; exit 128; }; [ "$#" = 3 ] || { echo "harness: unexpected git $*" >&2; exit 97; }; exit 0;;
       checkout) exit 0;;
       rev-parse)
         case "$2" in
