@@ -25,7 +25,10 @@
 // consultation sync and a sync before the readiness check each fail. The
 // simulation runs all seven steps against the fake app and records which serve
 // paths were PUT: exactly the two on success, and only the reminders one when
-// the consultation endpoint is missing, names another app, or counts wrong.
+// the consultation endpoint is missing, names another app or commit, or counts
+// wrong. Because the simulation fills in EXPECTED and MODIFIED itself and stops
+// at the first failing step, the shape checks also read the literal step-output
+// wiring and refuse any step-level `if:` or `continue-on-error`.
 //
 // Run: pnpm test:scripts   (node --test, wired into the REQUIRED CI quality job)
 
@@ -58,6 +61,15 @@ function shapeProblems(text) {
   const timeout = Number((text.match(/\n    timeout-minutes: (\d+)\n/) ?? [])[1]);
   const deadline = Number((text.match(/WAIT_DEADLINE_SECONDS:-(\d+)/) ?? [])[1]);
   if (!(timeout * 60 > deadline + 120)) problems.push(`timeout-minutes ${timeout} does not leave room after the ${deadline}s wait`);
+  // R27: the simulation below runs the steps in order and stops at the first
+  // failure, which is what GitHub does ONLY when no step carries its own `if:`
+  // or `continue-on-error`. Either would let a refused readiness check go on
+  // to the sync, so neither is allowed anywhere in the job (the job-level `if:`
+  // above is the production filter and is the only `if:` there is).
+  if (/^ {8}(if|continue-on-error):/m.test(text) || /^ {6}- (if|continue-on-error):/m.test(text)) {
+    problems.push("a step carries its own if: or continue-on-error, so a failed step may not stop the job");
+  }
+  if (/^ {4}continue-on-error:/m.test(text)) problems.push("the job carries continue-on-error");
   return problems;
 }
 
@@ -76,6 +88,32 @@ test("SEEDED: a job-level group that cancels in progress is caught", () => {
   const seeded = TEXT.replace("      cancel-in-progress: false\n", "      cancel-in-progress: true\n");
   assert.notEqual(seeded, TEXT);
   assert.ok(shapeProblems(seeded).length > 0);
+});
+
+test("SEEDED: continue-on-error on the consultation readiness check is caught", () => {
+  const anchor = "      - name: Check osteojp-consultation is ready to sync\n";
+  assert.ok(TEXT.includes(anchor));
+  const seeded = TEXT.replace(anchor, `${anchor}        continue-on-error: true\n`);
+  assert.ok(shapeProblems(seeded).some((x) => /continue-on-error/.test(x)));
+});
+
+test("SEEDED: if: always() on the consultation sync is caught, in either position", () => {
+  const anchor = "        id: sync_consultation\n";
+  assert.ok(TEXT.includes(anchor));
+  const after = TEXT.replace(anchor, `${anchor}        if: always()\n`);
+  assert.ok(shapeProblems(after).some((x) => /its own if:/.test(x)));
+  const first = TEXT.replace(
+    "      - name: Sync osteojp-consultation (PUT /api/inngest/consultation)\n",
+    "      - if: always()\n        name: Sync osteojp-consultation (PUT /api/inngest/consultation)\n",
+  );
+  assert.notEqual(first, TEXT);
+  assert.ok(shapeProblems(first).some((x) => /its own if:/.test(x)));
+});
+
+test("SEEDED: continue-on-error on the whole job is caught", () => {
+  const seeded = TEXT.replace("\n    timeout-minutes: 20\n", "\n    timeout-minutes: 20\n    continue-on-error: true\n");
+  assert.notEqual(seeded, TEXT);
+  assert.ok(shapeProblems(seeded).some((x) => /job carries continue-on-error/.test(x)));
 });
 
 test("SEEDED: a timeout shorter than the wait is caught", () => {
@@ -97,12 +135,14 @@ function parseSteps(text) {
   for (let i = 0; i < lines.length; i++) {
     const n = lines[i].match(/^ {6}- name: (.*)$/);
     if (n) {
-      cur = { name: n[1], env: {}, run: null };
+      cur = { name: n[1], id: null, env: {}, run: null };
       out.push(cur);
       inEnv = false;
       continue;
     }
     if (!cur) continue;
+    const idm = lines[i].match(/^ {8}id: (\S+)\s*$/);
+    if (idm) { cur.id = idm[1]; inEnv = false; continue; }
     if (/^ {8}env:\s*$/.test(lines[i])) { inEnv = true; continue; }
     const kv = lines[i].match(/^ {10}([A-Z_]+): (.*)$/);
     if (inEnv && kv) { cur.env[kv[1]] = kv[2]; continue; }
@@ -164,6 +204,26 @@ function appProblems(text) {
   if (!ready || ready.env.APP_ID !== CONSULTATION.app || ready.env.DEPLOYED_PATH !== CONSULTATION.deployed) {
     problems.push("the readiness check does not read the consultation app's own endpoint");
   }
+  // THE WIRING the simulation cannot see: it supplies EXPECTED and MODIFIED
+  // itself, so which step output feeds which check is read here, literally.
+  const wiring = [
+    [`Sync ${REMINDERS.app}`, "id", "sync"],
+    [`Sync ${CONSULTATION.app}`, "id", "sync_consultation"],
+    [`Check the live function count against the code (${REMINDERS.app})`, "EXPECTED", "${{ steps.expected.outputs.count }}"],
+    [`Check the live function count against the code (${REMINDERS.app})`, "MODIFIED", "${{ steps.sync.outputs.modified }}"],
+    [`Check ${CONSULTATION.app} is ready to sync`, "EXPECTED", "${{ steps.expected.outputs.consultation_count }}"],
+    [`Check the live function count against the code (${CONSULTATION.app})`, "EXPECTED", "${{ steps.expected.outputs.consultation_count }}"],
+    [`Check the live function count against the code (${CONSULTATION.app})`, "MODIFIED", "${{ steps.sync_consultation.outputs.modified }}"],
+  ];
+  for (const [prefix, key, want] of wiring) {
+    const s = steps.find((x) => x.name.startsWith(prefix));
+    const got = key === "id" ? s?.id : s?.env[key];
+    if (got !== want) problems.push(`"${prefix}" ${key} is ${JSON.stringify(got)}, not ${want}`);
+  }
+  const count = steps.find((s) => s.name.startsWith("Count the functions"));
+  if (!count?.run?.includes('echo "consultation_count=${consultation}" >> "${GITHUB_OUTPUT}"')) {
+    problems.push("the count step does not write consultation_count");
+  }
   const apps = [...code.matchAll(/inngest-expected-functions\.mjs([^\n|]*)/g)].map((m) => (m[1].match(/--app ([\w-]+)/) ?? [, "(default)"])[1]);
   if (JSON.stringify([...new Set(apps)]) !== JSON.stringify(["(default)", CONSULTATION.app])) {
     problems.push(`the counted apps are ${JSON.stringify([...new Set(apps)])}`);
@@ -211,6 +271,19 @@ test("SEEDED: the consultation sync before its readiness check is caught", () =>
   assert.ok(appProblems(seeded).some((x) => /not wait, sync and check/.test(x)));
 });
 
+test("SEEDED: the consultation checks wired to the reminders count are caught, each of them", () => {
+  const wire = "EXPECTED: ${{ steps.expected.outputs.consultation_count }}";
+  assert.equal(TEXT.split(wire).length - 1, 2);
+  const first = TEXT.replace(wire, "EXPECTED: ${{ steps.expected.outputs.count }}");
+  assert.ok(appProblems(first).some((x) => /is ready to sync" EXPECTED/.test(x)), appProblems(first).join("; "));
+  const i = TEXT.lastIndexOf(wire);
+  const second = TEXT.slice(0, i) + "EXPECTED: ${{ steps.expected.outputs.count }}" + TEXT.slice(i + wire.length);
+  assert.ok(appProblems(second).some((x) => /\(osteojp-consultation\)" EXPECTED/.test(x)), appProblems(second).join("; "));
+  const modified = TEXT.replace("MODIFIED: ${{ steps.sync_consultation.outputs.modified }}", "MODIFIED: ${{ steps.sync.outputs.modified }}");
+  assert.notEqual(modified, TEXT);
+  assert.ok(appProblems(modified).some((x) => /MODIFIED/.test(x)));
+});
+
 test("SEEDED: a consultation count that is not asked for by --app is caught", () => {
   const seeded = TEXT.replaceAll("inngest-expected-functions.mjs --app osteojp-consultation", "inngest-expected-functions.mjs");
   assert.notEqual(seeded, TEXT);
@@ -254,7 +327,7 @@ const srv = http.createServer((req, res) => {
     if (mode === "c404") { res.statusCode = 404; return res.end("{}"); }
     return res.end(JSON.stringify({
       app: mode === "capp" ? "osteojp-reminders" : "osteojp-consultation",
-      commit: mode === "cmoved" && consultationSynced ? "c".repeat(40) : sha,
+      commit: mode === "cstale" ? "d".repeat(40) : mode === "cmoved" && consultationSynced ? "c".repeat(40) : sha,
       functionCount: mode === "ccount" ? 2 : 1,
     }));
   }
@@ -380,6 +453,13 @@ test("SEEDED: a consultation count that differs from the code fails BEFORE its s
   const r = await simulate("ccount");
   assert.equal(r.step, READY.name);
   assert.match(r.out, /answers commit 'a{40}', app 'osteojp-consultation', 2 function\(s\); expected a{40}, osteojp-consultation, 1\. NOT SYNCED/);
+  assert.deepEqual(r.synced, [REMINDERS.serve]);
+});
+
+test("SEEDED: a consultation endpoint on another commit fails BEFORE its sync", async () => {
+  const r = await simulate("cstale");
+  assert.equal(r.step, READY.name);
+  assert.match(r.out, /answers commit 'd{40}', app 'osteojp-consultation', 1 function\(s\); expected a{40}, osteojp-consultation, 1\. NOT SYNCED/);
   assert.deepEqual(r.synced, [REMINDERS.serve]);
 });
 

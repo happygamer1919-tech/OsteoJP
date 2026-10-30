@@ -95,7 +95,7 @@
     "scripts/import/run-import.test.mjs": "7e82eb9b8214fff7ed376c4da2c5d5267f5ffd85ace990b63789eecfa7d324ab",
     "scripts/inc-1007-rearm-reminders-emit.test.mjs": "3095356aff0bb6a24cb6716371376676d3c9e2a3de17d0a0c0b7617c687f5c5e",
     "scripts/ingestion-sign.test.mjs": "c6ba1b8cf42878ccb91d3f829e676c280e7b59ea8d82387e5b7bbe6ae2b40e2e",
-    "scripts/inngest-auto-sync-workflow.test.mjs": "54114d001a80c3de585bad7c226aa8e6b61e4b62769c62759e1baef7a06fa383",
+    "scripts/inngest-auto-sync-workflow.test.mjs": "953bf3714766233da8149eb8130e3846dd7d38dc620911392974445c0d15a7a2",
     "scripts/inngest-expected-functions.test.mjs": "d1c43161bb69e8368b8a2648c1225807efc29ecdfd563ab96823a21b25de9423",
     "scripts/lane-stack.test.mjs": "2bcc1f73267c7567c59e89b67bb1d077d3fc81342abcfa1a312ed75d62c51296",
     "scripts/local-target.test.mjs": "a7cfe74aea60206f5b0e2c3215526e9b59d48f31acc565550e331bf23c161f5c",
