@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, eq, gt, gte, lt, min, ne, not, notExists, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, exists, gt, gte, lt, min, ne, not, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { appointments, reminderClaims, reminderDispatches, reminderSweepPasses, type DbTx } from "@osteojp/db";
 
@@ -13,6 +13,7 @@ import {
   SWEEP_MARK_CEILING,
   SWEEP_STATEMENT_TIMEOUT,
   dueVisits,
+  notSavedAfterMark,
   recordedStart,
   sweepLookAheadLimit,
   type SweepStep,
@@ -51,6 +52,11 @@ import { sweepRemindsNeverReminded } from "./sweep-mode";
  * An `early` claim counts for neither, as everywhere: it was taken over ten
  * minutes before this start's mark, by a job that woke at an older time. The
  * shadow's own rows count for neither as well: a shadow row sent nothing.
+ *
+ * AND NO GRACE FOR A VISIT SAVED AFTER ITS MARK (R24, ./sweep.ts): a mark is
+ * not taken while a scheduling save of the visit was written strictly after
+ * it, unless a claim of this mark was taken at or before that save (the
+ * reminder was handed over before the save, and held back: it is tried again).
  *
  * ONLY A MARK THAT FELL DUE SINCE THE SWEEP BEGAN TO SEND FOR THE TENANT
  * (`readSweepFloor`): at or after the first heartbeat of mode `send` that
@@ -141,6 +147,21 @@ export const SWEEP_SEND_PASS_MODE = "send";
 /* The selection                                                       */
 /* ------------------------------------------------------------------ */
 
+type ClaimColumns = Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "startsAt" | "early", PgColumn>;
+
+/** A claim of this mark, of either taker: this visit, offset, channel and START, and not `early`. */
+function claimOfThisMark(t: ClaimColumns, tenantId: string, offset: ReminderOffset): SQL | undefined {
+  return and(
+    eq(t.tenantId, tenantId),
+    eq(t.appointmentId, appointments.id),
+    eq(t.kind, REMINDER_CLAIM_KIND),
+    eq(t.offsetId, offset.id),
+    eq(t.channel, offset.channel),
+    eq(t.startsAt, recordedStart()),
+    sql`${t.early} is distinct from true`,
+  );
+}
+
 /**
  * NOT SETTLED AND NOT JUST TRIED, for the start the visit has now. See the
  * header. Both reads are of claims only, of either taker.
@@ -149,19 +170,6 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
   const live = alias(reminderClaims, "reminder_send_live_claim");
   const release = alias(reminderClaims, "reminder_send_live_claim_release");
   const recent = alias(reminderClaims, "reminder_send_recent_claim");
-  const start = recordedStart();
-  const claimOfThisMark = (
-    t: Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "startsAt" | "early", PgColumn>,
-  ) =>
-    and(
-      eq(t.tenantId, tenantId),
-      eq(t.appointmentId, appointments.id),
-      eq(t.kind, REMINDER_CLAIM_KIND),
-      eq(t.offsetId, offset.id),
-      eq(t.channel, offset.channel),
-      eq(t.startsAt, start),
-      sql`${t.early} is distinct from true`,
-    );
   return and(
     notExists(
       tx
@@ -169,7 +177,7 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
         .from(live)
         .where(
           and(
-            claimOfThisMark(live),
+            claimOfThisMark(live, tenantId, offset),
             notExists(
               tx
                 .select({ one: sql`1` })
@@ -190,7 +198,33 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
       tx
         .select({ one: sql`1` })
         .from(recent)
-        .where(and(claimOfThisMark(recent), gt(recent.createdAt, new Date(now.getTime() - SWEEP_RETRY_AFTER_MS)))),
+        .where(
+          and(
+            claimOfThisMark(recent, tenantId, offset),
+            gt(recent.createdAt, new Date(now.getTime() - SWEEP_RETRY_AFTER_MS)),
+          ),
+        ),
+    ),
+  );
+}
+
+/**
+ * R24 FOR THE SENDING PASS: no scheduling save of the visit written after this
+ * mark (./sweep.ts, `notSavedAfterMark`), EXCEPT a save written after the mark
+ * had already been handed over: a claim of this mark, of either taker, taken
+ * at or before that save. That mark was taken by a pass before the save, so
+ * R24's "saved before the pass" does not hold for it, and a reminder that was
+ * held back there is tried again as the owner ruled. Both instants are the
+ * database's clock.
+ */
+function notSavedAfterMarkBeforeItWasHandedOver(tx: DbTx, tenantId: string, offset: ReminderOffset): SQL {
+  const before = alias(reminderClaims, "reminder_send_claim_before_the_save");
+  return notSavedAfterMark(tx, offset, (savedAt) =>
+    exists(
+      tx
+        .select({ one: sql`1` })
+        .from(before)
+        .where(and(claimOfThisMark(before, tenantId, offset), sql`${before.createdAt} <= ${savedAt}`)),
     ),
   );
 }
@@ -349,6 +383,7 @@ export async function selectSendableMarks(
     const selectable = and(
       dueSinceTheFloor,
       args.includeNeverReminded ? undefined : hasSchedulingEvent(tx),
+      notSavedAfterMarkBeforeItWasHandedOver(tx, args.tenantId, offset),
       notSettledNorJustTried(tx, args.tenantId, offset, args.now),
     );
 

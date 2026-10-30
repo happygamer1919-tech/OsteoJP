@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, exists, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, inArray, not, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { appointments, auditLog, type DbTx } from "@osteojp/db";
 
@@ -71,40 +71,80 @@ export const SCHEDULING_SMS_REVIEW_ACTION = "appointment.sms_reply_reviewed";
 export const SCHEDULING_SMS_REPLY_ACTION = "appointment.patient_sms_reply";
 
 /**
+ * The scheduling events of the enclosing `appointments` row, under an alias of
+ * the audit table of their own: the rows and the condition that picks them.
+ * ONE condition, read by both predicates below, so "a scheduling save" means
+ * the same audit rows to each of them.
+ */
+function schedulingEvents(name: string) {
+  const saved = alias(auditLog, name);
+  const where = and(
+    eq(saved.entityType, "appointment"),
+    eq(saved.entityId, appointments.id),
+    or(
+      inArray(saved.action, [...SCHEDULING_SAVE_ACTIONS]),
+      and(
+        eq(saved.action, SCHEDULING_UPDATE_ACTION),
+        or(
+          sql`${saved.metadata}->>'toStatus' in ('scheduled', 'confirmed')`,
+          sql`${saved.metadata}->>'via' = 'portal_request_confirm'`,
+        ),
+      ),
+      and(
+        eq(saved.action, SCHEDULING_SMS_REVIEW_ACTION),
+        sql`${saved.metadata}->>'resolution' = 'confirmed'`,
+        sql`${saved.metadata}->>'applied' = 'true'`,
+      ),
+      and(
+        eq(saved.action, SCHEDULING_SMS_REPLY_ACTION),
+        sql`${saved.metadata}->>'outcome' = 'confirmed'`,
+      ),
+    ),
+  );
+  return { saved, where };
+}
+
+/**
  * True for the `appointments` row of the enclosing query when a scheduling
  * event is on its audit trail. Read under the caller's own claims, so a row of
  * another tenant that names this visit is never seen. Text against text on the
  * metadata, so a row of another shape matches nothing and raises nothing.
  */
 export function hasSchedulingEvent(tx: DbTx): SQL {
-  const saved = alias(auditLog, "reminder_scheduling_event");
+  const { saved, where } = schedulingEvents("reminder_scheduling_event");
+  return exists(tx.select({ one: sql`1` }).from(saved).where(where));
+}
+
+/**
+ * True for the `appointments` row of the enclosing query when a scheduling
+ * event on its audit trail was written STRICTLY AFTER `instant`: the same audit
+ * rows `hasSchedulingEvent` reads, and their own `created_at`, the database's
+ * clock at the save. A save written AT `instant` exactly is not after it.
+ *
+ * `unlessPrecededBy`, when given, is a condition on that save's `created_at`
+ * (passed in as SQL): a save it holds for does not count. The sending pass of
+ * the sweep uses it for "this mark was already handed over at or before the
+ * save" (./sweep-send.ts).
+ *
+ * Read by the reminder sweep for strategy's ruling R24 (./sweep.ts, "NO GRACE
+ * FOR A VISIT SAVED AFTER ITS MARK").
+ */
+export function hasSchedulingEventAfter(
+  tx: DbTx,
+  instant: SQL,
+  unlessPrecededBy?: (savedAt: SQL) => SQL,
+): SQL {
+  const { saved, where } = schedulingEvents("reminder_scheduling_event_after_mark");
+  const savedAt = sql`${saved.createdAt}`;
   return exists(
     tx
       .select({ one: sql`1` })
       .from(saved)
       .where(
         and(
-          eq(saved.entityType, "appointment"),
-          eq(saved.entityId, appointments.id),
-          or(
-            inArray(saved.action, [...SCHEDULING_SAVE_ACTIONS]),
-            and(
-              eq(saved.action, SCHEDULING_UPDATE_ACTION),
-              or(
-                sql`${saved.metadata}->>'toStatus' in ('scheduled', 'confirmed')`,
-                sql`${saved.metadata}->>'via' = 'portal_request_confirm'`,
-              ),
-            ),
-            and(
-              eq(saved.action, SCHEDULING_SMS_REVIEW_ACTION),
-              sql`${saved.metadata}->>'resolution' = 'confirmed'`,
-              sql`${saved.metadata}->>'applied' = 'true'`,
-            ),
-            and(
-              eq(saved.action, SCHEDULING_SMS_REPLY_ACTION),
-              sql`${saved.metadata}->>'outcome' = 'confirmed'`,
-            ),
-          ),
+          where,
+          sql`${saved.createdAt} > ${instant}`,
+          unlessPrecededBy ? not(unlessPrecededBy(savedAt)) : undefined,
         ),
       ),
   );

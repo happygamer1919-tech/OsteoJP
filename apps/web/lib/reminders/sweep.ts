@@ -7,7 +7,7 @@ import { lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import { withReminderTenantContext } from "./context";
 import { REMINDER_OFFSETS, type ReminderOffset } from "./offsets";
 import { REMINDER_CLAIM_KIND, REMINDER_CLAIM_RELEASE_KIND } from "./reminder-claim";
-import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./reminder-population";
+import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent, hasSchedulingEventAfter } from "./reminder-population";
 
 /**
  * THE REMINDER SWEEP, IN SHADOW: every 15 minutes a pass reads the database,
@@ -47,6 +47,7 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./r
  *     switch of ./reminder-population.ts says every visit counts. THE SWITCH IS
  *     OFF AND THE QUESTION IS THE OWNER'S. The predicate and the switch are
  *     that file's, read here and decided nowhere else;
+ *   - audit trail holds NO such save written after the mark (R24, below);
  *   - mark the sweep has not taken yet for the start the visit has now (next
  *     section).
  *
@@ -54,11 +55,52 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent } from "./r
  * is recorded on the heartbeat and logged, and the rest waits for the next
  * pass.
  *
- * NO GRACE IS APPLIED. How late a reminder may still go out is not ruled, so a
- * mark is taken however long ago it fell due, as long as the visit is ahead,
- * and the row records how many minutes late it was taken. The first passes
- * after the sweep is switched on therefore take every mark of the next two
- * days at once, 50 a pass.
+ * NO LATE LIMIT IN THE SELECTION. A mark is taken however long ago it fell
+ * due, as long as the visit is ahead, and the row records how many minutes
+ * late it was taken. How late a reminder may still GO OUT is the dispatcher's
+ * (the owner's late rule, ./sweep-send.ts). The first passes after the sweep
+ * is switched on therefore take every mark of the next two days at once, 50 a
+ * pass.
+ *
+ * ==========================================================================
+ * NO GRACE FOR A VISIT SAVED AFTER ITS MARK (strategy's ruling R24)
+ * ==========================================================================
+ * R24, its intent: "S5 grace = none. GATE: a visit saved after its mark and
+ * before the pass gets no shadow row and no send; a visit saved before its
+ * mark is unchanged." S5 is the shadow-only label of the 10-29 compare
+ * (docs/read-shadow-compare-20261029.md): the sweep took a mark the sleeping
+ * job never claimed, because the save that put the visit at this start, or
+ * accepted it, came after the mark, and the job it re-armed dropped the past
+ * mark (computeDueReminders). R24 makes the sweep do the same.
+ *
+ * So a mark is NOT taken while the visit's audit trail holds a SCHEDULING SAVE
+ * (the rows `hasSchedulingEvent` reads, ./reminder-population.ts) whose
+ * `created_at` is STRICTLY AFTER the mark. A save written AT the mark exactly
+ * counts as before it: that visit is taken as it always was. One save after
+ * the mark is enough, whatever came before it: a visit booked early and moved
+ * TO this start after the mark is the S5 case itself.
+ *
+ * Not taken means not taken at all, for that start: no shadow row, no send, by
+ * this pass or any later one. It is not counted as due, and nothing records
+ * it. A save that is not a scheduling save (an `appointment.update` with no
+ * `toStatus` of scheduled or confirmed, and not the acceptance of a request)
+ * changes nothing.
+ *
+ * WIDER THAN S5, AND KNOWN. The scheduling saves are wider than the saves
+ * that re-arm the sleeping job (./reminder-population.ts says where): a status
+ * set to Confirmada by hand, or a reschedule that keeps the start, is one too.
+ * So a visit booked well before its mark and confirmed by hand, or given
+ * another therapist, after the mark but before the pass that would take it
+ * gets no reminder for that mark, where the sleeping job, which woke at the
+ * mark itself, sent one. For a mark inside the passes' hours (07:00 to 21:45,
+ * every 15 minutes) the gap is at most the 15 minutes to the next pass, longer
+ * only when a pass fails or is over the ceiling.
+ *
+ * "Before the pass" is read as before the mark was first HANDED OVER. The
+ * shadow takes a mark once (its own row), so for it the two readings are one.
+ * The sending pass retries a reminder that was held back (the owner's rule):
+ * there a save written after a claim of this mark was taken does not stop the
+ * retry (./sweep-send.ts, `selectSendableMarks`).
  *
  * ==========================================================================
  * A MARK IS TAKEN ONCE: THE SWEEP'S OWN RECORD, NOT THE OUTCOME
@@ -248,6 +290,22 @@ export function dueVisits(tenantId: string, offset: ReminderOffset, now: Date): 
 }
 
 /**
+ * R24: NO SCHEDULING SAVE OF THE VISIT WAS WRITTEN AFTER THIS MARK. Strictly
+ * after: a save at the mark exactly does not count. See the header.
+ *
+ * `handedOverAtOrBefore` is the sending pass's: a save it holds for (the mark
+ * was already handed over at or before that save) does not count either. The
+ * shadow passes none.
+ */
+export function notSavedAfterMark(
+  tx: DbTx,
+  offset: ReminderOffset,
+  handedOverAtOrBefore?: (savedAt: SQL) => SQL,
+): SQL {
+  return not(hasSchedulingEventAfter(tx, markOf(offset), handedOverAtOrBefore));
+}
+
+/**
  * THE SWEEP HAS NOT TAKEN THIS MARK for the start the visit has now: no shadow
  * row of its own, and no live claim of its own. See the header for why the
  * outcome is not asked, and why a claim of the sleeping job is not looked at.
@@ -316,7 +374,12 @@ export type DueMark = {
   mark: Date;
   /** Whole minutes from the mark to the pass. Negative when the day's last pass took it ahead. */
   minutesAfterMark: number;
-  /** The visit's row was saved after this mark: moved, brought back, or edited. Recorded, not acted on. */
+  /**
+   * The visit's row was saved after this mark (its `updated_at`). Recorded, not
+   * acted on: a SCHEDULING save after the mark keeps the mark from being taken
+   * at all (R24), so a mark taken with this true was saved after it by
+   * something else, an edit the reminder job is not told of.
+   */
   savedAfterMark: boolean;
 };
 
@@ -354,6 +417,7 @@ export async function selectDueMarks(
     const selectable = and(
       dueVisits(args.tenantId, offset, args.now),
       includeNeverReminded ? undefined : hasSchedulingEvent(tx),
+      notSavedAfterMark(tx, offset),
       notTakenBySweep(tx, args.tenantId, offset),
     );
 

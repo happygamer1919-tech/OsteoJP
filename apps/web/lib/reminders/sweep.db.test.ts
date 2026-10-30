@@ -110,13 +110,31 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
   /**
    * A booking row on a visit's audit trail, as a save at the clinic writes
-   * one. THE ONLY AUDIT ROW THIS FILE WRITES: the sweep reads it to tell a
-   * visit the clinic saved, and writes none of its own.
+   * one. The sweep reads it to tell a visit the clinic saved, and writes none
+   * of its own. Stamped `at` the visit's creation, as the booking is: never by
+   * the database's clock, which would put it after the mark of an arm's
+   * pinned morning once the real date passes that morning (R24 reads when a
+   * scheduling save was written).
    */
-  async function booking(tenant: string, appointmentId: string): Promise<void> {
-    await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
-      values (${tenant}, null, 'appointment.create', 'appointment', ${appointmentId}, '{}'::jsonb)`);
+  async function booking(tenant: string, appointmentId: string, at?: Date): Promise<void> {
+    await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
+      values (${tenant}, null, 'appointment.create', 'appointment', ${appointmentId}, '{}'::jsonb,
+              coalesce(${at?.toISOString() ?? null}::timestamptz, now()))`);
     bookingRows += 1;
+  }
+
+  /**
+   * The audit rows of the R24 arm, other than bookings: saves written at a
+   * chosen instant, by action. The last arm reads the trail against these and
+   * `bookingRows`, and nothing else.
+   */
+  const laterSaves: Record<string, number> = {};
+
+  /** A save on a visit's audit trail, written `at` an instant of the arm's choosing. */
+  async function savedAt(appointmentId: string, action: string, metadata: Record<string, unknown>, at: Date): Promise<void> {
+    await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
+      values (${tenantA}, null, ${action}, 'appointment', ${appointmentId}, ${JSON.stringify(metadata)}::jsonb, ${at.toISOString()})`);
+    laterSaves[action] = (laterSaves[action] ?? 0) + 1;
   }
 
   /**
@@ -152,7 +170,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
               ${start.toISOString()}::timestamptz + make_interval(secs => ${(v.micros ?? 0) / 1_000_000}::double precision),
               ${plus(start, 45).toISOString()}, ${v.status ?? "scheduled"},
               ${created.toISOString()}, ${updated.toISOString()})`);
-    if (v.booked !== false) await booking(tenantId, id);
+    if (v.booked !== false) await booking(tenantId, id, created);
     return { id, start };
   }
 
@@ -783,6 +801,8 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     expect(await selects(plus(now, 15), v.id)).toBe(false);
 
     // Moved two hours later. The mark of the new start is due as well: taken, once.
+    // Moved by a bare write that leaves no audit row: a move at the clinic writes
+    // `appointment.reschedule`, and a visit SAVED after its mark is the R24 arm below.
     const moved = plus(v.start, 120);
     const move = (to: Date) =>
       sql.execute(raw`update appointments set starts_at = ${to.toISOString()},
@@ -799,6 +819,84 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     await move(v.start);
     expect(await pass(tenantA, plus(now, 45), "moved-4")).toEqual({ due: 0, recorded: 0, overCeiling: false });
     expect(await shadowsOf(v.id)).toHaveLength(2);
+  });
+
+  /**
+   * R24, strategy's ruling: "S5 grace = none. GATE: a visit saved after its
+   * mark and before the pass gets no shadow row and no send; a visit saved
+   * before its mark is unchanged." A save is a SCHEDULING save (the audit rows
+   * hasSchedulingEvent reads), timed by its own `created_at`. AT the mark
+   * exactly counts as before it.
+   */
+  it("R24: a visit SAVED AFTER ITS MARK and before the pass gets no shadow row; saved before or AT its mark it is taken as before", async () => {
+    const now = clockOf(9);
+    const H = 60;
+    // Each starts 20 hours on and was created 10 hours ago: one mark, the 24
+    // hour one, due 4 hours ago (the 48 hour mark was before the creation).
+    const one = async (i: number) => {
+      const v = await oneMarkVisit(now, { startIn: 20 * H + i });
+      return { ...v, mark: plus(v.start, -24 * H) };
+    };
+    const toThisStart = (v: { start: Date }) => ({ startsAt: v.start.toISOString() });
+    const v = {
+      // (b) Booked before its mark, nothing since: taken, as before R24.
+      before: await one(0),
+      // (a) S5 itself: booked earlier, moved TO this start one minute after its mark.
+      movedAfter: await one(1),
+      // (c) The same move, written AT the mark to the microsecond: before it, so taken.
+      movedAtMark: await one(2),
+      // The boundary from the other side: one millisecond after the mark.
+      movedJustAfter: await one(3),
+      // S5's other arm: an online request nobody had accepted at its mark, accepted after it.
+      acceptedAfter: await visit({ now, startIn: 20 * H + 4, createdIn: -10 * H, booked: false }),
+      // Known and wider than S5: a status set to Confirmada by hand after the mark.
+      confirmedAfter: await one(5),
+      // CONTROL: an edit after the mark that is not a scheduling save changes nothing.
+      editedAfter: await one(6),
+      // Two marks: created five days ago, both due; saved between the 48 hour
+      // mark and the 24 hour one. The 48 hour mark is not taken, the 24 hour one is.
+      between: await visit({ now, startIn: 20 * H + 7 }),
+    };
+    const markOf = (x: { start: Date }) => plus(x.start, -24 * H);
+    await savedAt(v.movedAfter.id, "appointment.reschedule", toThisStart(v.movedAfter), plus(markOf(v.movedAfter), 1));
+    await savedAt(v.movedAtMark.id, "appointment.reschedule", toThisStart(v.movedAtMark), markOf(v.movedAtMark));
+    await savedAt(v.movedJustAfter.id, "appointment.reschedule", toThisStart(v.movedJustAfter), new Date(markOf(v.movedJustAfter).getTime() + 1));
+    await savedAt(v.acceptedAfter.id, "appointment.update", { via: "portal_request_confirm" }, plus(markOf(v.acceptedAfter), 5));
+    await savedAt(v.confirmedAfter.id, "appointment.update", { fromStatus: "scheduled", toStatus: "confirmed" }, plus(markOf(v.confirmedAfter), 5));
+    await savedAt(v.editedAfter.id, "appointment.update", { fields: ["notes"] }, plus(markOf(v.editedAfter), 5));
+    await savedAt(v.between.id, "appointment.reschedule", toThisStart(v.between), plus(v.between.start, -30 * H));
+
+    const label = (id: string) => Object.entries(v).find(([, x]) => x.id === id)?.[0] ?? id;
+    const keys = (marks: { appointmentId: string; offsetId: string }[]) =>
+      marks.map((m) => `${label(m.appointmentId)}:${m.offsetId}`).sort();
+    const taken = ["before:24h", "between:24h", "editedAfter:24h", "movedAtMark:24h"];
+
+    // THE SELECTION. Not taken, and not counted as due either.
+    const selected = await select(tenantA, now);
+    expect(keys(selected.marks)).toEqual(taken);
+    expect(selected.due).toBe(taken.length);
+    // The accepted request HAS a scheduling save now, so it is not "never reminded".
+    expect(selected.neverRemindedLeftOut).toBe(0);
+    // With the switch that takes every visit on, the gate still holds.
+    expect(keys((await select(tenantA, now, { includeNeverReminded: true })).marks)).toEqual(taken);
+
+    // THE PASS writes a shadow row for each mark taken and none for the others.
+    expect(await pass(tenantA, now, "r24-1")).toEqual({ due: taken.length, recorded: taken.length, overCeiling: false });
+    for (const name of ["movedAfter", "movedJustAfter", "acceptedAfter", "confirmedAfter"] as const) {
+      expect(await shadowsOf(v[name].id), name).toEqual([]);
+    }
+    expect((await shadowsOf(v.between.id)).map((r) => r.offset_id)).toEqual(["24h"]);
+    expect((await shadowsOf(v.before.id)).map((r) => r.saved_after_mark)).toEqual([false]);
+    expect(await shadowsOf(v.movedAtMark.id)).toHaveLength(1);
+    expect(await shadowsOf(v.editedAfter.id)).toHaveLength(1);
+    expect((await heartbeatsOf("r24-1"))[0]).toMatchObject({ due_count: taken.length, recorded_count: taken.length });
+
+    // NOT TAKEN MEANS NEVER, for that start: a later pass takes nothing, and the visits are still ahead.
+    expect(await pass(tenantA, plus(now, 15), "r24-2")).toEqual({ due: 0, recorded: 0, overCeiling: false });
+    expect(await pass(tenantA, plus(now, 6 * H), "r24-3")).toEqual({ due: 0, recorded: 0, overCeiling: false });
+    for (const name of ["movedAfter", "movedJustAfter", "acceptedAfter", "confirmedAfter"] as const) {
+      expect(await shadowsOf(v[name].id), name).toEqual([]);
+    }
   });
 
   /* ---------------------------------------------------------------- */
@@ -938,8 +1036,9 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
     const before = await footprint();
     const auditBefore = await auditTrail();
-    // NEGATIVE CONTROL: the trail is not empty. It holds the bookings seeded so far.
-    expect(auditBefore).toMatchObject({ n: bookingRows });
+    // NEGATIVE CONTROL: the trail is not empty. It holds the bookings seeded so far, and the R24 arm's saves.
+    const later = Object.values(laterSaves).reduce((a, b) => a + b, 0);
+    expect(auditBefore).toMatchObject({ n: bookingRows + later });
     expect(bookingRows).toBeGreaterThan(100);
     const shadowsBefore = await rows(raw`select count(*)::int as n from reminder_claims
       where tenant_id in (${tenantA}, ${tenantB}) and kind = 'shadow'`);
@@ -1002,7 +1101,8 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
    * took claims through the claim's own code. The claim, the release, the
    * shadow row and the heartbeat were audit rows in the first draft of the
    * sweep. Not one is there now: the two tenants' audit trail holds the
-   * booking rows this file's seeds wrote, and nothing else.
+   * booking rows this file's seeds wrote and the R24 arm's own saves, and
+   * nothing else.
    */
   it("after every arm above: audit_log holds the seeded booking rows and no claim, release, shadow row or heartbeat", async () => {
     // NEGATIVE CONTROL: the four kinds of row were all written, in their own tables.
@@ -1018,6 +1118,13 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
 
     const audit = await rows(raw`select action, entity_type, count(*)::int as n from audit_log
       where tenant_id in (${tenantA}, ${tenantB}) group by action, entity_type order by action`);
-    expect(audit).toEqual([{ action: "appointment.create", entity_type: "appointment", n: bookingRows }]);
+    // The bookings, and the saves the R24 arm wrote itself at chosen instants. Nothing else.
+    expect(laterSaves).toEqual({ "appointment.reschedule": 4, "appointment.update": 3 });
+    expect(audit).toEqual([
+      { action: "appointment.create", entity_type: "appointment", n: bookingRows },
+      ...Object.entries(laterSaves)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([action, n]) => ({ action, entity_type: "appointment", n })),
+    ]);
   });
 });
