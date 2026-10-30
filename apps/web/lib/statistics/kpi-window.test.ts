@@ -60,6 +60,9 @@ describe("PERF-06 - the KPI window has a floor", () => {
     // Without this the picker would render blank while the query used a
     // 12-month window - a screen lying about its own scope.
     expect(src).toContain("defaultKpiFrom");
-    expect(src).toMatch(/firstParam\(sp\.from\)\s*\?\?\s*defaultKpiFrom/);
+    // R29 review: a from the queries reject falls back to the same default, so
+    // the picker never shows a date that was not queried.
+    expect(src).toMatch(/from:\s*isYmd\(rawFrom\)\s*\?\s*rawFrom\s*:\s*defaultKpiFrom/);
+    expect(src).toMatch(/to:\s*isYmd\(rawTo\)\s*\?\s*rawTo\s*:\s*null/);
   });
 });
