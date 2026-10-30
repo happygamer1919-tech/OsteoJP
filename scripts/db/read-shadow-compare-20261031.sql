@@ -36,7 +36,9 @@
 --       tenant at or before ANY pass that had the mark in range, while every other predicate held
 --       at every such pass. In R22's words: at least one pass had the mark in range (P4 and P5),
 --       P7 scheduling was false at every one of them, and P1 tenant, P2 start, P3 status, P6
---       created and P8 not taken were true (never false, never unknown) at every one of them. The
+--       created and P8 not taken were true (never false, never unknown) at every one of them, and
+--       every one of them recorded the sweep leaving at least one visit out (its heartbeat's
+--       `excluded_count` above 0: the sweep's own testimony that its scheduling-save rule ran). The
 --       sweep's `selectDueMarks` (apps/web/lib/reminders/sweep.ts) requires `hasSchedulingEvent`
 --       (reminder-population.ts) while REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER is false; the
 --       sleeping job never did. So the sweep skips such a visit BY DESIGN while that switch is
@@ -75,8 +77,10 @@
 --   11  agreement, 48h email, ONE ROW PER FULL DAY   } R20's verdicts 11 to 16: OK with at least one
 --   12  agreement, 24h sms, ONE ROW PER FULL DAY     } match and no mismatch; REVIEW, FAIL, VACUOUS
 --   13  no mark stays UNEXPLAINED, on any side and any day from t0 to the read's clock
---   14  R8 explains at least the 10 marks R22 found: R8 marks due Monday 10-26 to Thursday 10-29
---       are 10 or more (later days are printed, never asserted)
+--   14  R8 explains exactly the 10 marks R22 found: R8 marks due Monday 10-26 to Thursday 10-29
+--       are 10 over 6 visits, 8 of them Monday to Wednesday over those 6 visits and 2 on
+--       Thursday on visits of that set (R22's verdicts 2 and 3); later days are printed, never
+--       asserted
 --
 -- Run (the document's block does exactly this, with a 120 second bound):
 --   psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off
@@ -565,7 +569,10 @@ summ as (
 -- ======================================================================================
 r8 as (
   -- R8: a run-only UNEXPLAINED mark (R22's `u`) that at least one pass had in range, at every
-  -- such pass P7 scheduling false and every other predicate true (never false, never unknown).
+  -- such pass P7 scheduling false and every other predicate true (never false, never unknown),
+  -- and every such pass's heartbeat recorded the sweep leaving at least one visit out
+  -- (`excluded_count` above 0: the sweep's own count of the visits its scheduling-save rule
+  -- left out, sweep.ts `not(hasSchedulingEvent)`), so the sweep itself testifies to the rule.
   select u.tenant_id, u.appointment_id, u.offset_id, u.channel, u.starts_at
     from u
     join summ s on s.uk = u.uk
@@ -576,6 +583,7 @@ r8 as (
      and s.f3 = 0 and s.u3 = 0
      and s.f6 = 0
      and s.f8 = 0
+     and not exists (select 1 from pr where pr.uk = u.uk and pr.in_range and coalesce(pr.excluded_count, 0) = 0)
 ),
 pcl as (
   -- R20's comparison with the R8 label put on the marks it names; every other label is R20's.
@@ -676,11 +684,21 @@ unexp as (
     from pcl p
 ),
 r8c as (
-  -- Verdict 14: R8 on the four days R22 read (Monday 10-26 to Thursday 10-29), and after them.
+  -- Verdict 14: R8 on the four days R22 read, against R22's production counts exactly (its
+  -- verdicts 2 and 3): 8 marks over 6 visits Monday 10-26 to Wednesday 10-28, and 2 on Thursday
+  -- 10-29, both on visits of the Monday-to-Wednesday set. Later days are counted, never asserted.
   select count(*) filter (where p.day >= date '2026-10-26' and p.day <= date '2026-10-29') as early_pairs,
          count(*) filter (where p.category like 'R8 %' and p.day >= date '2026-10-26' and p.day <= date '2026-10-29') as early_r8,
          count(distinct p.appointment_id) filter (where p.category like 'R8 %'
                                                     and p.day >= date '2026-10-26' and p.day <= date '2026-10-29') as early_r8_visits,
+         count(*) filter (where p.category like 'R8 %' and p.day >= date '2026-10-26' and p.day <= date '2026-10-28') as mw_r8,
+         count(distinct p.appointment_id) filter (where p.category like 'R8 %'
+                                                    and p.day >= date '2026-10-26' and p.day <= date '2026-10-28') as mw_r8_visits,
+         count(*) filter (where p.category like 'R8 %' and p.day = date '2026-10-29') as thu_r8,
+         count(*) filter (where p.category like 'R8 %' and p.day = date '2026-10-29'
+                            and p.appointment_id not in (select q.appointment_id from pcl q
+                                                          where q.category like 'R8 %'
+                                                            and q.day >= date '2026-10-26' and q.day <= date '2026-10-28')) as thu_outside,
          count(*) filter (where p.category like 'R8 %' and p.day > date '2026-10-29') as later_r8
     from pcl p
 ),
@@ -810,13 +828,16 @@ select n, "check", observed, expected, verdict from (
     from unexp
   union all
   select 14,
-         '14. R8 explains at least the 10 marks R22 found: R8 marks due 2026-10-26 to 2026-10-29',
+         '14. R8 explains exactly the 10 marks R22 found: R8 marks due 2026-10-26 to 2026-10-29, as R22 counted them',
          'R8 marks ' || early_r8::text || ' over visits ' || early_r8_visits::text
+           || '; Monday to Wednesday ' || mw_r8::text || ' over visits ' || mw_r8_visits::text
+           || '; Thursday ' || thu_r8::text || ', on a visit outside that set ' || thu_outside::text
            || ' (of ' || early_pairs::text || ' marks those days); R8 marks due after 2026-10-29 ' || later_r8::text || ' (not asserted)',
-         '10 or more',
+         '10 over 6 visits; 8 over 6; 2, 0',
          case when (select t0 from win) is null then 'VACUOUS'
               when early_pairs = 0 then 'VACUOUS'
-              when early_r8 >= 10 then 'OK'
+              when early_r8 = 10 and early_r8_visits = 6 and mw_r8 = 8 and mw_r8_visits = 6
+                   and thu_r8 = 2 and thu_outside = 0 then 'OK'
               else 'FAIL' end
     from r8c
   union all

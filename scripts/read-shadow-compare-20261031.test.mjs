@@ -66,6 +66,9 @@ const PRHEAD = "a".repeat(40);
 const CLOCK_LINE = "  select now() as t1";
 const R8_LABEL = "R8 no scheduling save before any pass that could take the mark (by design while REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER is false)";
 
+/** R8's eighth condition: every in-range pass recorded the sweep leaving at least one visit out. */
+const R8_EXCLUDED = "not exists (select 1 from pr where pr.uk = u.uk and pr.in_range and coalesce(pr.excluded_count, 0) = 0)";
+
 /** R22's span: scripts/db/read-sweep-unexplained-20261030.sql lines 413 to 586 at 3a7a0686, joined by "\n". */
 const R22_SPAN_LINES = 174;
 const R22_SPAN_SHA256 = "c86ca78e7a86ffbe54173814c2bcaf9f7dce461337c8a5275689c3d3660a930d";
@@ -134,7 +137,7 @@ test("the read's copy of R22 is byte for byte its lines 413 to 586 at 3a7a0686",
 test("R8 is defined once, after R20's labels, and only on R20's run-only UNEXPLAINED marks", () => {
   assert.equal(sql.split(`'${R8_LABEL}'`).length, 2, "the R8 label is not written exactly once");
   assert.match(sql, /case when p\.side = 'run_only' and p\.category = 'UNEXPLAINED'\n/);
-  for (const c of ["s.in_range > 0", "s.f7 = s.in_range", "s.f1 = 0", "s.f2 = 0 and s.u2 = 0", "s.f3 = 0 and s.u3 = 0", "s.f6 = 0", "s.f8 = 0"]) {
+  for (const c of ["s.in_range > 0", "s.f7 = s.in_range", "s.f1 = 0", "s.f2 = 0 and s.u2 = 0", "s.f3 = 0 and s.u3 = 0", "s.f6 = 0", "s.f8 = 0", R8_EXCLUDED]) {
     assert.ok(sql.includes(c), `r8 lost its condition ${c}`);
   }
   assert.ok(doc.includes(R8_LABEL), "the document does not name the R8 label exactly");
@@ -505,7 +508,8 @@ const FULL_DAYS = ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026
  * at 10:00 and 15:00 Lisbon), each with an `appointment.create` audit row dated 10-01; a shadow
  * heartbeat every 15 minutes from Sunday 15:30 to Saturday 07:45; for every mark due in the window a
  * sleeping-job claim (mark + 2 s), a `sent` ledger row (mark + 3 s) and a shadow row in the
- * transaction of the first pass at or after the mark; each heartbeat's counts equal its rows. The
+ * transaction of the first pass at or after the mark; each heartbeat's counts equal its rows, and
+ * each records 5 visits left out (`excluded_count`, as production's passes do: 4 to 13). The
  * three appointment foreign keys to people and clinics are dropped in the throwaway: no synthetic
  * person or clinic is made, and the read reads none of those tables.
  */
@@ -556,7 +560,7 @@ insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, loo
   select '${TENANT}', p.pass_id, 'shadow', p.pass_at, p.look_ahead_before,
          (select count(*) from public.reminder_claims c where c.kind = 'shadow' and c.created_at = p.created_at),
          (select count(*) from public.reminder_claims c where c.kind = 'shadow' and c.created_at = p.created_at),
-         false, 0, p.created_at
+         false, 5, p.created_at
     from seed_pass p;
 -- The sweep heartbeats every tenant: the second tenant's passes, with nothing due.
 insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, look_ahead_before, due_count, recorded_count, over_ceiling, excluded_count, created_at)
@@ -653,7 +657,7 @@ const CASES = [
       "12 2026-10-28": "REVIEW", "12 2026-10-29": "REVIEW", 14: "OK",
     }),
     info: [
-      [14, /R8 marks 10 over visits 6 \(of \d+ marks those days\); R8 marks due after 2026-10-29 0/],
+      [14, /R8 marks 10 over visits 6; Monday to Wednesday 8 over visits 6; Thursday 2, on a visit outside that set 0 \(of \d+ marks those days\); R8 marks due after 2026-10-29 0 /],
       [13, /unexplained shadow only 0, run only 0, sent with neither 0/],
       [31, new RegExp(`marks due 2026-10-28, 48h email, run_only: ${R8_RE} \\| 2 \\|`)],
       [51, new RegExp(`${appt(0xa3)} \\| ${R8_RE}`)],
@@ -668,7 +672,25 @@ const CASES = [
       "11 2026-10-26": "REVIEW", "12 2026-10-27": "REVIEW", "11 2026-10-27": "REVIEW", "11 2026-10-28": "REVIEW",
       "12 2026-10-28": "REVIEW", "12 2026-10-29": "REVIEW", "12 2026-10-30": "REVIEW",
     }),
-    info: [[14, /R8 marks 9 over visits 5 .*R8 marks due after 2026-10-29 1 \(not asserted\)/]],
+    info: [[14, /R8 marks 9 over visits 5;.*R8 marks due after 2026-10-29 1 \(not asserted\)/]],
+  },
+  {
+    name: "R22's profile plus an eleventh R8 mark on Tuesday: verdict 14 FAILs (exact, not a lower bound)",
+    seed: [...R22_PROFILE, R22_SIXTH, r8Visit(appt(0xa7), "2026-10-29 13:00", ["48h"])].join("\n"),
+    want: only({
+      "11 2026-10-26": "REVIEW", "12 2026-10-27": "REVIEW", "11 2026-10-27": "REVIEW", "11 2026-10-28": "REVIEW",
+      "12 2026-10-28": "REVIEW", "12 2026-10-29": "REVIEW",
+    }),
+    info: [[14, /R8 marks 11 over visits 7; Monday to Wednesday 9 over visits 7; Thursday 2, on a visit outside that set 0 /], [13, /run only 0,/]],
+  },
+  {
+    name: "R22's profile with a swap: the sixth visit's Wednesday mark replaced by a Thursday mark on a new visit, still 10 over 6: verdict 14 FAILs",
+    seed: [...R22_PROFILE, r8Visit(appt(0xa8), "2026-10-30 13:00", ["24h"])].join("\n"),
+    want: only({
+      "11 2026-10-26": "REVIEW", "12 2026-10-27": "REVIEW", "11 2026-10-27": "REVIEW", "11 2026-10-28": "REVIEW",
+      "12 2026-10-28": "REVIEW", "12 2026-10-29": "REVIEW",
+    }),
+    info: [[14, /R8 marks 10 over visits 6; Monday to Wednesday 7 over visits 5; Thursday 3, on a visit outside that set 1 /]],
   },
   {
     name: "R8, one mark: its day reads REVIEW, never OK, and 13 stays OK",
@@ -744,6 +766,15 @@ const CASES = [
     ].join("\n"),
     want: only({ "3 2026-10-26": "FAIL", "3 2026-10-27": "FAIL", "12 2026-10-26": "FAIL", 8: "FAIL", 13: "FAIL" }),
     info: [[51, new RegExp(`${appt(0xb8)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "R8 negative: one pass with the mark in range recorded no visit left out (excluded_count 0): UNEXPLAINED",
+    seed: [
+      r8Visit(appt(0xba), "2026-10-27 13:00", ["24h"]),
+      `update public.reminder_sweep_passes set excluded_count = 0 where tenant_id = '${TENANT}' and pass_at = ${at("2026-10-26 18:00:03")};`,
+    ].join("\n"),
+    want: only({ "12 2026-10-26": "FAIL", 13: "FAIL" }),
+    info: [[51, new RegExp(`${appt(0xba)} \\| UNEXPLAINED`)]],
   },
   {
     name: "R4 keeps its place: a visit with no scheduling save at all reads R4, not R8",
@@ -886,12 +917,13 @@ const R8_MUTANTS = [
   ["s.f3 = 0 and s.u3 = 0", "R8 negative: P7 false, P3 false at every pass", "s.u3 = 0"],
   ["s.f3 = 0 and s.u3 = 0", "R8 negative: P7 false, P3 unknown at every pass", "s.f3 = 0"],
   ["s.f8 = 0", "R8 negative: P7 false, P8 false at every pass"],
+  [R8_EXCLUDED, "R8 negative: one pass with the mark in range recorded no visit left out"],
 ];
 for (const [cond, caseName, keep] of R8_MUTANTS) {
   const base = CASES.find((c) => c.name.startsWith(caseName));
   assert.ok(base, `no case named ${caseName}`);
   CASES.push({
-    name: `MUTANT: r8 without ${keep ? cond.replace(` and ${keep}`, "").replace(`${keep} and `, "") : cond}, on "${caseName}": the mark reads R8 and the day REVIEW, so the case's FAIL catches it`,
+    name: `MUTANT: r8 without ${keep ? cond.replace(` and ${keep}`, "").replace(`${keep} and `, "") : cond === R8_EXCLUDED ? "the left-out condition" : cond}, on "${caseName}": the mark reads R8 and the day REVIEW, so the case's FAIL catches it`,
     seed: base.seed,
     mutate: (s) => {
       assert.equal(s.split(`${cond}\n`).length, 2, `r8's condition ${cond} is not written exactly once`);
