@@ -87,9 +87,9 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes R20's and R22's documents pin) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-shadow-compare-20261031.sha256` pins it |
-| The commit | the dispatch names the pull request's head commit in `PRHEAD`; the block fetches `refs/pull/1678/head` and refuses any other sha |
+| The commit | the dispatch names the pull request's head commit in `PRHEAD`; the block fetches `refs/pull/1679/head` and refuses any other sha |
 
-**Why the pull request's head and not `main`.** As with R22: this pull request is not merged before GREEN runs it. The block fetches `refs/pull/1678/head`, which GitHub keeps after a branch is deleted, and checks out the head commit by its full sha.
+**Why the pull request's head and not `main`.** As with R22: this pull request is not merged before GREEN runs it. The block fetches `refs/pull/1679/head`, which GitHub keeps after a branch is deleted, and checks out the head commit by its full sha.
 
 ## When
 
@@ -108,7 +108,7 @@ GREEN pastes its dispatch's filled copy, whole and on its own, from `/Users/ivan
 set -o pipefail
 PRHEAD=PENDING
 DOCSHA=PENDING
-PRNUM=1678
+PRNUM=1679
 SHAREAD=3b9dacde1b4fbcbd214803fbf1ec81bffec20969fbbe774b354b3ad15eca748c
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -176,7 +176,7 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly: `set transaction read only; set local statement_timeout = '120s';`
 3. Below it, paste the whole of `scripts/db/read-shadow-compare-20261031.sql`. To copy it exactly from the pull request's head, type this in Claude Code. It fetches the pull request's head into the main clone's `FETCH_HEAD` only (no checkout, no branch moves), copies the file only if it is the reviewed one, and otherwise prints a STOP and copies nothing:
-   `! T=$(mktemp) && git -C /Users/ivan/Projects/GitHub/OsteoJP fetch -q origin refs/pull/1678/head && git -C /Users/ivan/Projects/GitHub/OsteoJP show FETCH_HEAD:scripts/db/read-shadow-compare-20261031.sql > "${T}" && [ "$(shasum -a 256 "${T}" | cut -d' ' -f1)" = "3b9dacde1b4fbcbd214803fbf1ec81bffec20969fbbe774b354b3ad15eca748c" ] && pbcopy < "${T}" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! T=$(mktemp) && git -C /Users/ivan/Projects/GitHub/OsteoJP fetch -q origin refs/pull/1679/head && git -C /Users/ivan/Projects/GitHub/OsteoJP show FETCH_HEAD:scripts/db/read-shadow-compare-20261031.sql > "${T}" && [ "$(shasum -a 256 "${T}" | cut -d' ' -f1)" = "3b9dacde1b4fbcbd214803fbf1ec81bffec20969fbbe774b354b3ad15eca748c" ] && pbcopy < "${T}" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run, at or after Friday 2026-10-30 07:15 Lisbon. EXPECT one table. Row 0 must read `on` and `OK`: if it does not, stop and send a screenshot, nothing else. Rows 1, 2, 6 to 10, 13 and 14 must read `OK`; rows 3 must read `OK`, one per full day. Rows 11 and 12 read `OK` or `REVIEW`: **REVIEW is not a pass**, and a table with any REVIEW, FAIL or VACUOUS goes to SOLO whole, before anything is decided.
 5. Send the whole table to SOLO privately (it holds counts, Lisbon times and, in rows 50 to 52, appointment ids; no name, phone or email). Do not post it anywhere public.
 
@@ -236,7 +236,7 @@ R20's other negative arms (the withdrawn S1, S2 and S6, the negative S3, S4, S5,
 
 ## NOT REHEARSED
 
-The block itself reads only production: its target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway ("A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so"). So the block's production path is NOT REHEARSED: the environment file, the target guard against the real target, the connection and the psql call through the block, and `git fetch origin refs/pull/1678/head` against GitHub in the real apply checkout. What stands in for it: the SQL run above with exactly the block's psql arguments and one named clock substitution, and the fault-injection test, which runs the block in GREEN's tool shape in bash and zsh with every external command a stub, fails each call in turn, and proves every halt is explicit, that the block passes only on an all-OK table over 4 or more full days and reports REVIEW only when the agreement verdicts alone read REVIEW.
+The block itself reads only production: its target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway ("A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so"). So the block's production path is NOT REHEARSED: the environment file, the target guard against the real target, the connection and the psql call through the block, and `git fetch origin refs/pull/1679/head` against GitHub in the real apply checkout. What stands in for it: the SQL run above with exactly the block's psql arguments and one named clock substitution, and the fault-injection test, which runs the block in GREEN's tool shape in bash and zsh with every external command a stub, fails each call in turn, and proves every halt is explicit, that the block passes only on an all-OK table over 4 or more full days and reports REVIEW only when the agreement verdicts alone read REVIEW.
 
 The owner's fallback copy step (it fetches from GitHub) is NOT REHEARSED.
 
