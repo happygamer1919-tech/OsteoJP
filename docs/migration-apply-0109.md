@@ -744,14 +744,17 @@ echo "CLOSING READ: the journal reads 107, 0109 is APPLIED, and nothing is pendi
 
 **The throwaway, and its journal built by hand.** BLUE's lane was reset by the lane-stack to production's migration position, `0000` to `0108` applied, and seeded with the e2e fixtures (3 `locations` rows, 2 of them active, both with weekday hours set). **The drizzle journal is not something a local lane has**, so it was built by hand from `main`'s journal, as 0108's rehearsal did: `drizzle.__drizzle_migrations` created, then one row per journal entry in `idx` order, `hash` the sha256 of the migration file's bytes and `created_at` the entry's `when`. 106 rows, the newest `0108` (`7f481ae4...`, 1788502900000), then `0107` (`56c310cd...`, 1788502800000).
 
-**The substitutions, a to g, and nothing else.** The lead's rule of 2026-09-30 held throughout: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so." As the rehearsal's own tooling and logs record them:
-- (a) `DATABASE_URL_DIRECT` was the throwaway's (127.0.0.1, the lane's port), set on each `psql` line and on the `verified-migrate` line run.
-- (b) No line that loads the production environment file was run; the segment builder refuses one.
-- (c) The `cd` into the apply worktree went to a scratch clone whose `origin` is a local bare repository holding `db/HOR-02-saturday-closing-time` at `8acd79c3`.
-- (d) Every `/tmp/` path went to a scratch folder.
-- (e) The clock lines ran as they stand, at the real time (Saturday 13:25), and their STOP is recorded rather than worked around.
-- (f) The target guard and the applied-migrations reader were run once each, alone, against the throwaway, to record their refusal; the closing read's journal facts were then read by a READ ONLY `psql` in their place.
-- (g) BEFORE YOU START's first-line check ran against this document as committed, whose first line is `NOT READY: awaiting R4 review`.
+**The substitutions, a to g, and nothing else.** The lead's rule of 2026-09-30 held throughout: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
+The rehearsal prompt's substitutions, verbatim (the prompt allowed these and nothing else):
+- (a) Every production connection string -> `postgresql://postgres:postgres@127.0.0.1:54622/postgres` passed directly on the command line or as the variable the block reads, set inline for that one command. Never write it into any env file.
+- (b) Lines that source `~/osteojp-secrets/...` or any env file: skip them (do not read those files, ever).
+- (c) `cd /Users/ivan/Projects/GitHub/osteojp-prod-apply` -> a scratch clone whose `origin` is a LOCAL BARE repo containing branch `db/HOR-02-saturday-closing-time` at 8acd79c3 (and `main` at origin/main). NEVER cd into /Users/ivan/Projects/GitHub/osteojp-prod-apply, and never run any git command there.
+- (d) `/tmp/` paths in blocks -> a scratch folder.
+- (e) The Lisbon clock / closed-hours check: do NOT fake the clock. If the block STOPs because now is clinic hours, record that block's clock step as NOT REHEARSED for the window and run the rest of that block's commands individually, in order, with explicit halts, saying exactly which lines you ran.
+- (f) The production target guard (`assert-production-target.mjs` / `production-target.mjs`) and the applied-migrations reader's production check will refuse 127.0.0.1. That refusal is a halt for that step: record NOT REHEARSED, then continue with the next step only if the document's own later steps do not depend on the guard's output; if they do, run those later SQL files directly with psql against the throwaway (a) and say so.
+- (g) The `NOT READY` first-line check: record that it STOPs as designed (prove it), then continue past it by running the remaining lines of that block individually.
+
+One step outside (a) to (g), judged by SOLO as building the throwaway and not as passing a guard: the drizzle journal table was created by hand (106 rows from main's journal), as 0108's rehearsal did.
 
 The two dispatch blocks were run as this document carries them (their PENDING values unfilled) and in segments; the run-window lines of stages 1, 2 and the closing read were run on their own, and STOP with no window recorded, as they must when no CLOCK CHECK has passed.
 
