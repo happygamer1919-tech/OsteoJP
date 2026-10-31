@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, exists, inArray, lte, not, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, inArray, lte, not, or, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { appointments, auditLog, type DbTx } from "@osteojp/db";
 
@@ -283,12 +283,18 @@ function startAtTheMark(tx: DbTx, mark: SQL): SQL {
         lte(prior.createdAt, sql`${mark}`),
       ),
     )
-    .orderBy(desc(prior.createdAt), desc(prior.id))
+    .orderBy(sql`${prior.createdAt} desc`, sql`${prior.id} desc`)
     .limit(1)})`;
 }
 
-/** The visit's start now, as the same millisecond text `toISOString()` writes. */
-const START_NOW_TEXT = sql`to_char(date_trunc('milliseconds', ${appointments.startsAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+/**
+ * The visit's start now, as the same millisecond text `toISOString()` writes.
+ * Built when asked, not at import: a test that replaces the database package
+ * imports this file without its tables.
+ */
+function startNowText(): SQL {
+  return sql`to_char(date_trunc('milliseconds', ${appointments.startsAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+}
 
 /**
  * One clause of the table, on an alias of the audit table, for the enclosing
@@ -310,7 +316,7 @@ export function reArmingClause(
       return of();
     case "moved":
       // Counted only when the start the mark was for is not the start now (see the table's notes).
-      return of(sql`${startAtTheMark(tx, mark)} is distinct from ${START_NOW_TEXT}`);
+      return of(sql`${startAtTheMark(tx, mark)} is distinct from ${startNowText()}`);
     case "accepted_in_pedidos":
       return of(sql`${saved.metadata}->>'via' = 'portal_request_confirm'`);
     case "accepted_with_estado":
