@@ -133,7 +133,9 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  *   actions.ts: createAppointment          appointment.create: always
  *   actions.ts: batchScheduleAppointments  appointment.create (written by batch.ts: batchSchedule): always
  *   actions.ts: cloneAppointment           appointment.create: always
- *   actions.ts: rescheduleAppointment      appointment.reschedule: always, BUT see the question below
+ *   actions.ts: rescheduleAppointment      appointment.reschedule (written by actions.ts:
+ *   actions.ts: bulkRescheduleAppointments   moveAppointment, once per visit moved): always,
+ *                                          BUT see the question below
  *   actions.ts: confirmAppointmentRequest  appointment.update with `via` portal_request_confirm: always
  *   actions.ts: updateAppointment          appointment.update, two cases:
  *     an online request accepted with the Estado control: `fromStatus`
@@ -173,7 +175,8 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * now, it was ahead and the door emitted; if the start changed since, a later
  * move wrote its own row, after this one.
  *
- * THE QUESTION (not decided here): `rescheduleAppointment` emits nothing for
+ * THE QUESTION (not decided here): a move (`moveAppointment`, behind both
+ * move doors) emits nothing for
  * a visit that is an unaccepted request at the move, and its audit row does
  * not record the status the visit had. Until it is ruled, every move counts,
  * as before R33. It can only differ for a visit that is an unaccepted request
@@ -193,7 +196,14 @@ export const RE_ARMING_SAVES = [
       "apps/web/lib/scheduling/actions.ts:cloneAppointment",
     ],
   },
-  { clause: "moved", action: "appointment.reschedule", doors: ["apps/web/lib/scheduling/actions.ts:rescheduleAppointment"] },
+  {
+    clause: "moved",
+    action: "appointment.reschedule",
+    doors: [
+      "apps/web/lib/scheduling/actions.ts:rescheduleAppointment",
+      "apps/web/lib/scheduling/actions.ts:bulkRescheduleAppointments",
+    ],
+  },
   {
     clause: "accepted_in_pedidos",
     action: "appointment.update",

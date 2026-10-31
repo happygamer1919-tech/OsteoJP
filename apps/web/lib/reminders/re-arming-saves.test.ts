@@ -69,12 +69,16 @@ const srcOf = (file: string) => {
   return found.src;
 };
 
-/** The top-level `export async function`s of `src`, each with its body (to the first `}` at column 0). */
+/**
+ * The top-level `async function`s of `src`, exported or not, each with its
+ * body (to the first `}` at column 0). A helper that is not exported is read
+ * too, so a call hidden in one is a door here until it is listed.
+ */
 function functionsOf(src: string): Map<string, string> {
   const lines = src.split("\n");
   const out = new Map<string, string>();
   for (let i = 0; i < lines.length; i++) {
-    const m = /^export\s+async\s+function\s+(\w+)/.exec(lines[i]!);
+    const m = /^(?:export\s+)?async\s+function\s+(\w+)/.exec(lines[i]!);
     if (!m) continue;
     const end = lines.findIndex((l, j) => j > i && l === "}");
     out.set(m[1]!, lines.slice(i, end + 1).join("\n"));
@@ -120,6 +124,7 @@ describe("R33: the doors that re-arm the live job are the doors of the gate's ta
       "apps/web/lib/reminders/inbound-reply.ts:applyInboundReply",
       "apps/web/lib/reminders/inbound-store.ts:resolveReviewItem",
       "apps/web/lib/scheduling/actions.ts:batchScheduleAppointments",
+      "apps/web/lib/scheduling/actions.ts:bulkRescheduleAppointments",
       "apps/web/lib/scheduling/actions.ts:cloneAppointment",
       "apps/web/lib/scheduling/actions.ts:confirmAppointmentRequest",
       "apps/web/lib/scheduling/actions.ts:createAppointment",
@@ -139,7 +144,7 @@ describe("R33: the doors that re-arm the live job are the doors of the gate's ta
     };
     // One call per door, and the helpers' own definitions and calls.
     expect(calls("enqueueRemindersAfterCommit(")).toEqual({
-      "apps/web/lib/scheduling/actions.ts": 6,
+      "apps/web/lib/scheduling/actions.ts": 7,
       "apps/web/lib/scheduling/pedido-acceptance.ts": 1,
       "apps/web/lib/scheduling/reminders.ts": 1,
     });
@@ -166,6 +171,12 @@ describe("R33: the doors that re-arm the live job are the doors of the gate's ta
 /** The function that writes each door's audit row: the door itself, or the helper it calls. */
 const AUDIT_WRITER: Record<string, { file: string; fn: string }> = {
   "apps/web/lib/scheduling/actions.ts:batchScheduleAppointments": { file: "apps/web/lib/scheduling/batch.ts", fn: "batchSchedule" },
+  // APPT-BULK-01: both move doors run the one move, which writes the row per visit.
+  "apps/web/lib/scheduling/actions.ts:rescheduleAppointment": { file: "apps/web/lib/scheduling/actions.ts", fn: "moveAppointment" },
+  "apps/web/lib/scheduling/actions.ts:bulkRescheduleAppointments": {
+    file: "apps/web/lib/scheduling/actions.ts",
+    fn: "moveAppointment",
+  },
 };
 
 describe("R33: each door writes the audit row its clause reads, in its own transaction", () => {
@@ -198,10 +209,19 @@ const CONDITIONS: [door: string, lines: string[]][] = [
   ["apps/web/lib/scheduling/actions.ts:createAppointment", ["reminderTargets = created.map((c) =>"]],
   ["apps/web/lib/scheduling/actions.ts:batchScheduleAppointments", ["result.booked.map((b) =>"]],
   ["apps/web/lib/scheduling/actions.ts:cloneAppointment", ["reminderTargets = ["]],
-  // moved: every moved row but an unaccepted request (the open question: the row records no status).
+  // moved: each door emits the targets the one move handed back (below, HELPER_CONDITIONS).
   [
     "apps/web/lib/scheduling/actions.ts:rescheduleAppointment",
-    ["reminderTargets = targets", ".filter((t) => !unacceptedPedidoIds.has(t.id))", 'action: "appointment.reschedule"'],
+    ['const moved = await moveAppointment(actor, ip, id, input, "apply");', "await enqueueRemindersAfterCommit(actor.tenantId, moved.reminderTargets);"],
+  ],
+  [
+    "apps/web/lib/scheduling/actions.ts:bulkRescheduleAppointments",
+    [
+      "moved = await moveAppointment(",
+      'if (mode === "apply") committed.push(moved);',
+      'if (mode === "apply" && committed.length > 0) {',
+      "committed.flatMap((m) => m.reminderTargets),",
+    ],
   ],
   // accepted_in_pedidos: always, and the row says so.
   [
@@ -245,6 +265,23 @@ const CONDITIONS: [door: string, lines: string[]][] = [
   ],
 ];
 
+/**
+ * The conditions that live in a helper a door runs, not in the door itself.
+ * `moveAppointment` (APPT-BULK-01) is the one move: every moved row is a
+ * target, but an unaccepted request (the open question: its row records no
+ * status), and it writes one `appointment.reschedule` per row.
+ */
+const HELPER_CONDITIONS: [helper: string, lines: string[]][] = [
+  [
+    "apps/web/lib/scheduling/actions.ts:moveAppointment",
+    [
+      "reminderTargets = targets",
+      ".filter((t) => !unacceptedPedidoIds.has(t.id))",
+      'action: "appointment.reschedule"',
+    ],
+  ],
+];
+
 describe("R33: the conditions the table's clauses are read from", () => {
   it("every door is listed here once", () => {
     expect(CONDITIONS.map(([door]) => door).sort()).toEqual(TABLE_DOORS);
@@ -252,6 +289,11 @@ describe("R33: the conditions the table's clauses are read from", () => {
 
   it.each(CONDITIONS)("%s", (door, lines) => {
     const body = bodyOf(door);
+    for (const line of lines) expect(body, line).toContain(line);
+  });
+
+  it.each(HELPER_CONDITIONS)("the helper %s", (helper, lines) => {
+    const body = bodyOf(helper);
     for (const line of lines) expect(body, line).toContain(line);
   });
 
