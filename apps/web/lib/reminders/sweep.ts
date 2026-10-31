@@ -90,6 +90,12 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasReArmingSaveAfter, hasSched
  * patient's own SMS after its mark is taken as before: those saves re-plan
  * nothing, and the sleeping job sent its reminder at the mark.
  *
+ * THE TWO CLOCKS DIFFER BY SECONDS. `audit_log.created_at` is the start of
+ * the save's transaction, and the sleeping job handles the event after the
+ * commit and its 2 second debounce, so a save in the last seconds before a
+ * mark counts as before it here while the job drops that mark. Negligible,
+ * and the compare reads it as a shadow row alone.
+ *
  * Not taken means not taken at all, for that start: no shadow row, no send, by
  * this pass or any later one. It is not counted as due, and nothing records
  * it. A save that re-arms nothing changes nothing.

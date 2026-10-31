@@ -168,6 +168,51 @@ describe("R33: the doors that re-arm the live job are the doors of the gate's ta
   });
 });
 
+/**
+ * KNOWN NON-DOORS: the two owner-run re-arm scripts. They send
+ * `appointment/scheduled` straight to the scheduler, outside the application,
+ * and write no audit row, so the gate cannot see the re-plan they cause. That
+ * is why an owner-run re-arm must not run while the sweep is in send mode
+ * without a fresh ruling (./reminder-population.ts says so). Pinned here as
+ * the only senders outside apps/web, and as writing no audit row.
+ */
+const OWNER_RUN_SENDERS = [
+  "packages/db/scripts/inc-1007-rearm-reminders-emit.mjs",
+  "packages/db/scripts/obs-05-backfill-emit.mjs",
+];
+
+describe("R33: the senders outside the application are the two owner-run scripts, and the gate cannot see them", () => {
+  /** Script sources (.mjs, .js, .ts, tests excluded) under `dir`, as paths from the repository root. */
+  const scriptsUnder = (dir: string): { file: string; src: string }[] => {
+    const out: { file: string; src: string }[] = [];
+    const walk = (d: string) => {
+      for (const entry of readdirSync(d, { withFileTypes: true })) {
+        if (entry.name === "node_modules") continue;
+        const full = join(d, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.(mjs|js|ts)$/.test(entry.name) && !/\.test\.(mjs|js|ts)$/.test(entry.name)) {
+          out.push({ file: full.slice(REPO.length + 1), src: readFileSync(full, "utf8") });
+        }
+      }
+    };
+    walk(join(REPO, dir));
+    return out;
+  };
+
+  it("only they name the event outside apps/web", () => {
+    const outside = [...scriptsUnder("packages"), ...scriptsUnder("scripts"), ...scriptsUnder("apps/api")];
+    const senders = outside.filter((x) => x.src.includes('"appointment/scheduled"')).map((x) => x.file);
+    expect(senders.sort()).toEqual(OWNER_RUN_SENDERS);
+  });
+
+  it.each(OWNER_RUN_SENDERS)("%s writes no audit row", (file) => {
+    const src = readFileSync(join(REPO, file), "utf8");
+    expect(src).toContain('"appointment/scheduled"');
+    expect(src).not.toMatch(/insert\s+into\s+(public\.)?audit_log/i);
+    expect(src).not.toMatch(/\.insert\(\s*auditLog\s*\)/);
+  });
+});
+
 /** The function that writes each door's audit row: the door itself, or the helper it calls. */
 const AUDIT_WRITER: Record<string, { file: string; fn: string }> = {
   "apps/web/lib/scheduling/actions.ts:batchScheduleAppointments": { file: "apps/web/lib/scheduling/batch.ts", fn: "batchSchedule" },

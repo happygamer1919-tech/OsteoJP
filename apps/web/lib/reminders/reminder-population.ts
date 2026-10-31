@@ -123,11 +123,19 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * WHAT RE-PLANS. Every `appointment/scheduled` event cancels the visit's
  * sleeping reminder runs and plans them again from the moment it is handled
  * (`computeDueReminders`, ./inngest/functions.ts): a mark already past is
- * dropped. The event has ONE sender (./index.ts), called ONLY by
- * `enqueueRemindersAfterCommit` (lib/scheduling/reminders.ts), and the
+ * dropped. In the application the event has ONE sender (./index.ts), called
+ * ONLY by `enqueueRemindersAfterCommit` (lib/scheduling/reminders.ts), and the
  * functions that call that are the doors below. Each writes an audit row in
  * the same transaction as the save, and THAT ROW is what the sweep reads: the
  * table says which rows, under which condition, for which door.
+ *
+ * TWO SENDERS OUTSIDE THE APPLICATION, AND THE GATE CANNOT SEE THEM. The
+ * owner-run re-arm scripts packages/db/scripts/inc-1007-rearm-reminders-emit.mjs
+ * and obs-05-backfill-emit.mjs send `appointment/scheduled` straight to the
+ * scheduler and write no audit row, so a re-plan they cause is invisible
+ * here: the sleeping job drops a past mark and the sweep still takes it. So
+ * an owner-run re-arm must not run while the sweep is in send mode without a
+ * fresh ruling. re-arming-saves.test.ts pins them as the only two.
  *
  *   door (file: function)                  audit row, and the condition the door emits under
  *   actions.ts: createAppointment          appointment.create: always

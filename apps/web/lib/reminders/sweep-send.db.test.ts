@@ -86,6 +86,16 @@
  * second each; the budget is for a busy machine, and it hides nothing that
  * fails on its own.
  *
+ * The failure R35 named (the first arm, line 396 on 9c90ea9d) is that
+ * timeout's signature: vitest reports a timed-out arm at its declaration, and
+ * for that it.each arm it printed 395:86, the line its name follows. The
+ * 10-31 reproduction timed out the same way on the floor arm, the slowest
+ * one, not on the first. Ruled out: the clock (the first arm replayed at 2064
+ * instants: every 15 minutes of a week, every minute of the night of
+ * 2026-10-30 and every 5 minutes of both DST days, no failure) and this
+ * file's fixtures (50 isolated runs clean before the fix). After the fix: the
+ * 8 loaded rounds and 50 isolated runs, all clean.
+ *
  * Skipped without DATABASE_URL. NOT hard-required in assert-rls-executed.mjs:
  * that file is a frozen gate, so listing this suite there is a GATE-CHANGE.
  */
