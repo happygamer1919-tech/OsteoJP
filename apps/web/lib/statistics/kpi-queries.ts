@@ -12,6 +12,7 @@ import { requireRequestContext, runScoped, type RequestContext } from "../auth/c
 import { viewerLocationScope } from "../auth/viewer-locations";
 import { patientLocationScope } from "../patients/scope";
 import { ageDistribution, categoryCounts, pivotSeries } from "./kpi-transform";
+import { isYmd, lisbonDayBounds, lisbonMonthsBefore } from "./day-bounds";
 
 export type KpiFilters = {
   /** Inclusive YYYY-MM-DD bounds (Europe/Lisbon civil day); null = unbounded. */
@@ -39,7 +40,6 @@ export type KpiReports = {
   topLocalities: CategoryCount[]; // 10. Top localidades dos utentes
 };
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const REVENUE_STATUSES = ["issued", "paid"] as const;
 const TOP_N = 10;
 
@@ -69,11 +69,13 @@ const TOP_N = 10;
  */
 export const DEFAULT_WINDOW_MONTHS = 12;
 
-/** The default `from`, as the ymd string the period picker and the URL use. */
+/**
+ * The default `from`, as the ymd string the period picker and the URL use:
+ * twelve months before TODAY IN LISBON (R29). It read the UTC date before, so
+ * between 00:00 and 01:00 Lisbon in summer time the window started a day early.
+ */
 export function defaultKpiFrom(now: Date = new Date()): string {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  d.setUTCMonth(d.getUTCMonth() - DEFAULT_WINDOW_MONTHS);
-  return d.toISOString().slice(0, 10);
+  return lisbonMonthsBefore(now, DEFAULT_WINDOW_MONTHS);
 }
 
 function dayBounds(
@@ -84,15 +86,9 @@ function dayBounds(
   // An explicit, well-formed `from` wins. Otherwise the 12-month floor applies,
   // so no caller of this module can produce an unbounded scan by omission -
   // defence in depth behind the page, which passes the default explicitly.
-  const start =
-    from && DATE_RE.test(from)
-      ? new Date(`${from}T00:00:00.000Z`)
-      : new Date(`${defaultKpiFrom(now)}T00:00:00.000Z`);
-  let end: Date | null = null;
-  if (to && DATE_RE.test(to)) {
-    end = new Date(`${to}T00:00:00.000Z`);
-    end.setUTCDate(end.getUTCDate() + 1);
-  }
+  // R29: both bounds are Lisbon midnights (day-bounds.ts), not UTC ones.
+  const floor = isYmd(from) ? from : defaultKpiFrom(now);
+  const { start, end } = lisbonDayBounds(floor, to);
   return { start, end };
 }
 
@@ -182,7 +178,8 @@ export async function getKpiReports(
       .limit(TOP_N);
 
     // 3. Evolução da faturação — revenue by month (multi-year).
-    const monthExpr = sql<string>`to_char(date_trunc('month', ${invoices.issuedAt}), 'YYYY-MM')`;
+    // R29: the month an invoice falls in is its Lisbon month, not its UTC month.
+    const monthExpr = sql<string>`to_char(${invoices.issuedAt} AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM')`;
     const revByMonthRows = await tx
       .select({ period: monthExpr, valueCents: centsExpr })
       .from(invoices)
