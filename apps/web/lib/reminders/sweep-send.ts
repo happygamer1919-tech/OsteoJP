@@ -1,5 +1,5 @@
 import "server-only";
-import { and, count, eq, gt, gte, lt, min, ne, not, notExists, sql, type SQL } from "drizzle-orm";
+import { and, count, eq, exists, gt, gte, lt, min, ne, not, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { appointments, reminderClaims, reminderDispatches, reminderSweepPasses, type DbTx } from "@osteojp/db";
 
@@ -13,6 +13,7 @@ import {
   SWEEP_MARK_CEILING,
   SWEEP_STATEMENT_TIMEOUT,
   dueVisits,
+  notSavedAfterMark,
   recordedStart,
   sweepLookAheadLimit,
   type SweepStep,
@@ -51,6 +52,16 @@ import { sweepRemindsNeverReminded } from "./sweep-mode";
  * An `early` claim counts for neither, as everywhere: it was taken over ten
  * minutes before this start's mark, by a job that woke at an older time. The
  * shadow's own rows count for neither as well: a shadow row sent nothing.
+ *
+ * AND NO GRACE FOR A VISIT SAVED AFTER ITS MARK (R24, ./sweep.ts): a mark is
+ * not taken while a save that re-armed the sleeping job (R33,
+ * ./reminder-population.ts `RE_ARMING_SAVES`) was written strictly after it.
+ * ONE EXCEPTION, strategy's ruling R34: "the owner's hourly held-back retry
+ * wins. It is the one named exception to R24, capped at 3 hours after the
+ * mark". So a claim of this mark taken at or before that save (the reminder
+ * was handed over before the save, and held back) keeps the mark selectable,
+ * while the pass's clock is at most SWEEP_RETRY_AFTER_SAVE_LIMIT_MS after the
+ * mark; later, nothing: not taken, not recorded as too late, not counted.
  *
  * ONLY A MARK THAT FELL DUE SINCE THE SWEEP BEGAN TO SEND FOR THE TENANT
  * (`readSweepFloor`): at or after the first heartbeat of mode `send` that
@@ -134,12 +145,37 @@ import { sweepRemindsNeverReminded } from "./sweep-mode";
 /** A reminder that was held back is taken again no sooner than this after its last claim. */
 export const SWEEP_RETRY_AFTER_MS = 60 * 60_000;
 
+/**
+ * R34: how long after its mark a held-back reminder is still tried again once
+ * a re-arming save was written after the mark. 3 hours for BOTH channels, by
+ * the ruling, and its own number: it equals the SMS late limit today
+ * (REMINDER_LATE_LIMIT_MS, ./dispatch.ts) and is not read from it, so an
+ * email (12 hours late at most) stops being retried here at 3. Exactly 3
+ * hours is still inside, as "exactly the limit is not too late" is there.
+ */
+export const SWEEP_RETRY_AFTER_SAVE_LIMIT_MS = 3 * 60 * 60_000;
+
 /** The mode a sending pass writes on its heartbeat. The table's list holds it. */
 export const SWEEP_SEND_PASS_MODE = "send";
 
 /* ------------------------------------------------------------------ */
 /* The selection                                                       */
 /* ------------------------------------------------------------------ */
+
+type ClaimColumns = Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "startsAt" | "early", PgColumn>;
+
+/** A claim of this mark, of either taker: this visit, offset, channel and START, and not `early`. */
+function claimOfThisMark(t: ClaimColumns, tenantId: string, offset: ReminderOffset): SQL | undefined {
+  return and(
+    eq(t.tenantId, tenantId),
+    eq(t.appointmentId, appointments.id),
+    eq(t.kind, REMINDER_CLAIM_KIND),
+    eq(t.offsetId, offset.id),
+    eq(t.channel, offset.channel),
+    eq(t.startsAt, recordedStart()),
+    sql`${t.early} is distinct from true`,
+  );
+}
 
 /**
  * NOT SETTLED AND NOT JUST TRIED, for the start the visit has now. See the
@@ -149,19 +185,6 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
   const live = alias(reminderClaims, "reminder_send_live_claim");
   const release = alias(reminderClaims, "reminder_send_live_claim_release");
   const recent = alias(reminderClaims, "reminder_send_recent_claim");
-  const start = recordedStart();
-  const claimOfThisMark = (
-    t: Record<"tenantId" | "appointmentId" | "kind" | "offsetId" | "channel" | "startsAt" | "early", PgColumn>,
-  ) =>
-    and(
-      eq(t.tenantId, tenantId),
-      eq(t.appointmentId, appointments.id),
-      eq(t.kind, REMINDER_CLAIM_KIND),
-      eq(t.offsetId, offset.id),
-      eq(t.channel, offset.channel),
-      eq(t.startsAt, start),
-      sql`${t.early} is distinct from true`,
-    );
   return and(
     notExists(
       tx
@@ -169,7 +192,7 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
         .from(live)
         .where(
           and(
-            claimOfThisMark(live),
+            claimOfThisMark(live, tenantId, offset),
             notExists(
               tx
                 .select({ one: sql`1` })
@@ -190,8 +213,51 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
       tx
         .select({ one: sql`1` })
         .from(recent)
-        .where(and(claimOfThisMark(recent), gt(recent.createdAt, new Date(now.getTime() - SWEEP_RETRY_AFTER_MS)))),
+        .where(
+          and(
+            claimOfThisMark(recent, tenantId, offset),
+            gt(recent.createdAt, new Date(now.getTime() - SWEEP_RETRY_AFTER_MS)),
+          ),
+        ),
     ),
+  );
+}
+
+/**
+ * R24 FOR THE SENDING PASS: no re-arming save of the visit written after this
+ * mark (./sweep.ts, `notSavedAfterMark`), EXCEPT, by R34, a save written after
+ * the mark had already been handed over: a claim of this mark, of either
+ * taker, taken at or before that save. That mark was taken by a pass before
+ * the save, so R24's "saved before the pass" does not hold for it, and a
+ * reminder that was held back there is tried again as the owner ruled. The
+ * claim and the save are both stamped by the database's clock.
+ *
+ * AND ONLY UNTIL 3 HOURS AFTER THE MARK (R34's cap,
+ * SWEEP_RETRY_AFTER_SAVE_LIMIT_MS), read on THE PASS'S clock as every other
+ * instant of the selection is: the mark is at or after `now` less the cap,
+ * which on the start is the same comparison the late rule's split makes
+ * below. Past it the exception is gone and the save keeps the mark out. The
+ * dispatcher's own late rule still judges an SMS at the moment of its send;
+ * nothing judges this cap again there, so a send step that starts after the
+ * cap, for a mark selected inside it, still goes (an email only: an SMS is
+ * past its own 3 hours then, and is recorded too late).
+ */
+function notSavedAfterMarkBeforeItWasHandedOver(tx: DbTx, tenantId: string, offset: ReminderOffset, now: Date): SQL {
+  const before = alias(reminderClaims, "reminder_send_claim_before_the_save");
+  const retryCapOnTheStart = new Date(now.getTime() - SWEEP_RETRY_AFTER_SAVE_LIMIT_MS + offset.minutesBefore * 60_000);
+  return notSavedAfterMark(
+    tx,
+    offset,
+    (savedAt) =>
+      and(
+        gte(appointments.startsAt, retryCapOnTheStart),
+        exists(
+          tx
+            .select({ one: sql`1` })
+            .from(before)
+            .where(and(claimOfThisMark(before, tenantId, offset), sql`${before.createdAt} <= ${savedAt}`)),
+        ),
+      )!,
   );
 }
 
@@ -349,6 +415,7 @@ export async function selectSendableMarks(
     const selectable = and(
       dueSinceTheFloor,
       args.includeNeverReminded ? undefined : hasSchedulingEvent(tx),
+      notSavedAfterMarkBeforeItWasHandedOver(tx, args.tenantId, offset, args.now),
       notSettledNorJustTried(tx, args.tenantId, offset, args.now),
     );
 
