@@ -3,7 +3,8 @@
  * edit actions (W5-09). Runs as admin (appointments:write + :delete).
  *
  * The per-row actions REUSE the existing Agenda server actions:
- *   - Reagendar → rescheduleAppointment (runs the availability/conflict check)
+ *   - Reagendar → the agenda's edit panel (APPT-EDIT-01), which calls
+ *     rescheduleAppointment (runs the availability/conflict check)
  *   - Estado    → updateAppointment (lifecycle-legal transitions only)
  *   - Cancelar  → cancelAppointment
  *
@@ -170,12 +171,12 @@ test("reschedule from Consultas is blocked by a therapist conflict, then overrid
 
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
-  // Move 09:00 onto 11:00 — same therapist → conflict. The reschedule drawer's
-  // time control is the W4-02 TimeField (Horas/Minutos selects), not a native
+  // Move 09:00 onto 11:00, same therapist, so a conflict. The edit panel's time
+  // control is the W4-02 TimeField (Horas/Minutos selects), not a native
   // input[type=time], so drive it via the shared fillTime helper (same as the
   // agenda scheduling specs).
   await fillTime(drawer, "11:00");
-  await drawer.getByRole("button", { name: /^Reagendar$/ }).click();
+  await drawer.getByRole("button", { name: SAVE, exact: true }).click();
 
   // Conflict surfaces in-drawer; override is offered, not auto-applied.
   await expect(drawer.getByText(/Conflito/i)).toBeVisible({ timeout: 8_000 });
@@ -388,7 +389,7 @@ test("PL-02 (a): reschedule from the Marcações tab saves and the row reflects 
   await expect(drawer).toBeVisible();
   // A conflict-free target on this isolated band day -> the save succeeds.
   await fillTime(drawer, "17:00");
-  await drawer.getByRole("button", { name: /^Reagendar$/ }).click();
+  await drawer.getByRole("button", { name: SAVE, exact: true }).click();
 
   // Saved: the drawer closes and the row now reads the new time (re-read).
   await expect(drawer).toBeHidden({ timeout: 8_000 });

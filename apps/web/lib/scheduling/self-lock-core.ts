@@ -27,6 +27,19 @@ export function isTherapistSelfLocked(
 }
 
 /**
+ * APPT-EDIT-01: the Terapeuta an EDIT saves. When the screen locks the
+ * practitioner (the ficha, for a therapist viewer), it is always the row's
+ * own, whatever the form holds; otherwise the form's choice.
+ */
+export function editPractitionerId(args: {
+  locked: boolean;
+  editingPractitionerId: string;
+  formPractitionerId: string;
+}): string {
+  return args.locked ? args.editingPractitionerId : args.formPractitionerId;
+}
+
+/**
  * Should the therapist -> primary-service PRESELECTION fire?
  *
  * The therapist->service mapping is a PRESELECTION, never a RESTRICTION (PL-06a):

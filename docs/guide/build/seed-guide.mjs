@@ -30,6 +30,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertLocalTarget } from '../../../scripts/local-target.mjs';
+import { refuseProdApplyCwd } from '../../../scripts/refuse-prod-apply-cwd.mjs';
+
+// R17/R28: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
