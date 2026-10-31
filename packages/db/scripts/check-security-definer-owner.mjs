@@ -175,8 +175,24 @@ export const EXPECTED_OWNER = "postgres";
  * this change merges; then main is merged into #1551 and #1551 merges. Between
  * this merge and #1551's, main's own count reads red (the seeded database and
  * the derived set hold 28, this says 36): one red run, accepted by the ruling.
+ *
+ * 36 -> 37 with migration 0108 (the pack read function, numbered at authoring
+ * after 0107, PR #1671). It creates ONE SECURITY DEFINER function,
+ * `public.pack_instance_consuming_sessions(uuid)`, with its own
+ * `ALTER FUNCTION ... OWNER TO postgres` and EXECUTE granted to
+ * `authenticated` only. 0103 to 0107 add no definer, so the sum is 36 + 1.
+ *
+ * MEASURED, NOT INCREMENTED: GREEN's post-check on production read
+ * `37, 0 not owned by postgres` in the sitting of 2026-10-31 00:32 Lisbon (36 before it),
+ * and the definer set derived from `packages/db/migrations` with 0108 in it
+ * has 37 names.
+ *
+ * THE ORDER is 0102's: GREEN applied 0108 from #1671's held head FIRST; then
+ * this change merges; then main is merged into #1671 and #1671 merges. Between
+ * this merge and #1671's, main's own count reads red (the seeded database and
+ * the derived set hold 36, this says 37): one red run, accepted by the ruling.
  */
-export const EXPECTED_COUNT = 36;
+export const EXPECTED_COUNT = 37;
 
 /**
  * The verdict, as a pure function of the catalog rows.
