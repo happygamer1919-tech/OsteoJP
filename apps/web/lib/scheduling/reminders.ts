@@ -206,6 +206,13 @@ export function confirmationEligibleIndex(
 export type StatusNotificationTarget = {
   appointmentId: string;
   endsAt: Date;
+  /**
+   * R37. The appointment's patient, read in the save's own transaction, so the
+   * completion can ask the canary list (lib/reminders/follow-up-start.ts).
+   * Read for a completion only: the no-show event does not use it, and its
+   * targets carry null. null on a completion fails closed for canary.
+   */
+  patientId: string | null;
 };
 
 /**
@@ -226,7 +233,15 @@ export async function enqueueSurveyAfterCorrection(
   target: StatusNotificationTarget,
 ): Promise<void> {
   try {
-    await enqueueFollowUp({ appointmentId: target.appointmentId, tenantId, endsAt: target.endsAt, surveyOnly: true });
+    // R37: enqueueFollowUp sends nothing when no survey can result for this
+    // patient under the switch as it reads now.
+    await enqueueFollowUp({
+      appointmentId: target.appointmentId,
+      tenantId,
+      endsAt: target.endsAt,
+      patientId: target.patientId,
+      surveyOnly: true,
+    });
   } catch (e) {
     console.error("scheduling: correction survey enqueue failed", e instanceof Error ? e.name : "unknown");
   }
@@ -242,10 +257,14 @@ export async function enqueueStatusNotificationsAfterCommit(
   targets: StatusNotificationTarget[],
   status: "completed" | "no_show",
 ): Promise<void> {
-  const enqueue = status === "completed" ? enqueueFollowUp : enqueueNoShow;
   for (const t of targets) {
     try {
-      await enqueue({ appointmentId: t.appointmentId, tenantId, endsAt: t.endsAt });
+      const args = { appointmentId: t.appointmentId, tenantId, endsAt: t.endsAt };
+      // R37: a completion starts the 24 hour run only when a message can
+      // result; enqueueFollowUp decides, with the patient. The no-show event
+      // is untouched: it is a different event with its own function.
+      if (status === "completed") await enqueueFollowUp({ ...args, patientId: t.patientId });
+      else await enqueueNoShow(args);
     } catch (e) {
       console.error(
         `scheduling: ${status} notification enqueue failed`,

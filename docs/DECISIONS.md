@@ -5347,3 +5347,46 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   (DB-gated, real store), the updated mirror
   `packages/db/tests/portal-roster-template-validity.db.test.ts`, and source arms
   in `therapist-choice.test.ts` and `catalog-roster-parity.test.ts`.
+
+## 2026-10-31 - R37: the follow-up run starts only when a message can result; the survey's mode is read when the visit is concluded
+
+- **Strategy ruling R37 (R26 CUT, Tier B, outside R9), verbatim:**
+  "send-follow-up-notification starts only when a message can result: survey
+  off: not started; canary: only the canary patient ids; on: every completed
+  visit. The mode is read when the visit is completed."
+- **The start condition.** `appointment/completed` has one sender,
+  `enqueueFollowUp` (`apps/web/lib/reminders/index.ts`), and it sends only when
+  `followUpRunCanResult` (`apps/web/lib/reminders/follow-up-start.ts`) is true:
+  the survey applies to the visit's patient (`surveyAppliesTo`, the same
+  function the dispatch reads: everyone under `on`, a listed patient under
+  `canary`, nobody under `off`), or the run is not a "Corrigir estado" run and
+  a follow-up body (`follow_up.email` or `follow_up.sms`) is approved in the
+  registry. The Estado save reads each concluded row's patient in its own
+  transaction; "Corrigir estado" reads it with its row. The no-show event is
+  untouched. No Inngest function option changed, so no Resync. The dispatch
+  still reads the mode when the run wakes, so a run started under canary or on
+  and woken under off still sends nothing it should not.
+- **For the SAT-01 canary: switch the survey to canary BEFORE the canary
+  patient's visit is marked Concluida.** The mode is read at that moment. A
+  visit concluded while the survey is off starts no run, and setting canary
+  afterwards does not give it one: that visit gets no survey. Runs started
+  under the old code (one for every concluded visit) are still judged when
+  they wake, so the canary works whether it is set before or after this
+  change is deployed.
+- **Visible change in the reminders log.** Under canary, a patient who is not
+  on the list no longer gets the "avaliação em fase de teste, paciente fora da
+  lista" row for a visit concluded after this change: no run is started, so
+  nothing writes it. With the survey off, a concluded visit also stops leaving
+  the suppressed follow-up rows. Runs already asleep from before the change
+  still write both.
+- **Interpretation, for strategy to confirm.** "A message can result" is read to
+  include the follow-up message: the day JP approves a follow-up body, the run
+  starts again under off (and for an unlisted canary patient), because that
+  run would then send a real message. The approval is read from the registry,
+  never assumed false. If strategy means the survey alone, the follow-up
+  clause is removed from `followUpRunCanResult`.
+- **Tests:** `apps/web/lib/reminders/follow-up-start.test.ts` (the decision
+  table, approval both ways, the sender), `apps/web/lib/scheduling/follow-up-start.test.ts`
+  (both doors under off, canary and on, and a series of two patients concluded
+  in one save), `apps/web/lib/reminders/follow-up-start-orders.test.ts` (the
+  canary set before and after this change, and a visit concluded under off).
