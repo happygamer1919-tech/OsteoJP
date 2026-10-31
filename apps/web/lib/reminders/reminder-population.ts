@@ -231,7 +231,7 @@ const REQUEST_ORIGIN = "patient_portal";
  * `appointments` row. Text against text on the metadata, so a row of another
  * shape matches nothing and raises nothing.
  */
-export function reArmingClause(clause: ReArmingClause, saved: { action: PgColumn; metadata: PgColumn }): SQL {
+export function reArmingClause(clause: ReArmingClause, saved: Record<"action" | "metadata", PgColumn>): SQL {
   const action = RE_ARMING_SAVES.find((c) => c.clause === clause)!.action;
   const of = (...more: SQL[]) => and(eq(saved.action, action), ...more)!;
   const isRequest = sql`${appointments.origin} = ${REQUEST_ORIGIN}`;
