@@ -110,6 +110,9 @@ export type BulkSide = {
  *                 or not found; nothing is written
  *   changed       the row moved or changed since the client read it;
  *                 nothing is written, preview again
+ *   already_saved the row already holds what this change makes of the start
+ *                 the client saw (a save retried after a lost answer, or the
+ *                 same plan submitted twice); nothing is written again
  *   past          the change would put the visit in the past; nothing is
  *                 written
  *   overlap       (preview only) it would land on another visit of this
@@ -123,6 +126,7 @@ export type BulkVerdict =
   | { kind: "unchanged" }
   | { kind: "not_eligible" }
   | { kind: "changed" }
+  | { kind: "already_saved" }
   | { kind: "past" }
   | { kind: "overlap"; with: { id: string; startsAt: string; endsAt: string } }
   | { kind: "conflict"; conflicts: ConflictInfo[] }
@@ -154,7 +158,9 @@ export type BulkResult = {
   rows: BulkRowResult[];
   /** Rows saved (apply) or that would be saved (preview, verdict ok). */
   okCount: number;
-  /** Rows left as they were, for any reason. */
+  /** Rows that already held this change (a retried or doubled save). */
+  alreadySavedCount: number;
+  /** Rows left as they were for any other reason. */
   skippedCount: number;
 };
 
@@ -330,4 +336,33 @@ export function bulkSelfOverlap(
     }
   }
   return null;
+}
+
+/**
+ * Does the row ALREADY hold what this change makes of the start the client
+ * saw? That is a save retried after its answer was lost, or the same plan
+ * submitted twice: report it as saved, not as changed by someone else.
+ *
+ * The plan is rebuilt from `expectedStartsAt`. Its length, therapist and
+ * clinic are the row's current ones: a change that set them made them equal
+ * to the plan's, and a change that did not left them as they were.
+ */
+export function bulkAlreadySaved(
+  row: Pick<BulkSourceRow, "startsAt" | "endsAt" | "practitionerId" | "locationId">,
+  expectedStartsAt: string,
+  change: BulkChange,
+  rowTime?: string | null,
+): boolean {
+  const seenStart = new Date(expectedStartsAt);
+  if (Number.isNaN(seenStart.getTime())) return false;
+  const length = row.endsAt.getTime() - row.startsAt.getTime();
+  const seen = {
+    startsAt: seenStart,
+    endsAt: new Date(seenStart.getTime() + length),
+    practitionerId: row.practitionerId,
+    locationId: row.locationId,
+  };
+  const plan = planBulkRow(seen, change, rowTime);
+  if (bulkRowUnchanged(seen, plan)) return false;
+  return bulkRowUnchanged(row, plan);
 }

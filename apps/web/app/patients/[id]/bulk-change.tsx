@@ -108,6 +108,11 @@ function BulkChangePanel({
   const [stale, setStale] = useState(false);
   const [rowTime, setRowTime] = useState<Record<string, string>>({});
   const [rowOverride, setRowOverride] = useState<Record<string, boolean>>({});
+  // The start of each visit as the LAST preview read it. Every preview reads
+  // the candidates again, so "Pré-visualizar de novo" really does see a visit
+  // moved since; the save then names these starts, so a retried save finds
+  // its own work done instead of moving the visits again.
+  const [seenStarts, setSeenStarts] = useState<Record<string, string>>({});
   const [pickFor, setPickFor] = useState<string | null>(null);
   const [result, setResult] = useState<BulkResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -175,7 +180,7 @@ function BulkChangePanel({
    * `fresh`: a preview started from the choice step forgets the hours picked
    * and the ticks made in an earlier preview, which described another choice.
    */
-  function request(mode: "preview" | "apply", fresh = false): BulkRequest {
+  function request(mode: "preview" | "apply", fresh = false, starts: Record<string, string> = seenStarts): BulkRequest {
     const times = fresh ? {} : rowTime;
     // The tick reaches the server only for a row whose LATEST preview verdict
     // is an overridable conflict: a tick left from an earlier preview never
@@ -193,7 +198,7 @@ function BulkChangePanel({
           id: c.id,
           // The start she saw: a row that moved since is left alone, so a save
           // retried after a lost answer cannot shift the visits twice.
-          expectedStartsAt: c.startsAt,
+          expectedStartsAt: starts[c.id] ?? c.startsAt,
           ...(times[c.id] ? { time: times[c.id] } : {}),
           ...(mode === "apply" && rowOverride[c.id] && conflicting.has(c.id) ? { allowConflict: true } : {}),
         })),
@@ -209,7 +214,21 @@ function BulkChangePanel({
     }
     setBusy(true);
     try {
-      const body = request("preview", fresh);
+      // Read the visits again: a preview always plans from where they are now.
+      const listed = await runAction(() => listBulkRescheduleCandidatesAction(patientId), {
+        kind: "read",
+        retry: retryPreview,
+        owner,
+      });
+      if (listed.failed) return;
+      if (!listed.value.ok) {
+        setError(s["ficha.bulk.loadError"]);
+        return;
+      }
+      setCandidates(listed.value.data);
+      const starts = Object.fromEntries(listed.value.data.map((c) => [c.id, c.startsAt]));
+      setSeenStarts(starts);
+      const body = request("preview", fresh, starts);
       if (fresh) {
         setRowTime({});
         setRowOverride({});
@@ -495,6 +514,11 @@ function BulkChangePanel({
             <p className="text-sm text-text-primary" data-testid="bulk-result-saved">
               {fill(s["ficha.bulk.saved"], { count: result.okCount })}
             </p>
+            {result.alreadySavedCount > 0 && (
+              <p className="text-sm text-text-primary" data-testid="bulk-result-already">
+                {fill(s["ficha.bulk.alreadySaved"], { count: result.alreadySavedCount })}
+              </p>
+            )}
             {result.skippedCount > 0 && (
               <p className="text-sm text-text-primary" data-testid="bulk-result-skipped">
                 {fill(s["ficha.bulk.skipped"], { count: result.skippedCount })}
@@ -503,7 +527,9 @@ function BulkChangePanel({
             <ul className="flex flex-col gap-2">
               {result.rows.map((r) => (
                 <li key={r.id} className="text-sm" data-testid="bulk-result-row" data-applied={r.applied ? "true" : "false"}>
-                  <span className="font-medium">{r.applied ? s["ficha.bulk.applied"] : s["ficha.bulk.notApplied"]}</span>
+                  <span className="font-medium">
+                    {r.applied || r.verdict.kind === "already_saved" ? s["ficha.bulk.applied"] : s["ficha.bulk.notApplied"]}
+                  </span>
                   {": "}
                   {label(r.applied ? r.after : r.before)}
                   {!r.applied && <span className="block text-text-secondary">{verdictText(r)}</span>}
@@ -534,6 +560,8 @@ function verdictText(r: BulkRowResult): string {
       return s["ficha.bulk.verdictNotEligible"];
     case "changed":
       return s["ficha.bulk.verdictChanged"];
+    case "already_saved":
+      return s["ficha.bulk.verdictAlreadySaved"];
     case "past":
       return s["ficha.bulk.verdictPast"];
     case "overlap":
@@ -577,12 +605,16 @@ function PreviewRow({
       data-verdict={v.kind}
     >
       <span className="text-sm text-text-secondary">{label(row.before)}</span>
-      {after && v.kind !== "unchanged" && v.kind !== "not_eligible" && v.kind !== "changed" && (
+      {after && v.kind !== "unchanged" && v.kind !== "not_eligible" && v.kind !== "changed" && v.kind !== "already_saved" && (
         <span className="text-sm font-medium text-text-primary">{`→ ${label(after)}`}</span>
       )}
       {v.kind === "ok" && <span className="text-sm text-success">{s["ficha.bulk.verdictOk"]}</span>}
       {v.kind === "unchanged" && <span className="text-sm text-text-secondary">{s["ficha.bulk.verdictUnchanged"]}</span>}
-      {(v.kind === "not_eligible" || v.kind === "changed" || v.kind === "past" || v.kind === "overlap") && (
+      {(v.kind === "not_eligible" ||
+        v.kind === "changed" ||
+        v.kind === "already_saved" ||
+        v.kind === "past" ||
+        v.kind === "overlap") && (
         <span className="text-sm text-text-secondary">{verdictText(row)}</span>
       )}
       {v.kind === "conflict" && (

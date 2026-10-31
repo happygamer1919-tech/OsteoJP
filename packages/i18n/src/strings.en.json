@@ -1847,6 +1847,8 @@
   "ficha.bulk.verdictUnchanged": "Stays the same, not changed",
   "ficha.bulk.verdictNotEligible": "This appointment can no longer be changed here.",
   "ficha.bulk.verdictChanged": "This appointment changed since it was chosen. Preview again.",
+  "ficha.bulk.verdictAlreadySaved": "Already saved with this change.",
+  "ficha.bulk.alreadySaved": "Already saved: {count}.",
   "ficha.bulk.verdictPast": "The new date and time are in the past.",
   "ficha.bulk.verdictOverlap": "It would overlap another appointment in this selection, at {time}.",
   "ficha.bulk.override": "Save anyway for this appointment",

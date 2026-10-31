@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BULK_MAX_ROWS,
+  bulkAlreadySaved,
   bulkRowEligible,
   bulkSelfOverlap,
   bulkRowUnchanged,
@@ -207,5 +208,20 @@ describe("expectedStartsAt", () => {
   it("an ISO start passes; garbage does not", () => {
     expect(validBulkRequest({ ...ok, rows: [{ id: "a1", expectedStartsAt: "2031-05-12T14:00:00.000Z" }] })).toBe(true);
     expect(validBulkRequest({ ...ok, rows: [{ id: "a1", expectedStartsAt: "soon" }] })).toBe(false);
+  });
+});
+
+describe("bulkAlreadySaved", () => {
+  // The row now: Monday 12th, 15:00 Lisbon (14:00Z), 45 minutes, t-new.
+  const now = { ...row, practitionerId: "t-new" };
+  it("the row holds what the change makes of the start she saw: already saved", () => {
+    expect(bulkAlreadySaved(now, "2031-05-05T14:00:00.000Z", { shiftDays: 7 })).toBe(true);
+    expect(bulkAlreadySaved(now, "2031-05-12T08:00:00.000Z", { time: "15:00" })).toBe(true);
+    expect(bulkAlreadySaved(now, "2031-05-12T14:00:00.000Z", { practitionerId: "t-new" })).toBe(false);
+  });
+  it("anything else: not saved by this plan", () => {
+    expect(bulkAlreadySaved(now, "2031-05-06T14:00:00.000Z", { shiftDays: 7 })).toBe(false);
+    expect(bulkAlreadySaved(now, "2031-05-05T14:00:00.000Z", { shiftDays: 7, practitionerId: "t-other" })).toBe(false);
+    expect(bulkAlreadySaved(now, "garbage", { shiftDays: 7 })).toBe(false);
   });
 });

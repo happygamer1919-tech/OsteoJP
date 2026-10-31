@@ -166,6 +166,7 @@ function fakeTx() {
           return chain;
         },
         then: (resolve: (r: unknown[]) => unknown) => resolve(awaited()),
+        for: () => chain,
         limit: async () => {
           const r = rows.find((x) => x.id === named);
           return r ? [r] : [];
@@ -613,13 +614,25 @@ describe("bulkRescheduleAppointments: a shift moves a series onto its own old sl
 });
 
 describe("bulkRescheduleAppointments: stale rows, the past, and a row that throws", () => {
-  it("a row whose start is not the one the client saw is left alone (a retried save cannot shift twice)", async () => {
+  it("a RETRIED save (the row already holds this plan of the start she saw) is reported as already saved, and nothing is written again", async () => {
+    // She saw the 5th; +7 made it the 12th, which is where the row now is.
     const r = await bulkRescheduleAppointments(
       req({ mode: "apply", change: { shiftDays: 7 }, rows: [{ id: "appt-12", expectedStartsAt: "2031-05-05T14:00:00.000Z" }] }),
     );
-    expect(r.ok && r.data.rows[0]!.verdict).toEqual({ kind: "changed" });
+    expect(r.ok && r.data.rows[0]!.verdict).toEqual({ kind: "already_saved" });
+    expect(r.ok && [r.data.okCount, r.data.alreadySavedCount, r.data.skippedCount]).toEqual([0, 1, 0]);
     expect(updates).toEqual([]);
     expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("a row moved ELSEWHERE since she saw it is left alone as changed", async () => {
+    // She saw the 6th; +7 would be the 13th; the row is on the 12th.
+    const r = await bulkRescheduleAppointments(
+      req({ mode: "apply", change: { shiftDays: 7 }, rows: [{ id: "appt-12", expectedStartsAt: "2031-05-06T14:00:00.000Z" }] }),
+    );
+    expect(r.ok && r.data.rows[0]!.verdict).toEqual({ kind: "changed" });
+    expect(r.ok && [r.data.okCount, r.data.alreadySavedCount, r.data.skippedCount]).toEqual([0, 0, 1]);
+    expect(updates).toEqual([]);
   });
 
   it("the start she saw passes", async () => {

@@ -78,6 +78,7 @@ import { moveConfirmation } from "./move-confirmation";
 import {
   BULK_ROLES,
   BULK_STATUSES,
+  bulkAlreadySaved,
   bulkRowEligible,
   bulkSelfOverlap,
   bulkRowUnchanged,
@@ -2216,6 +2217,10 @@ async function moveAppointment(
             })
             .from(appointments)
             .where(eq(appointments.id, id))
+            // LOCKED, so two saves of the same plan (a double submit) queue on
+            // the row: the second reads the start the first wrote, answers
+            // "changed" and writes nothing. Only the bulk change takes it.
+            .for("update")
             .limit(1);
           if (
             !now ||
@@ -2551,6 +2556,24 @@ async function emitRescheduledFanOut(
  * moves their own visits on the agenda; RLS would refuse them a colleague's
  * row anyway, but the bulk change is not offered to them at all.
  */
+/** The bulk change's rows as stored, under RLS. */
+async function readBulkSources(actor: RequestContext, ids: string[]): Promise<BulkSourceRow[]> {
+  return runScoped(actor, (tx) =>
+    tx
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        status: appointments.status,
+        startsAt: appointments.startsAt,
+        endsAt: appointments.endsAt,
+        practitionerId: appointments.practitionerId,
+        locationId: appointments.locationId,
+      })
+      .from(appointments)
+      .where(inArray(appointments.id, ids)),
+  );
+}
+
 export async function bulkRescheduleAppointments(
   request: BulkRequest,
 ): Promise<ActionResult<BulkResult>> {
@@ -2565,20 +2588,7 @@ export async function bulkRescheduleAppointments(
   // and reads as not eligible below.
   let sources: BulkSourceRow[];
   try {
-    sources = await runScoped(actor, (tx) =>
-      tx
-        .select({
-          id: appointments.id,
-          patientId: appointments.patientId,
-          status: appointments.status,
-          startsAt: appointments.startsAt,
-          endsAt: appointments.endsAt,
-          practitionerId: appointments.practitionerId,
-          locationId: appointments.locationId,
-        })
-        .from(appointments)
-        .where(inArray(appointments.id, request.rows.map((r) => r.id))),
-    );
+    sources = await readBulkSources(actor, request.rows.map((r) => r.id));
   } catch (e) {
     return fail("bulk-reschedule", e);
   }
@@ -2618,7 +2628,16 @@ export async function bulkRescheduleAppointments(
       // The row as the client last saw it. A row that moved since (a second
       // tab, or a save retried after its answer was lost) is left alone.
       if (asked.expectedStartsAt && new Date(asked.expectedStartsAt).getTime() !== source.startsAt.getTime()) {
-        rows.push({ id: asked.id, before: sideOf(source), after: null, verdict: { kind: "changed" }, applied: false });
+        // A save retried after its answer was lost finds its own work done:
+        // the row already holds what this plan makes of the start she saw.
+        const done = bulkAlreadySaved(source, asked.expectedStartsAt, request.change, asked.time);
+        rows.push({
+          id: asked.id,
+          before: sideOf(source),
+          after: done ? sideOf(source) : null,
+          verdict: { kind: done ? "already_saved" : "changed" },
+          applied: false,
+        });
         continue;
       }
       const plan = planBulkRow(source, request.change, asked.time);
@@ -2679,13 +2698,27 @@ export async function bulkRescheduleAppointments(
         if (mode === "apply") committed.push(moved);
         else passed.push({ id: asked.id, plan });
         rows.push({ id: asked.id, before: sideOf(source), after: sideOf(plan), verdict: { kind: "ok" }, applied: mode === "apply" });
+      } else if (moved.result.error === "not_found") {
+        // The row changed inside its own transaction: another save (the same
+        // plan submitted twice, or another desk) got there first. Read it as
+        // it now stands, and say "already saved" when that save was this one.
+        const [now] = await readBulkSources(actor, [asked.id]).catch(() => []);
+        const done = !!now && asked.expectedStartsAt
+          ? bulkAlreadySaved(now, asked.expectedStartsAt, request.change, asked.time)
+          : false;
+        rows.push({
+          id: asked.id,
+          before: sideOf(source),
+          after: done && now ? sideOf(now) : sideOf(plan),
+          verdict: { kind: done ? "already_saved" : "changed" },
+          applied: false,
+        });
       } else {
         rows.push({
           id: asked.id,
           before: sideOf(source),
           after: sideOf(plan),
-          // A row that changed inside its own transaction reads as changed.
-          verdict: moved.result.error === "not_found" ? { kind: "changed" } : verdictOfRefusal(moved.result),
+          verdict: verdictOfRefusal(moved.result),
           applied: false,
         });
       }
@@ -2717,7 +2750,11 @@ export async function bulkRescheduleAppointments(
   const shownAt = (r: BulkRowResult) => (r.before ? new Date(r.before.startsAt).getTime() : Number.MAX_SAFE_INTEGER);
   rows.sort((a, b) => shownAt(a) - shownAt(b));
   const okCount = rows.filter((r) => r.verdict.kind === "ok").length;
-  return { ok: true, data: { mode, rows, okCount, skippedCount: rows.length - okCount } };
+  const alreadySavedCount = rows.filter((r) => r.verdict.kind === "already_saved").length;
+  return {
+    ok: true,
+    data: { mode, rows, okCount, alreadySavedCount, skippedCount: rows.length - okCount - alreadySavedCount },
+  };
 }
 
 /**

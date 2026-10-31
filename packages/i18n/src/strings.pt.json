@@ -1847,6 +1847,8 @@
   "ficha.bulk.verdictUnchanged": "Fica igual, não é alterada",
   "ficha.bulk.verdictNotEligible": "Esta marcação já não pode ser alterada aqui.",
   "ficha.bulk.verdictChanged": "Esta marcação mudou desde a escolha. Pré-visualize de novo.",
+  "ficha.bulk.verdictAlreadySaved": "Já estava guardada com esta alteração.",
+  "ficha.bulk.alreadySaved": "Já estavam guardadas: {count}.",
   "ficha.bulk.verdictPast": "A nova data e hora já passaram.",
   "ficha.bulk.verdictOverlap": "Ficaria sobreposta a outra marcação desta seleção, às {time}.",
   "ficha.bulk.override": "Guardar mesmo assim nesta marcação",

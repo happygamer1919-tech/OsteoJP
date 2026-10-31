@@ -429,8 +429,40 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
     expect((await send()).ok).toBe(true);
     const after = await snapshot(ids);
     const again = await send();
-    expect(again.ok && again.data.rows.map((x) => x.verdict.kind)).toEqual(["changed", "changed", "changed"]);
+    expect(again.ok && again.data.rows.map((x) => x.verdict.kind)).toEqual([
+      "already_saved",
+      "already_saved",
+      "already_saved",
+    ]);
+    expect(again.ok && [again.data.okCount, again.data.alreadySavedCount]).toEqual([0, 3]);
     expect(await snapshot(ids)).toEqual(after);
+  });
+
+  it("a DOUBLE SUBMIT (two applies of the same plan at once): each visit is saved exactly once", async () => {
+    const p = await patient("Paciente Um");
+    const ids = await threeVisits(p);
+    const asked = await seen(ids);
+    const send = () =>
+      actions.bulkRescheduleAppointments({ patientId: p, rows: asked, change: { shiftDays: 7 }, mode: "apply" });
+    const [a, b] = await Promise.all([send(), send()]);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    // Each visit: one save says ok, the other already_saved.
+    for (const id of ids) {
+      const kinds = [a, b].map((r) => r.data.rows.find((x) => x.id === id)!.verdict.kind).sort();
+      expect(kinds).toEqual(["already_saved", "ok"]);
+    }
+    expect(a.data.okCount + b.data.okCount).toBe(3);
+    // Exactly one reschedule audit row per visit, and one reminder target per visit in all.
+    const rs = (await auditLog()).filter((x) => x.action === "appointment.reschedule");
+    expect(rs.map((x) => x.entity_id).sort()).toEqual([...ids].sort());
+    const targets = h.enqueueRemindersAfterCommit.mock.calls.flatMap((c) => c[1] as { appointmentId: string }[]);
+    expect(targets.map((t) => t.appointmentId).sort()).toEqual([...ids].sort());
+    for (const [i, day] of DAYS.entries()) {
+      expect((await stored(ids[i]!)).starts_at).toBe(
+        day + 7 === 31 ? "2027-03-31T14:00:00" : at(day + 7, 15).toISOString().slice(0, 19),
+      );
+    }
   });
 
   it("a therapist is refused, the list and the change both; nothing is written", async () => {
