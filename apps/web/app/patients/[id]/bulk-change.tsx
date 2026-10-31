@@ -531,7 +531,7 @@ function BulkChangePanel({
                     {r.applied || r.verdict.kind === "already_saved" ? s["ficha.bulk.applied"] : s["ficha.bulk.notApplied"]}
                   </span>
                   {": "}
-                  {label(r.applied ? r.after : r.before)}
+                  {label(r.applied || r.verdict.kind === "already_saved" ? r.after : r.before)}
                   {!r.applied && <span className="block text-text-secondary">{verdictText(r)}</span>}
                 </li>
               ))}

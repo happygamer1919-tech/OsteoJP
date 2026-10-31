@@ -2208,29 +2208,28 @@ async function moveAppointment(
         if (!affected || affected.length === 0) {
           return { ok: false, error: "not_found" };
         }
-        if (extras.expect) {
-          const [now] = await tx
+        // APPT-BULK-01: is the row still as the bulk change saw it? Read here
+        // WITHOUT a lock (a preview takes none), and again with the row lock
+        // after the slot lock, below, before an apply writes.
+        const stillAsSeen = async (lock: boolean): Promise<boolean> => {
+          if (!extras.expect) return true;
+          const q = tx
             .select({
               patientId: appointments.patientId,
               status: appointments.status,
               startsAt: appointments.startsAt,
             })
             .from(appointments)
-            .where(eq(appointments.id, id))
-            // LOCKED, so two saves of the same plan (a double submit) queue on
-            // the row: the second reads the start the first wrote, answers
-            // "changed" and writes nothing. Only the bulk change takes it.
-            .for("update")
-            .limit(1);
-          if (
-            !now ||
-            now.patientId !== extras.expect.patientId ||
-            !extras.expect.statuses.has(now.status) ||
-            now.startsAt.getTime() !== extras.expect.startsAt.getTime()
-          ) {
-            return { ok: false, error: "not_found" };
-          }
-        }
+            .where(eq(appointments.id, id));
+          const [now] = await (lock ? q.for("update").limit(1) : q.limit(1));
+          return (
+            !!now &&
+            now.patientId === extras.expect.patientId &&
+            extras.expect.statuses.has(now.status) &&
+            now.startsAt.getTime() === extras.expect.startsAt.getTime()
+          );
+        };
+        if (!(await stillAsSeen(false))) return { ok: false, error: "not_found" };
         const ids = affected.map((a) => a.id);
 
         // BEFORE the update, so `startsAt` here is the instant the appointment
@@ -2387,6 +2386,13 @@ async function moveAppointment(
           ),
         );
         if (slotLocks) await tx.execute(slotLocks);
+        // APPT-BULK-01, APPLY ONLY (a preview returned above): the row lock,
+        // AFTER the slot lock, the same order as every move takes them, so a
+        // drawer move and a bulk save cannot deadlock. Two saves of the same
+        // plan (a double submit) share the destination slot lock, so the
+        // second gets here after the first has committed, reads the start it
+        // wrote, and writes nothing.
+        if (extras.expect && !(await stillAsSeen(true))) return { ok: false, error: "not_found" };
 
         for (const t of targets) {
           await tx

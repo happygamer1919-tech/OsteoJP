@@ -108,6 +108,8 @@ let rows: Row[] = [];
 let updates: { id: string | null; values: Record<string, unknown> }[] = [];
 /** How many slot locks (pg_advisory_xact_lock) the transactions asked for. */
 let slotLocks = 0;
+/** How many row locks (SELECT ... FOR UPDATE) the transactions asked for. */
+let rowLocks = 0;
 let templates: unknown[] = [];
 
 /** The id a drizzle condition names, found by walking it. */
@@ -166,7 +168,10 @@ function fakeTx() {
           return chain;
         },
         then: (resolve: (r: unknown[]) => unknown) => resolve(awaited()),
-        for: () => chain,
+        for: () => {
+          rowLocks += 1;
+          return chain;
+        },
         limit: async () => {
           const r = rows.find((x) => x.id === named);
           return r ? [r] : [];
@@ -195,6 +200,7 @@ function arrange(actor: RequestContext = reception) {
   rows = [monday(12), monday(19), monday(26)];
   updates = [];
   slotLocks = 0;
+  rowLocks = 0;
   templates = [];
   for (const f of [h.audit, h.enqueue, h.careTeam, h.rescheduled]) f.mockClear();
   h.findConflictsForWindow.mockReset();
@@ -272,8 +278,10 @@ describe("bulkRescheduleAppointments: preview writes nothing", () => {
     expect(h.careTeam).not.toHaveBeenCalled();
     expect(h.enqueue).not.toHaveBeenCalled();
     expect(h.rescheduled).not.toHaveBeenCalled();
-    // No slot lock was taken: the preview stopped before the write side.
+    // No slot lock and no row lock was taken: the preview stopped before the
+    // write side.
     expect(slotLocks).toBe(0);
+    expect(rowLocks).toBe(0);
   });
 
   it("runs the conflict check for every row against the NEW therapist", async () => {
@@ -324,8 +332,10 @@ describe("bulkRescheduleAppointments: apply writes what a drawer move writes, pe
     );
     expect(h.audit).toHaveBeenCalledTimes(3);
     // One slot lock per row, as a drawer move takes (the yardstick that the
-    // preview's zero above is not a fake that never sees a lock).
+    // preview's zero above is not a fake that never sees a lock), and one row
+    // lock per row, taken after it.
     expect(slotLocks).toBe(3);
+    expect(rowLocks).toBe(3);
     expect(h.audit.mock.calls.map((c) => (c[1] as { action: string }).action)).toEqual([
       "appointment.reschedule",
       "appointment.reschedule",
