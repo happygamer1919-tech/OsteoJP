@@ -75,6 +75,22 @@ import {
   type StatusNotificationTarget,
 } from "./reminders";
 import { moveConfirmation } from "./move-confirmation";
+import {
+  BULK_ROLES,
+  BULK_STATUSES,
+  bulkAlreadySaved,
+  bulkRowEligible,
+  bulkSelfOverlap,
+  bulkRowUnchanged,
+  planBulkRow,
+  sideOf,
+  validBulkRequest,
+  verdictOfRefusal,
+  type BulkRequest,
+  type BulkResult,
+  type BulkRowResult,
+  type BulkSourceRow,
+} from "./bulk-reschedule-core";
 import { acceptedPedidoTarget, unconfirmedPedidoIdsAmong } from "./pedido-acceptance";
 import { acceptedGuestRequestTarget, guestLinkOccurrence, linkGuestRequestTx } from "./guest-link";
 import { approvalNoticeAfterAccept, type ApprovalNotice } from "./book-confirm-notice";
@@ -315,6 +331,21 @@ function isDoubleConfirmedViolation(e: unknown): boolean {
 }
 
 /**
+ * APPT-EDIT-02: thrown inside moveAppointment's transaction when a
+ * therapist's UPDATE finds the row no longer has the Terapeuta its guard
+ * checked (reassigned between the read and the write). Throwing, not
+ * returning, so the transaction rolls back every row and audit this save
+ * already wrote; moveAppointment's catch turns it into the guard's own refusal.
+ * Not exported: this file is "use server" and exports only actions.
+ */
+class TherapistChangeRace extends Error {
+  constructor() {
+    super("therapist_change_race");
+    this.name = "TherapistChangeRace";
+  }
+}
+
+/**
  * Log a sanitized failure (no PII / payload) and return a generic error.
  *
  * EXCEPT for the double-confirmed constraint, which gets its OWN code so the
@@ -327,6 +358,7 @@ function isDoubleConfirmedViolation(e: unknown): boolean {
  * assim" — an override that this constraint exists to refuse, so offering it
  * would invite the user to retry something that cannot succeed.
  */
+
 function fail(action: string, e: unknown): Denied {
   if (isDoubleConfirmedViolation(e)) {
     console.error(`scheduling: ${action} refused by appointments_no_double_confirmed`);
@@ -2072,33 +2104,118 @@ export async function rescheduleAppointment(
   if (isDenied(auth)) return auth;
   const { actor } = auth;
 
-  if (!id || !input.practitionerId || !input.locationId) {
-    return { ok: false, error: "validation" };
-  }
-  // STAFF-02: a reschedule carries a locationId and can therefore MOVE an
-  // appointment into an unassigned clinic. Guarded on the DESTINATION, which is
-  // the only location this call can create a booking at.
-  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
-    return { ok: false, error: "location_not_assigned" };
-  }
-  // SCHED-17: MOVING a shared-resource appointment is held to the same rule as
-  // creating one - the ruling names both. No therapist self-guard is added here:
-  // reschedule has never had one and relies on RLS for whose rows may move.
-  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
-  if (!shared.ok) return { ok: false, error: "shared_resource_location" };
-  const inStart = new Date(input.startsAt);
-  const inEnd = new Date(input.endsAt);
-  if (!isValidInterval(inStart, inEnd)) {
-    return { ok: false, error: "validation" };
-  }
-  const scope: SeriesScope = input.scope ?? "one";
-
   const ip = await clientIp();
+  const moved = await moveAppointment(actor, ip, id, input, "apply");
+  if (moved.result.ok) {
+    // Stream E: re-enqueue at the NEW time. The new appointment/scheduled event
+    // supersedes the prior sleeping run (cancelOn on appointment id), so the old
+    // time never fires. Best-effort, post-commit.
+    await afterCommit("reschedule", async () => {
+      revalidateAppointmentSurfaces();
+      revalidatePath("/notificacoes");
+      await enqueueRemindersAfterCommit(actor.tenantId, moved.reminderTargets);
+      await emitRescheduledFanOut(actor, moved.rescheduleFanOut);
+    });
+    // The fan-out above reads the PRE-update practitioners, so the NEW
+    // Terapeuta is not among its recipients. This is the one notice they get.
+    await afterCommit("rescheduleCareTeam", () => emitCareTeamNotices(actor, moved.careTeamAdded));
+  }
+  return moved.result;
+}
+
+/**
+ * APPT-BULK-01: what one move produced, for the post-commit step. The three
+ * lists are filled only when the move committed.
+ */
+type MoveOutcome = {
+  result: ActionResult<{ id: string }>;
+  reminderTargets: ReminderEnqueueTarget[];
+  rescheduleFanOut: Array<StaffTransitionFanOut & { newStartsAt: Date }>;
+  careTeamAdded: CareTeamAddition[];
+};
+
+/**
+ * THE ONE MOVE, shared by `rescheduleAppointment` (the agenda's edit panel,
+ * the ficha) and `bulkRescheduleAppointments` (the ficha's "Alterar várias
+ * marcações"). APPT-BULK-01 moved the body here UNCHANGED, so a bulk change
+ * runs every check a single move runs, in the same order, and writes exactly
+ * what a single move writes: one update, one `appointment.reschedule` audit
+ * row with the same metadata, the care-team join, and the reminder targets
+ * and staff notices handed back for the door's ONE post-commit step.
+ *
+ * `mode: "preview"` runs every check up to and including the conflict list,
+ * then returns BEFORE the slot lock and before any write, so a preview writes
+ * nothing. What a preview cannot see is what only a write can raise: the
+ * double-confirmed constraint (0061) and the RLS WITH CHECK. An apply still
+ * meets both.
+ *
+ * THE POST-COMMIT STEP STAYS IN EACH DOOR, in its own exported body: the
+ * reminder call, the "remarcada" notices and the care-team notices. Each
+ * door makes ONE reminder call per action, and the scanners that list every
+ * emitter of appointment/scheduled (lib/reminders/*.test.ts) read it there.
+ *
+ * NOT EXPORTED, ON PURPOSE: this file is "use server", and an exported
+ * function is a server action any client can call with any arguments.
+ */
+/**
+ * APPT-BULK-01, the bulk change's two extras, both absent on a single move.
+ *   expect          the row as the bulk change last saw it: this patient, one
+ *                   of these statuses, this start. Re-read INSIDE the row's
+ *                   transaction; a row that changed since answers not_found
+ *                   and is left alone (a retried save cannot shift it twice,
+ *                   and a visit cancelled since is not moved).
+ *   previewVacated  PREVIEW ONLY: the other selected rows that this action
+ *                   will have moved away before this one, so a preview of a
+ *                   shift by N days does not report the series in its own
+ *                   way. An apply never reads it: it meets the database as
+ *                   it then stands, after those rows have really moved.
+ */
+type MoveExtras = {
+  expect?: { patientId: string; statuses: ReadonlySet<string>; startsAt: Date };
+  previewVacated?: readonly string[];
+};
+
+async function moveAppointment(
+  actor: RequestContext,
+  ip: string | null,
+  id: string,
+  input: RescheduleInput,
+  mode: "preview" | "apply",
+  extras: MoveExtras = {},
+): Promise<MoveOutcome> {
+  const outcome = (result: ActionResult<{ id: string }>): MoveOutcome => ({
+    result,
+    reminderTargets,
+    rescheduleFanOut,
+    careTeamAdded,
+  });
   // Captured inside the tx, enqueued AFTER commit (network out of the tx).
   let reminderTargets: ReminderEnqueueTarget[] = [];
   let rescheduleFanOut: Array<StaffTransitionFanOut & { newStartsAt: Date }> = [];
   // CARE-02c: care-team rows written because the Terapeuta changed.
   let careTeamAdded: CareTeamAddition[] = [];
+
+  if (!id || !input.practitionerId || !input.locationId) {
+    return outcome({ ok: false, error: "validation" });
+  }
+  // STAFF-02: a reschedule carries a locationId and can therefore MOVE an
+  // appointment into an unassigned clinic. Guarded on the DESTINATION, which is
+  // the only location this call can create a booking at.
+  if (!isLocationBookable(await bookingLocationScope(actor), input.locationId)) {
+    return outcome({ ok: false, error: "location_not_assigned" });
+  }
+  // SCHED-17: MOVING a shared-resource appointment is held to the same rule as
+  // creating one - the ruling names both. The therapist rule for a move is
+  // not the create rule: see APPT-EDIT-02 inside the transaction below.
+  const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
+  if (!shared.ok) return outcome({ ok: false, error: "shared_resource_location" });
+  const inStart = new Date(input.startsAt);
+  const inEnd = new Date(input.endsAt);
+  if (!isValidInterval(inStart, inEnd)) {
+    return outcome({ ok: false, error: "validation" });
+  }
+  const scope: SeriesScope = input.scope ?? "one";
+
   try {
     const result = await runScoped<ActionResult<{ id: string }>>(
       actor,
@@ -2107,7 +2224,53 @@ export async function rescheduleAppointment(
         if (!affected || affected.length === 0) {
           return { ok: false, error: "not_found" };
         }
+        // APPT-BULK-01: is the row still as the bulk change saw it? Read here
+        // WITHOUT a lock (a preview takes none), and again with the row lock
+        // after the slot lock, below, before an apply writes.
+        const stillAsSeen = async (lock: boolean): Promise<boolean> => {
+          if (!extras.expect) return true;
+          const q = tx
+            .select({
+              patientId: appointments.patientId,
+              status: appointments.status,
+              startsAt: appointments.startsAt,
+            })
+            .from(appointments)
+            .where(eq(appointments.id, id));
+          const [now] = await (lock ? q.for("update").limit(1) : q.limit(1));
+          return (
+            !!now &&
+            now.patientId === extras.expect.patientId &&
+            extras.expect.statuses.has(now.status) &&
+            now.startsAt.getTime() === extras.expect.startsAt.getTime()
+          );
+        };
+        if (!(await stillAsSeen(false))) return { ok: false, error: "not_found" };
         const ids = affected.map((a) => a.id);
+
+        // APPT-EDIT-02 - A THERAPIST KEEPS THEIR OWN VISITS. Owner ruling
+        // 2026-10-31: "A therapist may NOT change the therapist of a visit;
+        // reception does it." So for role therapist every row this save moves
+        // must already carry the Terapeuta it sends; the date, the hour and the
+        // clinic may still change. Owner, admin and reception are unchanged.
+        //
+        // AGAINST THE STORED ROW, not the request: `affected` is what the
+        // database holds before this save, read under the caller's RLS.
+        //
+        // AND AGAIN AT THE WRITE, for the therapist only: the read above takes
+        // no row lock, so reception may reassign the visit between it and the
+        // UPDATE below. That UPDATE matches on the Terapeuta checked here, and
+        // a row that no longer has it rolls the whole save back (see
+        // TherapistChangeRace). Owner, admin and reception write as before.
+        //
+        // NO SHARED-RESOURCE EXCEPTION, unlike the create door. There it lets a
+        // therapist BOOK the NESA machine; here a NESA row moved in time keeps
+        // NESA and passes, and swapping NESA for a person (or back) is a change
+        // of Terapeuta like any other. Refused before any write, audit or emit.
+        const therapistKeeps = actor.role === "therapist";
+        if (therapistKeeps && affected.some((a) => a.practitionerId !== input.practitionerId)) {
+          return { ok: false, error: "therapist_change_reception_only" };
+        }
 
         // BEFORE the update, so `startsAt` here is the instant the appointment
         // is moving FROM. Read once and reused below rather than re-read after
@@ -2219,7 +2382,10 @@ export async function rescheduleAppointment(
               room: t.room,
               startsAt: t.startsAt,
               endsAt: t.endsAt,
-              excludeIds: ids,
+              excludeIds:
+                mode === "preview" && extras.previewVacated
+                  ? [...ids, ...extras.previewVacated]
+                  : ids,
             });
             // PL-11: availability is advisory in the CONFLICT LIST, still. The
             // enforced check above already refused an outside-hours window, so
@@ -2235,6 +2401,11 @@ export async function rescheduleAppointment(
             };
           }
         }
+
+        // APPT-BULK-01: a preview stops HERE, every check above run and
+        // nothing below it reached: no slot lock, no update, no audit row, no
+        // care-team join, no reminder target, no staff notice.
+        if (mode === "preview") return { ok: true, data: { id } };
 
         // 2.9 — lock the DESTINATION slots before any row moves. Only the
         // destination matters: vacating a slot cannot create a double-booking,
@@ -2255,17 +2426,35 @@ export async function rescheduleAppointment(
           ),
         );
         if (slotLocks) await tx.execute(slotLocks);
+        // APPT-BULK-01, APPLY ONLY (a preview returned above): the row lock,
+        // AFTER the slot lock, the same order as every move takes them, so a
+        // drawer move and a bulk save cannot deadlock. Two saves of the same
+        // plan (a double submit) share the destination slot lock, so the
+        // second gets here after the first has committed, reads the start it
+        // wrote, and writes nothing.
+        if (extras.expect && !(await stillAsSeen(true))) return { ok: false, error: "not_found" };
 
         for (const t of targets) {
-          await tx
+          const moved = tx
             .update(appointments)
             .set({
               startsAt: t.startsAt,
               endsAt: t.endsAt,
               practitionerId: input.practitionerId,
               locationId: input.locationId,
-            })
-            .where(eq(appointments.id, t.id)); // RLS scopes tenant
+            });
+          if (therapistKeeps) {
+            // APPT-EDIT-02: only while the row still has the Terapeuta the guard
+            // checked (input.practitionerId, equal to it by then). None back
+            // means it was reassigned since: throw, so nothing of this save
+            // commits, and the catch below answers with the guard's refusal.
+            const kept = await moved
+              .where(and(eq(appointments.id, t.id), eq(appointments.practitionerId, input.practitionerId)))
+              .returning({ id: appointments.id });
+            if (kept.length === 0) throw new TherapistChangeRace();
+          } else {
+            await moved.where(eq(appointments.id, t.id)); // RLS scopes tenant
+          }
           await writeAppointmentAudit(tx, {
             tenantId: actor.tenantId,
             actorUserId: actor.userId,
@@ -2348,38 +2537,282 @@ export async function rescheduleAppointment(
         return { ok: true, data: { id } };
       },
     );
-    if (result.ok) {
-      // Stream E: re-enqueue at the NEW time. The new appointment/scheduled event
-      // supersedes the prior sleeping run (cancelOn on appointment id), so the old
-      // time never fires. Best-effort, post-commit.
+    // A preview wrote nothing, so it hands nothing to the post-commit step.
+    if (mode === "preview" || !result.ok) {
+      reminderTargets = [];
+      rescheduleFanOut = [];
+      careTeamAdded = [];
+    }
+    return outcome(result);
+  } catch (e) {
+    // The transaction rolled back: nothing of this move is handed on.
+    reminderTargets = [];
+    rescheduleFanOut = [];
+    careTeamAdded = [];
+    if (e instanceof TherapistChangeRace) return outcome({ ok: false, error: "therapist_change_reception_only" });
+    return outcome(fail("reschedule", e));
+  }
+}
+
+/**
+ * LE-staff-transitions-emit-nothing: one "remarcada" notice per moved row, to
+ * its PREVIOUS therapists. Best-effort and post-commit: the appointment really
+ * has moved, so a failed notification must never be reported as a failed
+ * reschedule. Shared by the single move and the bulk change, each of which
+ * makes its own ONE reminder call beside it.
+ */
+async function emitRescheduledFanOut(
+  actor: RequestContext,
+  fanOut: ReadonlyArray<StaffTransitionFanOut & { newStartsAt: Date }>,
+): Promise<void> {
+  for (const f of fanOut) {
+    await emitRescheduledNotification({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      appointmentId: f.appointmentId,
+      patientId: f.patientId,
+      practitionerIds: f.practitionerIds,
+      previousStartsAt: f.startsAt,
+      newStartsAt: f.newStartsAt,
+      occurredAt: new Date(),
+    });
+  }
+}
+
+/**
+ * APPT-BULK-01 - "Alterar várias marcações": change many of ONE patient's
+ * future visits in one go (a new therapist, a new clinic, a new hour with the
+ * dates kept, a shift by N days, a new length), from the ficha.
+ *
+ * EVERY ROW IS A SINGLE MOVE. Each ticked row is planned (bulk-reschedule-
+ * core.ts) and then handed to `moveAppointment`, the code
+ * `rescheduleAppointment` runs, in its OWN transaction, scope "one". So each
+ * row meets every check a drawer move meets, in the same order (clinic
+ * assignment, NESA, the therapist's working hours, the closure, the clinic's
+ * hours, the conflicts, the slot lock, the double-confirmed constraint, RLS),
+ * and a saved row writes exactly what a drawer move writes: one update and one
+ * `appointment.reschedule` audit row with the same metadata, and the care-team
+ * join. Nothing here re-implements or loosens a check.
+ *
+ * TWO MODES.
+ *   preview  writes nothing: each row runs the checks and stops before the
+ *            slot lock (see `moveAppointment`). Each row comes back with its
+ *            old values, its new values and its verdict.
+ *   apply    saves each row that passes and SKIPS each row that does not;
+ *            a skipped row's transaction writes nothing. The rows that saved
+ *            then get ONE post-commit step for the whole action, below: one
+ *            reminder call, so one save marker, the one-confirmation rule (the
+ *            earliest eligible row) and the cap all hold as for a series move,
+ *            plus the staff notices.
+ *
+ * DEFAULTS PENDING THE OWNER (stated in the PR): conflicting rows are skipped
+ * and listed, the rest are saved; a row's three overridable conflicts are
+ * passed only by that row's explicit tick (`allowConflict`), never the hard
+ * refusals; the patient gets today's messages, nothing new.
+ *
+ * OWNER, ADMIN AND RECEPTION ONLY. A therapist holds appointments:write and
+ * moves their own visits on the agenda; RLS would refuse them a colleague's
+ * row anyway, but the bulk change is not offered to them at all.
+ */
+/** The bulk change's rows as stored, under RLS. */
+async function readBulkSources(actor: RequestContext, ids: string[]): Promise<BulkSourceRow[]> {
+  return runScoped(actor, (tx) =>
+    tx
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        status: appointments.status,
+        startsAt: appointments.startsAt,
+        endsAt: appointments.endsAt,
+        practitionerId: appointments.practitionerId,
+        locationId: appointments.locationId,
+      })
+      .from(appointments)
+      .where(inArray(appointments.id, ids)),
+  );
+}
+
+export async function bulkRescheduleAppointments(
+  request: BulkRequest,
+): Promise<ActionResult<BulkResult>> {
+  const auth = await authorize("appointments:write");
+  if (isDenied(auth)) return auth;
+  const { actor } = auth;
+  if (!BULK_ROLES.has(actor.role)) return { ok: false, error: "forbidden" };
+  if (!validBulkRequest(request)) return { ok: false, error: "validation" };
+  const mode = request.mode;
+
+  // The rows as stored, under RLS: a row the viewer cannot read is not found,
+  // and reads as not eligible below.
+  let sources: BulkSourceRow[];
+  try {
+    sources = await readBulkSources(actor, request.rows.map((r) => r.id));
+  } catch (e) {
+    return fail("bulk-reschedule", e);
+  }
+  const byId = new Map(sources.map((r) => [r.id, r]));
+  const nowMs = Date.now();
+  const ip = await clientIp();
+
+  // THE ORDER FOLLOWS THE SHIFT. A weekly series moved a week later lands each
+  // visit on the next one's old slot: processed latest first, that slot is
+  // already free when the visit before it arrives, and if the later visit was
+  // refused the earlier one meets it and is refused too (never an overlap).
+  // Earlier, or no shift: earliest first, by the same reasoning.
+  const startOf = (id: string) => byId.get(id)?.startsAt.getTime() ?? Number.MAX_SAFE_INTEGER;
+  const later = (request.change.shiftDays ?? 0) > 0;
+  const ordered = [...request.rows].sort((a, b) =>
+    later ? startOf(b.id) - startOf(a.id) : startOf(a.id) - startOf(b.id),
+  );
+
+  const rows: BulkRowResult[] = [];
+  const committed: MoveOutcome[] = [];
+  // PREVIEW ONLY: the rows this preview has passed so far, which the apply
+  // will have moved before the row now being checked (see MoveExtras).
+  const passed: { id: string; plan: ReturnType<typeof planBulkRow> }[] = [];
+  try {
+    for (const asked of ordered) {
+      const source = byId.get(asked.id);
+      if (!source || !bulkRowEligible(source, request.patientId, nowMs)) {
+        rows.push({
+          id: asked.id,
+          before: source ? sideOf(source) : null,
+          after: null,
+          verdict: { kind: "not_eligible" },
+          applied: false,
+        });
+        continue;
+      }
+      // The row as the client last saw it. A row that moved since (a second
+      // tab, or a save retried after its answer was lost) is left alone.
+      if (asked.expectedStartsAt && new Date(asked.expectedStartsAt).getTime() !== source.startsAt.getTime()) {
+        // A save retried after its answer was lost finds its own work done:
+        // the row already holds what this plan makes of the start she saw.
+        const done = bulkAlreadySaved(source, asked.expectedStartsAt, request.change, asked.time);
+        rows.push({
+          id: asked.id,
+          before: sideOf(source),
+          after: done ? sideOf(source) : null,
+          verdict: { kind: done ? "already_saved" : "changed" },
+          applied: false,
+        });
+        continue;
+      }
+      const plan = planBulkRow(source, request.change, asked.time);
+      if (bulkRowUnchanged(source, plan)) {
+        rows.push({ id: asked.id, before: sideOf(source), after: sideOf(plan), verdict: { kind: "unchanged" }, applied: false });
+        continue;
+      }
+      // A visit is never moved into the past from here.
+      if (plan.startsAt.getTime() <= nowMs) {
+        rows.push({ id: asked.id, before: sideOf(source), after: sideOf(plan), verdict: { kind: "past" }, applied: false });
+        continue;
+      }
+      // PREVIEW ONLY: two rows of this selection landing on each other with
+      // one therapist. The apply needs no such check: the second row meets the
+      // first in the database and is refused there.
+      if (mode === "preview") {
+        const clash = bulkSelfOverlap(plan, passed);
+        if (clash) {
+          rows.push({
+            id: asked.id,
+            before: sideOf(source),
+            after: sideOf(plan),
+            verdict: { kind: "overlap", with: clash },
+            applied: false,
+          });
+          continue;
+        }
+      }
+      let moved: MoveOutcome;
+      try {
+        moved = await moveAppointment(
+          actor,
+          ip,
+          asked.id,
+          {
+            startsAt: plan.startsAt.toISOString(),
+            endsAt: plan.endsAt.toISOString(),
+            practitionerId: plan.practitionerId,
+            locationId: plan.locationId,
+            scope: "one",
+            // A preview never overrides: it shows the conflict. An apply passes
+            // it only for a row ticked for it.
+            allowConflict: mode === "apply" && asked.allowConflict === true,
+          },
+          mode,
+          {
+            expect: { patientId: request.patientId, statuses: BULK_STATUSES, startsAt: source.startsAt },
+            previewVacated: passed.map((x) => x.id),
+          },
+        );
+      } catch (e) {
+        // A check that threw outside the row's transaction: this row is not
+        // moved, the rows already saved stay saved and still get their
+        // post-commit step below.
+        moved = { result: fail("bulk-reschedule", e), reminderTargets: [], rescheduleFanOut: [], careTeamAdded: [] };
+      }
+      if (moved.result.ok) {
+        if (mode === "apply") committed.push(moved);
+        else passed.push({ id: asked.id, plan });
+        rows.push({ id: asked.id, before: sideOf(source), after: sideOf(plan), verdict: { kind: "ok" }, applied: mode === "apply" });
+      } else if (moved.result.error === "not_found") {
+        // The row changed inside its own transaction: another save (the same
+        // plan submitted twice, or another desk) got there first. Read it as
+        // it now stands, and say "already saved" when that save was this one.
+        const [now] = await readBulkSources(actor, [asked.id]).catch(() => []);
+        const done = !!now && asked.expectedStartsAt
+          ? bulkAlreadySaved(now, asked.expectedStartsAt, request.change, asked.time)
+          : false;
+        rows.push({
+          id: asked.id,
+          before: sideOf(source),
+          after: done && now ? sideOf(now) : sideOf(plan),
+          verdict: { kind: done ? "already_saved" : "changed" },
+          applied: false,
+        });
+      } else {
+        rows.push({
+          id: asked.id,
+          before: sideOf(source),
+          after: sideOf(plan),
+          verdict: verdictOfRefusal(moved.result),
+          applied: false,
+        });
+      }
+    }
+  } finally {
+    // THE POST-COMMIT STEP, ONCE FOR THE WHOLE ACTION, exactly the single
+    // move's: ONE reminder call holding every saved row (one save marker; the
+    // one-confirmation rule picks the earliest eligible row; the cap is the
+    // same 52 the row limit already respects), the "remarcada" notices, the
+    // care-team notices. In a finally, so rows already saved get it whatever
+    // happens to a later row. A new emitter of appointment/scheduled.
+    if (mode === "apply" && committed.length > 0) {
       await afterCommit("reschedule", async () => {
         revalidateAppointmentSurfaces();
         revalidatePath("/notificacoes");
-        await enqueueRemindersAfterCommit(actor.tenantId, reminderTargets);
-        // LE-staff-transitions-emit-nothing. Best-effort and post-commit: the
-        // appointment really has moved, so a failed notification must never be
-        // reported as a failed reschedule.
-        for (const f of rescheduleFanOut) {
-          await emitRescheduledNotification({
-            tenantId: actor.tenantId,
-            actorUserId: actor.userId,
-            appointmentId: f.appointmentId,
-            patientId: f.patientId,
-            practitionerIds: f.practitionerIds,
-            previousStartsAt: f.startsAt,
-            newStartsAt: f.newStartsAt,
-            occurredAt: new Date(),
-          });
-        }
+        await enqueueRemindersAfterCommit(
+          actor.tenantId,
+          committed.flatMap((m) => m.reminderTargets),
+        );
+        await emitRescheduledFanOut(actor, committed.flatMap((m) => m.rescheduleFanOut));
       });
-      // The fan-out above reads the PRE-update practitioners, so the NEW
-      // Terapeuta is not among its recipients. This is the one notice they get.
-      await afterCommit("rescheduleCareTeam", () => emitCareTeamNotices(actor, careTeamAdded));
+      await afterCommit("rescheduleCareTeam", () =>
+        emitCareTeamNotices(actor, committed.flatMap((m) => m.careTeamAdded)),
+      );
     }
-    return result;
-  } catch (e) {
-    return fail("reschedule", e);
   }
+
+  // Shown in the order of the visits, whatever order they were processed in.
+  const shownAt = (r: BulkRowResult) => (r.before ? new Date(r.before.startsAt).getTime() : Number.MAX_SAFE_INTEGER);
+  rows.sort((a, b) => shownAt(a) - shownAt(b));
+  const okCount = rows.filter((r) => r.verdict.kind === "ok").length;
+  const alreadySavedCount = rows.filter((r) => r.verdict.kind === "already_saved").length;
+  return {
+    ok: true,
+    data: { mode, rows, okCount, alreadySavedCount, skippedCount: rows.length - okCount - alreadySavedCount },
+  };
 }
 
 /**

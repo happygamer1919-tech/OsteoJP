@@ -288,13 +288,26 @@ describe("CARE-02c: every appointment insert has a care-team verdict", () => {
   });
 
   it("A RESCHEDULE TO A NEW TERAPEUTA writes too: only the moved rows, only the Terapeuta slot", () => {
-    const body = functionBody("apps/web/lib/scheduling/actions.ts", "rescheduleAppointment");
+    // APPT-BULK-01 moved the transaction, unchanged, into `moveAppointment`
+    // (shared with the bulk change). The write is asserted there; the notice
+    // stays in the action's own body, after the move has returned.
+    const FILE = "apps/web/lib/scheduling/actions.ts";
+    const action = functionBody(FILE, "rescheduleAppointment");
+    const body = functionBody(FILE, "moveAppointment");
     expect(body.length).toBeGreaterThan(2000);
     expect(body).toMatch(/a\.practitionerId !== input\.practitionerId/);
     expect(body).toMatch(/addBookedTherapistsToCareTeam\(tx, actor, movedToNewTherapist, \{\s*slots: "primary",?\s*\}\)/);
-    expect(body).toContain("emitCareTeamNotices(actor, careTeamAdded)");
-    // The notice after the commit, the write inside the transaction.
-    expect(txOrderFaults("rescheduleAppointment", body, NOTIFY_RE)).toEqual([]);
+    // The write inside the transaction, and no notice from inside the move.
+    const span = txSpan(body);
+    expect(span).not.toBeNull();
+    const writeAt = body.search(/addBookedTherapistsToCareTeam\(/);
+    expect(writeAt).toBeGreaterThan(span!.start);
+    expect(writeAt).toBeLessThan(span!.end);
+    expect(body).not.toMatch(NOTIFY_RE);
+    // The notice in the action, after the move (which holds the commit).
+    expect(action).toContain("emitCareTeamNotices(actor, moved.careTeamAdded)");
+    expect(action.indexOf("emitCareTeamNotices(")).toBeGreaterThan(action.indexOf("moveAppointment("));
+    expect(action).not.toMatch(/\brunScoped\b/);
     // After the UPDATE, so the read-back sees the new Terapeuta.
     expect(body.indexOf("addBookedTherapistsToCareTeam(")).toBeGreaterThan(
       body.indexOf(".update(appointments)"),

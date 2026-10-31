@@ -275,10 +275,54 @@ describe("AppointmentDrawer APPT-EDIT-01: lockPractitioner on an edit", () => {
     expect(html).not.toContain(">Dra. Colega<");
   });
 
-  it("not locked (the agenda, unchanged): the therapist list is offered as before", () => {
-    const html = renderLocked(false);
-    expect(html).not.toContain('data-testid="drawer-therapist-readonly"');
+});
+
+// APPT-EDIT-02: owner ruling 2026-10-31, "A therapist may NOT change the
+// therapist of a visit; reception does it." The agenda and /marcacoes render
+// the drawer with no lockPractitioner prop, so the drawer locks the Terapeuta
+// of an EDIT by itself for a therapist viewer. Reception keeps the select, and
+// the create form is PL-10's self-lock, not this lock.
+describe("AppointmentDrawer APPT-EDIT-02: a therapist editing a visit cannot change its Terapeuta", () => {
+  const withColleague: AgendaOptions = {
+    ...options,
+    therapists: [
+      { id: "therapist-1", label: "Dr. Costa" },
+      { id: "therapist-2", label: "Dra. Colega" },
+    ],
+  };
+  const lockedField = (html: string) => {
+    const at = html.indexOf('data-testid="drawer-therapist-readonly"');
+    return at === -1 ? null : html.slice(at, html.indexOf("</div>", at));
+  };
+
+  it("a therapist on the agenda's edit (no lockPractitioner): the row's own Terapeuta, read-only, no colleague", () => {
+    const html = render({ mode: "edit", appt: editAppt }, false, { role: "therapist", userId: "therapist-1" }, withColleague);
+    const field = lockedField(html);
+    expect(field).not.toBeNull();
+    expect(field).toContain('data-practitioner-id="therapist-1"');
+    expect(field).toContain("Dr. Costa");
+    expect(html).not.toContain(">Dra. Colega<");
+  });
+
+  it("a therapist editing a colleague's visit they can open: still the row's own Terapeuta, not themselves", () => {
+    const colleagues = { ...editAppt, practitionerId: "therapist-2", practitionerName: "Dra. Colega" };
+    const html = render({ mode: "edit", appt: colleagues }, false, { role: "therapist", userId: "therapist-1" }, withColleague);
+    const field = lockedField(html);
+    expect(field).not.toBeNull();
+    expect(field).toContain('data-practitioner-id="therapist-2"');
+    expect(html).not.toContain(">Dr. Costa<");
+  });
+
+  it("reception on the same edit keeps the Terapeuta select, colleague offered", () => {
+    const html = render({ mode: "edit", appt: editAppt }, false, { role: "reception", userId: "recep-1" }, withColleague);
+    expect(lockedField(html)).toBeNull();
     expect(html).toContain(">Dra. Colega<");
+  });
+
+  it("a therapist on CREATE is not this lock: PL-10's own-name label, no edit read-only field", () => {
+    const html = render({ mode: "create" }, false, { role: "therapist", userId: "therapist-1" }, withColleague);
+    expect(lockedField(html)).toBeNull();
+    expect(html).toContain('data-practitioner-id="therapist-1"');
   });
 });
 

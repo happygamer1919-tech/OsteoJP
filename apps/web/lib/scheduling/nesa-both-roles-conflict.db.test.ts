@@ -11,6 +11,9 @@
  * runScoped is REAL, so RLS, appointment_conflicts, the SCHED-17 location rule
  * and the SCHED-29 second-participant rule run as on production. Only the
  * request context, the client IP and the reminder send are mocked.
+ *
+ * The APPT-EDIT-02 arms at the end use the same seeded clinic, therapists and
+ * machine for a therapist's reschedule (see the comment above them).
  */
 import { randomUUID } from "node:crypto";
 import { sql as raw } from "drizzle-orm";
@@ -387,5 +390,130 @@ d("SCHED-29.2: NESA's hour is held in both roles", () => {
       locationId: cb,
     });
     expect(personDay?.booked.map((b) => b.appointmentId)).not.toContain(personRow);
+  });
+
+  // ========================================================================
+  // APPT-EDIT-02 - A THERAPIST KEEPS THEIR OWN VISITS, against Postgres.
+  // Owner ruling 2026-10-31: "A therapist may NOT change the therapist of a
+  // visit; reception does it." A therapist's reschedule UPDATE matches on the
+  // Terapeuta and asks RETURNING, so these arms prove the real policies let
+  // that RETURNING read the moved row for each way a therapist reaches one:
+  // as Terapeuta, as Terapeuta 2, and on a NESA row at their clinic. Every row
+  // is seeded by reception (created_by), so no arm passes on the creator arm.
+  // The hours are fixed dates (2027-02-10, a Wednesday), never relative to now.
+  // ========================================================================
+
+  async function stored(id: string) {
+    const [r] = await rows(raw`select practitioner_id::text as p, practitioner_2_id::text as p2,
+        starts_at, ends_at from appointments where id = ${id}`);
+    return {
+      practitionerId: r?.p as string,
+      practitionerTwoId: (r?.p2 as string | null) ?? null,
+      startsAt: new Date(r?.starts_at as string).toISOString(),
+      endsAt: new Date(r?.ends_at as string).toISOString(),
+    };
+  }
+
+  async function rescheduleAudits(id: string): Promise<number> {
+    const [r] = await rows(raw`select count(*)::int as n from audit_log
+      where tenant_id = ${tenantId} and entity_type = 'appointment'
+        and entity_id = ${id} and action = 'appointment.reschedule'`);
+    return Number(r?.n);
+  }
+
+  async function moveToTen(id: string, practitionerId: string) {
+    const { rescheduleAppointment } = await import("./actions");
+    return rescheduleAppointment(id, {
+      startsAt: TEN.toISOString(),
+      endsAt: TEN_END.toISOString(),
+      practitionerId,
+      locationId: cb,
+    });
+  }
+
+  it("APPT-EDIT-02: a therapist moves their OWN visit to a free hour, keeping themselves: moved, one audit row", async () => {
+    const id = await seedRow({ practitionerId: therapistOne, patientId: patientA, startsAt: ELEVEN, endsAt: ELEVEN_END });
+    as("therapist", therapistOne);
+    const r = await moveToTen(id, therapistOne);
+    expect(r).toEqual({ ok: true, data: { id } });
+    expect(await stored(id)).toEqual({
+      practitionerId: therapistOne,
+      practitionerTwoId: null,
+      startsAt: TEN.toISOString(),
+      endsAt: TEN_END.toISOString(),
+    });
+    expect(await rescheduleAudits(id)).toBe(1);
+  });
+
+  it("APPT-EDIT-02: a therapist who is Terapeuta 2 moves a colleague's visit in time, keeping the colleague: moved", async () => {
+    const id = await seedRow({
+      practitionerId: therapistTwo,
+      practitionerTwoId: therapistOne,
+      patientId: patientA,
+      startsAt: ELEVEN,
+      endsAt: ELEVEN_END,
+    });
+    as("therapist", therapistOne);
+    const r = await moveToTen(id, therapistTwo);
+    expect(r).toEqual({ ok: true, data: { id } });
+    expect(await stored(id)).toEqual({
+      practitionerId: therapistTwo,
+      practitionerTwoId: therapistOne,
+      startsAt: TEN.toISOString(),
+      endsAt: TEN_END.toISOString(),
+    });
+    expect(await rescheduleAudits(id)).toBe(1);
+  });
+
+  it("APPT-EDIT-02: a therapist hands their own visit to a colleague: therapist_change_reception_only, the row unchanged", async () => {
+    const id = await seedRow({ practitionerId: therapistOne, patientId: patientA, startsAt: ELEVEN, endsAt: ELEVEN_END });
+    as("therapist", therapistOne);
+    const r = await moveToTen(id, therapistTwo);
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
+    expect(await stored(id)).toEqual({
+      practitionerId: therapistOne,
+      practitionerTwoId: null,
+      startsAt: ELEVEN.toISOString(),
+      endsAt: ELEVEN_END.toISOString(),
+    });
+    expect(await rescheduleAudits(id)).toBe(0);
+  });
+
+  /**
+   * A therapist who stays on the row as Terapeuta 2 is still refused a new
+   * Terapeuta.
+   */
+  it("APPT-EDIT-02: a therapist who is Terapeuta 2 hands the colleague's visit to a third therapist: refused, row unchanged", async () => {
+    const id = await seedRow({
+      practitionerId: therapistTwo,
+      practitionerTwoId: therapistOne,
+      patientId: patientA,
+      startsAt: ELEVEN,
+      endsAt: ELEVEN_END,
+    });
+    as("therapist", therapistOne);
+    const r = await moveToTen(id, therapistThree);
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
+    expect(await stored(id)).toEqual({
+      practitionerId: therapistTwo,
+      practitionerTwoId: therapistOne,
+      startsAt: ELEVEN.toISOString(),
+      endsAt: ELEVEN_END.toISOString(),
+    });
+    expect(await rescheduleAudits(id)).toBe(0);
+  });
+
+  it("APPT-EDIT-02: a therapist moves a NESA visit at their clinic in time, keeping NESA: moved", async () => {
+    const id = await seedRow({ practitionerId: nesaId, patientId: patientA, startsAt: ELEVEN, endsAt: ELEVEN_END });
+    as("therapist", therapistOne);
+    const r = await moveToTen(id, nesaId);
+    expect(r).toEqual({ ok: true, data: { id } });
+    expect(await stored(id)).toEqual({
+      practitionerId: nesaId,
+      practitionerTwoId: null,
+      startsAt: TEN.toISOString(),
+      endsAt: TEN_END.toISOString(),
+    });
+    expect(await rescheduleAudits(id)).toBe(1);
   });
 });
