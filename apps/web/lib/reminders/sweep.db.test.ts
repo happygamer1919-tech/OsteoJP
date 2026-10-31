@@ -946,6 +946,8 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
       requestSmsRefused: await one({ request: true }),
       // A request brought back from Cancelada to Agendada is unaccepted again and emits nothing.
       requestBroughtBackToAgendada: await one({ request: true }),
+      // A request accepted BEFORE its mark, saved again as Confirmada after it: no transition, no event.
+      requestConfirmedAgain: await one({ request: true, status: "confirmed" }),
       // RE-ARMING: each door below emitted appointment/scheduled, so each keeps its mark out.
       requestAcceptedWithEstado: await one({ request: true, status: "confirmed" }),
       requestAcceptedBySms: await one({ request: true, status: "confirmed" }),
@@ -959,6 +961,7 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     await savedAt(v.reviewConfirmed.id, "appointment.sms_reply_reviewed", review("confirmed", true), after(v.reviewConfirmed));
     await savedAt(v.requestSmsRefused.id, "appointment.patient_sms_reply", { ...reply("review"), reason: "slot_taken" }, after(v.requestSmsRefused));
     await savedAt(v.requestBroughtBackToAgendada.id, "appointment.update", { changed: ["status"], fromStatus: "cancelled", toStatus: "scheduled" }, after(v.requestBroughtBackToAgendada));
+    await savedAt(v.requestConfirmedAgain.id, "appointment.update", { changed: ["status"], fromStatus: "confirmed", toStatus: "confirmed" }, after(v.requestConfirmedAgain));
     await savedAt(v.requestAcceptedWithEstado.id, "appointment.update", { changed: ["status"], fromStatus: "scheduled", toStatus: "confirmed" }, after(v.requestAcceptedWithEstado));
     await savedAt(v.requestAcceptedBySms.id, "appointment.patient_sms_reply", reply("confirmed"), after(v.requestAcceptedBySms));
     await savedAt(v.requestAcceptedInReview.id, "appointment.sms_reply_reviewed", review("confirmed", true), after(v.requestAcceptedInReview));
@@ -967,7 +970,14 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     await savedAt(v.requestBroughtBackToConfirmada.id, "appointment.update", { changed: ["status"], fromStatus: "cancelled", toStatus: "confirmed" }, after(v.requestBroughtBackToConfirmada));
 
     const label = (id: string) => Object.entries(v).find(([, x]) => x.id === id)?.[0] ?? id;
-    const taken = ["handConfirmed", "requestBroughtBackToAgendada", "requestSmsRefused", "reviewConfirmed", "smsConfirmed"];
+    const taken = [
+      "handConfirmed",
+      "requestBroughtBackToAgendada",
+      "requestConfirmedAgain",
+      "requestSmsRefused",
+      "reviewConfirmed",
+      "smsConfirmed",
+    ];
     const selected = await select(tenantA, now);
     expect(selected.marks.map((m) => label(m.appointmentId)).sort()).toEqual(taken);
     expect(selected.due).toBe(taken.length);
@@ -1257,9 +1267,9 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     // The bookings, and the saves the R24 arm wrote itself at chosen instants. Nothing else.
     expect(laterSaves).toEqual({
       "appointment.patient_sms_reply": 4,
-      "appointment.reschedule": 12,
+      "appointment.reschedule": 13,
       "appointment.sms_reply_reviewed": 2,
-      "appointment.update": 9,
+      "appointment.update": 10,
     });
     expect(audit).toEqual([
       { action: "appointment.create", entity_type: "appointment", n: bookingRows },

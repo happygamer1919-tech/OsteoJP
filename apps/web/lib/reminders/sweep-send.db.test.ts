@@ -1296,6 +1296,29 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(await pass(tenantB, plus(now, 5 * H))).toMatchObject({ due: 0, taken: 0, sent: 0 });
   });
 
+  /**
+   * R24's exception at its edge: a claim stamped at the SAME instant as the
+   * save counts as taken before it (`<=`), so the held-back reminder is tried
+   * again. Both instants are written here, as the database's clock would.
+   */
+  it("R24: a claim taken AT the very instant of the save lifts the gate: the held-back reminder is tried again and sent", async () => {
+    const now = clockOf(25);
+    const v = await smsDue(now, 30, { origin: "patient_portal" });
+    const at = plus(now, -10);
+    const claimId = randomUUID();
+    await sql.execute(raw`insert into reminder_claims
+      (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
+      values (${claimId}, ${tenantA}, ${v.id}, 'claim', '24h', 'sms', ${v.start.toISOString()},
+              ${plus(v.start, -24 * H).toISOString()}, 'sweep', false, 1, ${at.toISOString()})`);
+    await sql.execute(raw`insert into reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id, created_at)
+      values (${tenantA}, ${v.id}, 'release', '24h', 'sms', ${claimId}, ${at.toISOString()})`);
+    await sql.execute(raw`update appointments set status = 'confirmed' where id = ${v.id}`);
+    await savedAt(v.id, "appointment.update", { changed: ["status"], via: "portal_request_confirm" }, at);
+
+    expect(await pass(tenantA, plus(now, 60))).toMatchObject({ due: 1, taken: 1, sent: 1 });
+    expect(h.sends).toEqual([`sms:${v.id}`]);
+  });
+
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows, the R24 arms' saves, and nothing else", async () => {
     const audit = await rows(raw`select action, count(*)::int as n from audit_log
       where tenant_id in (${tenantA}, ${tenantB}) group by action order by action`);
@@ -1303,7 +1326,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
       "appointment.patient_sms_reply": 3,
       "appointment.reschedule": 6,
       "appointment.sms_reply_reviewed": 1,
-      "appointment.update": 8,
+      "appointment.update": 9,
     });
     const bookings = audit.find((r) => r.action === "appointment.create");
     expect(Number(bookings?.n ?? 0)).toBeGreaterThan(0);
