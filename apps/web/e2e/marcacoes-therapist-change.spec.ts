@@ -222,23 +222,25 @@ test("a therapist with a conflict is refused with the agenda's conflict list, an
  * APPT-EDIT-01 - the clinic manager's case: a new therapist AND a new hour, in
  * ONE save from the ficha.
  *
- * The 15:00 booking with "E2E Therapist" cannot go to "E2E Terapeuta Clinica
- * Unica" at 15:00 (she works Monday 09:00-13:00, the G2 test above), and the
- * old date-and-hour panel kept the old therapist, so the move was two saves,
- * each refused alone. Reagendar now opens the agenda's edit panel, where both
+ * A booking with "E2E Therapist" in the afternoon cannot go to "E2E Terapeuta
+ * Clinica Unica" at the same hour (she works Monday 09:00-13:00, the G2 test
+ * above), and the old date-and-hour panel kept the old therapist, so the move
+ * was two saves, each refused alone. Reagendar now opens the agenda's edit panel, where both
  * change together and the hours are checked against the NEW therapist.
  *
  * DAY BAND 193 to 199 is this test's own: it books on the first Monday at or
- * after 193.
+ * after 193. Its hours, 16:30 and 11:15, and the next test's, 17:30, are used by
+ * no other test in this file, so two runs on a lane database that keeps its rows do not
+ * meet on one row.
  */
 test("Reagendar changes the therapist and the hour together, checked against the new therapist (APPT-EDIT-01)", async ({
   page,
 }, testInfo) => {
   const date = bandMonday(193, testInfo.retry);
-  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "15:00" });
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "16:30" });
 
   await openMarcacoes(page);
-  const r = row(page, date, "15:00");
+  const r = row(page, date, "16:30");
   await r.getByText("Gerir marcação").click();
   await r.getByRole("button", { name: "Reagendar", exact: true }).click();
 
@@ -249,26 +251,26 @@ test("Reagendar changes the therapist and the hour together, checked against the
   await expect(drawer.getByRole("combobox", { name: /Paciente/i })).toHaveCount(0);
 
   await drawer.getByRole("combobox", { name: "Terapeuta", exact: true }).selectOption({ label: THERAPIST_ONE_LOCATION });
-  await fillTime(drawer, "10:00");
+  await fillTime(drawer, "11:15");
   await drawer.getByRole("button", { name: SAVE, exact: true }).click();
 
   await expect(drawer).toBeHidden({ timeout: 12_000 });
-  // A fresh read: the row moved to 10:00 and names the new therapist.
+  // A fresh read: the row moved to 11:15 and names the new therapist.
   await openMarcacoes(page);
-  const after = row(page, date, "10:00");
+  const after = row(page, date, "11:15");
   await expect(after).toHaveCount(1, { timeout: 8_000 });
   await expect(after.getByTestId("marcacao-therapist")).toContainText(THERAPIST_ONE_LOCATION);
-  await expect(row(page, date, "15:00")).toHaveCount(0);
+  await expect(row(page, date, "16:30")).toHaveCount(0);
 });
 
 test("Reagendar shows the real refusal: the new therapist outside her hours is named, not a generic error (APPT-EDIT-01)", async ({
   page,
 }, testInfo) => {
   const date = bandMonday(203, testInfo.retry);
-  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "15:00" });
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "17:30" });
 
   await openMarcacoes(page);
-  const r = row(page, date, "15:00");
+  const r = row(page, date, "17:30");
   await r.getByText("Gerir marcação").click();
   await r.getByRole("button", { name: "Reagendar", exact: true }).click();
 
@@ -288,5 +290,5 @@ test("Reagendar shows the real refusal: the new therapist outside her hours is n
 
   // Nothing was written.
   await openMarcacoes(page);
-  await expect(row(page, date, "15:00").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);
+  await expect(row(page, date, "17:30").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);
 });
