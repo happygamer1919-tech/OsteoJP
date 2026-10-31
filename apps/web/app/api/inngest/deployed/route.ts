@@ -1,3 +1,4 @@
+import { inngest } from "@/lib/reminders/inngest/client";
 import { servedFunctions } from "@/lib/reminders/inngest/served";
 
 /**
@@ -18,6 +19,10 @@ import { servedFunctions } from "@/lib/reminders/inngest/served";
  * away. It sits under /api/inngest, which the proxy matcher already leaves out of
  * the session check (apps/web/proxy.ts). It reads no database and no secret.
  *
+ * R27: it also names the Inngest app (`app`, the id of the client the serve
+ * route registers with), so the workflow can check that the path it synced is
+ * the app it means. /api/inngest/consultation/deployed is its consultation twin.
+ *
  * force-dynamic and no-store: a cached answer would name the previous commit and
  * the workflow would wait on it, or worse, sync against it.
  */
@@ -26,6 +31,7 @@ export const dynamic = "force-dynamic";
 export function GET(): Response {
   return Response.json(
     {
+      app: inngest.id,
       commit: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
       functionCount: servedFunctions.length,
     },

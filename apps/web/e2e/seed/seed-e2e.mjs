@@ -32,6 +32,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { refuseProdApplyCwd } from "../../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17/R28: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = join(HERE, "../../../../packages/db/seed/form-templates");

@@ -18,6 +18,11 @@
  * The negative arms: a sibling named osteojp-prod-apply-other and an ordinary
  * directory are not refused, and the apply lane's own programs (which must run
  * in that checkout) do not carry the guard.
+ *
+ * R28 (strategy, 2026-10-30): the two seed scripts outside scripts/ and
+ * packages/ (the e2e fixture and the guide's clinic) carry the guard too, with
+ * every case lane-stack has. The apply lane's installers (scripts/apply-lane)
+ * stay unguarded, because they target the apply checkout by design.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -139,6 +144,9 @@ const GUARDED = [
   ["packages/db/seed/location-cleanup.ts", 86],
   ["packages/db/seed/working-hours-real.ts", 86],
   ["packages/db/seed/wave08-catalog-dryrun.ts", 86],
+  // R28.
+  ["apps/web/e2e/seed/seed-e2e.mjs", 86],
+  ["docs/guide/build/seed-guide.mjs", 86],
 ];
 
 // The programs the apply lane runs IN that checkout, the libraries they import,
@@ -178,11 +186,30 @@ const DELIBERATELY_UNGUARDED = [
   // A read-only target check: it reads the environment, writes and connects
   // nowhere, and the runbooks branch on its own 0 and 1.
   "packages/db/scripts/assert-not-prod.ts",
+  // R28: the apply lane's installers set up the apply session and its
+  // checkout, so they run there by design. The node installer the zsh one
+  // runs is with them.
+  ...fs
+    .readdirSync(path.join(ROOT, "scripts/apply-lane"))
+    .filter((f) => f.endsWith(".zsh"))
+    .map((f) => `scripts/apply-lane/${f}`),
+  "scripts/apply-lane/install-apply-settings.mjs",
 ];
+
+// R28 review: the readdir above admits ANY .zsh file under scripts/apply-lane,
+// so a new one would be left unguarded without a word. These are the three the
+// ruling names; a fourth must be added here on purpose.
+test("the apply lane's unguarded .zsh installers are exactly the three R28 names", () => {
+  const zsh = fs.readdirSync(path.join(ROOT, "scripts/apply-lane")).filter((f) => f.endsWith(".zsh")).sort();
+  assert.deepEqual(zsh, ["install-apply-settings.zsh", "remove-user-psql-allow.zsh", "set-user-classify-all-shell.zsh"]);
+});
 
 /** Spawn a script by its kind, with an environment that reaches nothing. */
 function spawnScript(rel, cwd, file = path.join(ROOT, rel)) {
-  const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: BASE, NO_COLOR: "1" };
+  // SUPABASE_URL names an .invalid host: seed-e2e.mjs falls back to the local
+  // stack's default address when it is unset, so a copy that lost its guard
+  // would otherwise write its fixture into whatever local stack is up.
+  const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: BASE, NO_COLOR: "1", SUPABASE_URL: "http://r17-guard-test.invalid:54321" };
   const [cmd, args] = rel.endsWith(".sh")
     ? ["bash", ["--noprofile", "--norc", file]]
     : rel.endsWith(".ts")
@@ -250,6 +277,50 @@ test("a symlinked working directory into the checkout is refused, by node and by
   assert.equal(sh.status, REFUSE_EXIT_CODE, show(sh));
   assert.equal(sh.stderr, `REFUSE: scripts/merge-on-green.sh does not run in the production apply checkout (${path.join(PROD, "sub")}).\n`, show(sh));
 });
+
+// R28: the two seed scripts get the cases above that lane-stack gets. Each is
+// copied into the fake checkout at its own repository path, with the guard and
+// the one relative module seed-guide.mjs imports; apps/web's node_modules is
+// linked in so seed-e2e.mjs's package import resolves before the guard runs.
+const SEED_SCRIPTS = ["apps/web/e2e/seed/seed-e2e.mjs", "docs/guide/build/seed-guide.mjs"];
+
+function prodSeedCopies() {
+  for (const rel of [...SEED_SCRIPTS, "scripts/refuse-prod-apply-cwd.mjs", "scripts/local-target.mjs"]) {
+    fs.mkdirSync(path.dirname(path.join(PROD, rel)), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, rel), path.join(PROD, rel));
+  }
+  const modules = path.join(PROD, "apps/web/node_modules");
+  if (!fs.existsSync(modules)) fs.symlinkSync(path.join(ROOT, "apps/web/node_modules"), modules, "dir");
+}
+
+for (const rel of SEED_SCRIPTS) {
+  test(`${rel} is refused by its own location, a linked file, a linked or upper-case working directory and a .. walk`, () => {
+    const refuse = (where) => `REFUSE: ${rel} does not run in the production apply checkout (${where}).\n`;
+    const expectRefusal = (r, where) => {
+      assert.equal(r.status, REFUSE_EXIT_CODE, show(r));
+      assert.equal(r.stderr, refuse(where), show(r));
+      assert.equal(r.stdout, "", "something ran before the guard" + show(r));
+    };
+    prodSeedCopies();
+    const copy = path.join(PROD, rel);
+    // Its own file: the copy in the checkout, started from an ordinary
+    // directory through the directory link.
+    expectRefusal(spawnScript(rel, NORMAL, path.join(LINK, rel)), copy);
+    // A symlink to that file from another folder, through the typed upper-case
+    // name where the volume ignores case (the Mac).
+    const typed = path.join(BASE, PROD_APPLY_SEGMENT.toUpperCase());
+    const sameDir = fs.existsSync(typed);
+    const elsewhere = fs.mkdtempSync(path.join(NORMAL, "seed-links-"));
+    const linked = path.join(elsewhere, path.basename(rel));
+    fs.symlinkSync(sameDir ? path.join(typed, rel) : copy, linked);
+    expectRefusal(spawnScript(rel, elsewhere, linked), copy);
+    // The repository's own file, started in a linked working directory, an
+    // upper-case one and a `..` walk into the checkout.
+    expectRefusal(spawnScript(rel, path.join(LINK, "sub")), path.join(PROD, "sub"));
+    if (sameDir) expectRefusal(spawnScript(rel, path.join(typed, "sub")), path.join(PROD, "sub"));
+    expectRefusal(spawnScript(rel, path.join(NORMAL, "..", PROD_APPLY_SEGMENT, "sub")), path.join(PROD, "sub"));
+  });
+}
 
 test("NEGATIVE ARM: started in a sibling or an ordinary directory, a guarded script is not refused", () => {
   for (const cwd of [OTHER, NORMAL]) {

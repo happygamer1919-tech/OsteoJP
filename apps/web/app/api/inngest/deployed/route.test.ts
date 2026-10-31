@@ -23,6 +23,7 @@ describe("/api/inngest/deployed", () => {
     const res = GET();
     expect(res.headers.get("Cache-Control")).toBe("no-store, max-age=0");
     expect(await res.json()).toEqual({
+      app: "osteojp-reminders",
       commit: "0123456789abcdef0123456789abcdef01234567",
       functionCount: servedFunctions.length,
     });
@@ -37,6 +38,7 @@ describe("/api/inngest/deployed", () => {
   it("counts the list the serve route registers, not a copy of it", () => {
     const route = readFileSync(join(__dirname, "..", "route.ts"), "utf8");
     expect(route).toMatch(/functions:\s*servedFunctions,/);
+    expect(route).toMatch(/import \{ inngest \} from "@\/lib\/reminders\/inngest\/client";/);
     expect(servedFunctions.length).toBeGreaterThan(0);
   });
 });
