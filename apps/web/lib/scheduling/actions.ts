@@ -331,6 +331,21 @@ function isDoubleConfirmedViolation(e: unknown): boolean {
 }
 
 /**
+ * APPT-EDIT-02: thrown inside moveAppointment's transaction when a
+ * therapist's UPDATE finds the row no longer has the Terapeuta its guard
+ * checked (reassigned between the read and the write). Throwing, not
+ * returning, so the transaction rolls back every row and audit this save
+ * already wrote; moveAppointment's catch turns it into the guard's own refusal.
+ * Not exported: this file is "use server" and exports only actions.
+ */
+class TherapistChangeRace extends Error {
+  constructor() {
+    super("therapist_change_race");
+    this.name = "TherapistChangeRace";
+  }
+}
+
+/**
  * Log a sanitized failure (no PII / payload) and return a generic error.
  *
  * EXCEPT for the double-confirmed constraint, which gets its OWN code so the
@@ -343,6 +358,7 @@ function isDoubleConfirmedViolation(e: unknown): boolean {
  * assim" — an override that this constraint exists to refuse, so offering it
  * would invite the user to retry something that cannot succeed.
  */
+
 function fail(action: string, e: unknown): Denied {
   if (isDoubleConfirmedViolation(e)) {
     console.error(`scheduling: ${action} refused by appointments_no_double_confirmed`);
@@ -2189,8 +2205,8 @@ async function moveAppointment(
     return outcome({ ok: false, error: "location_not_assigned" });
   }
   // SCHED-17: MOVING a shared-resource appointment is held to the same rule as
-  // creating one - the ruling names both. No therapist self-guard is added here:
-  // reschedule has never had one and relies on RLS for whose rows may move.
+  // creating one - the ruling names both. The therapist rule for a move is
+  // not the create rule: see APPT-EDIT-02 inside the transaction below.
   const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
   if (!shared.ok) return outcome({ ok: false, error: "shared_resource_location" });
   const inStart = new Date(input.startsAt);
@@ -2231,6 +2247,30 @@ async function moveAppointment(
         };
         if (!(await stillAsSeen(false))) return { ok: false, error: "not_found" };
         const ids = affected.map((a) => a.id);
+
+        // APPT-EDIT-02 - A THERAPIST KEEPS THEIR OWN VISITS. Owner ruling
+        // 2026-10-31: "A therapist may NOT change the therapist of a visit;
+        // reception does it." So for role therapist every row this save moves
+        // must already carry the Terapeuta it sends; the date, the hour and the
+        // clinic may still change. Owner, admin and reception are unchanged.
+        //
+        // AGAINST THE STORED ROW, not the request: `affected` is what the
+        // database holds before this save, read under the caller's RLS.
+        //
+        // AND AGAIN AT THE WRITE, for the therapist only: the read above takes
+        // no row lock, so reception may reassign the visit between it and the
+        // UPDATE below. That UPDATE matches on the Terapeuta checked here, and
+        // a row that no longer has it rolls the whole save back (see
+        // TherapistChangeRace). Owner, admin and reception write as before.
+        //
+        // NO SHARED-RESOURCE EXCEPTION, unlike the create door. There it lets a
+        // therapist BOOK the NESA machine; here a NESA row moved in time keeps
+        // NESA and passes, and swapping NESA for a person (or back) is a change
+        // of Terapeuta like any other. Refused before any write, audit or emit.
+        const therapistKeeps = actor.role === "therapist";
+        if (therapistKeeps && affected.some((a) => a.practitionerId !== input.practitionerId)) {
+          return { ok: false, error: "therapist_change_reception_only" };
+        }
 
         // BEFORE the update, so `startsAt` here is the instant the appointment
         // is moving FROM. Read once and reused below rather than re-read after
@@ -2395,15 +2435,26 @@ async function moveAppointment(
         if (extras.expect && !(await stillAsSeen(true))) return { ok: false, error: "not_found" };
 
         for (const t of targets) {
-          await tx
+          const moved = tx
             .update(appointments)
             .set({
               startsAt: t.startsAt,
               endsAt: t.endsAt,
               practitionerId: input.practitionerId,
               locationId: input.locationId,
-            })
-            .where(eq(appointments.id, t.id)); // RLS scopes tenant
+            });
+          if (therapistKeeps) {
+            // APPT-EDIT-02: only while the row still has the Terapeuta the guard
+            // checked (input.practitionerId, equal to it by then). None back
+            // means it was reassigned since: throw, so nothing of this save
+            // commits, and the catch below answers with the guard's refusal.
+            const kept = await moved
+              .where(and(eq(appointments.id, t.id), eq(appointments.practitionerId, input.practitionerId)))
+              .returning({ id: appointments.id });
+            if (kept.length === 0) throw new TherapistChangeRace();
+          } else {
+            await moved.where(eq(appointments.id, t.id)); // RLS scopes tenant
+          }
           await writeAppointmentAudit(tx, {
             tenantId: actor.tenantId,
             actorUserId: actor.userId,
@@ -2498,6 +2549,7 @@ async function moveAppointment(
     reminderTargets = [];
     rescheduleFanOut = [];
     careTeamAdded = [];
+    if (e instanceof TherapistChangeRace) return outcome({ ok: false, error: "therapist_change_reception_only" });
     return outcome(fail("reschedule", e));
   }
 }

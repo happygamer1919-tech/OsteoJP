@@ -381,6 +381,11 @@ export type ActionErrorCode =
   // cannot prove the slot is free. Its own code because the next action differs:
   // reception, who sees every row at the clinic, can bring it back.
   | "uncancel_shared_resource"
+  // APPT-EDIT-02: a THERAPIST rescheduling a visit to a different Terapeuta
+  // (owner ruling 2026-10-31: "A therapist may NOT change the therapist of a
+  // visit; reception does it."). Also returned when the Terapeuta changed under
+  // the save. Its own code because the next action differs: ask reception.
+  | "therapist_change_reception_only"
   | "error";
 
 export type ActionResult<T> =
