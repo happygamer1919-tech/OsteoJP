@@ -358,6 +358,12 @@ const SUITES = [
   // THIS ENTRY NEEDS THE PL-09 SUITE ON MAIN: before that pull request merges
   // the file does not exist, and an absent suite here is red.
   { file: "staff-scope-saves.db.test.ts", hard: true },
+  // 0108 (the pack read function, public.pack_instance_consuming_sessions):
+  // who gets a pack's consuming visits, proven as the real principals (staff
+  // of the pack's clinics, a patient's JWT, an untied therapist, another
+  // tenant, no claims). Named here so that its ABSENCE is red too. THIS ENTRY
+  // NEEDS 0108 ON MAIN: before #1671 merged the file did not exist.
+  { file: "pack-instance-consuming-sessions.db.test.ts", hard: true },
 ];
 
 // A test counts as NOT executed for any of these statuses.

@@ -16,8 +16,22 @@ import { isDue } from "../retry-policy";
 // EVERY WRITE IS KEYED BY ROW ID and every consultation is handled
 // independently, so one bad row cannot stop the batch.
 
-/** How often the scanner wakes. The shortest backoff is 5 minutes. */
-export const RETRY_CRON = "*/5 * * * *";
+/**
+ * When the scanner wakes: every 2 hours from 08:00 to 20:00 Lisbon, 7 wakes a
+ * day (08, 10, 12, 14, 16, 18, 20), the same form as the reminder sweep's cron.
+ *
+ * R27 (strategy, on SOLO's R12 proposal). It was every 5 minutes, about 8,640
+ * wakes and 25,900 executions a month at 3 executions a wake (the run plus its
+ * two read steps), which kept the app unsynced. At 7 wakes a day it is about 210
+ * wakes and 630 executions a month, plus one step per real retry.
+ *
+ * WHAT IT COSTS IN SPEED: a backoff now ends at the next wake, so a failed send
+ * is retried up to 2 hours after its backoff (up to 12 hours overnight, 13 on
+ * the night the clocks go back) instead of within 5 minutes. The 7-day audio
+ * bound still holds with that rounding: inngest/schedule.test.ts walks the
+ * worst case over a whole year of wakes.
+ */
+export const RETRY_CRON = "TZ=Europe/Lisbon 0 8-20/2 * * *";
 
 export const retryPendingConsultationFires = inngest.createFunction(
   {
