@@ -7,8 +7,9 @@
 //
 // This file is 0108's test (scripts/pack-instance-consuming-sessions-0108.test.mjs) with the number, the
 // files, the pins, the journal position, the carries, the verdict profiles and the migration's shape
-// changed; with the CHECK probe added (the one read-write transaction after the apply, always rolled
-// back); and with the held head moved to origin/db/HOR-02-saturday-closing-time.
+// changed, and with the held head moved to origin/db/HOR-02-saturday-closing-time. No block writes after
+// the apply: the CHECK's refusals are proven by the DB-gated suite and the rehearsal, and on production by
+// the post-check's verdicts 5 and 6, READ ONLY.
 //
 // WHAT THIS PROVES, statically, with no database:
 //   * the migration stands in its one place, written at its number, and the mirror carries the same
@@ -19,18 +20,16 @@
 //   * the pre-check and the post-check write nothing, control no transaction, compare the journal with
 //     the pinned sha256s in code, and read the grants, the shape of locations, the policies and the
 //     relation privileges by the SAME text, so a carry means the same thing on both sides;
-//   * the CHECK PROBE holds no transaction control, writes only the two new columns of one row, each
-//     attempt inside its own exception block that undoes it, and catches nothing but the CHECK's
-//     violation and its own SQLSTATE;
+//   * NO BLOCK WRITES AFTER THE APPLY: no probe file, no psql call that is not READ ONLY, and the
+//     document names where the refusals are proven instead;
 //   * the post-check's pinned comment md5s are the md5s of the migration's own COMMENT strings, and the
-//     outcomes verdict 6 and the probe expect follow from the migration's CHECK expression;
-//   * THE VERDICT PROFILE: every verdict prints OK or FAIL, and only post-check verdict 7 and probe
-//     verdict 1 can read VACUOUS; the blocks require 12 OK of the pre-check, 14 OK of the post-check and
-//     8 OK of the probe, each with 0 VACUOUS and 0 FAIL;
+//     outcomes verdict 6 expects follow from the migration's CHECK expression;
+//   * THE VERDICT PROFILE: every verdict prints OK or FAIL, and only post-check verdict 7 can read
+//     VACUOUS; the blocks require 12 OK of the pre-check and 14 OK of the post-check, each with
+//     0 VACUOUS and 0 FAIL;
 //   * every sha256 the document pins is the real file, or the value read on this tree, and the
 //     sidecar pins the document;
-//   * THE ONLY WRITE THAT CAN STAY is verified-migrate, once; every psql call is READ ONLY but the
-//     probe's, which is opened by begin and closed by rollback;
+//   * THE ONLY WRITE IS verified-migrate, once; every psql call is READ ONLY;
 //   * THE CLOCK IS THE WEEKDAY TABLE (Saturday 08:00 to 13:00, kept on purpose) in stage 0 and stage 1,
 //     and the weekday table AND strategy's start windows in the two dispatch blocks; R9's proofs 2 and
 //     3 are fixed `no`, there is no daytime path, no override arm, and no block carries a date; and a
@@ -74,6 +73,7 @@ const PREV_PATH = `packages/db/migrations/${PREV_TAG}.sql`;
 const JOURNAL = "packages/db/migrations/meta/_journal.json";
 const PRE = "scripts/db/precheck-0109-location-saturday-hours.sql";
 const POST = "scripts/db/postcheck-0109-location-saturday-hours.sql";
+/** Removed before the rehearsal (the coordinator, 2026-10-31); a test holds it gone. */
 const PROBE = "scripts/db/probe-0109-location-saturday-hours.sql";
 const DOC = "docs/migration-apply-0109.md";
 const SIDECAR = "docs/migration-apply-0109.sha256";
@@ -152,39 +152,6 @@ export function writeProblems(sql) {
       }
     }
   }
-  return problems;
-}
-
-/** The probe's body, between its dollar quotes, and the file outside them. */
-export function probeParts(sql) {
-  const code = codeOf(sql);
-  const m = /DO \$probe\$\n([\s\S]*?)\n\$probe\$;/.exec(code);
-  if (!m) return null;
-  return { body: m[1], outside: code.replace(m[0], "DO PROBE;") };
-}
-/** THE CHECK PROBE: what it may write, and what it may never do. [] when it holds. */
-export const PROBE_UPDATE = "UPDATE public.locations SET saturday_opens_at = v_pair.o, saturday_closes_at = v_pair.c WHERE id = v_id;";
-export function probeProblems(sql) {
-  const parts = probeParts(sql);
-  if (parts === null) return ["the probe has no DO $probe$ block"];
-  const problems = [];
-  const sets = parts.outside.split("\n").map((l) => l.trim()).filter((l) => /^SET\b/i.test(l));
-  const wantSets = ["SET LOCAL lock_timeout = '5s';", "SET LOCAL statement_timeout = '30s';", "SET LOCAL row_security = off;", "SET LOCAL search_path = public;"];
-  if (JSON.stringify(sets) !== JSON.stringify(wantSets)) problems.push(`the probe's settings are not exactly ${wantSets.join(" ")}`);
-  for (const line of parts.outside.split("\n")) {
-    const t = line.trim();
-    if (/^(INSERT|UPDATE|DELETE|TRUNCATE|CREATE|ALTER|DROP|GRANT|REVOKE|COPY|MERGE|CALL|LOCK|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|BEGIN|END|ABORT|START|PREPARE|RESET)\b/i.test(t)) problems.push(`a statement outside the DO block: ${t.slice(0, 60)}`);
-  }
-  if (/\b(COMMIT|ROLLBACK|SAVEPOINT|RELEASE|ABORT)\b/i.test(unquoted(parts.body))) problems.push("transaction control inside the DO block");
-  const flat = unquoted(parts.body).replace(/\s+/g, " ");
-  if ((flat.match(/\b(INSERT|UPDATE|DELETE|TRUNCATE|MERGE|COPY|EXECUTE|PERFORM\s+dblink)\b/gi) ?? []).length !== 1) problems.push("not exactly one write in the DO block, or an EXECUTE");
-  const body = parts.body.replace(/\s+/g, " ");
-  if (!body.includes(PROBE_UPDATE)) problems.push("the one write is not the UPDATE of the two new columns on one row");
-  const attempt = "BEGIN UPDATE public.locations SET saturday_opens_at = v_pair.o, saturday_closes_at = v_pair.c WHERE id = v_id; GET DIAGNOSTICS v_n = ROW_COUNT; RAISE EXCEPTION USING ERRCODE = 'S0109', MESSAGE = v_n::text; EXCEPTION WHEN check_violation THEN";
-  if (!body.includes(attempt)) problems.push("the UPDATE is not inside its own exception block, undone by the probe's own SQLSTATE");
-  const handlers = [...body.matchAll(/\bWHEN ([A-Za-z_]+|SQLSTATE '[0-9A-Z]{5}') THEN\b/g)].map((m) => m[1]);
-  if (JSON.stringify(handlers) !== JSON.stringify(["check_violation", "SQLSTATE 'S0109'"])) problems.push(`the probe catches ${handlers.join(", ")}, not exactly the CHECK's violation and its own SQLSTATE`);
-  if (!body.includes("SELECT l.id INTO v_id FROM public.locations l ORDER BY l.id LIMIT 1;")) problems.push("the probe does not pick one row, the lowest id");
   return problems;
 }
 
@@ -303,7 +270,7 @@ export function blockHazards(block) {
   return out;
 }
 
-const OWN_PINS = ["SHA0109", "SHAPRE", "SHAPOST", "SHAPROBE"];
+const OWN_PINS = ["SHA0109", "SHAPRE", "SHAPOST"];
 const PIN_NAMES = [...OWN_PINS, ...Object.keys(EXTERNAL_PINS), "SHAGATE"];
 const PIN_LINE = new RegExp(`^(${PIN_NAMES.join("|")})=(\\S+)$`, "gm");
 
@@ -320,13 +287,13 @@ export function gateProblems(gate, fileText) {
 /** Every pin the document gives is the file's real sha256 or the given external value. */
 export function pinProblems(md, actual, gateText) {
   const problems = [];
-  const own = { SHA0109: actual.migration, SHAPRE: actual[PRE], SHAPOST: actual[POST], SHAPROBE: actual[PROBE] };
+  const own = { SHA0109: actual.migration, SHAPRE: actual[PRE], SHAPOST: actual[POST] };
   for (const [name, value] of pinLines(md)) {
     if (name in own && value !== own[name]) problems.push(`${name} pins ${value}, the file is ${own[name]}`);
     if (name in EXTERNAL_PINS && value !== EXTERNAL_PINS[name]) problems.push(`${name} pins ${value}, the document was given ${EXTERNAL_PINS[name]}`);
     if (name === "SHAGATE") problems.push(...gateProblems(value, gateText));
   }
-  for (const [file, sha] of [[MIGRATION_PATH, actual.migration], [PRE, actual[PRE]], [POST, actual[POST]], [PROBE, actual[PROBE]]]) {
+  for (const [file, sha] of [[MIGRATION_PATH, actual.migration], [PRE, actual[PRE]], [POST, actual[POST]]]) {
     const row = md.split("\n").find((l) => l.startsWith("| ") && l.includes(`\`${file}\``) && /sha256 `[0-9a-f]{64}`/.test(l));
     if (!row) problems.push(`the fact table gives no sha256 for ${file}`);
     else if (!row.includes(`sha256 \`${sha}\``)) problems.push(`the fact table's sha256 for ${file} is not ${sha}`);
@@ -338,7 +305,7 @@ export function pinProblems(md, actual, gateText) {
 
 /** The file each pin stands for. SHAGATE is not here: it feeds R9 proof 1, which is printed and decides nothing. */
 export const PIN_FILES = Object.freeze({
-  SHA0109: MIGRATION_PATH, SHAPREV: PREV_PATH, SHAPRE: PRE, SHAPOST: POST, SHAPROBE: PROBE,
+  SHA0109: MIGRATION_PATH, SHAPREV: PREV_PATH, SHAPRE: PRE, SHAPOST: POST,
   SHAVM: "packages/db/scripts/verified-migrate.mjs", SHAGUARD: "scripts/assert-production-target.mjs",
   SHAPTM: "scripts/production-target.mjs", SHAREADER: "packages/db/scripts/read-applied-migrations.mjs", SHACJ: "scripts/check-journal.mjs",
 });
@@ -370,23 +337,18 @@ export function compareFirstProblems(block) {
   return problems;
 }
 
-/** The probe's one psql call, the only one not opened READ ONLY. */
-export const PROBE_RUN = `psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin" -f ${PROBE} -c "rollback" 2>&1 | tee /tmp/0109-probe.out || `;
-/** THE ONLY WRITE THAT CAN STAY IS verified-migrate: it runs once, every psql call opens READ ONLY but the probe's, and no block holds a SQL writing verb. */
+/** THE ONLY WRITE IS verified-migrate: it runs once, every psql call opens READ ONLY, none commits, and no block holds a SQL writing verb. */
 export function onlyWriteProblems(blocks) {
   const problems = [];
   const lines = blocks.flatMap((b) => b.split("\n"));
   const vm = lines.filter((l) => l.includes("verified-migrate.mjs --"));
   if (vm.length !== 1) problems.push(`verified-migrate runs ${vm.length} times, not once`);
-  let probes = 0;
   for (const l of lines) {
     if (!/(^|[ (])psql "/.test(l)) continue;
     if ((l.match(/(^|[ (])psql "/g) ?? []).length !== 1) problems.push(`two psql calls on one line: ${l.slice(0, 90)}`);
     if (/-c "(commit|end)"/i.test(l)) problems.push(`a psql call that commits: ${l.slice(0, 90)}`);
-    if (l.startsWith(PROBE_RUN)) { probes += 1; continue; }
     if (!l.includes('-c "begin read only"')) problems.push(`a psql call that is not READ ONLY: ${l.slice(0, 90)}`);
   }
-  if (probes !== 1) problems.push(`the probe runs ${probes} times, not once`);
   for (const l of lines) {
     const sqlWrite = /\b(GRANT|REVOKE|INSERT INTO|DELETE FROM|UPDATE public|TRUNCATE|DROP|COMMIT|ALTER (TABLE|DEFAULT|ROLE|SEQUENCE|POLICY)|CREATE (TABLE|SEQUENCE|POLICY|FUNCTION|INDEX|ROLE))\b/.exec(l.replace(/echo "[^"]*"/g, ""));
     if (sqlWrite) problems.push(`a SQL writing statement in a block: ${sqlWrite[0]}`);
@@ -612,7 +574,7 @@ const CARRY_CHECKS = [
   `echo "${MD5_VARS.map((v) => `\${${v}}`).join(" ")}" | grep -qxE '[0-9a-f]{32}( [0-9a-f]{32}){3}' || `,
 ];
 
-/** What stage 1 hands the pre-check and verified-migrate, and what stage 2 hands the post-check and the probe, read off the text. */
+/** What stage 1 hands the pre-check and verified-migrate, and what stage 2 hands the post-check, read off the text. */
 export function argumentProblems(s1, s2) {
   const problems = [];
   const l1 = s1.split("\n");
@@ -627,16 +589,13 @@ export function argumentProblems(s1, s2) {
   if (!l2.includes(CARRY_FUNCTION)) problems.push("stage 2's carry() does not match a row by its whole name");
   const want = `psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 ${CARRY_MAP.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0109-postcheck.out || `;
   if (!l2.some((l) => l.startsWith(want))) problems.push("stage 2 does not hand the post-check the seven carries, each under its own name, inside begin read only");
-  if (!l2.some((l) => l.startsWith(PROBE_RUN))) problems.push("stage 2 does not run the probe inside its own begin and rollback");
   for (const c of CARRY_CHECKS) if (!l2.some((l) => l.startsWith(c) && EXPLICIT_HALT.test(l))) problems.push(`stage 2 lacks the carry check ${c}`);
   const at = (start) => l2.findIndex((l) => l.startsWith(start));
   if (CARRY_CHECKS.some((c) => at(c) > at('psql "${DATABASE_URL_DIRECT}" -X -P pager=off'))) problems.push("a carry check follows the post-check it guards");
-  if (!(at(PROBE_RUN) > at(want)) || !(at(PROBE_RUN) > at('[ "${HN}" = 1 ] || '))) problems.push("the probe does not follow the post-check and the journal reads");
-  if (!(at('[ "${RR}" = "0 of ${LR}" ] || ') > at(PROBE_RUN))) problems.push("the read after the probe does not follow it, or does not compare with the carry locations_rows");
   return problems;
 }
 
-/** Stage 1 requires 12 OK, 0 VACUOUS, 0 FAIL of the pre-check; stage 2 requires 14, 0, 0 of the post-check and 8, 0, 0 of the probe. */
+/** Stage 1 requires 12 OK, 0 VACUOUS, 0 FAIL of the pre-check; stage 2 requires 14, 0, 0 of the post-check. */
 export function profileBlockProblems(s1, s2) {
   const problems = [];
   const has = (b, start) => b.split("\n").some((l) => l.startsWith(start) && EXPLICIT_HALT.test(l));
@@ -644,7 +603,6 @@ export function profileBlockProblems(s1, s2) {
   for (const [n, w] of [["FAILS", "FAIL"], ["VACS", "VACUOUS"], ["OKS", "OK"]]) {
     if (!s1.split("\n").includes(count(n, w, "precheck.new"))) problems.push(`stage 1 does not count ${n} in the pre-check transcript`);
     if (!s2.split("\n").includes(count(n, w, "postcheck.out"))) problems.push(`stage 2 does not count ${n} in the post-check transcript`);
-    if (!s2.split("\n").includes(count(`P${n}`, w, "probe.out"))) problems.push(`stage 2 does not count P${n} in the probe transcript`);
   }
   if (!has(s1, '[ "${FAILS}" = 0 ] || ')) problems.push("stage 1 does not require 0 FAIL");
   if (!has(s1, '[ "${VACS}" = 0 ] || ')) problems.push("stage 1 does not require 0 VACUOUS");
@@ -652,9 +610,6 @@ export function profileBlockProblems(s1, s2) {
   if (!has(s2, '[ "${FAILS}" = 0 ] || ')) problems.push("stage 2 does not require 0 FAIL of the post-check");
   if (!has(s2, '[ "${VACS}" = 0 ] || ')) problems.push("stage 2 does not require 0 VACUOUS of the post-check");
   if (!has(s2, '[ "${OKS}" = 14 ] || ')) problems.push("stage 2 does not require 14 OK of the post-check");
-  if (!has(s2, '[ "${PFAILS}" = 0 ] || ')) problems.push("stage 2 does not require 0 FAIL of the probe");
-  if (!has(s2, '[ "${PVACS}" = 0 ] || ')) problems.push("stage 2 does not require 0 VACUOUS of the probe");
-  if (!has(s2, '[ "${POKS}" = 8 ] || ')) problems.push("stage 2 does not require 8 OK of the probe");
   return problems;
 }
 
@@ -677,12 +632,11 @@ export function fillDispatch(block, v) {
 const migration = read(MIGRATION_PATH);
 const pre = read(PRE);
 const post = read(POST);
-const probe = read(PROBE);
 const doc = read(DOC);
 /** The document as it reads after SOLO's READY line: the same bytes without the NOT READY line. */
 const readyDoc = doc.startsWith(`${NOT_READY_LINE}\n`) ? doc.slice(NOT_READY_LINE.length + 1) : doc;
 const gateText = existsSync(join(ROOT, GATE_FILE)) ? read(GATE_FILE) : null;
-const ACTUAL = { migration: sha256(migration), [PRE]: sha256(pre), [POST]: sha256(post), [PROBE]: sha256(probe) };
+const ACTUAL = { migration: sha256(migration), [PRE]: sha256(pre), [POST]: sha256(post) };
 const BYS = "BEFORE YOU START: every check passed, and the journal reads 106.";
 const STAGE0 = "0109 HELD HEAD, NUMBER, FILES AND CLOCK VERIFIED";
 const CLOCKCHK = "CLOCK: closed hours by the weekday table, inside the run window the dispatch names";
@@ -703,7 +657,7 @@ const swap = (text, from, to) => {
 test("the migration stands in its one place, written at its number: its bytes are the pinned sha256, and the mirror carries the same statements", () => {
   assert.equal(sha256(migration), MIGRATION_SHA);
   assert.deepEqual(statementsOf(read(`supabase/migrations/${TAG}.sql`)), statementsOf(migration));
-  for (const [name, text] of [["migration", migration], ["pre", pre], ["post", post], ["probe", probe]]) assert.doesNotMatch(text, /[^\x09\x0a\x20-\x7e]/, name);
+  for (const [name, text] of [["migration", migration], ["pre", pre], ["post", post]]) assert.doesNotMatch(text, /[^\x09\x0a\x20-\x7e]/, name);
   const live = JSON.parse(read(JOURNAL));
   const e = live.entries.find((x) => x.tag === TAG);
   const p = live.entries.find((x) => x.tag === PREV_TAG);
@@ -742,7 +696,7 @@ test("CONTROLS, ONE RULE AT A TIME: each migrationProblems rule refuses an input
   }
 });
 
-test("THE POST-CHECK'S PINS FOLLOW FROM THE MIGRATION: the comment md5s are the md5s of its own COMMENT strings, and the outcomes verdict 6 and the probe expect are its CHECK's", () => {
+test("THE POST-CHECK'S PINS FOLLOW FROM THE MIGRATION: the comment md5s are the md5s of its own COMMENT strings, and the outcomes verdict 6 expects are its CHECK's", () => {
   const comments = commentsOf(migration);
   assert.deepEqual(Object.keys(comments).sort(), ["saturday_closes_at", "saturday_opens_at"]);
   for (const [col, text] of Object.entries(comments)) {
@@ -758,14 +712,6 @@ test("THE POST-CHECK'S PINS FOLLOW FROM THE MIGRATION: the comment md5s are the 
   const outcome = pairs.map(([o, c]) => (checkAdmits(o, c) ? "admitted" : "refused")).join(",");
   assert.equal(outcome, "admitted,admitted,refused,refused,refused,refused");
   assert.ok(post.includes(`CASE WHEN expr_result = '${outcome}' THEN 'OK' ELSE 'FAIL' END FROM j`));
-  // The probe: four refused, one admitted, each by the CHECK's own name.
-  const probePairs = [["09:00", null], [null, "13:00"], ["13:00", "09:00"], ["09:00", "09:00"], ["09:00", "13:00"]];
-  const pvalues = probePairs.map(([o, c], i) => `(${i + 2}, ${lit(o)}, ${lit(c)})`).join(", ");
-  assert.ok(probe.replace(/\s+/g, " ").includes(`(VALUES ${pvalues}) AS v(k, o, c)`), "the probe's pairs are not these five, in this order");
-  probePairs.forEach(([o, c], i) => {
-    const want = checkAdmits(o, c) ? "admitted, 1 row, undone" : `refused by ${CHECK_NAME}`;
-    assert.ok(probe.includes(`CASE WHEN p${i + 2} = '${want}' THEN 'OK' ELSE 'FAIL' END FROM j`), `probe verdict ${i + 2}: ${want}`);
-  });
   // The CHECK the post-check pins is the migration's, as Postgres renders it.
   const def = "CHECK ((((saturday_opens_at IS NULL) AND (saturday_closes_at IS NULL)) OR ((saturday_opens_at IS NOT NULL) AND (saturday_closes_at IS NOT NULL) AND (saturday_closes_at > saturday_opens_at))))";
   assert.ok(post.includes(`AND con_shape = 'c/validated ${def}'`));
@@ -828,35 +774,29 @@ test("the read-only check files write nothing and control no transaction of thei
   assert.notDeepEqual(aclDefaultProblems(pre.replace(`THEN 's'::"char"`, `THEN 'S'::"char"`)), []);
 });
 
-test("THE CHECK PROBE: no transaction control, one UPDATE of the two new columns on one row, each attempt undone in its own exception block, and nothing caught but the CHECK's violation and its own SQLSTATE", () => {
-  assert.deepEqual(probeProblems(probe), []);
-  assert.ok(probe.includes(`'refused by ' || coalesce(nullif(v_con, ''), 'no constraint name')`));
-  // RED ARMS, one per rule.
-  const one = (from, to) => probeProblems(swap(probe, from, to));
-  assert.deepEqual(one("SET LOCAL lock_timeout = '5s';", "SET LOCAL lock_timeout = '0';"), ["the probe's settings are not exactly SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '30s'; SET LOCAL row_security = off; SET LOCAL search_path = public;"]);
-  assert.ok(probeProblems(`${probe}\nCOMMIT;\n`).some((p) => /^a statement outside the DO block: COMMIT/.test(p)));
-  assert.ok(probeProblems(`${probe}\nEND;\n`).some((p) => /^a statement outside the DO block: END/.test(p)));
-  assert.ok(one("  PERFORM set_config('sathours.probe', 'ran', true);", "  COMMIT;\n  PERFORM set_config('sathours.probe', 'ran', true);").includes("transaction control inside the DO block"));
-  assert.ok(one("       WHERE id = v_id;", "       ;").includes("the one write is not the UPDATE of the two new columns on one row"));
-  assert.ok(one("      RAISE EXCEPTION USING ERRCODE = 'S0109', MESSAGE = v_n::text;\n", "").includes("the UPDATE is not inside its own exception block, undone by the probe's own SQLSTATE"));
-  assert.ok(one("      WHEN SQLSTATE 'S0109' THEN", "      WHEN OTHERS THEN").some((p) => /^the probe catches check_violation, OTHERS/.test(p)));
-  assert.ok(one("  SELECT count(*)::int INTO v_before FROM public.locations;", "  SELECT count(*)::int INTO v_before FROM public.locations;\n  DELETE FROM public.audit_log WHERE false;").includes("not exactly one write in the DO block, or an EXECUTE"));
-  assert.ok(one("ORDER BY l.id LIMIT 1;", "ORDER BY l.id;").includes("the probe does not pick one row, the lowest id"));
-  assert.deepEqual(probeProblems("SELECT 1;"), ["the probe has no DO $probe$ block"]);
+test("NO BLOCK WRITES AFTER THE APPLY: the probe file is gone, nothing names it, and the document says where the CHECK's refusals are proven instead", () => {
+  assert.ok(!existsSync(join(ROOT, PROBE)), `${PROBE} is back`);
+  assert.doesNotMatch(doc.split("## Review history")[0], /probe/i, "the document still names a probe outside its review history");
+  for (const b of blocksOf(doc)) assert.doesNotMatch(b, /probe|-c "begin" /i, "a block names a probe or opens a read-write transaction");
+  assert.doesNotMatch(codeOf(post), /probe/i);
+  const section = between(doc, "### The CHECK's refusals, and why no block writes to prove them", "## THE CLOSING JOURNAL READ");
+  assert.ok(section, "the section is gone");
+  for (const term of ["`packages/db/tests/location-saturday-hours.db.test.ts` (13 of 13 at `466042e4`)", "the rehearsal", "verdict 5 pins the CHECK's exact `pg_get_constraintdef` text", "verdict 6 evaluates the stored expression"]) assert.ok(section.includes(term), term);
+  assert.ok(existsSync(join(ROOT, "packages/db/tests/location-saturday-hours.db.test.ts")));
+  // RED ARM: a read-write psql call planted in stage 2 is seen.
+  const planted = `psql "\${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -c "begin" -f ${PROBE} -c "rollback" || { echo "STOP: x"; exit 1; }`;
+  assert.deepEqual(onlyWriteProblems([blockWith(doc, STAGE1), `${blockWith(doc, STAGE2)}${planted}\n`]), [`a psql call that is not READ ONLY: ${planted.slice(0, 90)}`]);
 });
 
-test("THE VERDICT PROFILES: 12 verdicts, 6 carries and 5 infos before; 14 verdicts after, of which only 7 can read VACUOUS; 8 in the probe, of which only 1 can; and the blocks require exactly those", () => {
+test("THE VERDICT PROFILES: 12 verdicts, 6 carries and 5 infos before; 14 verdicts after, of which only 7 can read VACUOUS; and the blocks require exactly those", () => {
   assert.deepEqual(profileProblems(pre, 12, []), []);
   assert.deepEqual(profileProblems(post, 14, [7]), []);
-  assert.deepEqual(profileProblems(probe, 8, [1]), []);
   const tally = (rows) => rows.map(kindOf).reduce((a, k) => ({ ...a, [k]: (a[k] ?? 0) + 1 }), {});
   assert.deepEqual(tally(verdictRowsOf(pre)), { verdict: 12, carry: 6, info: 5 });
   assert.deepEqual(tally(verdictRowsOf(post)), { verdict: 14 });
-  assert.deepEqual(tally(verdictRowsOf(probe)), { verdict: 8 });
   assert.deepEqual(verdictRowsOf(pre).filter((r) => kindOf(r) === "verdict").map((r) => r.n), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, "journal_rows_before"]);
   assert.deepEqual(verdictRowsOf(post).map((r) => r.n), Array.from({ length: 14 }, (_, i) => i));
-  assert.deepEqual(verdictRowsOf(probe).map((r) => r.n), Array.from({ length: 8 }, (_, i) => i));
-  for (const [file, profile] of [[pre, "12 OK / 0 VACUOUS / 0 FAIL"], [post, "14 OK / 0 VACUOUS / 0 FAIL"], [probe, "8 OK / 0 VACUOUS / 0 FAIL"]]) assert.ok(file.includes(`'${profile}', 'SUMMARY'`), profile);
+  for (const [file, profile] of [[pre, "12 OK / 0 VACUOUS / 0 FAIL"], [post, "14 OK / 0 VACUOUS / 0 FAIL"]]) assert.ok(file.includes(`'${profile}', 'SUMMARY'`), profile);
   // RED ARMS
   const v7 = "CASE WHEN rows_state = 'read' AND rows_n = 0 THEN 'VACUOUS'";
   assert.deepEqual(profileProblems(swap(post, v7, "CASE WHEN rows_state = 'read' AND rows_n = 0 THEN 'OK'"), 14, [7]), ["the verdicts that can read VACUOUS are , not 7"]);
@@ -868,9 +808,8 @@ test("THE VERDICT PROFILES: 12 verdicts, 6 carries and 5 infos before; 14 verdic
   assert.deepEqual(profileBlockProblems(s1, s2), []);
   assert.deepEqual(profileBlockProblems(swap(s1, '[ "${OKS}" = 12 ] || ', '[ "${OKS}" = 11 ] || '), s2), ["stage 1 does not require 12 OK"]);
   assert.deepEqual(profileBlockProblems(s1, swap(s2, '[ "${OKS}" = 14 ] || ', '[ "${OKS}" = 13 ] || ')), ["stage 2 does not require 14 OK of the post-check"]);
-  assert.deepEqual(profileBlockProblems(s1, swap(s2, '[ "${POKS}" = 8 ] || ', '[ "${POKS}" -ge 7 ] || ')), ["stage 2 does not require 8 OK of the probe"]);
   assert.deepEqual(profileBlockProblems(s1, swap(s2, '[ "${VACS}" = 0 ] || ', '[ "${VACS}" -le 1 ] || ')), ["stage 2 does not require 0 VACUOUS of the post-check"]);
-  assert.match(s2, /^echo "0109 POST-CHECK PASSED\. 12\/12 pre-check OK, post-check \$\{OKS\} OK \/ \$\{VACS\} VACUOUS \/ 0 FAIL, CHECK probe \$\{POKS\} OK and rolled back, journal \$\{J\} to \$\{JA\}; /m);
+  assert.match(s2, /^echo "0109 POST-CHECK PASSED\. 12\/12 pre-check OK, post-check \$\{OKS\} OK \/ \$\{VACS\} VACUOUS \/ 0 FAIL, journal \$\{J\} to \$\{JA\}; /m);
 });
 
 test("blocksOf takes only the plain fences, and blockWith finds exactly one block", () => {
@@ -886,7 +825,7 @@ test("every pin is the real file or the given value, and SHAGATE is the gate fil
   for (const [name, file] of Object.entries(PIN_FILES)) {
     if (name in EXTERNAL_PINS) assert.equal(sha256(read(file)), EXTERNAL_PINS[name], `${name}: ${file}`);
   }
-  assert.notDeepEqual(pinProblems(doc.replace(`SHAPROBE=${ACTUAL[PROBE]}`, `SHAPROBE=${"0".repeat(64)}`), ACTUAL, gateText), []);
+  assert.notDeepEqual(pinProblems(doc.replace(`SHAPOST=${ACTUAL[POST]}`, `SHAPOST=${"0".repeat(64)}`), ACTUAL, gateText), []);
   assert.notDeepEqual(pinProblems(doc, { ...ACTUAL, [POST]: "f".repeat(64) }, gateText), []);
   assert.notDeepEqual(pinProblems(doc.replace(/^SHAGATE=.*$/m, "SHAGATE=TODO"), ACTUAL, gateText), []);
   const gate = pinLines(doc).find(([n]) => n === "SHAGATE")[1];
@@ -916,26 +855,27 @@ test("THE HALT RULE stands in the document word for word: 0094's rule with the n
   ].join("\n");
   assert.ok(doc.includes(`${rule}\n\n`), "the halt rule is not in the document word for word");
   assert.ok(read("docs/migration-apply-0094.md").includes(rule.replaceAll("0109", "0094")), "the rule is no longer 0094's with the number changed");
-  assert.ok(doc.includes("**Stage 2 is READ ONLY but for one psql call, the CHECK probe**"), "the document does not say where stage 2 is not READ ONLY");
+  assert.ok(doc.includes("**Stage 2 is READ ONLY, every psql call of it**"), "the document does not say stage 2 is READ ONLY");
 });
 
-test("THE ONLY WRITE THAT CAN STAY IS verified-migrate, once; every psql call is READ ONLY but the probe's; and no rollback statement stands in any block", () => {
+test("THE ONLY WRITE IS verified-migrate, once; every psql call is READ ONLY; and no rollback statement stands in any block", () => {
   const blocks = blocksOf(doc);
   assert.deepEqual(onlyWriteProblems(blocks), []);
-  // Eight psql calls: the pre-check and the clinics' rows; the post-check, the journal count, the count by hash, the last three rows, the probe and the read after it.
-  assert.equal(blocks.flatMap((b) => b.split("\n")).filter((l) => /(^|[ (])psql "/.test(l)).length, 8);
+  assert.equal(blocks.flatMap((b) => b.split("\n")).filter((l) => /(^|[ (])psql "/.test(l)).length, 6);
   assert.ok(doc.includes("## Rollback") && doc.includes("GREEN never runs that statement from this document"));
   for (const b of blocks) for (const mark of ["DROP COLUMN", "DROP CONSTRAINT", "ALTER TABLE", "UPDATE public.locations", "DROP TABLE"]) assert.ok(!b.includes(mark), `${mark} stands in a block GREEN pastes`);
   const s1 = blockWith(doc, STAGE1);
   const s2 = blockWith(doc, STAGE2);
   assert.deepEqual(onlyWriteProblems([s1, s1, s2]), ["verified-migrate runs 2 times, not once"]);
   assert.match(onlyWriteProblems([s1, swap(s2, `-c "begin read only" -f ${POST} -c "rollback"`, `-c "begin" -f ${POST} -c "rollback"`)])[0], /^a psql call that is not READ ONLY: psql /);
-  const committing = PROBE_RUN.replace('-c "rollback"', '-c "commit"').slice(0, 90);
-  assert.deepEqual(onlyWriteProblems([s1, swap(s2, `-c "begin" -f ${PROBE} -c "rollback"`, `-c "begin" -f ${PROBE} -c "commit"`)]), [`a psql call that commits: ${committing}`, `a psql call that is not READ ONLY: ${committing}`, "the probe runs 0 times, not once"]);
+  // Six psql calls: the pre-check and the clinics' rows; the post-check, the journal count, the count by hash and the last three rows.
+  const committing = swap(s2, `-c "begin read only" -f ${POST} -c "rollback"`, `-c "begin" -f ${POST} -c "commit"`);
+  const line = committing.split("\n").find((l) => l.includes(`-f ${POST} -c "commit"`)).slice(0, 90);
+  assert.deepEqual(onlyWriteProblems([s1, committing]), [`a psql call that commits: ${line}`, `a psql call that is not READ ONLY: ${line}`]);
   assert.deepEqual(onlyWriteProblems([s1, `${s2}\npsql "\${DATABASE_URL_DIRECT}" -X -c "begin read only" -c "DROP TABLE public.locations"\n`]), ["a SQL writing statement in a block: DROP"]);
 });
 
-test("THE ARGUMENTS: what stage 1 hands the pre-check and verified-migrate, and what stage 2 hands the post-check and the probe, read off the text", () => {
+test("THE ARGUMENTS: what stage 1 hands the pre-check and verified-migrate, and what stage 2 hands the post-check, read off the text", () => {
   const s1 = blockWith(doc, STAGE1);
   const s2 = blockWith(doc, STAGE2);
   assert.deepEqual(argumentProblems(s1, s2), []);
@@ -945,7 +885,6 @@ test("THE ARGUMENTS: what stage 1 hands the pre-check and verified-migrate, and 
   assert.ok(argumentProblems(s1, swap(s2, '-v locations_shape_md5="${LS}" -v opens_at_grants_md5="${OG}"', '-v locations_shape_md5="${OG}" -v opens_at_grants_md5="${LS}"')).length >= 1);
   assert.deepEqual(argumentProblems(s1, swap(s2, "grep -qxE '[0-9]+( [0-9]+){2}'", "grep -qxE '.*'")), [`stage 2 lacks the carry check ${CARRY_CHECKS[1]}`]);
   assert.deepEqual(argumentProblems(swap(s1, "--expect-pending 1 ", "--expect-pending 2 "), s2), [`stage 1 does not run verified-migrate with --tag ${TAG} --sha256 \${SHA0109} --expect-pending 1`]);
-  assert.deepEqual(argumentProblems(s1, swap(s2, '[ "${RR}" = "0 of ${LR}" ] || ', '[ "${RR}" != "" ] || ')), ["the read after the probe does not follow it, or does not compare with the carry locations_rows"]);
   assert.ok(s1.split("\n").some((l) => l.startsWith("W108=$(node -e ") && l.includes(`p.tag==='${PREV_TAG}'?String(p.when):'none'`)));
 });
 
@@ -1037,9 +976,6 @@ test("A POST-COMMIT STOP SAYS WHAT STANDS: stage 2 and the closing read; UNKNOWN
   for (const b of [blockWith(doc, STAGE0), s1, blockWith(doc, BYS), blockWith(doc, CLOCKCHK)]) assert.ok(!b.includes("Treat the state as UNKNOWN"));
   const postLine = s2.split("\n").find((l) => l.startsWith(POST_RUN_START));
   assert.ok(postLine.includes(`echo "STOP: the post-check did not complete (psql's lines are above), or its transcript could not be written. ${POST_RUN_SENTENCE}"; exit 1; }`));
-  // The probe's own STOPs say the write stands and the probe's transaction did not commit.
-  const probeLine = s2.split("\n").find((l) => l.startsWith(PROBE_RUN));
-  assert.match(probeLine, /Its transaction was not committed: the file holds no COMMIT, and a psql that stops ends its connection, which rolls the transaction back\. 0109 IS APPLIED and the write stands\./);
   // RED ARMS
   const bare = swap(s2, `STOP: a count carry is not a number. ${WRITE_STANDS}`, "STOP: a count carry is not a number");
   assert.match(postCommitProblems(bare, M2, CONTRADICTING_READS.stage2)[0], /a post-commit STOP that does not say the write stands/);
@@ -1123,7 +1059,7 @@ test("THE HELD HEAD: every block that reads a head names origin/db/HOR-02-saturd
 const MUST_HALT = [
   /^cd /, /\bgit (fetch|checkout|status|grep|show|rev-parse origin\/)\b/, /^rm -f /, /^mv /, /^touch /, /\| tee /,
   /^node (scripts|packages)\//, /^node --env-file=/, /^node -e /, /\bpsql /, />>? \/tmp\/0109-/, /^set -o allexport/,
-  /^(T108|W108|REC|START|NOWZ|DTZ|NOW|NEXT|PREV|HD|S2|TIP|WAS|DOC|BAN|SIDE|SM|SP|SPRE|SPOST|SPROBE|SV|SG|SC|RW|MW|WREAD|STRAY)=\$\(/,
+  /^(T108|W108|REC|START|NOWZ|DTZ|NOW|NEXT|PREV|HD|S2|TIP|WAS|DOC|BAN|SIDE|SM|SP|SPRE|SPOST|SV|SG|SC|RW|MW|WREAD|STRAY)=\$\(/,
   /^test /, /^\[ /, /^shasum -a 256 -c /, /^grep -q/, /^echo "[^"]*" \| grep -q/,
 ];
 export function unguardedLines(block) {
@@ -1171,7 +1107,7 @@ function realPath(name) {
 const hasShell = (name) => spawnSync("/bin/sh", ["-c", `command -v ${name}`], { env: { PATH: SYSTEM_PATH } }).status === 0;
 const shq = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 
-/** One POSIX sh stub, as 0108's, with the held branch, the probe and the read after it. */
+/** One POSIX sh stub, as 0108's, with the held branch. */
 function stubText(name, real) {
   const R = (n) => shq(real[n]);
   return `#!/bin/sh
@@ -1243,8 +1179,6 @@ case "$n" in
     case "$*" in
       *precheck-0109-location-saturday-hours.sql*) ${R("cat")} "$HARNESS_FIX/\${HARNESS_PRE:-pre.out}"; exit "\${HARNESS_PRE_EXIT:-0}";;
       *postcheck-0109-location-saturday-hours.sql*) ${R("cat")} "$HARNESS_FIX/\${HARNESS_POST:-post.out}"; exit "\${HARNESS_POST_EXIT:-0}";;
-      *probe-0109-location-saturday-hours.sql*) ${R("cat")} "$HARNESS_FIX/\${HARNESS_PROBE:-probe.out}"; exit "\${HARNESS_PROBE_EXIT:-0}";;
-      *"saturday_opens_at is not null"*) printf 'BEGIN\\n%s\\n' "\${HARNESS_REREAD:-0 of 4}"; exit 0;;
       *public.locations*) printf 'BEGIN\\n%s\\n' "$HARNESS_CLINICS"; exit 0;;
       *"where hash = "*) printf 'BEGIN\\n%s\\n' "\${HARNESS_HASHN:-1}"; exit 0;;
       *"limit 3"*) exec ${R("cat")} "$HARNESS_FIX/last3.out";;
@@ -1320,7 +1254,6 @@ function harnessFixtures() {
   const verdictOf = (rows, startsWith, to) => rows.map((r) => (r.trimStart().startsWith(startsWith) ? r.replace(/\| OK$/, `| ${to}`) : r));
   const verdicts = (n, label) => Array.from({ length: n }, (_, i) => row(`${i}. ${label} verdict`, "harness", "harness", "OK"));
   const postRows = verdicts(14, "post-check");
-  const probeRows = verdicts(8, "probe");
   const vm = [
     `file       ${TAG}.sql present, sha256 matches`, "journal    106 row(s) applied, last when=1788502900000",
     `pending    1  [${TAG}]`, "--- drizzle-kit migrate --- (harness)", "journal    106 -> 107  (delta 1)",
@@ -1336,16 +1269,12 @@ function harnessFixtures() {
     "post-1vac.out": table(verdictOf(postRows, "7. post-check verdict", "VACUOUS")),
     "post-fail.out": table(verdictOf(postRows, "5. post-check verdict", "FAIL")),
     "post-short.out": table(postRows.filter((r) => !r.trimStart().startsWith("9. post-check verdict"))),
-    "probe.out": `BEGIN\n${table(probeRows)}ROLLBACK\n`,
-    "probe-fail.out": `BEGIN\n${table(verdictOf(probeRows, "4. probe verdict", "FAIL"))}ROLLBACK\n`,
-    "probe-vac.out": `BEGIN\n${table(verdictOf(probeRows, "1. probe verdict", "VACUOUS"))}ROLLBACK\n`,
-    "probe-short.out": `BEGIN\n${table(probeRows.filter((r) => !r.trimStart().startsWith("6. probe verdict")))}ROLLBACK\n`,
     "last3.out": last3, "vm.out": vm,
   };
 }
 
 const APPLY_FILES = [
-  PRE, POST, PROBE, PREV_PATH, "scripts/assert-production-target.mjs", "scripts/production-target.mjs", "scripts/check-journal.mjs", GATE_FILE,
+  PRE, POST, PREV_PATH, "scripts/assert-production-target.mjs", "scripts/production-target.mjs", "scripts/check-journal.mjs", GATE_FILE,
   "packages/db/scripts/verified-migrate.mjs", "packages/db/scripts/read-applied-migrations.mjs",
 ];
 
@@ -1430,7 +1359,6 @@ export async function runOnce(cfg, runId, fault) {
     HARNESS_SNTP: cfg.net?.sntp ?? "", HARNESS_CURL: cfg.net?.curl ?? "",
     HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3), HARNESS_FAIL_MODE: fault?.mode ?? "",
     HARNESS_HASHN: cfg.db?.hashN ?? "1", HARNESS_PRE: cfg.db?.pre ?? "pre.out", HARNESS_POST: cfg.db?.post ?? "post.out",
-    HARNESS_PROBE: cfg.db?.probe ?? "probe.out", HARNESS_PROBE_EXIT: String(cfg.db?.probeExit ?? 0), HARNESS_REREAD: cfg.db?.reread ?? "0 of 4",
     HARNESS_PRE_EXIT: String(cfg.db?.preExit ?? 0), HARNESS_POST_EXIT: String(cfg.db?.postExit ?? 0), HARNESS_READER: cfg.db?.reader ?? "",
     HARNESS_HOOK_AFTER: fault?.hookAfter ?? "", HARNESS_HOOK_MKDIR: fault?.hookMkdir ? join(run, "tmp", fault.hookMkdir) : "",
     HARNESS_STRAY: cfg.git?.stray ?? "", HARNESS_CHECKOUT: cfg.git?.checkout ?? "",
@@ -1563,7 +1491,7 @@ const HARNESS_BLOCKS = {
     sources: true, vm: true,
   },
   stage2: {
-    marker: STAGE2, markers: ["0109-postcheck.out", "0109-probe.out", "0109-stage2.ok"], success: [STAGE2],
+    marker: STAGE2, markers: ["0109-postcheck.out", "0109-stage2.ok"], success: [STAGE2],
     setup: (clock) => (tmp) => {
       putRecord(tmp, "0109-head.sha", `${FAKE_SHA.MAIN}\n`, 20);
       putRecord(tmp, "0109-window.ok", `${FAKE_SHA.MAIN} ${clock.window}\n`, 15);
@@ -1730,17 +1658,6 @@ test("THE HARNESS IS ITS OWN CONTROL: in the tool's shape set -e stops nothing, 
       const noGuard = await runOnce({ ...cfg, block: strip(cfg.block, "node scripts/assert-production-target.mjs") }, `${shell}-control-noguard`, { call: guardCall.id });
       assert.equal(noGuard.code, 0, noGuard.out.slice(-800));
       assert.ok(noGuard.out.includes(STAGE1) && noGuard.calls.some((c) => c.id.startsWith("psql#")));
-      // Stage 2's probe line without its guard: a failing probe goes on to the pass mark. With it, it stops.
-      const s2cfg = harnessConfig(doc, "stage2", CLOSED, shell, base);
-      const s2pos = await runOnce(s2cfg, `${shell}-control-s2`, null);
-      const probeCall = s2pos.calls.find((c) => c.id.startsWith("psql#") && c.args.includes(PROBE));
-      assert.ok(probeCall.args.includes("\n-c\nbegin\n-f\n"), probeCall.args);
-      // Without its own guard, a probe psql that fails is still caught: by the count of its OK verdicts, the second layer.
-      const noProbeGuard = await runOnce({ ...s2cfg, block: strip(s2cfg.block, PROBE_RUN) }, `${shell}-control-noprobe`, { call: probeCall.id });
-      assert.match(noProbeGuard.out, /^STOP: the CHECK probe printed \[0\] OK verdicts, not 8\. /m, noProbeGuard.out.slice(-600));
-      const probeFails = await runOnce(s2cfg, `${shell}-control-probe`, { call: probeCall.id });
-      assert.match(probeFails.out, /^STOP: the CHECK probe did not complete/m);
-      assert.ok(!probeFails.markersAtEnd.includes("0109-stage2.ok"));
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
@@ -1901,7 +1818,7 @@ test("THE CLINICS' ROWS: a clinic whose own hours reach outside the table, or no
   });
 });
 
-test("THE VERDICT PROFILES, stages 1 and 2 whole: 12 OK before; 14 OK after and 8 OK of the probe; and no other profile passes", async () => {
+test("THE VERDICT PROFILES, stages 1 and 2 whole: 12 OK before; 14 OK after; and no other profile passes", async () => {
   await withHarness(async (base) => {
     for (const shell of shellsHere()) {
       for (const [fixture, exit, stop] of [
@@ -1927,18 +1844,12 @@ test("THE VERDICT PROFILES, stages 1 and 2 whole: 12 OK before; 14 OK after and 
         [{ post: "post-1vac.out" }, /^STOP: the post-check printed \[1\] VACUOUS verdicts, not 0\. A VACUOUS verdict is not a pass: locations read no row to hold NULL\. 0109 IS APPLIED and the write stands\. /],
         [{ post: "post-short.out" }, /^STOP: the post-check printed \[13\] OK verdicts, not 14\. /],
         [{ post: "post-fail.out" }, /^STOP: the post-check printed \[1\] FAIL verdicts, or its transcript could not be read\. Stage 1 recorded that it applied 0109, and this read does not agree\. Treat the state as UNKNOWN\. /],
-        [{ probe: "probe-fail.out" }, /^STOP: the CHECK probe printed \[1\] FAIL verdicts, or its transcript could not be read: the server did not refuse or admit a pair the way the migration's CHECK makes it\. Its transaction was rolled back\. 0109 IS APPLIED /],
-        [{ probe: "probe-vac.out" }, /^STOP: the CHECK probe printed \[1\] VACUOUS verdicts, not 0: it found no row to probe/],
-        [{ probe: "probe-short.out" }, /^STOP: the CHECK probe printed \[7\] OK verdicts, not 8\. /],
-        [{ probeExit: 3 }, /^STOP: the CHECK probe did not complete \(psql's lines are above\), or its transcript could not be written\. Its transaction was not committed/],
-        [{ reread: "1 of 4" }, /^STOP: after the probe, locations reads \[1 of 4\], not 0 of 4: a value stayed, or a row came or went during the sitting\. 0109 IS APPLIED /],
-        [{ reread: "0 of 5" }, /^STOP: after the probe, locations reads \[0 of 5\], not 0 of 4: /],
       ]) {
         const r = await runOnce({ ...harnessConfig(doc, "stage2", CLOSED, shell, base), db }, `${shell}-profile2-${JSON.stringify(db).replace(/\W+/g, "-")}`, null);
         const tag = `${shell} stage 2 on ${JSON.stringify(db)}`;
         if (stop === null) {
           assert.equal(r.code, 0, `${tag}: ${r.out.slice(-600)}`);
-          assert.match(r.out, /^0109 POST-CHECK PASSED\. 12\/12 pre-check OK, post-check 14 OK \/ 0 VACUOUS \/ 0 FAIL, CHECK probe 8 OK and rolled back, journal 106 to 107; /m, tag);
+          assert.match(r.out, /^0109 POST-CHECK PASSED\. 12\/12 pre-check OK, post-check 14 OK \/ 0 VACUOUS \/ 0 FAIL, journal 106 to 107; /m, tag);
           assert.ok(r.markersAtEnd.includes("0109-stage2.ok"), tag);
           continue;
         }
@@ -2009,9 +1920,9 @@ test("THE APPLIED MARKER: one from this sitting stops stages 0 and 1 and the two
 
 test("A PINNED FILE THAT DIFFERS OR IS NOT THERE: every pin a block assigns is compared, and the block STOPS on it before anything runs with credentials", async () => {
   for (const b of blocksOf(doc)) assert.deepEqual(pinComparedProblems(b), []);
-  assert.deepEqual(HARNESS_PLAN.map((n) => pinsOf(blockWith(doc, HARNESS_BLOCKS[n].marker)).length), [10, 10, 0, 6, 5, 2]);
+  assert.deepEqual(HARNESS_PLAN.map((n) => pinsOf(blockWith(doc, HARNESS_BLOCKS[n].marker)).length), [9, 9, 0, 6, 4, 2]);
   const cases = HARNESS_PLAN.flatMap((name) => pinsOf(blockWith(doc, HARNESS_BLOCKS[name].marker)).flatMap((pin) => ["differs", "is missing"].map((kind) => ({ name, pin, kind }))));
-  assert.equal(cases.length, 66);
+  assert.equal(cases.length, 60);
   await inPool(cases, Number(process.env.HARNESS_POOL) || Math.max(2, Math.floor(cpus().length / 2)), async ({ name, pin, kind }) => {
     await withHarness(async (base) => {
       for (const shell of shellsHere()) {

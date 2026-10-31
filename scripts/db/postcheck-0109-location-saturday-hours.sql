@@ -38,8 +38,10 @@
 --          alone, 13:00 alone, 13:00 to 09:00 and 09:00 to 09:00 are refused.
 --          A CHECK refuses a row only when its expression is FALSE (NULL
 --          admits), so "refused" here is "IS FALSE". This proves the stored
---          expression without a write; the block's CHECK PROBE, after this
---          file, proves the server enforces it on the table;
+--          expression without a write. That the server enforces it on the
+--          table is proven by the DB-gated suite in CI
+--          (packages/db/tests/location-saturday-hours.db.test.ts) and by the
+--          rehearsal; no block writes on production to prove it;
 --   7      EVERY EXISTING ROW IS NULL IN BOTH NEW COLUMNS, and the row count is
 --          the carry locations_rows (VACUOUS when there is no row). The counts
 --          are read by a DO block, by name, only once both columns exist, so a
