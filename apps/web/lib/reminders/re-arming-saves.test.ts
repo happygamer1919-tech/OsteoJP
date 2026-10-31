@@ -25,7 +25,7 @@
  * "confirmo" on a booked visit do not count; the same on a request does) is
  * proven in sweep.db.test.ts and sweep-send.db.test.ts.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { sql as rawSql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -200,7 +200,11 @@ describe("R33: the senders outside the application are the two owner-run scripts
   };
 
   it("only they name the event outside apps/web", () => {
-    const outside = [...scriptsUnder("packages"), ...scriptsUnder("scripts"), ...scriptsUnder("apps/api")];
+    const outside = ["packages", "scripts", "apps/api", "apps/portal", "apps/admin"]
+      .filter((dir) => existsSync(join(REPO, dir)))
+      .flatMap((dir) => scriptsUnder(dir));
+    expect(outside.some((x) => x.file.startsWith("apps/portal/"))).toBe(true);
+    expect(outside.some((x) => x.file.startsWith("apps/admin/"))).toBe(true);
     const senders = outside.filter((x) => x.src.includes('"appointment/scheduled"')).map((x) => x.file);
     expect(senders.sort()).toEqual(OWNER_RUN_SENDERS);
   });
