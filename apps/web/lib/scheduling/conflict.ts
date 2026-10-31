@@ -1,13 +1,13 @@
 import "server-only";
 import { and, eq, gt, lt, notInArray, sql, type SQL } from "drizzle-orm";
-import { appointments, availabilityTemplates, patients, timeOff, type DbTx } from "@osteojp/db";
+import { appointments, patients, timeOff, type DbTx } from "@osteojp/db";
 import { listSharedResourcesTx } from "./shared-resources";
 import {
   absencesOverlapping,
   evaluateAvailability,
   type AbsenceBlock,
-  type AvailabilityTemplate,
 } from "./availability";
+import { readEffectiveTemplates } from "./effective-availability";
 import type { ConflictInfo } from "./types";
 
 /**
@@ -238,23 +238,14 @@ export async function findScheduleConflicts(
     endsAt: Date;
   },
 ): Promise<ConflictInfo[]> {
-  const [templateRows, absenceRows] = await Promise.all([
-    tx
-      .select({
-        weekday: availabilityTemplates.weekday,
-        startTime: availabilityTemplates.startTime,
-        endTime: availabilityTemplates.endTime,
-        validFrom: availabilityTemplates.validFrom,
-        validUntil: availabilityTemplates.validUntil,
-        isActive: availabilityTemplates.isActive,
-      })
-      .from(availabilityTemplates)
-      .where(
-        and(
-          eq(availabilityTemplates.userId, args.practitionerId),
-          eq(availabilityTemplates.locationId, args.locationId),
-        ),
-      ),
+  const [templates, absenceRows] = await Promise.all([
+    // HOR-01: the same effective rows `checkAvailability` enforces, through the
+    // one staff-side resolver, so the advisory panel and the refusal cannot
+    // disagree about a therapist on the clinic's default hours.
+    readEffectiveTemplates(tx, {
+      therapistId: args.practitionerId,
+      locationId: args.locationId,
+    }),
     // time_off is therapist-wide (not per location). Half-open overlap with the
     // candidate window, filtered in SQL so we only pull relevant blocks.
     tx
@@ -276,14 +267,6 @@ export async function findScheduleConflicts(
 
   const out: ConflictInfo[] = [];
 
-  const templates: AvailabilityTemplate[] = templateRows.map((r) => ({
-    weekday: r.weekday,
-    startTime: r.startTime,
-    endTime: r.endTime,
-    validFrom: r.validFrom,
-    validUntil: r.validUntil,
-    isActive: r.isActive,
-  }));
   const availability = evaluateAvailability(args.startsAt, args.endsAt, templates);
   if (availability.configured && !availability.covered) {
     out.push({

@@ -28,6 +28,10 @@ export type AvailabilityTemplate = {
    *  inspector needs to name the ROW behind a window, so Eliminar on a Dia
    *  definido can say which row it removes. */
   id?: string;
+  /** HOR-01. OPTIONAL for the same reason: absent (or "own") on a row read from
+   *  availability_templates, "clinic_default" on a row the resolver generated
+   *  from the clinic's opening hours (effective-availability-core.ts). */
+  source?: "own" | "clinic_default";
 };
 
 /**
@@ -50,7 +54,7 @@ export type AvailabilityTemplate = {
  * owner ruled three: base / dia definido / excecao. `dia_definido` is the honest
  * name for "a row bounded to one day", whichever editor wrote it.
  */
-export type ScheduleRule = "base" | "dia_definido" | "excecao";
+export type ScheduleRule = "base" | "dia_definido" | "excecao" | "clinica";
 
 /**
  * Classify a template. A row bounded to exactly ONE day is a dated override; a
@@ -66,7 +70,11 @@ export type ScheduleRule = "base" | "dia_definido" | "excecao";
 export function scheduleRuleFor(t: {
   validFrom: string | null;
   validUntil: string | null;
-}): Extract<ScheduleRule, "base" | "dia_definido"> {
+  source?: "own" | "clinic_default";
+}): Extract<ScheduleRule, "base" | "dia_definido" | "clinica"> {
+  // HOR-01: a window generated from the clinic's opening hours is not a row
+  // anybody typed, and the inspector says so rather than calling it the week.
+  if (t.source === "clinic_default") return "clinica";
   if (t.validFrom !== null && t.validFrom === t.validUntil) return "dia_definido";
   return "base";
 }

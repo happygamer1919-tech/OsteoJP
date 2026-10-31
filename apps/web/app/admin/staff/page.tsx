@@ -15,6 +15,8 @@ import { listStaffLocations } from "@/lib/admin/staff-locations";
 import { seesEveryLocation } from "@/lib/admin/location-scope-warning";
 import { buildAssignedLocations } from "@/lib/admin/assigned-locations";
 import { listTimeOffBlocksForRoster } from "@/lib/admin/time-off";
+import { listScheduleKinds } from "@/lib/admin/clinic-default-schedule";
+import { ScheduleKindLabel } from "@/app/horarios/ClinicHoursControl";
 import { buildScheduleDays, datedAheadByKey, indexScheduleTemplates } from "@/lib/admin/schedule-days";
 import { paletteColorByKey, therapistColor } from "@/lib/scheduling/therapist-color";
 import { staffCardTitles } from "@/lib/scheduling/staff-options";
@@ -153,6 +155,18 @@ export default async function StaffPage({
   // saw it because viewerLocationScope returns null for them. Full reasoning on
   // `manageableTargets` in lib/admin/schedule-scope.ts.
   const timeOffByMember = await listTimeOffBlocksForRoster(actor, schedulableIds);
+  // HOR-01: the same schedule label Horarios shows ("Horario da clinica
+  // (padrao)" / "Horario proprio"), read by the same function, for the same
+  // members whose hours this page shows.
+  const scheduleKinds = await listScheduleKinds(actor, schedulableIds);
+  const scheduleKindLabels = {
+    kindOwn: s["schedule.kindOwn"],
+    kindOwnHint: s["schedule.kindOwnHint"],
+    kindClinicDefault: s["schedule.kindClinicDefault"],
+    kindClinicDefaultHint: s["schedule.kindClinicDefaultHint"],
+    kindNone: s["schedule.kindNone"],
+    kindNoneHint: s["schedule.kindNoneHint"],
+  };
   // Two readers of one answer, kept separate ON PURPOSE. `blocksFor` returns []
   // for a member this viewer cannot manage, and `manageableFor` is what tells
   // the modal to SAY SO rather than render an empty editor over that [].
@@ -381,6 +395,9 @@ export default async function StaffPage({
                   </span>
                   {u.jobTitle && (
                     <span className="text-xs text-v2-text-secondary">{u.jobTitle}</span>
+                  )}
+                  {showHours && scheduleKinds.has(u.id) && (
+                    <ScheduleKindLabel kind={scheduleKinds.get(u.id)!.kind} labels={scheduleKindLabels} />
                   )}
                 </div>
 

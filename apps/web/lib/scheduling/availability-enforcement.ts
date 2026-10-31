@@ -1,6 +1,5 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
-import { availabilityTemplates, type DbTx } from "@osteojp/db";
+import type { DbTx } from "@osteojp/db";
 
 import {
   evaluateAvailability,
@@ -9,6 +8,7 @@ import {
   type AvailabilityTemplate,
 } from "./availability";
 import { lisbonParts } from "./time";
+import { readEffectiveTemplates } from "./effective-availability";
 
 /**
  * RB-03 — A MANUALLY ENTERED TIME MUST BE INSIDE THE THERAPIST'S DISPONIBILIDADE.
@@ -98,31 +98,14 @@ export async function checkAvailability(
     endsAt: Date;
   },
 ): Promise<AvailabilityVerdict> {
-  const rows = await tx
-    .select({
-      weekday: availabilityTemplates.weekday,
-      startTime: availabilityTemplates.startTime,
-      endTime: availabilityTemplates.endTime,
-      validFrom: availabilityTemplates.validFrom,
-      validUntil: availabilityTemplates.validUntil,
-      isActive: availabilityTemplates.isActive,
-    })
-    .from(availabilityTemplates)
-    .where(
-      and(
-        eq(availabilityTemplates.userId, args.practitionerId),
-        eq(availabilityTemplates.locationId, args.locationId),
-      ),
-    );
-
-  const templates: AvailabilityTemplate[] = rows.map((r) => ({
-    weekday: r.weekday,
-    startTime: r.startTime,
-    endTime: r.endTime,
-    validFrom: r.validFrom,
-    validUntil: r.validUntil,
-    isActive: r.isActive,
-  }));
+  // HOR-01: the EFFECTIVE rows, through the one staff-side resolver. A
+  // therapist with no rows at this clinic who is a bookable member of it now
+  // works the clinic's opening hours here, so "unconfigured" below is reached
+  // only by somebody the default does not apply to.
+  const templates: AvailabilityTemplate[] = await readEffectiveTemplates(tx, {
+    therapistId: args.practitionerId,
+    locationId: args.locationId,
+  });
 
   const verdict = evaluateAvailability(args.startsAt, args.endsAt, templates);
   if (!verdict.configured) return { ok: true, reason: "unconfigured" };

@@ -37,6 +37,8 @@ const tpl = (over: Record<string, unknown> = {}) => ({
   validFrom: null,
   validUntil: null,
   isActive: true,
+  // HOR-01: the row's clinic, as every real row carries (ARGS.locationId).
+  locationId: "l-1",
   ...over,
 });
 
