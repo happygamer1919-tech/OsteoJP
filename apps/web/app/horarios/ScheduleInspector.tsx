@@ -38,16 +38,19 @@ const RULE_LABEL: Record<ScheduleRule, string> = {
   base: s["inspector.ruleBase"],
   dia_definido: s["inspector.ruleDiaDefinido"],
   excecao: s["inspector.ruleExcecao"],
+  clinica: s["inspector.ruleClinica"],
 };
 const RULE_HINT: Record<ScheduleRule, string> = {
   base: s["inspector.ruleBaseHint"],
   dia_definido: s["inspector.ruleDiaDefinidoHint"],
   excecao: s["inspector.ruleExcecaoHint"],
+  clinica: s["inspector.ruleClinicaHint"],
 };
 const RULE_TONE: Record<ScheduleRule, "neutral" | "success" | "warning"> = {
   base: "neutral",
   dia_definido: "success",
   excecao: "warning",
+  clinica: "neutral",
 };
 
 const WEEKDAY_KEY = [
