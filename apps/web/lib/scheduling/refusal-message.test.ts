@@ -67,6 +67,7 @@ describe("the sentence for each refusal", () => {
     ["location_not_assigned", "appointment.locationNotAssigned"],
     ["shared_resource_location", "appointment.sharedResourceLocation"],
     ["uncancel_shared_resource", "appointment.uncancelSharedResource"],
+    ["therapist_change_reception_only", "appointment.therapistChangeReceptionOnly"],
     ["pack_insufficient", "appointment.packInsufficient"],
     ["pack_service_locked", "appointment.packServiceLocked"],
     ["validation", "appointment.requiredFields"],
@@ -84,6 +85,7 @@ describe("the sentence for each refusal", () => {
       "location_not_assigned",
       "shared_resource_location",
       "uncancel_shared_resource",
+      "therapist_change_reception_only",
       "pack_insufficient",
       "pack_service_locked",
       "validation",
@@ -95,6 +97,12 @@ describe("the sentence for each refusal", () => {
     const sentences = codes.map((error) => appointmentRefusalMessage({ error }));
     expect(new Set(sentences).size).toBe(codes.length);
     expect(sentences).not.toContain(s["errors.generic"]);
+  });
+
+  it("APPT-EDIT-02: a therapist's change of Terapeuta names who can make it", () => {
+    expect(appointmentRefusalMessage({ error: "therapist_change_reception_only" })).toBe(
+      "Só a receção pode mudar o terapeuta de uma marcação.",
+    );
   });
 
   it("an unknown code, a missing code and a server error read as the generic sentence", () => {
