@@ -327,6 +327,21 @@ function isDoubleConfirmedViolation(e: unknown): boolean {
  * assim" — an override that this constraint exists to refuse, so offering it
  * would invite the user to retry something that cannot succeed.
  */
+/**
+ * APPT-EDIT-02: thrown inside rescheduleAppointment's transaction when a
+ * therapist's UPDATE finds the row no longer has the Terapeuta its guard
+ * checked (reassigned between the read and the write). Throwing, not
+ * returning, so the transaction rolls back every row and audit this save
+ * already wrote; the action's catch turns it into the guard's own refusal.
+ * Not exported: this file is "use server" and exports only actions.
+ */
+class TherapistChangeRace extends Error {
+  constructor() {
+    super("therapist_change_race");
+    this.name = "TherapistChangeRace";
+  }
+}
+
 function fail(action: string, e: unknown): Denied {
   if (isDoubleConfirmedViolation(e)) {
     console.error(`scheduling: ${action} refused by appointments_no_double_confirmed`);
@@ -2116,17 +2131,23 @@ export async function rescheduleAppointment(
         // clinic may still change. Owner, admin and reception are unchanged.
         //
         // AGAINST THE STORED ROW, not the request: `affected` is what the
-        // database holds before this save, read under the caller's RLS. RLS
-        // alone never held this: appointments_rls (0086) lets a therapist write
-        // another practitioner_id on a row they created or are Terapeuta 2 on,
-        // and their own id on a NESA row at their clinic.
+        // database holds before this save, read under the caller's RLS. The
+        // rule is enforced here, in the application; the database policies
+        // are unchanged by this card.
+        //
+        // AND AGAIN AT THE WRITE, for the therapist only: the read above takes
+        // no row lock, so reception may reassign the visit between it and the
+        // UPDATE below. That UPDATE matches on the Terapeuta checked here, and
+        // a row that no longer has it rolls the whole save back (see
+        // TherapistChangeRace). Owner, admin and reception write as before.
         //
         // NO SHARED-RESOURCE EXCEPTION, unlike the create door. There it lets a
         // therapist BOOK the NESA machine; here a NESA row moved in time keeps
         // NESA and passes, and swapping NESA for a person (or back) is a change
         // of Terapeuta like any other. Refused before any write, audit or emit.
-        if (actor.role === "therapist" && affected.some((a) => a.practitionerId !== input.practitionerId)) {
-          return { ok: false, error: "forbidden" };
+        const therapistKeeps = actor.role === "therapist";
+        if (therapistKeeps && affected.some((a) => a.practitionerId !== input.practitionerId)) {
+          return { ok: false, error: "therapist_change_reception_only" };
         }
 
         // BEFORE the update, so `startsAt` here is the instant the appointment
@@ -2277,15 +2298,26 @@ export async function rescheduleAppointment(
         if (slotLocks) await tx.execute(slotLocks);
 
         for (const t of targets) {
-          await tx
+          const moved = tx
             .update(appointments)
             .set({
               startsAt: t.startsAt,
               endsAt: t.endsAt,
               practitionerId: input.practitionerId,
               locationId: input.locationId,
-            })
-            .where(eq(appointments.id, t.id)); // RLS scopes tenant
+            });
+          if (therapistKeeps) {
+            // APPT-EDIT-02: only while the row still has the Terapeuta the guard
+            // checked (input.practitionerId, equal to it by then). None back
+            // means it was reassigned since: throw, so nothing of this save
+            // commits, and the catch below answers with the guard's refusal.
+            const kept = await moved
+              .where(and(eq(appointments.id, t.id), eq(appointments.practitionerId, input.practitionerId)))
+              .returning({ id: appointments.id });
+            if (kept.length === 0) throw new TherapistChangeRace();
+          } else {
+            await moved.where(eq(appointments.id, t.id)); // RLS scopes tenant
+          }
           await writeAppointmentAudit(tx, {
             tenantId: actor.tenantId,
             actorUserId: actor.userId,
@@ -2398,6 +2430,7 @@ export async function rescheduleAppointment(
     }
     return result;
   } catch (e) {
+    if (e instanceof TherapistChangeRace) return { ok: false, error: "therapist_change_reception_only" };
     return fail("reschedule", e);
   }
 }

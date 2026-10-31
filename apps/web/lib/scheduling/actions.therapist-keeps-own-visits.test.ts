@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 /**
  * APPT-EDIT-02 - A THERAPIST KEEPS THEIR OWN VISITS, driven through the real
@@ -12,7 +14,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  *
  * Each refusal asserts the whole of "nothing happened": no UPDATE, no audit
  * row, no care-team write, no reminder enqueued, and the conflict check never
- * asked. Each acceptance is the control that keeps the refusals honest: the
+ * asked. The refusal code is `therapist_change_reception_only`, so the screen
+ * says who can make the change rather than "no permission".
+ *
+ * THE RACE (R4): the guard reads the row without a lock, so the therapist's
+ * UPDATE also matches on the Terapeuta it checked. When reception reassigned
+ * the visit in between, that UPDATE returns no row, the transaction is rolled
+ * back by a throw, and the answer is the same refusal. The WHERE each role
+ * sends is rendered with drizzle's real Postgres dialect and pinned. Each acceptance is the control that keeps the refusals honest: the
  * same fake accepts the same move when only the Terapeuta is kept, or when the
  * actor is not a therapist.
  *
@@ -38,6 +47,10 @@ const h = vi.hoisted(() => ({
   careTeam: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
   findConflictsForWindow: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(async () => []),
   resources: [] as { id: string; label: string; locationIds: string[] }[],
+  // The index of the first UPDATE whose row was reassigned under the save, so
+  // a guarded UPDATE from it on matches nothing and its RETURNING is empty.
+  // Infinity: no row is lost.
+  lostFrom: Number.POSITIVE_INFINITY,
 }));
 vi.mock("./actor", () => ({ clientIp: vi.fn(async () => null) }));
 vi.mock("./audit", () => ({ writeAppointmentAudit: h.audit }));
@@ -116,6 +129,10 @@ const ownRow: Row = {
 };
 
 let updates: Record<string, unknown>[] = [];
+/** The WHERE of each UPDATE, and whether its caller asked for RETURNING. */
+let wheres: { cond: SQL; returning: boolean }[] = [];
+const dialect = new PgDialect();
+const rendered = (i: number) => dialect.sqlToQuery(wheres[i]!.cond);
 
 /**
  * `target` answers resolveSeries' first read (the one with a limit);
@@ -147,10 +164,21 @@ function fakeTx(target: Row, members: Row[]) {
       return chain;
     },
     update: () => ({
-      set: (values: Record<string, unknown>) => {
-        updates.push(values);
-        return { where: async () => [] };
-      },
+      set: (values: Record<string, unknown>) => ({
+        where: (cond: SQL) => {
+          updates.push(values);
+          const entry = { cond, returning: false };
+          const index = wheres.push(entry) - 1;
+          const plain = Promise.resolve([]);
+          return {
+            then: (ok: (v: unknown) => unknown, ko?: (e: unknown) => unknown) => plain.then(ok, ko),
+            returning: async () => {
+              entry.returning = true;
+              return index >= h.lostFrom ? [] : [{ id: "updated" }];
+            },
+          };
+        },
+      }),
     }),
     insert: () => ({ values: async () => [] }),
   };
@@ -164,6 +192,7 @@ function arrange(opts: { role?: Role; userId?: string; target?: Row; members?: R
   };
   const target = opts.target ?? ownRow;
   updates = [];
+  wheres = [];
   h.audit.mockClear();
   h.enqueue.mockClear();
   h.careTeam.mockClear();
@@ -179,6 +208,7 @@ function arrange(opts: { role?: Role; userId?: string; target?: Row; members?: R
 
 beforeEach(() => {
   h.resources = [];
+  h.lostFrom = Number.POSITIVE_INFINITY;
   arrange();
 });
 
@@ -201,41 +231,41 @@ const nothingHappened = () => {
 };
 
 describe("APPT-EDIT-02: a therapist may not hand a visit to anyone else", () => {
-  it("their own visit, sent to a colleague: forbidden, and nothing is written, audited or enqueued", async () => {
+  it("their own visit, sent to a colleague: refused, and nothing is written, audited or enqueued", async () => {
     const r = await rescheduleAppointment(APPT, input(COLLEAGUE));
-    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
     nothingHappened();
   });
 
   it("the same refusal when the hour moves too: a new time does not buy a new Terapeuta", async () => {
     const r = await rescheduleAppointment(APPT, input(COLLEAGUE, { startsAt: NEW_START, endsAt: NEW_END }));
-    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
     nothingHappened();
   });
 
-  it("a colleague's visit they are Terapeuta 2 on, taken for themselves: forbidden (the row is read, not the request)", async () => {
+  it("a colleague's visit they are Terapeuta 2 on, taken for themselves: refused (the row is read, not the request)", async () => {
     arrange({ target: { ...ownRow, practitionerId: COLLEAGUE, practitionerTwoId: SELF } });
     const r = await rescheduleAppointment(APPT, input(SELF));
-    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
     nothingHappened();
   });
 
-  it("a NESA visit at their clinic, taken for themselves: forbidden (no shared-resource exception on a move)", async () => {
+  it("a NESA visit at their clinic, taken for themselves: refused (no shared-resource exception on a move)", async () => {
     h.resources = [{ id: NESA, label: "Equipamento NESA", locationIds: ["loc-1"] }];
     arrange({ target: { ...ownRow, practitionerId: NESA } });
     const r = await rescheduleAppointment(APPT, input(SELF));
-    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
     nothingHappened();
   });
 
-  it("their own visit, sent to the NESA machine: forbidden", async () => {
+  it("their own visit, sent to the NESA machine: refused", async () => {
     h.resources = [{ id: NESA, label: "Equipamento NESA", locationIds: ["loc-1"] }];
     const r = await rescheduleAppointment(APPT, input(NESA));
-    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
     nothingHappened();
   });
 
-  it("a series move where one occurrence already has a colleague: forbidden, so no row of it moves", async () => {
+  it("a series move where one occurrence already has a colleague: refused, so no row of it moves", async () => {
     const second: Row = {
       ...ownRow,
       id: "appt-2",
@@ -246,7 +276,7 @@ describe("APPT-EDIT-02: a therapist may not hand a visit to anyone else", () => 
     };
     arrange({ members: [ownRow, second] });
     const r = await rescheduleAppointment(APPT, input(SELF, { scope: "series", startsAt: NEW_START, endsAt: NEW_END }));
-    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
     nothingHappened();
   });
 });
@@ -282,6 +312,67 @@ describe("APPT-EDIT-02: what a therapist still may do, and what everyone else st
       ]);
       expect(h.audit).toHaveBeenCalledTimes(1);
       expect(h.enqueue).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
+describe("APPT-EDIT-02 (R4): the visit reassigned between the guard and the write", () => {
+  it("a therapist's UPDATE matches on the Terapeuta the guard checked, and asks for the row back", async () => {
+    const r = await rescheduleAppointment(APPT, input(SELF, { startsAt: NEW_START, endsAt: NEW_END }));
+    expect(r).toMatchObject({ ok: true });
+    expect(wheres).toHaveLength(1);
+    expect(wheres[0]!.returning).toBe(true);
+    const q = rendered(0);
+    expect(q.sql).toBe('("appointments"."id" = $1 and "appointments"."practitioner_id" = $2)');
+    expect(q.params).toEqual([APPT, SELF]);
+  });
+
+  it("reception changed the Terapeuta underneath: no row comes back, so refused, no audit, no reminder, no care team", async () => {
+    h.lostFrom = 0;
+    const r = await rescheduleAppointment(APPT, input(SELF, { startsAt: NEW_START, endsAt: NEW_END }));
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
+    // The UPDATE was attempted (and matched nothing); the throw rolls the
+    // transaction back, so nothing after it in the save runs.
+    expect(wheres).toHaveLength(1);
+    expect(h.audit).not.toHaveBeenCalled();
+    expect(h.careTeam).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("in a series, the second row lost: refused, and the first row's audit is inside the rolled-back transaction", async () => {
+    const second: Row = {
+      ...ownRow,
+      id: "appt-2",
+      startsAt: new Date("2031-05-19T14:00:00.000Z"),
+      endsAt: new Date("2031-05-19T14:45:00.000Z"),
+      recurrenceParentId: APPT,
+    };
+    arrange({ members: [ownRow, second] });
+    // The first UPDATE finds its row, the second does not.
+    h.lostFrom = 1;
+    const r = await rescheduleAppointment(APPT, input(SELF, { scope: "series", startsAt: NEW_START, endsAt: NEW_END }));
+    expect(r).toEqual({ ok: false, error: "therapist_change_reception_only" });
+    expect(wheres).toHaveLength(2);
+    // The first row's audit was written with `tx`, so in Postgres the throw
+    // rolls it back with the row; the fake cannot roll back, so it is counted.
+    expect(h.audit).toHaveBeenCalledTimes(1);
+    expect(h.audit.mock.calls[0]![0]).toBeTypeOf("object");
+    expect(h.enqueue).not.toHaveBeenCalled();
+    expect(h.careTeam).not.toHaveBeenCalled();
+  });
+
+  it.each(["owner", "admin", "reception"] as const)(
+    "%s: the WHERE is the id alone, as before, with no RETURNING asked",
+    async (role) => {
+      arrange({ role, userId: `${role}-1` });
+      h.lostFrom = 0; // would refuse a guarded write; theirs is not guarded
+      const r = await rescheduleAppointment(APPT, input(COLLEAGUE));
+      expect(r).toMatchObject({ ok: true });
+      expect(wheres).toHaveLength(1);
+      expect(wheres[0]!.returning).toBe(false);
+      const q = rendered(0);
+      expect(q.sql).toBe('"appointments"."id" = $1');
+      expect(q.params).toEqual([APPT]);
     },
   );
 });

@@ -104,6 +104,10 @@ export function appointmentRefusalMessage(r: AppointmentRefusal): string {
     // 0088; the sentence sends them to reception, who can.
     case "uncancel_shared_resource":
       return s["appointment.uncancelSharedResource"];
+    // APPT-EDIT-02: a therapist cannot hand a visit to another Terapeuta; the
+    // sentence names who can, rather than a missing permission.
+    case "therapist_change_reception_only":
+      return s["appointment.therapistChangeReceptionOnly"];
     // RB-02: the pacote has fewer sessions left than this booking needs.
     case "pack_insufficient":
       return s["appointment.packInsufficient"];

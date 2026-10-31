@@ -31,7 +31,8 @@ export function isTherapistSelfLocked(
  * viewer? Owner ruling 2026-10-31: "A therapist may NOT change the therapist of
  * a visit; reception does it." So a therapist editing an existing visit sees
  * its Terapeuta read-only on every screen that opens the drawer (the agenda,
- * /marcacoes, the ficha); owner, admin and reception keep the select. The
+ * /marcacoes, the ficha's Reagendar, the ficha's Notas tab); owner, admin and
+ * reception keep the select. The
  * create form is PL-10's self-lock above and is not touched.
  *
  * Only the affordance: rescheduleAppointment refuses the change itself
