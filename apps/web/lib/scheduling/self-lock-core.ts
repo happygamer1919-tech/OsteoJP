@@ -19,6 +19,13 @@ import type { Role } from "@osteojp/auth";
  * Edit mode is never self-locked — the practitioner is already fixed on the
  * saved row and edit stays on its existing (out-of-scope) rules.
  */
+export function isTherapistSelfLocked(
+  role: Role,
+  mode: "create" | "edit",
+): boolean {
+  return mode === "create" && role === "therapist";
+}
+
 /**
  * APPT-EDIT-01: the Terapeuta an EDIT saves. When the screen locks the
  * practitioner (the ficha, for a therapist viewer), it is always the row's
@@ -30,13 +37,6 @@ export function editPractitionerId(args: {
   formPractitionerId: string;
 }): string {
   return args.locked ? args.editingPractitionerId : args.formPractitionerId;
-}
-
-export function isTherapistSelfLocked(
-  role: Role,
-  mode: "create" | "edit",
-): boolean {
-  return mode === "create" && role === "therapist";
 }
 
 /**

@@ -239,10 +239,6 @@ describe("AppointmentDrawer W6-03: locked patient on deep-link create", () => {
   });
 });
 
-// APPT-EDIT-01: no save path of an edit carries the patient
-// (rescheduleAppointment and updateAppointment take none), so an editable
-// patient field on an edit was a value dropped in silence. An edit shows its
-// patient read-only, as the deep-linked create does.
 // APPT-EDIT-01: the ficha passes lockPractitioner for a therapist viewer. The
 // Terapeuta is the row's own, read-only, with no select to change it; the
 // save sends that id (editPractitionerId, self-lock-core.test.ts).
@@ -286,6 +282,10 @@ describe("AppointmentDrawer APPT-EDIT-01: lockPractitioner on an edit", () => {
   });
 });
 
+// APPT-EDIT-01: no save path of an edit carries the patient
+// (rescheduleAppointment and updateAppointment take none), so an editable
+// patient field on an edit was a value dropped in silence. An edit shows its
+// patient read-only, as the deep-linked create does.
 describe("AppointmentDrawer APPT-EDIT-01: the patient is read-only on an edit", () => {
   const readonly = (html: string) => {
     const at = html.indexOf('data-testid="drawer-patient-readonly"');
