@@ -743,6 +743,13 @@
       "when": 1788502900000,
       "tag": "0108_pack_instance_consuming_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1788503100000,
+      "tag": "0109_location_saturday_hours",
+      "breakpoints": true
     }
   ]
 }
