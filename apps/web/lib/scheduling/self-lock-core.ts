@@ -36,7 +36,7 @@ export function isTherapistSelfLocked(
  * create form is PL-10's self-lock above and is not touched.
  *
  * Only the affordance: rescheduleAppointment refuses the change itself
- * (`forbidden`), so a stale tab or a hand-made request is refused too.
+ * (`therapist_change_reception_only`), so a stale tab or a hand-made request is refused too.
  */
 export function isTherapistEditLocked(role: Role, mode: "create" | "edit"): boolean {
   return mode === "edit" && role === "therapist";

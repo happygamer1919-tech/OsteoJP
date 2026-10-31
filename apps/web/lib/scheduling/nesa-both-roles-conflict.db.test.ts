@@ -480,9 +480,8 @@ d("SCHED-29.2: NESA's hour is held in both roles", () => {
   });
 
   /**
-   * The arm above is also refused by the policy itself: the therapist neither
-   * created the row nor stays on it. This one the policy admits (they stay its
-   * Terapeuta 2), so only the application rule refuses it.
+   * A therapist who stays on the row as Terapeuta 2 is still refused a new
+   * Terapeuta.
    */
   it("APPT-EDIT-02: a therapist who is Terapeuta 2 hands the colleague's visit to a third therapist: refused, row unchanged", async () => {
     const id = await seedRow({

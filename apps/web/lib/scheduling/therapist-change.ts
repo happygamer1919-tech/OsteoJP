@@ -31,7 +31,8 @@ type Row = Pick<
  * patient's appointments at all. A therapist holds appointments:write too, but
  * the owner ruled on 2026-10-31 (APPT-EDIT-02): "A therapist may NOT change the
  * therapist of a visit; reception does it." Only the affordance:
- * rescheduleAppointment refuses a therapist a new Terapeuta (`forbidden`).
+ * rescheduleAppointment refuses a therapist a new Terapeuta
+ * (`therapist_change_reception_only`).
  */
 export function offersTherapistChange(role: Role, canEditAppointments: boolean): boolean {
   return canEditAppointments && role !== "therapist";

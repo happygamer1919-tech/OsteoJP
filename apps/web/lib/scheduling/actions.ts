@@ -331,19 +331,6 @@ function isDoubleConfirmedViolation(e: unknown): boolean {
 }
 
 /**
- * Log a sanitized failure (no PII / payload) and return a generic error.
- *
- * EXCEPT for the double-confirmed constraint, which gets its OWN code so the
- * agenda can say what happened in pt-PT. THE DEMO IS THE REASON THIS IS NOT
- * DEFERRED: the owner is showing this build to the clinic team, and a raw
- * database error on screen during that is worse than the bug it replaced.
- *
- * It is deliberately NOT mapped to `conflict`. That code carries a list of
- * conflicting appointments and the drawer answers it with "Guardar mesmo
- * assim" — an override that this constraint exists to refuse, so offering it
- * would invite the user to retry something that cannot succeed.
- */
-/**
  * APPT-EDIT-02: thrown inside moveAppointment's transaction when a
  * therapist's UPDATE finds the row no longer has the Terapeuta its guard
  * checked (reassigned between the read and the write). Throwing, not
@@ -357,6 +344,20 @@ class TherapistChangeRace extends Error {
     this.name = "TherapistChangeRace";
   }
 }
+
+/**
+ * Log a sanitized failure (no PII / payload) and return a generic error.
+ *
+ * EXCEPT for the double-confirmed constraint, which gets its OWN code so the
+ * agenda can say what happened in pt-PT. THE DEMO IS THE REASON THIS IS NOT
+ * DEFERRED: the owner is showing this build to the clinic team, and a raw
+ * database error on screen during that is worse than the bug it replaced.
+ *
+ * It is deliberately NOT mapped to `conflict`. That code carries a list of
+ * conflicting appointments and the drawer answers it with "Guardar mesmo
+ * assim" — an override that this constraint exists to refuse, so offering it
+ * would invite the user to retry something that cannot succeed.
+ */
 
 function fail(action: string, e: unknown): Denied {
   if (isDoubleConfirmedViolation(e)) {
@@ -2254,9 +2255,7 @@ async function moveAppointment(
         // clinic may still change. Owner, admin and reception are unchanged.
         //
         // AGAINST THE STORED ROW, not the request: `affected` is what the
-        // database holds before this save, read under the caller's RLS. The
-        // rule is enforced here, in the application; the database policies
-        // are unchanged by this card.
+        // database holds before this save, read under the caller's RLS.
         //
         // AND AGAIN AT THE WRITE, for the therapist only: the read above takes
         // no row lock, so reception may reassign the visit between it and the
