@@ -27,7 +27,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -150,29 +149,6 @@ const GUARDED = [
   ["docs/guide/build/seed-guide.mjs", 86],
 ];
 
-// R28's two scripts are listed here BEFORE the pull request that guards them
-// merges, because this file is a frozen gate and the guard cannot land first:
-// with the call in the scripts and this list unchanged, the "every file that
-// calls the guard" case below goes red. So, for each, the sha256 of its bytes
-// on main as they stood the day this was written, unguarded. While a file still
-// hashes to its pin it is in that one known state: it is not spawned (it would
-// run for real) and it must not appear among the callers. Any other bytes,
-// including the guarded ones, get every case in this file. The allowance is
-// for those exact bytes and no others, so it cannot excuse a later edit that
-// drops the guard. Once the guarded scripts are on main the pins are inert, and
-// the next GATE-CHANGE to this file removes them.
-const AWAITING_GUARD = new Map([
-  ["apps/web/e2e/seed/seed-e2e.mjs", "1d7ca07fddcf02914045f4e5740f2912788d2cf85447e19ef6261a6fa831c98e"],
-  ["docs/guide/build/seed-guide.mjs", "cdd56ff4a274bf3777f737e1c1f7c4862caf4c3311f17cfcc2c2872e78d8f412"],
-]);
-
-/** True when `rel` is one of R28's scripts and still holds its pinned, unguarded bytes. */
-function awaitingGuard(rel) {
-  const pin = AWAITING_GUARD.get(rel);
-  if (!pin) return false;
-  return createHash("sha256").update(fs.readFileSync(path.join(ROOT, rel))).digest("hex") === pin;
-}
-
 // The programs the apply lane runs IN that checkout, the libraries they import,
 // and the owner-run production tools: none of them may carry the guard.
 const PRODUCTION_PROGRAMS = [
@@ -220,6 +196,14 @@ const DELIBERATELY_UNGUARDED = [
   "scripts/apply-lane/install-apply-settings.mjs",
 ];
 
+// R28 review: the readdir above admits ANY .zsh file under scripts/apply-lane,
+// so a new one would be left unguarded without a word. These are the three the
+// ruling names; a fourth must be added here on purpose.
+test("the apply lane's unguarded .zsh installers are exactly the three R28 names", () => {
+  const zsh = fs.readdirSync(path.join(ROOT, "scripts/apply-lane")).filter((f) => f.endsWith(".zsh")).sort();
+  assert.deepEqual(zsh, ["install-apply-settings.zsh", "remove-user-psql-allow.zsh", "set-user-classify-all-shell.zsh"]);
+});
+
 /** Spawn a script by its kind, with an environment that reaches nothing. */
 function spawnScript(rel, cwd, file = path.join(ROOT, rel)) {
   // SUPABASE_URL names an .invalid host: seed-e2e.mjs falls back to the local
@@ -237,12 +221,6 @@ function spawnScript(rel, cwd, file = path.join(ROOT, rel)) {
 const show = (r) => `\n  status ${r.status} signal ${r.signal}\n  stdout: ${JSON.stringify(r.stdout)}\n  stderr: ${JSON.stringify(r.stderr)}`;
 
 for (const [rel, code] of GUARDED) {
-  if (awaitingGuard(rel)) {
-    test(`${rel} is listed ahead of its guard (R28): its pinned unguarded bytes, not spawned`, () => {
-      assert.doesNotMatch(fs.readFileSync(path.join(ROOT, rel), "utf8"), /refuse-prod-apply-cwd|refuseProdApplyCwd/);
-    });
-    continue;
-  }
   test(`${rel} refuses first when started inside the apply checkout`, () => {
     const cwd = fs.mkdtempSync(path.join(NESTED, "run-"));
     const r = spawnScript(rel, cwd);
@@ -316,11 +294,7 @@ function prodSeedCopies() {
 }
 
 for (const rel of SEED_SCRIPTS) {
-  test(`${rel} is refused by its own location, a linked file, a linked or upper-case working directory and a .. walk`, (t) => {
-    if (awaitingGuard(rel)) {
-      t.skip("listed ahead of its guard (R28): its pinned unguarded bytes are not run");
-      return;
-    }
+  test(`${rel} is refused by its own location, a linked file, a linked or upper-case working directory and a .. walk`, () => {
     const refuse = (where) => `REFUSE: ${rel} does not run in the production apply checkout (${where}).\n`;
     const expectRefusal = (r, where) => {
       assert.equal(r.status, REFUSE_EXIT_CODE, show(r));
@@ -371,7 +345,7 @@ const GUARDED_SET = new Set(GUARDED.map(([rel]) => rel));
 
 test("the list above is every file that calls the guard, and every file that imports it", () => {
   const callers = filesMatching("refuseProdApplyCwd\\(import\\.meta\\.url|production apply checkout \\(\\$\\{r17_dir\\}\\)");
-  assert.deepEqual(callers, [...GUARDED_SET].filter((rel) => !awaitingGuard(rel)).sort());
+  assert.deepEqual(callers, [...GUARDED_SET].sort());
   // An import without the call (or with a call written another way) is a
   // script that thinks it is guarded: it must be on the list, where the spawn
   // case above proves the refusal.
