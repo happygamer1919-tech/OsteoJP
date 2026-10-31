@@ -40,6 +40,7 @@ import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
 import { addDays, lisbonMidnightUtc } from "../../../lib/scheduling/time";
 import { offersTherapistChange } from "../../../lib/scheduling/therapist-change";
+import { BULK_ROLES } from "../../../lib/scheduling/bulk-reschedule-core";
 import type { AppointmentStatusValue } from "../../../lib/scheduling/types";
 import { MarcacoesFilters } from "./marcacoes-filters.client";
 import {
@@ -64,6 +65,7 @@ import { FichaExportButton } from "./ficha-export-button";
 import { FocusOnArrive } from "./focus-on-arrive.client";
 import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
+import { BulkChangeButton } from "./bulk-change";
 import { PatientPacks } from "./patient-packs";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
@@ -763,6 +765,12 @@ export default async function PatientProfilePage({
           aria-label={s["patients.tabAppointments"]}
           className="flex flex-col gap-6"
         >
+          {/* APPT-BULK-01: "Alterar várias marcações", owner, admin and
+              reception, when they may edit this patient's appointments. The
+              server action holds the same gate. */}
+          {canEditAppointments && BULK_ROLES.has(ctx.role) && (
+            <BulkChangeButton patientId={id} options={consultasOptions} />
+          )}
           {/* RB-02: no patientId and no canAdjust - the consumir/restaurar
               controls are gone, so there is nothing here to authorise and
               nothing to revalidate. */}
