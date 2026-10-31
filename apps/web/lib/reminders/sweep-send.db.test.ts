@@ -70,6 +70,22 @@
  * database's clock stay real) to the pass's own, and an arm that lets time go
  * by between the selection and a send moves it inside the send step.
  *
+ * THE TIME BUDGET (strategy's ruling R35, "send-path tests are never left
+ * flaky"). An arm here is a run of several passes against a real database,
+ * and the default budget of 5 seconds a test is a unit test's. Measured
+ * 2026-10-31 with this file run beside five full runs of the web DB suite on
+ * one database (the shape of a sitting that runs mutants and gates at once),
+ * eight rounds: arms took up to 5.2 seconds, two rounds failed "Test timed
+ * out in 5000ms" (and in one the next arm failed too: an arm that times out
+ * keeps running, and its send landed in the next arm's count), and the FIRST
+ * arm took 2.0 to 3.5 seconds where its nine siblings, the same work, took
+ * 0.2 to 1.3, because it alone loaded the scheduler's module graph inside its
+ * own budget. So that graph is loaded once in `beforeAll`, and every arm has
+ * 30 seconds: the same eight rounds then passed, the first arm at 0.2 to 0.5
+ * seconds and the slowest arm at 5.4. Isolated, the arms take well under a
+ * second each; the budget is for a busy machine, and it hides nothing that
+ * fails on its own.
+ *
  * Skipped without DATABASE_URL. NOT hard-required in assert-rls-executed.mjs:
  * that file is a frozen gate, so listing this suite there is a GATE-CHANGE.
  */
@@ -116,7 +132,7 @@ vi.mock("@osteojp/db", async (importOriginal) => {
 const live = Boolean(process.env.DATABASE_URL);
 const d = live ? describe : describe.skip;
 
-d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the switch off it sends nothing", () => {
+d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the switch off it sends nothing", { timeout: 30_000 }, () => {
   let sql: Awaited<ReturnType<typeof import("@osteojp/db").getDbAdmin>>;
   const tenantA = randomUUID();
   const tenantB = randomUUID();
@@ -325,6 +341,12 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   }
 
   beforeAll(async () => {
+    // R35: the module graph the arms import (the scheduled function, both
+    // passes, the dispatcher), loaded here once, so no arm pays for it inside
+    // its own budget. See the header.
+    await import("./inngest/sweep");
+    await import("./sweep-send");
+    await import("./dispatch");
     const { getDbAdmin } = await import("@osteojp/db");
     sql = getDbAdmin();
     for (const [tenant, t] of Object.entries(seeds)) {
@@ -338,7 +360,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
         values (${t.patient}, ${tenant}, 'Paciente Sweep', '912345678', ${"p-" + t.patient.slice(0, 8) + "@p.test"}, true, true)`);
     }
     h.tenants = [tenantA, tenantB];
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!sql) return;
