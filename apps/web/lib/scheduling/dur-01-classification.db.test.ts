@@ -127,7 +127,18 @@ d("DUR-01: stage 1's inline rule agrees with the app's own checks, row for row",
       values (${lv}, ${tenantId}, 'Linda-a-Velha (teste)', '08:00', '20:00')`);
     await sql.execute(raw`insert into locations (id, tenant_id, name, opens_at, closes_at, midday_closed_from, midday_closed_to)
       values (${cb}, ${tenantId}, 'Castelo Branco (teste)', '08:00', '20:00', '13:00', '14:00')`);
-    for (const u of [ownerId, ...t, nesa]) {
+    // HOR-01 (2026-10-30): Terapeuta 11 is NOT a member of LV. Since HOR-01 the
+    // staff app gives a therapist with no Horarios rows the clinic's opening
+    // hours at every clinic they are a member of, so a member with no rows is
+    // no longer "not configured" to the app. Stage 1 carries the rule as it stood
+    // when DUR-01 RAN (2026-09-27, complete, and it refuses to run again), where
+    // no rows meant no refusal. Terapeuta 11 carries the two window and closure
+    // arms and has no rows; as a member, the app would now also flag "after the
+    // last start" (19:30 + 60 min ends past LV's 20:00) as outside hours, a
+    // difference that comes from the later rule and not from the op. Dropping the
+    // membership keeps this suite measuring what it was written for: the op's
+    // inline rule against the app's, under the rule the op ran with.
+    for (const u of [ownerId, ...t.filter((u) => u !== t[11]), nesa]) {
       await sql.execute(raw`insert into staff_locations (tenant_id, user_id, location_id) values (${tenantId}, ${u}, ${lv})`);
     }
     for (const u of [ownerId, t[9]!, t[10]!]) {

@@ -99,6 +99,9 @@ const MONDAY_09_13 = {
   validFrom: null,
   validUntil: null,
   isActive: true,
+  // HOR-01: the row's clinic, as every real row carries. The resolver reads a
+  // therapist's rows at every clinic and narrows to the one asked about.
+  locationId: "loc-1",
 };
 
 let updates: Record<string, unknown>[] = [];

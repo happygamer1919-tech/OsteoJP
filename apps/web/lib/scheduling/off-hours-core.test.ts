@@ -303,12 +303,19 @@ function txWith(rows: unknown[]) {
 }
 
 /** Would the write path refuse a one-slot booking here for being outside the hours? */
-async function refused(date: string, slotMin: number, rows: AvailabilityTemplate[]): Promise<boolean> {
+async function refused(
+  date: string,
+  slotMin: number,
+  rows: AvailabilityTemplate[],
+  // HOR-01: the clinic asked about. The resolver reads a therapist's rows at
+  // every clinic and narrows to this one, so it must be the rows' own clinic.
+  locationId: string = LV,
+): Promise<boolean> {
   const startsAt = lisbonDateTimeToUtc(date, slotLabel(slotMin));
   const endsAt = new Date(startsAt.getTime() + SLOT_MINUTES * 60_000);
   const verdict = await checkAvailability(txWith(rows), {
     practitionerId: "p-1",
-    locationId: LV,
+    locationId,
     startsAt,
     endsAt,
   });
@@ -407,7 +414,7 @@ describe("AGREEMENT: a slot is shaded exactly when checkAvailability refuses a b
         const perClinic = await Promise.all(
           v.clinics.map(async (c) => ({
             hasHours: c.templates.some((t) => t.isActive),
-            refuses: await refused(MON, m, c.templates),
+            refuses: await refused(MON, m, c.templates, c.locationId),
           })),
         );
         const withHours = perClinic.filter((c) => c.hasHours);

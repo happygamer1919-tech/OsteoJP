@@ -1,8 +1,9 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
 import { availabilityTemplates, locations, staffLocations, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
+import { readEffectiveTemplates } from "./effective-availability";
 
 /**
  * Read-only lookup of the ACTIVE location ids a therapist is assigned to
@@ -22,18 +23,27 @@ export async function getTherapistLocationIds(
   therapistId: string,
 ): Promise<string[]> {
   return runScoped(ctx, async (tx) => {
-    const rows = await tx
-      .selectDistinct({ locationId: availabilityTemplates.locationId })
-      .from(availabilityTemplates)
-      .innerJoin(locations, eq(availabilityTemplates.locationId, locations.id))
-      .where(
-        and(
-          eq(availabilityTemplates.userId, therapistId),
-          eq(availabilityTemplates.isActive, true),
-          eq(locations.isActive, true),
-        ),
-      );
-    return rows.map((r) => r.locationId);
+    // HOR-01: "where does this therapist have hours" now means EFFECTIVE hours,
+    // the same rows the booking refusal measures against: their own active
+    // rows, plus every member clinic where the clinic's opening hours apply to
+    // them. A therapist with no rows who belongs to exactly one clinic is
+    // auto-filled to it; one who belongs to two is not, as before for anybody
+    // with hours at two clinics.
+    const templates = await readEffectiveTemplates(tx, { therapistId });
+    const ids = [
+      ...new Set(
+        templates.filter((t) => t.isActive && t.locationId).map((t) => t.locationId as string),
+      ),
+    ];
+    if (ids.length === 0) return [];
+    // Only ACTIVE clinics, as before: an own row at an archived clinic does not
+    // make it a place to book. (Generated rows only ever name active clinics.)
+    const active = await tx
+      .select({ id: locations.id })
+      .from(locations)
+      .where(and(inArray(locations.id, ids), eq(locations.isActive, true)));
+    const activeIds = new Set(active.map((r) => r.id));
+    return ids.filter((id) => activeIds.has(id));
   });
 }
 
