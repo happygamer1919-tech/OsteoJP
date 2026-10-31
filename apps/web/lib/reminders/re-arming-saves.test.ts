@@ -297,6 +297,22 @@ describe("R33: the conditions the table's clauses are read from", () => {
     for (const line of lines) expect(body, line).toContain(line);
   });
 
+  it("every writer of a booking or a move row records the start with toISOString(), so it compares as millisecond text", () => {
+    const actions = srcOf("apps/web/lib/scheduling/actions.ts");
+    expect(bodyOf("apps/web/lib/scheduling/actions.ts:createAppointment")).toContain("startsAt: created[i].startsAt.toISOString(),");
+    expect(bodyOf("apps/web/lib/scheduling/actions.ts:cloneAppointment")).toContain("startsAt: values.startsAt.toISOString(),");
+    expect(bodyOf("apps/web/lib/scheduling/actions.ts:moveAppointment")).toContain("startsAt: t.startsAt.toISOString(),");
+    const batch = bodyOf("apps/web/lib/scheduling/batch.ts:batchSchedule");
+    expect(batch).toContain("startsAt: toBook[i].startsAt.toISOString(),");
+    expect(batch).toContain("startsAt: b.startsAt,");
+    // No other file writes either row (the gate's own table names them, and writes nothing).
+    const writers = APP_SOURCES.filter((x) => /action: "appointment\.(create|reschedule)"/.test(x.src))
+      .map((x) => x.file)
+      .filter((f) => f !== "apps/web/lib/reminders/reminder-population.ts");
+    expect(writers.sort()).toEqual(["apps/web/lib/scheduling/actions.ts", "apps/web/lib/scheduling/batch.ts"]);
+    expect(actions.match(/action: "appointment\.(create|reschedule)"/g)).toHaveLength(3);
+  });
+
   it("an un-cancel is from Cancelada to Agendada or Confirmada, and nothing else", () => {
     expect(srcOf("apps/web/lib/scheduling/uncancel.ts")).toContain(
       'return from === "cancelled" && (to === "scheduled" || to === "confirmed");',
@@ -346,6 +362,19 @@ describe("R33: the gate's SQL is the table, clause for clause", () => {
     // No clause reads a `toStatus` without the `fromStatus` beside it.
     expect(sql.match(/->>'toStatus'/g)).toHaveLength(3);
     expect(sql.match(/->>'fromStatus'/g)).toHaveLength(2);
+    // A move counts only when the start at the mark is not the start now: the
+    // latest booking or move row AT OR BEFORE the mark (`<=`), newest first,
+    // its `startsAt` against the start now as millisecond text, and no row
+    // (null) counts. One such read, on the `moved` clause only.
+    const AT_THE_MARK =
+      /"reminder_re_arming_save"\."action" = \$(\d+) and \(\(select "reminder_start_at_the_mark"\."metadata"->>'startsAt' from "audit_log" "reminder_start_at_the_mark" where \("reminder_start_at_the_mark"\."entity_type" = \$\d+ and "reminder_start_at_the_mark"\."entity_id" = "appointments"\."id" and "reminder_start_at_the_mark"\."action" in \(\$(\d+), \$(\d+)\) and "reminder_start_at_the_mark"\."created_at" <= now\(\)\) order by "reminder_start_at_the_mark"\."created_at" desc, "reminder_start_at_the_mark"\."id" desc limit \$(\d+)\)\) is distinct from to_char\(date_trunc\('milliseconds', "appointments"\."starts_at"\) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS\.MS"Z"'\)\)/g;
+    const reads = [...sql.matchAll(AT_THE_MARK)];
+    expect(reads).toHaveLength(1);
+    const [, moved, a, b, limit] = reads[0]!;
+    expect(params[Number(moved) - 1]).toBe("appointment.reschedule");
+    expect([params[Number(a) - 1], params[Number(b) - 1]]).toEqual(["appointment.create", "appointment.reschedule"]);
+    expect(params[Number(limit) - 1]).toBe(1);
+    expect(sql.match(/"reminder_start_at_the_mark"/g)!.length).toBe(sql.match(AT_THE_MARK)!.join("").match(/"reminder_start_at_the_mark"/g)!.length);
     // Strictly after.
     expect(sql).toContain(`"reminder_re_arming_save"."created_at" > now()`);
     expect(sql).not.toContain(`"reminder_re_arming_save"."created_at" >= `);

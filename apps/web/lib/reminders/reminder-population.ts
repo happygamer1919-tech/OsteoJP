@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, exists, inArray, not, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, inArray, lte, not, or, sql, type SQL } from "drizzle-orm";
 import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { appointments, auditLog, type DbTx } from "@osteojp/db";
 
@@ -135,7 +135,8 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  *   actions.ts: cloneAppointment           appointment.create: always
  *   actions.ts: rescheduleAppointment      appointment.reschedule (written by actions.ts:
  *   actions.ts: bulkRescheduleAppointments   moveAppointment, once per visit moved): always,
- *                                          BUT see the question below
+ *                                          BUT counted only when it changed the START
+ *                                          (below), and see the question below
  *   actions.ts: confirmAppointmentRequest  appointment.update with `via` portal_request_confirm: always
  *   actions.ts: updateAppointment          appointment.update, two cases:
  *     an online request accepted with the Estado control: `fromStatus`
@@ -182,6 +183,24 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * as before R33. It can only differ for a visit that is an unaccepted request
  * at the pass (nothing sends to it, and the sleeping job has no run for it),
  * or one accepted afterwards through a door that writes none of the rows above.
+ *
+ * A MOVE COUNTS ONLY WHEN THE START IS NOT THE ONE THE MARK WAS FOR (R4
+ * round 2 on #1678, prepared for strategy). A move that keeps the start (a new
+ * therapist, clinic or length; a series or bulk change keeping the hour; a
+ * move away and back) re-arms the sleeping job too, but that job woke at the
+ * mark and sent the reminder before the save. Counted, it would leave the
+ * job's claim alone in the compare (no label fits it), and in send mode it
+ * would leave the patient with no reminder at all: the event cancels the
+ * job's run, its re-plan has no mark left, and the gate holds the sweep. So
+ * an `appointment.reschedule` after the mark counts only while the visit's
+ * start AT THE MARK differs from its start now. The start at the mark is the
+ * `startsAt` of the latest `appointment.create` or `appointment.reschedule`
+ * row of the visit written at or before the mark; every writer of those two
+ * puts it there with `toISOString()` (pinned in re-arming-saves.test.ts), so
+ * it is compared as millisecond text with the start now, the way
+ * scripts/db/read-sweep-unexplained-20261030.sql compares them. With no such
+ * row, or one without `startsAt` (an imported visit, a row of another shape),
+ * the move counts, as before. Audit rows only: no claim is read.
  *
  * re-arming-saves.test.ts lists the doors from the source and holds this table
  * to them: a door added, removed or given another condition fails it.
@@ -237,18 +256,53 @@ export type ReArmingClause = (typeof RE_ARMING_SAVES)[number]["clause"];
 const REQUEST_ORIGIN = "patient_portal";
 
 /**
- * One clause of the table, on an alias of the audit table, for the enclosing
- * `appointments` row. Text against text on the metadata, so a row of another
- * shape matches nothing and raises nothing.
+ * The visit's start AT `mark`, as millisecond text: the `startsAt` of its
+ * latest `appointment.create` or `appointment.reschedule` row written at or
+ * before the mark. Null when there is none, or it carries no `startsAt`.
  */
-export function reArmingClause(clause: ReArmingClause, saved: Record<"action" | "metadata", PgColumn>): SQL {
+function startAtTheMark(tx: DbTx, mark: SQL): SQL {
+  const prior = alias(auditLog, "reminder_start_at_the_mark");
+  // Qualified by hand: a select list renders a column without its alias, and
+  // the enclosing query has another `metadata` in scope.
+  return sql`(${tx
+    .select({ startsAt: sql.raw(`"reminder_start_at_the_mark"."metadata"->>'startsAt'`) })
+    .from(prior)
+    .where(
+      and(
+        eq(prior.entityType, "appointment"),
+        eq(prior.entityId, appointments.id),
+        inArray(prior.action, ["appointment.create", "appointment.reschedule"]),
+        lte(prior.createdAt, sql`${mark}`),
+      ),
+    )
+    .orderBy(desc(prior.createdAt), desc(prior.id))
+    .limit(1)})`;
+}
+
+/** The visit's start now, as the same millisecond text `toISOString()` writes. */
+const START_NOW_TEXT = sql`to_char(date_trunc('milliseconds', ${appointments.startsAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+/**
+ * One clause of the table, on an alias of the audit table, for the enclosing
+ * `appointments` row; `mark` is the instant the gate reads saves after.
+ * Text against text on the metadata, so a row of another shape matches
+ * nothing and raises nothing.
+ */
+export function reArmingClause(
+  tx: DbTx,
+  clause: ReArmingClause,
+  saved: Record<"action" | "metadata", PgColumn>,
+  mark: SQL,
+): SQL {
   const action = RE_ARMING_SAVES.find((c) => c.clause === clause)!.action;
   const of = (...more: SQL[]) => and(eq(saved.action, action), ...more)!;
   const isRequest = sql`${appointments.origin} = ${REQUEST_ORIGIN}`;
   switch (clause) {
     case "booked":
-    case "moved":
       return of();
+    case "moved":
+      // Counted only when the start the mark was for is not the start now (see the table's notes).
+      return of(sql`${startAtTheMark(tx, mark)} is distinct from ${START_NOW_TEXT}`);
     case "accepted_in_pedidos":
       return of(sql`${saved.metadata}->>'via' = 'portal_request_confirm'`);
     case "accepted_with_estado":
@@ -299,7 +353,7 @@ export function hasReArmingSaveAfter(tx: DbTx, instant: SQL, unlessPrecededBy?: 
         and(
           eq(saved.entityType, "appointment"),
           eq(saved.entityId, appointments.id),
-          or(...RE_ARMING_SAVES.map((c) => reArmingClause(c.clause, saved))),
+          or(...RE_ARMING_SAVES.map((c) => reArmingClause(tx, c.clause, saved, instant))),
           sql`${saved.createdAt} > ${instant}`,
           unlessPrecededBy ? not(unlessPrecededBy(sql`${saved.createdAt}`)) : undefined,
         ),

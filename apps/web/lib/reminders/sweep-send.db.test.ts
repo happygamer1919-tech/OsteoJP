@@ -177,6 +177,8 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     status?: string;
     origin?: string;
     booked?: boolean;
+    /** Minutes from the start to the start the booking row records. Absent: the row records none. */
+    bookedStartIn?: number;
   }): Promise<{ id: string; start: Date }> {
     const tenantId = v.tenant ?? tenantA;
     const mine = seeds[tenantId]!;
@@ -192,8 +194,11 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
       // Stamped at the visit's creation, as a booking is. The database's clock
       // would put it after the mark of an arm on the real clock, and R24 reads
       // when a scheduling save was written.
+      // The start it records, as createAppointment writes it, only when asked:
+      // without one the gate reads the start at the mark as unknown.
+      const metadata = JSON.stringify(v.bookedStartIn === undefined ? {} : { startsAt: plus(start, v.bookedStartIn).toISOString() });
       await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-        values (${tenantId}, null, 'appointment.create', 'appointment', ${id}, '{}'::jsonb, ${created.toISOString()})`);
+        values (${tenantId}, null, 'appointment.create', 'appointment', ${id}, ${metadata}::jsonb, ${created.toISOString()})`);
     }
     return { id, start };
   }
@@ -219,7 +224,10 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
    * `now`: it starts 23 and a half hours after `now` and was created 10 hours
    * before, which is after its 48 hour mark.
    */
-  const smsVisit = (now: Date, over: { tenant?: string; startIn?: number; status?: string; origin?: string; booked?: boolean } = {}) =>
+  const smsVisit = (
+    now: Date,
+    over: { tenant?: string; startIn?: number; status?: string; origin?: string; booked?: boolean; bookedStartIn?: number } = {},
+  ) =>
     visit({ now, startIn: over.startIn ?? 23 * H + 30, createdIn: -10 * H, ...over });
 
   /** A visit whose ONLY due mark is the 48 hour email, due 30 minutes before `now`. */
@@ -1319,12 +1327,51 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(h.sends).toEqual([`sms:${v.id}`]);
   });
 
+  /**
+   * A MOVE COUNTS ONLY WHEN THE START IS NOT THE ONE THE MARK WAS FOR (R4
+   * round 2 on #1678). A move that kept the start, written after the mark,
+   * re-armed the sleeping job and so cancelled its run; held by the gate, the
+   * patient would get no reminder at all. The sweep sends it, late and inside
+   * the late rule. A move that changed the start is still not sent.
+   */
+  it("R33: a move after the mark that KEEPS the start is sent (late, within its limit); one that changed it is not", async () => {
+    const now = clockOf(26);
+    const one = async (minutesAgo: number, bookedStartIn: number) => {
+      const v = await smsVisit(now, { startIn: 24 * H - minutesAgo, bookedStartIn });
+      return { ...v, mark: plus(v.start, -24 * H) };
+    };
+    const toStart = (x: { start: Date }, minutes = 0) => ({ startsAt: plus(x.start, minutes).toISOString() });
+    const v = {
+      therapistChanged: await one(30, 0),
+      awayAndBack: await one(40, 0),
+      laterSameDay: await one(50, -3 * H),
+      bulkKeptHour: await one(60, 0),
+    };
+    await savedAt(v.therapistChanged.id, "appointment.reschedule", { ...toStart(v.therapistChanged), scope: "one" }, plus(v.therapistChanged.mark, 5));
+    await savedAt(v.awayAndBack.id, "appointment.reschedule", toStart(v.awayAndBack, 2 * H), plus(v.awayAndBack.mark, 5));
+    await savedAt(v.awayAndBack.id, "appointment.reschedule", toStart(v.awayAndBack), plus(v.awayAndBack.mark, 10));
+    await savedAt(v.laterSameDay.id, "appointment.reschedule", toStart(v.laterSameDay), plus(v.laterSameDay.mark, 5));
+    await savedAt(
+      v.bulkKeptHour.id,
+      "appointment.reschedule",
+      { ...toStart(v.bulkKeptHour), endsAt: plus(v.bulkKeptHour.start, 45).toISOString(), scope: "one", allowConflict: false },
+      plus(v.bulkKeptHour.mark, 5),
+    );
+
+    expect(await pass(tenantA, now)).toMatchObject({ due: 3, taken: 3, sent: 3, tooLate: 0 });
+    expect([...h.sends].sort()).toEqual(
+      [`sms:${v.therapistChanged.id}`, `sms:${v.awayAndBack.id}`, `sms:${v.bulkKeptHour.id}`].sort(),
+    );
+    expect(await claimsOf(v.laterSameDay.id)).toEqual([]);
+    expect(await ledgerOf(v.laterSameDay.id)).toEqual([]);
+  });
+
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows, the R24 arms' saves, and nothing else", async () => {
     const audit = await rows(raw`select action, count(*)::int as n from audit_log
       where tenant_id in (${tenantA}, ${tenantB}) group by action order by action`);
     expect(laterSaves).toEqual({
       "appointment.patient_sms_reply": 3,
-      "appointment.reschedule": 6,
+      "appointment.reschedule": 11,
       "appointment.sms_reply_reviewed": 1,
       "appointment.update": 9,
     });
