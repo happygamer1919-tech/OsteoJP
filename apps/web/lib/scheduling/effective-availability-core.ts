@@ -12,8 +12,18 @@
 //    rows are kept and act as overrides (part-timers, split shifts, dated days).
 // 2. Otherwise, the clinic's own opening hours ARE the therapist's hours there,
 //    as generated rows: Monday to Friday from `opens_at` to `closes_at`, and
-//    Saturday from `opens_at` to the clinic's Saturday closing time ONLY when the
-//    clinic has one. Sunday is never generated.
+//    Saturday from the clinic's SATURDAY opening time to its Saturday closing
+//    time, ONLY when the clinic has both and closing comes after opening. A
+//    Saturday never borrows the weekday `opens_at` (owner, 2026-10-31: Saturday
+//    is 09:00 to 13:00 while weekdays open at 08:00). Sunday is never generated.
+// 2a. The midday closure is NOT cut out of a generated row, on Saturday as on
+//    a weekday: a weekday row runs `opens_at` to `closes_at` straight through
+//    it. The closure is its own rule, enforced at every booking on every open
+//    day, Saturday included (clinic-closure-enforcement.ts, `closureFor`, owner
+//    2026-09-10), outside the allowConflict gate. Cutting it here as well would
+//    give one fact two owners. A Saturday window that ends at or before the
+//    closure starts (09:00 to 13:00 against Castelo Branco's 13:00 to 14:00)
+//    never meets it at all.
 // 3. Generated rows exist only for a therapist who is ACTIVE, BOOKABLE, NOT a
 //    shared resource (NESA) and a MEMBER of that clinic (staff_locations).
 //    Anybody else gets no generated rows, which leaves them exactly where they
@@ -27,9 +37,10 @@
 // CLINIC HOURS ARE DATA, NEVER A CONSTANT HERE
 // ==========================================================================
 // Nothing in this file names an hour. Weekdays read `opens_at`/`closes_at`
-// (migration 0085). Saturday reads a per-clinic Saturday closing time that only
-// exists once its own migration is applied; until then, and wherever it is
-// NULL, `saturdayClosesAt` is null and no Saturday row is generated.
+// (migration 0085). Saturday reads the per-clinic pair `saturday_opens_at`/
+// `saturday_closes_at` (HOR-02), which only exists once its own migration is
+// applied; until then, and wherever either end is NULL, `saturday` is null and
+// no Saturday row is generated (packages/db/src/location-saturday.ts).
 
 import { timeToMinutes, type AvailabilityTemplate } from "./availability";
 
@@ -50,9 +61,10 @@ export type MemberClinic = {
   /** Lisbon wall-clock "HH:MM" or "HH:MM:SS". */
   opensAt: string;
   closesAt: string;
-  /** The clinic's Saturday closing time, or null when it has none (or the
-   *  column does not exist yet on this database). Opening is `opensAt`. */
-  saturdayClosesAt: string | null;
+  /** The clinic's own Saturday opening and closing time, or null when it has
+   *  no Saturday (either end NULL, or the HOR-02 columns not on this database
+   *  yet). Never derived from `opensAt`: a Saturday opens when it says. */
+  saturday: { opensAt: string; closesAt: string } | null;
 };
 
 /** Active, bookable, and a person rather than a shared resource. */
@@ -72,9 +84,9 @@ export function isClinicDefaultEligible(e: ClinicDefaultEligibility | null | und
  */
 export function clinicDefaultTemplates(clinic: MemberClinic): AvailabilityTemplate[] {
   const out: AvailabilityTemplate[] = [];
-  const row = (weekday: number, endTime: string): AvailabilityTemplate => ({
+  const row = (weekday: number, startTime: string, endTime: string): AvailabilityTemplate => ({
     weekday,
-    startTime: clinic.opensAt,
+    startTime,
     endTime,
     validFrom: null,
     validUntil: null,
@@ -83,13 +95,16 @@ export function clinicDefaultTemplates(clinic: MemberClinic): AvailabilityTempla
     source: "clinic_default",
   });
   if (timeToMinutes(clinic.closesAt) > timeToMinutes(clinic.opensAt)) {
-    for (const weekday of CLINIC_DEFAULT_WEEKDAYS) out.push(row(weekday, clinic.closesAt));
+    for (const weekday of CLINIC_DEFAULT_WEEKDAYS) {
+      out.push(row(weekday, clinic.opensAt, clinic.closesAt));
+    }
   }
-  if (
-    clinic.saturdayClosesAt !== null &&
-    timeToMinutes(clinic.saturdayClosesAt) > timeToMinutes(clinic.opensAt)
-  ) {
-    out.push(row(SATURDAY, clinic.saturdayClosesAt));
+  // Saturday is its own pair, judged by the same forward-window rule as the
+  // weekday pair, and independently of it: a backwards weekday pair does not
+  // switch Saturday off, and a backwards Saturday pair does not touch weekdays.
+  const sat = clinic.saturday;
+  if (sat !== null && timeToMinutes(sat.closesAt) > timeToMinutes(sat.opensAt)) {
+    out.push(row(SATURDAY, sat.opensAt, sat.closesAt));
   }
   return out;
 }

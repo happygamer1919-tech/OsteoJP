@@ -38,7 +38,7 @@ const clinic = (over: Partial<MemberClinic> = {}): MemberClinic => ({
   locationId: LV,
   opensAt: "08:00:00",
   closesAt: "21:00:00",
-  saturdayClosesAt: null,
+  saturday: null,
   ...over,
 });
 
@@ -64,7 +64,7 @@ function covered(templates: AvailabilityTemplate[], loc: string, date: string, f
 }
 
 describe("clinicDefaultTemplates: hours come from the clinic row, never from a constant", () => {
-  it("no Saturday closing time: Monday to Friday only, opens_at to closes_at", () => {
+  it("no Saturday hours: Monday to Friday only, opens_at to closes_at", () => {
     const rows = clinicDefaultTemplates(clinic());
     expect(rows.map((r) => r.weekday)).toEqual([1, 2, 3, 4, 5]);
     for (const r of rows) {
@@ -75,14 +75,54 @@ describe("clinicDefaultTemplates: hours come from the clinic row, never from a c
     }
   });
 
-  it("a Saturday closing time adds Saturday, opening at opens_at", () => {
-    const rows = clinicDefaultTemplates(clinic({ saturdayClosesAt: "13:00:00" }));
+  it("Saturday hours 09:00 to 13:00 add ONE Saturday row, opening at the SATURDAY opening time", () => {
+    // The owner's answer of 2026-10-31: weekdays open at 08:00, Saturday at
+    // 09:00. A row starting at the weekday opens_at would make 08:00 to 09:00
+    // on Saturday bookable while the clinic is shut.
+    const rows = clinicDefaultTemplates(clinic({ saturday: { opensAt: "09:00:00", closesAt: "13:00:00" } }));
     expect(rows.map((r) => r.weekday)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(rows.find((r) => r.weekday === 6)).toMatchObject({ startTime: "08:00:00", endTime: "13:00:00" });
+    expect(rows.filter((r) => r.weekday === 6)).toEqual([
+      {
+        weekday: 6,
+        startTime: "09:00:00",
+        endTime: "13:00:00",
+        validFrom: null,
+        validUntil: null,
+        isActive: true,
+        locationId: LV,
+        source: "clinic_default",
+      },
+    ]);
+    // The weekday rows are untouched by Saturday's own opening time.
+    for (const r of rows.filter((r) => r.weekday !== 6)) {
+      expect([r.startTime, r.endTime]).toEqual(["08:00:00", "21:00:00"]);
+    }
+  });
+
+  it("Saturday closing at or before its own opening generates no Saturday row, and leaves weekdays alone", () => {
+    for (const saturday of [
+      { opensAt: "13:00:00", closesAt: "09:00:00" },
+      { opensAt: "09:00:00", closesAt: "09:00:00" },
+      // Closes after the WEEKDAY opening (08:00) but before its own: still none.
+      // A check against opens_at instead of the Saturday opening passes this.
+      { opensAt: "10:00:00", closesAt: "09:00:00" },
+    ]) {
+      const rows = clinicDefaultTemplates(clinic({ saturday }));
+      expect(rows.map((r) => r.weekday)).toEqual([1, 2, 3, 4, 5]);
+    }
+  });
+
+  it("a backwards WEEKDAY pair does not switch a valid Saturday off", () => {
+    const rows = clinicDefaultTemplates(clinic({ opensAt: "20:00", closesAt: "08:00", saturday: { opensAt: "09:00:00", closesAt: "13:00:00" } }));
+    expect(rows.map((r) => r.weekday)).toEqual([6]);
   });
 
   it("Sunday is never generated, whatever the clinic row says", () => {
-    for (const c of [clinic(), clinic({ saturdayClosesAt: "13:00:00" }), clinic({ opensAt: "00:00", closesAt: "23:59" })]) {
+    for (const c of [
+      clinic(),
+      clinic({ saturday: { opensAt: "09:00:00", closesAt: "13:00:00" } }),
+      clinic({ opensAt: "00:00", closesAt: "23:59", saturday: { opensAt: "00:00", closesAt: "23:59" } }),
+    ]) {
       expect(clinicDefaultTemplates(c).some((r) => r.weekday === 0)).toBe(false);
     }
   });
@@ -94,7 +134,6 @@ describe("clinicDefaultTemplates: hours come from the clinic row, never from a c
 
   it("a backwards or empty pair generates nothing rather than an invalid row", () => {
     expect(clinicDefaultTemplates(clinic({ opensAt: "20:00", closesAt: "08:00" }))).toEqual([]);
-    expect(clinicDefaultTemplates(clinic({ saturdayClosesAt: "08:00:00" })).some((r) => r.weekday === 6)).toBe(false);
   });
 });
 
@@ -117,16 +156,19 @@ describe("resolveEffectiveTemplates", () => {
     expect(covered(t, LV, MON, "20:30", "21:30")).toEqual({ configured: true, covered: false });
   });
 
-  it("Saturday: refused without a Saturday closing time, covered until it with one", () => {
+  it("Saturday: refused without Saturday hours, covered from the Saturday opening to the Saturday closing with them", () => {
     const without = resolve({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
     expect(covered(without, LV, SAT, "09:00", "10:00").covered).toBe(false);
 
     const withSat = resolve({
       own: [],
       eligibility: ELIGIBLE,
-      memberClinics: [clinic({ saturdayClosesAt: "13:00:00" })],
+      memberClinics: [clinic({ saturday: { opensAt: "09:00:00", closesAt: "13:00:00" } })],
     });
     expect(covered(withSat, LV, SAT, "09:00", "10:00").covered).toBe(true);
+    expect(covered(withSat, LV, SAT, "12:00", "13:00").covered).toBe(true);
+    // Before the Saturday opening, inside the weekday hours: refused.
+    expect(covered(withSat, LV, SAT, "08:00", "09:00").covered).toBe(false);
     expect(covered(withSat, LV, SAT, "12:30", "13:30").covered).toBe(false);
   });
 
@@ -134,7 +176,7 @@ describe("resolveEffectiveTemplates", () => {
     const t = resolve({
       own: [],
       eligibility: ELIGIBLE,
-      memberClinics: [clinic({ saturdayClosesAt: "13:00:00" })],
+      memberClinics: [clinic({ saturday: { opensAt: "09:00:00", closesAt: "13:00:00" } })],
     });
     expect(covered(t, LV, SUN, "10:00", "11:00")).toEqual({ configured: true, covered: false });
   });

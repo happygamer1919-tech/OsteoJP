@@ -39,7 +39,8 @@ const LV = "00000000-0000-4000-8000-0000000000a1";
 
 type Rows = Record<string, unknown[]>;
 
-let current: { tables: Rows; saturdayColumn: boolean; saturday: Record<string, string | null> };
+type SaturdayRow = { opensAt: string | null; closesAt: string | null };
+let current: { tables: Rows; saturdayColumns: string[]; saturday: Record<string, SaturdayRow> };
 
 const dialect = new PgDialect();
 
@@ -63,10 +64,15 @@ function fakeTx() {
     execute: async (q: SQL) => {
       const text = dialect.sqlToQuery(q).sql;
       if (text.includes("information_schema.columns")) {
-        return [{ present: text.includes("saturday_closes_at") ? current.saturdayColumn : false }];
+        // The catalogue names the Saturday columns that exist, as Postgres would.
+        return current.saturdayColumns.map((column_name) => ({ column_name }));
       }
       if (text.includes("saturday_closes_at")) {
-        return Object.entries(current.saturday).map(([id, v]) => ({ id, saturday_closes_at: v }));
+        return Object.entries(current.saturday).map(([id, v]) => ({
+          id,
+          saturday_opens_at: v.opensAt,
+          saturday_closes_at: v.closesAt,
+        }));
       }
       return [];
     },
@@ -77,7 +83,7 @@ vi.mock("@/lib/auth/context", () => ({
   runScoped: async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(fakeTx()),
 }));
 
-import { resetLocationSaturdayColumnCache } from "@osteojp/db";
+import { resetLocationSaturdayHoursCache } from "@osteojp/db";
 import { checkAvailability } from "./availability-enforcement";
 import { findScheduleConflicts } from "./conflict";
 import { getTherapistAvailability, listTherapistBlocksAndHours } from "./day-availability";
@@ -92,7 +98,7 @@ const CTX = { tenantId: "t", userId: "u", role: "reception" } as never;
 /** A therapist with no rows, active, bookable, a member of LV (08:00 to 21:00). */
 function noRowsMember(over: { users?: unknown[]; staff?: unknown[]; time_off?: unknown[] } = {}) {
   current = {
-    saturdayColumn: false,
+    saturdayColumns: [],
     saturday: {},
     tables: {
       availability_templates: [],
@@ -115,7 +121,7 @@ function noRowsMember(over: { users?: unknown[]; staff?: unknown[]; time_off?: u
 }
 
 beforeEach(() => {
-  resetLocationSaturdayColumnCache();
+  resetLocationSaturdayHoursCache();
   noRowsMember();
 });
 
@@ -138,18 +144,37 @@ describe("checkAvailability (create, clone, reschedule)", () => {
     expect(await check(SUN, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
   });
 
-  it("Saturday: refused while the clinic has no Saturday closing time", async () => {
+  it("Saturday: refused while the clinic has no Saturday hours", async () => {
     expect(await check(SAT, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
   });
 
-  it("Saturday: bookable until the clinic's Saturday closing time once the column holds one", async () => {
-    current.saturdayColumn = true;
-    current.saturday = { [LV]: "13:00:00" };
+  it("Saturday: refused when only the closing column exists, even with a value in it", async () => {
+    current.saturdayColumns = ["saturday_closes_at"];
+    current.saturday = { [LV]: { opensAt: null, closesAt: "13:00:00" } };
+    expect(await check(SAT, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
+  });
+
+  it("Saturday: refused when both columns exist but the opening time is NULL", async () => {
+    current.saturdayColumns = ["saturday_opens_at", "saturday_closes_at"];
+    current.saturday = { [LV]: { opensAt: null, closesAt: "13:00:00" } };
+    expect(await check(SAT, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
+  });
+
+  it("Saturday: bookable from the Saturday opening to the Saturday closing once both hold a value", async () => {
+    current.saturdayColumns = ["saturday_opens_at", "saturday_closes_at"];
+    current.saturday = { [LV]: { opensAt: "09:00:00", closesAt: "13:00:00" } };
     expect(await check(SAT, "10:00", "11:00")).toEqual({ ok: true, reason: "covered" });
+    // 08:00 is the WEEKDAY opening; on Saturday the clinic is still shut.
+    expect(await check(SAT, "08:00", "09:00")).toEqual({
+      ok: false,
+      windows: [{ startTime: "09:00", endTime: "13:00" }],
+    });
     expect(await check(SAT, "13:00", "14:00")).toEqual({
       ok: false,
-      windows: [{ startTime: "08:00", endTime: "13:00" }],
+      windows: [{ startTime: "09:00", endTime: "13:00" }],
     });
+    // Sunday stays shut whatever Saturday holds.
+    expect(await check(SUN, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
   });
 
   it("a therapist the default does not apply to stays UNCONFIGURED, exactly as before", async () => {
@@ -266,7 +291,7 @@ describe("the agenda's off-hours band", () => {
     });
     // Monday: only 21:00 to 22:00 is outside the clinic's day.
     expect(bands[MON]).toEqual([{ startMin: 21 * 60, endMin: 22 * 60 }]);
-    // Saturday with no Saturday closing time: the whole visible day.
+    // Saturday with no Saturday hours: the whole visible day.
     expect(bands[SAT]).toEqual([{ startMin: 8 * 60, endMin: 22 * 60 }]);
   });
 });

@@ -3,7 +3,7 @@ import { and, eq, inArray, type SQL } from "drizzle-orm";
 import {
   availabilityTemplates,
   locations,
-  readLocationSaturdayClosesAt,
+  readLocationSaturdayHours,
   staffLocations,
   users,
   type DbTx,
@@ -133,9 +133,9 @@ export async function readDefaultEligibility(
 
 /**
  * The ACTIVE clinics the therapist is a member of (staff_locations), each with
- * its opening hours and, where the database has the column, its Saturday
- * closing time. Two plain reads rather than a join, so the membership and the
- * hours are each one query a reader can check by eye.
+ * its opening hours and, where the database has the HOR-02 columns, its
+ * Saturday opening and closing time. Two plain reads rather than a join, so
+ * the membership and the hours are each one query a reader can check by eye.
  */
 export async function readMemberClinics(
   tx: DbTx,
@@ -160,7 +160,7 @@ export async function readMemberClinics(
     .where(and(inArray(locations.id, ids), eq(locations.isActive, true)));
   if (hourRows.length === 0) return [];
 
-  const saturday = await readLocationSaturdayClosesAt(
+  const saturday = await readLocationSaturdayHours(
     tx,
     hourRows.map((r) => r.id),
   );
@@ -168,6 +168,6 @@ export async function readMemberClinics(
     locationId: r.id,
     opensAt: r.opensAt,
     closesAt: r.closesAt,
-    saturdayClosesAt: saturday.get(r.id) ?? null,
+    saturday: saturday.get(r.id) ?? null,
   }));
 }

@@ -5,8 +5,18 @@
  * staff reader does with the rows it is handed. This proves the rows: that the
  * resolver's queries, run as `authenticated` under the caller's tenant claims
  * through `runScoped`, find the therapist's flags, memberships and the clinic's
- * hours, and that the column-presence check for the Saturday closing time
- * answers on a real catalogue.
+ * hours, and that the column-presence check for the Saturday hours answers on
+ * a real catalogue.
+ *
+ * THE SATURDAY COLUMNS ARE MADE HERE, NEVER COMMITTED. HOR-02's columns are not
+ * on a database built from main, so each Saturday arm adds the columns it needs
+ * (none, only the closing one, or both) INSIDE ONE TRANSACTION that also runs
+ * the booking check, as `authenticated` with the caller's claims (what
+ * runScoped does), and is then rolled back. Nothing outside that transaction
+ * ever sees them: an ALTER TABLE that committed would change `locations` for
+ * every suite running beside this one. The arm first drops both columns if
+ * they exist, so on a database where HOR-02 IS applied it measures the same
+ * states, with no CHECK in the way of the close <= open arm.
  *
  * ONE THERAPIST PER REASON. Each differs from the eligible one in exactly one
  * way, so dropping a term from the eligibility rule turns exactly one arm red.
@@ -39,7 +49,8 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
   let getTherapistAvailability: typeof import("./day-availability").getTherapistAvailability;
   let getTherapistLocationIds: typeof import("./therapist-locations").getTherapistLocationIds;
   let applyClinicDefaultSchedule: typeof import("@/lib/admin/clinic-default-schedule").applyClinicDefaultSchedule;
-  let saturdayColumnPresent: boolean;
+  let toClaims: typeof import("@osteojp/auth").toClaims;
+  let saturdayHoursPresent: boolean;
 
   const tenant = randomUUID();
   const lv = randomUUID();
@@ -94,13 +105,14 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     ({ getTherapistAvailability } = await import("./day-availability"));
     ({ getTherapistLocationIds } = await import("./therapist-locations"));
     ({ applyClinicDefaultSchedule } = await import("@/lib/admin/clinic-default-schedule"));
+    ({ toClaims } = await import("@osteojp/auth"));
 
     const [col] = (await db.execute(raw`
-      select exists (select 1 from information_schema.columns
+      select count(*) = 2 as present from information_schema.columns
         where table_schema = 'public' and table_name = 'locations'
-          and column_name = 'saturday_closes_at') as present
+          and column_name in ('saturday_opens_at', 'saturday_closes_at')
     `)) as unknown as [{ present: boolean }];
-    saturdayColumnPresent = col.present === true;
+    saturdayHoursPresent = col.present === true;
 
     await db.execute(
       raw`insert into tenants (id, name, slug) values (${tenant}::uuid, 'hor-01', ${"hor-01-" + tenant.slice(0, 8)})`,
@@ -198,29 +210,109 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     expect(await check(who.eligible, SUN, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
   });
 
-  it("Saturday follows the database: refused without a Saturday closing time column", async () => {
-    // On a database built from main this column does not exist yet, which is
-    // the state the resolver must survive. Where it exists and is NULL, the
-    // answer is the same.
-    if (saturdayColumnPresent) {
-      await db.execute(raw`update locations set saturday_closes_at = null where id = ${lv}::uuid`);
+  /**
+   * Run `fn` with the HOR-02 columns in the state named, inside ONE rolled-back
+   * transaction (see the header). The Saturday cache is cleared before and
+   * after, so the arm's own catalogue is what is read and nothing it learned
+   * outlives the columns it made.
+   */
+  class Rollback {
+    constructor(readonly value: unknown) {}
+  }
+  async function underSaturdayColumns<T>(
+    cols: { opens: boolean; closes: boolean },
+    values: { opensAt: string | null; closesAt: string | null },
+    fn: (tx: import("@osteojp/db").DbTx) => Promise<T>,
+  ): Promise<T> {
+    const dbmod = await import("@osteojp/db");
+    dbmod.resetLocationSaturdayHoursCache();
+    try {
+      await db.transaction(async (tx) => {
+        // "does not exist, skipping" is the expected answer on a main-built
+        // database; it is a NOTICE, and it is not this arm's evidence.
+        await tx.execute(raw`set local client_min_messages = warning`);
+        await tx.execute(raw`alter table public.locations
+          drop column if exists saturday_opens_at, drop column if exists saturday_closes_at`);
+        if (cols.opens) {
+          await tx.execute(raw`alter table public.locations add column saturday_opens_at time`);
+          await tx.execute(raw`update locations set saturday_opens_at = ${values.opensAt}::time where id = ${lv}::uuid`);
+        }
+        if (cols.closes) {
+          await tx.execute(raw`alter table public.locations add column saturday_closes_at time`);
+          await tx.execute(raw`update locations set saturday_closes_at = ${values.closesAt}::time where id = ${lv}::uuid`);
+        }
+        // What runScoped does: the policies decide, as for a real booking.
+        await tx.execute(raw`set local role authenticated`);
+        await tx.execute(raw`select set_config('request.jwt.claims', ${JSON.stringify(toClaims(ctx))}, true)`);
+        throw new Rollback(await fn(tx as never));
+      });
+    } catch (e) {
+      if (e instanceof Rollback) return e.value as T;
+      throw e;
+    } finally {
+      dbmod.resetLocationSaturdayHoursCache();
     }
+    throw new Error("unreachable: the transaction committed");
+  }
+
+  const satCheck = (tx: import("@osteojp/db").DbTx, date: string, from: string, to: string) =>
+    checkAvailability(tx, { practitionerId: who.eligible, locationId: lv, startsAt: at(date, from), endsAt: at(date, to) });
+
+  it("Saturday on the database as built: refused (no columns, or both NULL)", async () => {
+    // On a database built from main the columns do not exist, which is the
+    // state the resolver must survive. Where HOR-02 is applied the fixture's
+    // clinic was inserted without Saturday values, so both are NULL: same answer.
     expect(await check(who.eligible, SAT, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
-    // And where the column exists (HOR-02 applied), a value turns Saturday on,
-    // opening at opens_at. On a database without it this half has nothing to
-    // measure, and the line above is the whole answer.
-    if (saturdayColumnPresent) {
-      await db.execute(raw`update locations set saturday_closes_at = '13:00' where id = ${lv}::uuid`);
-      try {
-        expect(await check(who.eligible, SAT, "10:00", "11:00")).toEqual({ ok: true, reason: "covered" });
-        expect(await check(who.eligible, SAT, "13:00", "14:00")).toEqual({
-          ok: false,
-          windows: [{ startTime: "08:00", endTime: "13:00" }],
-        });
-      } finally {
-        await db.execute(raw`update locations set saturday_closes_at = null where id = ${lv}::uuid`);
-      }
-    }
+  });
+
+  it("Saturday, only the CLOSING column exists (with a value): refused, the catalogue reads absent", async () => {
+    const dbmod = await import("@osteojp/db");
+    const out = await underSaturdayColumns({ opens: false, closes: true }, { opensAt: null, closesAt: "13:00" }, async (tx) => ({
+      present: await dbmod.locationSaturdayHoursPresent(tx),
+      sat: await satCheck(tx, SAT, "10:00", "11:00"),
+    }));
+    expect(out).toEqual({ present: false, sat: { ok: false, windows: [] } });
+  });
+
+  it("Saturday, both columns, opening NULL: refused", async () => {
+    const out = await underSaturdayColumns({ opens: true, closes: true }, { opensAt: null, closesAt: "13:00" }, (tx) =>
+      satCheck(tx, SAT, "10:00", "11:00"),
+    );
+    expect(out).toEqual({ ok: false, windows: [] });
+  });
+
+  it("Saturday, both columns set 09:00 and 13:00: bookable 09:00 to 13:00 and nowhere else; Sunday never", async () => {
+    const dbmod = await import("@osteojp/db");
+    const out = await underSaturdayColumns({ opens: true, closes: true }, { opensAt: "09:00", closesAt: "13:00" }, async (tx) => ({
+      present: await dbmod.locationSaturdayHoursPresent(tx),
+      first: await satCheck(tx, SAT, "09:00", "10:00"),
+      last: await satCheck(tx, SAT, "12:00", "13:00"),
+      // 08:00 is the WEEKDAY opening: on Saturday the clinic is still shut.
+      early: await satCheck(tx, SAT, "08:00", "09:00"),
+      late: await satCheck(tx, SAT, "13:00", "14:00"),
+      sunday: await satCheck(tx, SUN, "10:00", "11:00"),
+      monday: await satCheck(tx, MON, "08:00", "09:00"),
+    }));
+    const shut = { ok: false, windows: [{ startTime: "09:00", endTime: "13:00" }] };
+    expect(out).toEqual({
+      present: true,
+      first: { ok: true, reason: "covered" },
+      last: { ok: true, reason: "covered" },
+      early: shut,
+      late: shut,
+      sunday: { ok: false, windows: [] },
+      monday: { ok: true, reason: "covered" },
+    });
+  });
+
+  it.each([
+    ["closing before opening", "13:00", "09:00"],
+    ["closing AT opening", "09:00", "09:00"],
+  ])("Saturday, both columns set, %s: refused", async (_why, opensAt, closesAt) => {
+    const out = await underSaturdayColumns({ opens: true, closes: true }, { opensAt, closesAt }, (tx) =>
+      satCheck(tx, SAT, "08:00", "09:00"),
+    );
+    expect(out).toEqual({ ok: false, windows: [] });
   });
 
   it.each([
@@ -308,21 +400,21 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     expect(await getTherapistLocationIds(ctx, who.twoClinicsRowsAtOne)).toEqual([lv]);
   });
 
-  it("a Saturday column that vanishes under a cached 'present' does not break booking", async () => {
+  it("Saturday columns that vanish under a cached 'present' do not break booking", async () => {
     const dbmod = await import("@osteojp/db");
-    dbmod.markLocationSaturdayColumnPresentForTests();
+    dbmod.markLocationSaturdayHoursPresentForTests();
     try {
       // The whole check runs in ONE transaction: if the failed Saturday read
       // were not inside a savepoint, the transaction would be aborted and this
       // would throw instead of answering.
       expect(await check(who.eligible, MON, "10:00", "11:00")).toEqual({ ok: true, reason: "covered" });
       expect(await check(who.eligible, SAT, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
-      if (!saturdayColumnPresent) {
-        // And the cache now says absent, so the column is not re-queried per booking.
-        expect(await dbmod.locationSaturdayColumnPresent(db)).toBe(false);
+      if (!saturdayHoursPresent) {
+        // And the cache now says absent, so the columns are not re-queried per booking.
+        expect(await dbmod.locationSaturdayHoursPresent(db)).toBe(false);
       }
     } finally {
-      dbmod.resetLocationSaturdayColumnCache();
+      dbmod.resetLocationSaturdayHoursCache();
     }
   });
 
