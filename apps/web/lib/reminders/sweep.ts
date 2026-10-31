@@ -7,7 +7,7 @@ import { lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
 import { withReminderTenantContext } from "./context";
 import { REMINDER_OFFSETS, type ReminderOffset } from "./offsets";
 import { REMINDER_CLAIM_KIND, REMINDER_CLAIM_RELEASE_KIND } from "./reminder-claim";
-import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent, hasSchedulingEventAfter } from "./reminder-population";
+import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasReArmingSaveAfter, hasSchedulingEvent } from "./reminder-population";
 
 /**
  * THE REMINDER SWEEP, IN SHADOW: every 15 minutes a pass reads the database,
@@ -47,7 +47,8 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent, hasSchedul
  *     switch of ./reminder-population.ts says every visit counts. THE SWITCH IS
  *     OFF AND THE QUESTION IS THE OWNER'S. The predicate and the switch are
  *     that file's, read here and decided nowhere else;
- *   - audit trail holds NO such save written after the mark (R24, below);
+ *   - audit trail holds NO save that re-armed the sleeping job written after
+ *     the mark (R24 and R33, below);
  *   - mark the sweep has not taken yet for the start the visit has now (next
  *     section).
  *
@@ -73,28 +74,30 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasSchedulingEvent, hasSchedul
  * accepted it, came after the mark, and the job it re-armed dropped the past
  * mark (computeDueReminders). R24 makes the sweep do the same.
  *
- * So a mark is NOT taken while the visit's audit trail holds a SCHEDULING SAVE
- * (the rows `hasSchedulingEvent` reads, ./reminder-population.ts) whose
- * `created_at` is STRICTLY AFTER the mark. A save written AT the mark exactly
- * counts as before it: that visit is taken as it always was. One save after
- * the mark is enough, whatever came before it: a visit booked early and moved
- * TO this start after the mark is the S5 case itself.
+ * So a mark is NOT taken while the visit's audit trail holds a RE-ARMING SAVE
+ * whose `created_at` is STRICTLY AFTER the mark. A save written AT the mark
+ * exactly counts as before it: that visit is taken as it always was. One save
+ * after the mark is enough, whatever came before it: a visit booked early and
+ * moved TO this start after the mark is the S5 case itself.
+ *
+ * WHICH SAVES (strategy's ruling R33): "It counts exactly the saves that make
+ * the live job re-plan this visit's reminders (the doors that emit
+ * appointment/scheduled with a re-arm). [...] A status-only save (an SMS
+ * "confirmo", a hand-set Confirmada) never counts." The doors, the audit row
+ * each writes and the condition it emits under are the table RE_ARMING_SAVES
+ * of ./reminder-population.ts, and re-arming-saves.test.ts holds it to the
+ * source. So a booked visit confirmed by hand, in the review queue or by the
+ * patient's own SMS after its mark is taken as before: those saves re-plan
+ * nothing, and the sleeping job sent its reminder at the mark.
  *
  * Not taken means not taken at all, for that start: no shadow row, no send, by
  * this pass or any later one. It is not counted as due, and nothing records
- * it. A save that is not a scheduling save (an `appointment.update` with no
- * `toStatus` of scheduled or confirmed, and not the acceptance of a request)
- * changes nothing.
+ * it. A save that re-arms nothing changes nothing.
  *
- * WIDER THAN S5, AND KNOWN. The scheduling saves are wider than the saves
- * that re-arm the sleeping job (./reminder-population.ts says where): a status
- * set to Confirmada by hand, or a reschedule that keeps the start, is one too.
- * So a visit booked well before its mark and confirmed by hand, or given
- * another therapist, after the mark but before the pass that would take it
- * gets no reminder for that mark, where the sleeping job, which woke at the
- * mark itself, sent one. For a mark inside the passes' hours (07:00 to 21:45,
- * every 15 minutes) the gap is at most the 15 minutes to the next pass, longer
- * only when a pass fails or is over the ceiling.
+ * A MOVE THAT KEEPS THE START (another therapist or clinic) re-arms the
+ * sleeping job too, so it counts. Written between the mark and the pass, the
+ * sleeping job sent that reminder at the mark and the sweep takes no row for
+ * it: the compare sees the job's claim alone for that start.
  *
  * "Before the pass" is read as before the mark was first HANDED OVER. The
  * shadow takes a mark once (its own row), so for it the two readings are one.
@@ -290,19 +293,19 @@ export function dueVisits(tenantId: string, offset: ReminderOffset, now: Date): 
 }
 
 /**
- * R24: NO SCHEDULING SAVE OF THE VISIT WAS WRITTEN AFTER THIS MARK. Strictly
- * after: a save at the mark exactly does not count. See the header.
+ * R24: NO RE-ARMING SAVE OF THE VISIT (R33, ./reminder-population.ts
+ * `RE_ARMING_SAVES`) WAS WRITTEN AFTER THIS MARK. Strictly after: a save at
+ * the mark exactly does not count. See the header.
  *
- * `handedOverAtOrBefore` is the sending pass's: a save it holds for (the mark
- * was already handed over at or before that save) does not count either. The
- * shadow passes none.
+ * `handedOverAtOrBefore` is the sending pass's: a save it holds for (the
+ * held-back retry, ./sweep-send.ts) does not count either. The shadow passes none.
  */
 export function notSavedAfterMark(
   tx: DbTx,
   offset: ReminderOffset,
   handedOverAtOrBefore?: (savedAt: SQL) => SQL,
 ): SQL {
-  return not(hasSchedulingEventAfter(tx, markOf(offset), handedOverAtOrBefore));
+  return not(hasReArmingSaveAfter(tx, markOf(offset), handedOverAtOrBefore));
 }
 
 /**
@@ -376,9 +379,10 @@ export type DueMark = {
   minutesAfterMark: number;
   /**
    * The visit's row was saved after this mark (its `updated_at`). Recorded, not
-   * acted on: a SCHEDULING save after the mark keeps the mark from being taken
-   * at all (R24), so a mark taken with this true was saved after it by
-   * something else, an edit the reminder job is not told of.
+   * acted on: a RE-ARMING save after the mark keeps the mark from being taken
+   * at all (R24, R33), so a mark taken with this true was saved after it by
+   * something that re-armed nothing: an edit, or a status set by hand or by
+   * the patient's SMS.
    */
   savedAfterMark: boolean;
 };

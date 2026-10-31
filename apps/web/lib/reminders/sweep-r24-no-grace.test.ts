@@ -9,9 +9,10 @@
  * builder itself, read off every query of a selection with a stand-in
  * transaction that records them and answers nothing:
  *
- *   1. THE GATE: a scheduling save (the audit rows `hasSchedulingEvent`
- *      reads, condition for condition) whose `created_at` is STRICTLY AFTER
- *      the mark of the offset being selected. At the mark is before it.
+ *   1. THE GATE: a re-arming save (R33: the table of
+ *      ./reminder-population.ts, held to the source by
+ *      re-arming-saves.test.ts) whose `created_at` is STRICTLY AFTER the mark
+ *      of the offset being selected. At the mark is before it.
  *   2. THE SHADOW PASS asks it, for both offsets, in the count of what is due
  *      and in the read of the marks it takes.
  *   3. THE SENDING PASS asks it the same way, and lifts it only for a save
@@ -28,7 +29,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const { REMINDER_OFFSETS } = await import("./offsets");
-const { hasSchedulingEvent, hasSchedulingEventAfter } = await import("./reminder-population");
+const { hasReArmingSaveAfter, hasSchedulingEvent } = await import("./reminder-population");
 const { notSavedAfterMark, selectDueMarks } = await import("./sweep");
 const { selectSendableMarks } = await import("./sweep-send");
 type DbTx = import("@osteojp/db").DbTx;
@@ -52,14 +53,18 @@ async function textOf(condition: SQL): Promise<{ sql: string; params: unknown[] 
  */
 function recordingTx() {
   const queries: string[] = [];
+  const full: { sql: string; params: unknown[] }[] = [];
   const tx = {
     select(fields: Record<string, unknown>) {
       const builder = qb.select(fields as never);
       return {
         from(table: never) {
-          const query = builder.from(table) as unknown as Record<string, unknown> & { toSQL: () => { sql: string } };
+          const query = builder.from(table) as unknown as Record<string, unknown> & {
+            toSQL: () => { sql: string; params: unknown[] };
+          };
           query.then = (resolve: (rows: unknown[]) => unknown) => {
             queries.push(query.toSQL().sql);
+            full.push(query.toSQL());
             if ("n" in fields) return resolve([{ n: 0 }]);
             if ("first" in fields) return resolve([{ first: new Date("2026-01-05T08:00:00Z") }]);
             return resolve([]);
@@ -69,15 +74,15 @@ function recordingTx() {
       };
     },
   };
-  return { tx: tx as unknown as DbTx, queries };
+  return { tx: tx as unknown as DbTx, queries, full };
 }
 
-/** The R24 clause, as rendered: a scheduling save written after the mark of an offset. */
+/** The R24 clause, as rendered: a re-arming save written after the mark of an offset. */
 const AFTER_THE_MARK =
-  /"reminder_scheduling_event_after_mark"\."created_at" > "appointments"\."starts_at" - make_interval\(mins => \$(\d+)::int\)/g;
+  /"reminder_re_arming_save"\."created_at" > "appointments"\."starts_at" - make_interval\(mins => \$(\d+)::int\)/g;
 
 describe("R24: the gate, as SQL", () => {
-  it("is a scheduling save written STRICTLY after the mark: `>`, never `>=`, against the start less the offset", async () => {
+  it("is a re-arming save written STRICTLY after the mark: `>`, never `>=`, against the start less the offset", async () => {
     for (const offset of REMINDER_OFFSETS) {
       const { sql, params } = await textOf(notSavedAfterMark(qb as unknown as DbTx, offset));
       const found = [...sql.matchAll(AFTER_THE_MARK)];
@@ -85,26 +90,23 @@ describe("R24: the gate, as SQL", () => {
       // The parameter in the mark is this offset's minutes.
       expect(params[Number(found[0]![1]) - 1], offset.id).toBe(offset.minutesBefore);
       // It is a gate: the visit is taken only when NO such save exists.
-      expect(sql).toMatch(/where not exists \(select 1 from "audit_log" "reminder_scheduling_event_after_mark"/);
-      expect(sql).not.toMatch(/"reminder_scheduling_event_after_mark"\."created_at" >= /);
+      expect(sql).toMatch(/where not exists \(select 1 from "audit_log" "reminder_re_arming_save"/);
+      expect(sql).not.toMatch(/"reminder_re_arming_save"\."created_at" >= /);
     }
   });
 
-  it("reads the very audit rows `hasSchedulingEvent` reads, condition for condition", async () => {
-    const before = (await textOf(hasSchedulingEvent(qb as unknown as DbTx))).sql;
-    const after = (await textOf(hasSchedulingEventAfter(qb as unknown as DbTx, rawSql`now()`))).sql;
-    // The event condition: from the entity check to the last event's metadata
-    // check, with the alias written one way for both.
-    const LAST = "->>'outcome' = 'confirmed')";
-    const eventsOf = (text: string, name: string) => {
-      const t = text.replaceAll(`"${name}"`, '"saved"');
-      const from = t.indexOf(`"saved"."entity_type"`);
-      return t.slice(from, t.indexOf(LAST, from) + LAST.length);
-    };
-    const scheduling = eventsOf(before, "reminder_scheduling_event");
-    expect(scheduling).toContain(`"saved"."action" in`);
-    expect(scheduling).toContain(`->>'via' = 'portal_request_confirm'`);
-    expect(eventsOf(after, "reminder_scheduling_event_after_mark")).toBe(scheduling);
+  it("R33: reads the re-arming saves, NOT the wider scheduling events the population reads", async () => {
+    const population = (await textOf(hasSchedulingEvent(qb as unknown as DbTx))).sql;
+    const gate = (await textOf(hasReArmingSaveAfter(qb as unknown as DbTx, rawSql`now()`))).sql;
+    // The population counts any update to Agendada or Confirmada and any SMS "confirmo".
+    expect(population).toContain(`->>'toStatus' in ('scheduled', 'confirmed')`);
+    expect(population).not.toContain(`"appointments"."origin"`);
+    // The gate does not: a status counts only with the status it came from, and
+    // an acceptance only on a visit that is an online request.
+    expect(gate).not.toContain(`->>'toStatus' in`);
+    expect(gate).toContain(`->>'fromStatus' = 'scheduled'`);
+    expect(gate).toContain(`->>'fromStatus' = 'cancelled'`);
+    expect(gate).toContain(`"appointments"."origin" = $`);
   });
 });
 
@@ -132,7 +134,7 @@ describe("R24: both passes ask it", () => {
         `and not exists (select 1 from "reminder_claims" "reminder_send_claim_before_the_save" where (`,
       );
       expect(q).toMatch(
-        /"reminder_send_claim_before_the_save"\."created_at" <= "reminder_scheduling_event_after_mark"\."created_at"/,
+        /"reminder_send_claim_before_the_save"\."created_at" <= "reminder_re_arming_save"\."created_at"/,
       );
       // A claim of THIS mark: the kind, not early, and the start as a claim stores it.
       expect(q).toContain(`"reminder_send_claim_before_the_save"."early" is distinct from true`);

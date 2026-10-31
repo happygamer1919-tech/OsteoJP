@@ -182,9 +182,15 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   const laterSaves: Record<string, number> = {};
 
   /** A save on a visit's audit trail, written `at` an instant of the arm's choosing. */
-  async function savedAt(appointmentId: string, action: string, metadata: Record<string, unknown>, at: Date): Promise<void> {
+  async function savedAt(
+    appointmentId: string,
+    action: string,
+    metadata: Record<string, unknown>,
+    at: Date,
+    tenant = tenantA,
+  ): Promise<void> {
     await sql.execute(raw`insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-      values (${tenantA}, null, ${action}, 'appointment', ${appointmentId}, ${JSON.stringify(metadata)}::jsonb, ${at.toISOString()})`);
+      values (${tenant}, null, ${action}, 'appointment', ${appointmentId}, ${JSON.stringify(metadata)}::jsonb, ${at.toISOString()})`);
     laterSaves[action] = (laterSaves[action] ?? 0) + 1;
   }
 
@@ -682,9 +688,11 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   /* ---------------------------------------------------------------- */
 
   /** A visit whose only selectable mark is the 24 hour SMS, due `minutesAgo` before `now`. */
-  const smsDue = (now: Date, minutesAgo: number, over: { origin?: string } = {}) => smsVisit(now, { startIn: 24 * H - minutesAgo, ...over });
+  const smsDue = (now: Date, minutesAgo: number, over: { origin?: string; tenant?: string } = {}) =>
+    smsVisit(now, { startIn: 24 * H - minutesAgo, ...over });
   /** A visit whose only DUE mark is the 48 hour email, due `minutesAgo` before `now`. */
-  const emailDue = (now: Date, minutesAgo: number) => visit({ now, startIn: 48 * H - minutesAgo });
+  const emailDue = (now: Date, minutesAgo: number, over: { origin?: string; tenant?: string } = {}) =>
+    visit({ now, startIn: 48 * H - minutesAgo, ...over });
 
   it("THE LATE RULE: 3 hours for an SMS and 12 for an email are still sent; a minute later each is recorded as too late, once, and never sent", async () => {
     const now = clockOf(7);
@@ -1095,9 +1103,9 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     const now = clockOf(22);
     // An online request nobody has accepted: held back at the first pass.
     const heldBack = await smsVisit(now, { origin: "patient_portal" });
-    // A booked visit confirmed by hand after its mark, before the first pass.
+    // A booked visit moved to this start after its mark, before the first pass.
     const confirmedFirst = await smsVisit(now, { startIn: 23 * H + 31 });
-    await savedAt(confirmedFirst.id, "appointment.update", { fromStatus: "scheduled", toStatus: "confirmed" }, plus(confirmedFirst.start, -24 * H + 5));
+    await savedAt(confirmedFirst.id, "appointment.reschedule", { startsAt: confirmedFirst.start.toISOString() }, plus(confirmedFirst.start, -24 * H + 5));
 
     expect(await pass(tenantA, now)).toMatchObject({ due: 1, taken: 1, sent: 0, heldBack: 1 });
     expect(await ledgerOf(heldBack.id)).toEqual(["reminder.24h.sms:suppressed:unconfirmed"]);
@@ -1122,8 +1130,8 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
   it("R24: a claim taken only AFTER the save does not lift the gate (the real clock)", async () => {
     const t0 = new Date();
     const v = await smsVisit(t0);
-    // Confirmed by hand one minute after its mark, 29 minutes ago.
-    await savedAt(v.id, "appointment.update", { fromStatus: "scheduled", toStatus: "confirmed" }, plus(v.start, -24 * H + 1));
+    // Moved to this start one minute after its mark, 29 minutes ago.
+    await savedAt(v.id, "appointment.reschedule", { startsAt: v.start.toISOString() }, plus(v.start, -24 * H + 1));
     // A claim of this mark, given up, taken NOW: after the save.
     await seedClaim(v.id, v.start, { released: true });
     expect(await pass(tenantA, plus(t0, 61))).toMatchObject({ due: 0, taken: 0, sent: 0 });
@@ -1131,16 +1139,111 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(await ledgerOf(v.id)).toEqual([]);
   });
 
+  /**
+   * R33: a save that re-armed nothing does not keep a mark out of the sending
+   * pass either. Strategy, its words: "A status-only save (an SMS "confirmo",
+   * a hand-set Confirmada) never counts." So the reminder of a booked visit
+   * confirmed after its mark, before any pass took it, is sent as before R24
+   * (this was the case the PR first left without one). The same rows on an
+   * online request ARE its acceptance, re-armed the sleeping job, and keep the
+   * mark out.
+   */
+  it("R33: a booked visit confirmed by hand, in the review queue or by SMS after its mark IS sent; a request accepted that way after its mark is not", async () => {
+    const now = clockOf(17);
+    // Confirmed visits of one therapist may not overlap: 50 minutes apart. Requests on the other tenant.
+    const booked = (minutesAgo: number) => smsVisit(now, { startIn: 24 * H - minutesAgo, status: "confirmed" });
+    const request = (minutesAgo: number) =>
+      smsVisit(now, { tenant: tenantB, startIn: 24 * H - minutesAgo, status: "confirmed", origin: "patient_portal", booked: false });
+    const markOf = (x: { start: Date }) => plus(x.start, -24 * H);
+    const reply = { source: "patient-sms-reply", intent: "confirmada", outcome: "confirmed", reason: null };
+    const v = {
+      handConfirmed: await booked(20),
+      smsConfirmed: await booked(70),
+      reviewConfirmed: await booked(120),
+      requestAcceptedWithEstado: await request(20),
+      requestAcceptedBySms: await request(70),
+    };
+    await savedAt(v.handConfirmed.id, "appointment.update", { changed: ["status"], fromStatus: "scheduled", toStatus: "confirmed" }, plus(markOf(v.handConfirmed), 5));
+    await savedAt(v.smsConfirmed.id, "appointment.patient_sms_reply", reply, plus(markOf(v.smsConfirmed), 5));
+    await savedAt(v.reviewConfirmed.id, "appointment.sms_reply_reviewed", { source: "reception-sms-review", resolution: "confirmed", applied: true }, plus(markOf(v.reviewConfirmed), 5));
+    await savedAt(v.requestAcceptedWithEstado.id, "appointment.update", { changed: ["status"], fromStatus: "scheduled", toStatus: "confirmed" }, plus(markOf(v.requestAcceptedWithEstado), 5), tenantB);
+    await savedAt(v.requestAcceptedBySms.id, "appointment.patient_sms_reply", reply, plus(markOf(v.requestAcceptedBySms), 5), tenantB);
+
+    expect(await pass(tenantA, now)).toMatchObject({ due: 3, taken: 3, sent: 3 });
+    expect(await pass(tenantB, now)).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    expect([...h.sends].sort()).toEqual([`sms:${v.handConfirmed.id}`, `sms:${v.reviewConfirmed.id}`, `sms:${v.smsConfirmed.id}`].sort());
+    for (const x of [v.requestAcceptedWithEstado, v.requestAcceptedBySms]) {
+      expect(await claimsOf(x.id)).toEqual([]);
+      expect(await ledgerOf(x.id)).toEqual([]);
+    }
+  });
+
+  /**
+   * R33's GATE, its words: "CHECK a visit confirmed by SMS after its 24h mark,
+   * already sent by the live job. EXPECT no UNEXPLAINED row and no send." The
+   * sending pass reads the sleeping job's claim as settling the mark, and the
+   * SMS "confirmo" does not keep it out or take it again.
+   */
+  it("R33 GATE: a visit confirmed by SMS after its 24h mark, already sent by the sleeping job, is not sent again", async () => {
+    const now = clockOf(18);
+    const v = await smsVisit(now);
+    const mark = plus(v.start, -24 * H);
+    await seedClaim(v.id, v.start, { taker: "run" });
+    await seedLedger(v.id, "sent", null);
+    await sql.execute(raw`update appointments set status = 'confirmed' where id = ${v.id}`);
+    await savedAt(v.id, "appointment.patient_sms_reply", { source: "patient-sms-reply", intent: "confirmada", outcome: "confirmed", reason: null }, plus(mark, 20));
+
+    expect(await pass(tenantA, now)).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    expect(await pass(tenantA, plus(now, 61))).toMatchObject({ due: 0, taken: 0, sent: 0 });
+    expect(h.sends).toEqual([]);
+    expect((await claimsOf(v.id)).map((c) => [c.taker, c.released])).toEqual([["run", false]]);
+    expect(await ledgerOf(v.id)).toEqual(["reminder.24h.sms:sent:"]);
+  });
+
+  /**
+   * R33's GATE, its words: "CHECK a visit moved after its mark to a later
+   * start the same day. EXPECT the past mark not sent, as the live job does."
+   * The sleeping job sent the old start's reminder, then the move re-armed it
+   * and it planned from the new start, whose mark was already past: dropped.
+   */
+  it("R33 GATE: a visit moved after its mark to a LATER START THE SAME DAY: the past mark is not sent; moved before that mark, it is", async () => {
+    const now = clockOf(23);
+    const movedLater = async (startIn: number, movedAt: (mark: Date) => Date) => {
+      const v = await smsVisit(now, { startIn });
+      const oldStart = plus(v.start, -3 * H);
+      // The sleeping job sent the old start's SMS at its mark.
+      await seedClaim(v.id, oldStart, { taker: "run" });
+      await seedLedger(v.id, "sent", null);
+      await savedAt(v.id, "appointment.reschedule", { startsAt: v.start.toISOString() }, movedAt(plus(v.start, -24 * H)));
+      return { ...v, oldStart };
+    };
+    // The new start's mark was 30 minutes ago; moved ten minutes after it.
+    const late = await movedLater(23 * H + 30, (mark) => plus(mark, 10));
+    // CONTROL: the new start's mark an hour ago; moved an hour before it.
+    const early = await movedLater(23 * H, (mark) => plus(mark, -60));
+
+    expect(await pass(tenantA, now)).toMatchObject({ due: 1, taken: 1, sent: 1 });
+    expect(h.sends).toEqual([`sms:${early.id}`]);
+    expect((await claimsOf(late.id)).map((c) => [c.taker, c.starts_at])).toEqual([["run", late.oldStart.toISOString()]]);
+    expect(await ledgerOf(late.id)).toEqual(["reminder.24h.sms:sent:"]);
+    expect(await pass(tenantA, plus(now, 61))).toMatchObject({ due: 0, taken: 0, sent: 0 });
+  });
+
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows, the R24 arms' saves, and nothing else", async () => {
-    const [t] = await rows(raw`select count(*)::int as n,
-        count(*) filter (where action <> 'appointment.create')::int as other,
-        count(*) filter (where action = 'appointment.reschedule')::int as reschedules,
-        count(*) filter (where action = 'appointment.update')::int as updates
-      from audit_log where tenant_id in (${tenantA}, ${tenantB})`);
-    expect(Number(t!.n)).toBeGreaterThan(0);
-    expect(laterSaves).toEqual({ "appointment.reschedule": 2, "appointment.update": 4 });
-    expect(t!.reschedules).toBe(laterSaves["appointment.reschedule"]);
-    expect(t!.updates).toBe(laterSaves["appointment.update"]);
-    expect(t!.other).toBe(6);
+    const audit = await rows(raw`select action, count(*)::int as n from audit_log
+      where tenant_id in (${tenantA}, ${tenantB}) group by action order by action`);
+    expect(laterSaves).toEqual({
+      "appointment.patient_sms_reply": 3,
+      "appointment.reschedule": 6,
+      "appointment.sms_reply_reviewed": 1,
+      "appointment.update": 4,
+    });
+    const bookings = audit.find((r) => r.action === "appointment.create");
+    expect(Number(bookings?.n ?? 0)).toBeGreaterThan(0);
+    expect(audit.filter((r) => r.action !== "appointment.create")).toEqual(
+      Object.entries(laterSaves)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([action, n]) => ({ action, n })),
+    );
   });
 });

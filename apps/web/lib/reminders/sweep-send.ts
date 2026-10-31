@@ -54,9 +54,10 @@ import { sweepRemindsNeverReminded } from "./sweep-mode";
  * shadow's own rows count for neither as well: a shadow row sent nothing.
  *
  * AND NO GRACE FOR A VISIT SAVED AFTER ITS MARK (R24, ./sweep.ts): a mark is
- * not taken while a scheduling save of the visit was written strictly after
- * it, unless a claim of this mark was taken at or before that save (the
- * reminder was handed over before the save, and held back: it is tried again).
+ * not taken while a save that re-armed the sleeping job (R33,
+ * ./reminder-population.ts `RE_ARMING_SAVES`) was written strictly after it,
+ * unless a claim of this mark was taken at or before that save (the reminder
+ * was handed over before the save, and held back: it is tried again).
  *
  * ONLY A MARK THAT FELL DUE SINCE THE SWEEP BEGAN TO SEND FOR THE TENANT
  * (`readSweepFloor`): at or after the first heartbeat of mode `send` that
@@ -209,7 +210,7 @@ function notSettledNorJustTried(tx: DbTx, tenantId: string, offset: ReminderOffs
 }
 
 /**
- * R24 FOR THE SENDING PASS: no scheduling save of the visit written after this
+ * R24 FOR THE SENDING PASS: no re-arming save of the visit written after this
  * mark (./sweep.ts, `notSavedAfterMark`), EXCEPT a save written after the mark
  * had already been handed over: a claim of this mark, of either taker, taken
  * at or before that save. That mark was taken by a pass before the save, so
