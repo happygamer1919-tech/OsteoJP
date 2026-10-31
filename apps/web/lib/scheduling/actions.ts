@@ -2082,8 +2082,8 @@ export async function rescheduleAppointment(
     return { ok: false, error: "location_not_assigned" };
   }
   // SCHED-17: MOVING a shared-resource appointment is held to the same rule as
-  // creating one - the ruling names both. No therapist self-guard is added here:
-  // reschedule has never had one and relies on RLS for whose rows may move.
+  // creating one - the ruling names both. The therapist rule for a reschedule
+  // is not the create rule: see APPT-EDIT-02 inside the transaction below.
   const shared = await sharedResourceBookingCheck(actor, input.practitionerId, input.locationId);
   if (!shared.ok) return { ok: false, error: "shared_resource_location" };
   const inStart = new Date(input.startsAt);
@@ -2108,6 +2108,26 @@ export async function rescheduleAppointment(
           return { ok: false, error: "not_found" };
         }
         const ids = affected.map((a) => a.id);
+
+        // APPT-EDIT-02 - A THERAPIST KEEPS THEIR OWN VISITS. Owner ruling
+        // 2026-10-31: "A therapist may NOT change the therapist of a visit;
+        // reception does it." So for role therapist every row this save moves
+        // must already carry the Terapeuta it sends; the date, the hour and the
+        // clinic may still change. Owner, admin and reception are unchanged.
+        //
+        // AGAINST THE STORED ROW, not the request: `affected` is what the
+        // database holds before this save, read under the caller's RLS. RLS
+        // alone never held this: appointments_rls (0086) lets a therapist write
+        // another practitioner_id on a row they created or are Terapeuta 2 on,
+        // and their own id on a NESA row at their clinic.
+        //
+        // NO SHARED-RESOURCE EXCEPTION, unlike the create door. There it lets a
+        // therapist BOOK the NESA machine; here a NESA row moved in time keeps
+        // NESA and passes, and swapping NESA for a person (or back) is a change
+        // of Terapeuta like any other. Refused before any write, audit or emit.
+        if (actor.role === "therapist" && affected.some((a) => a.practitionerId !== input.practitionerId)) {
+          return { ok: false, error: "forbidden" };
+        }
 
         // BEFORE the update, so `startsAt` here is the instant the appointment
         // is moving FROM. Read once and reused below rather than re-read after

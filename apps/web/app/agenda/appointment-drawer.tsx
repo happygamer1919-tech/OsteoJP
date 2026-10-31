@@ -27,7 +27,12 @@ import { s } from "@/lib/i18n";
 import { runAction } from "@/lib/actions/run-action";
 import { useActionOwner } from "@/lib/actions/use-action-owner";
 import { useLatestCallback } from "@/lib/actions/use-latest-callback";
-import { editPractitionerId, isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
+import {
+  editPractitionerId,
+  isTherapistEditLocked,
+  isTherapistSelfLocked,
+  shouldPreselectPrimaryService,
+} from "@/lib/scheduling/self-lock-core";
 import { patientLabel } from "@/lib/scheduling/patient-label";
 import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
 import { NO_SMS_MESSAGE_KEY } from "@/lib/patients/phone-preview";
@@ -185,8 +190,10 @@ export function AppointmentDrawer({
   canHardDelete: boolean;
   /**
    * APPT-EDIT-01: on an EDIT, show the Terapeuta read-only and always save
-   * the row's own. The ficha sets it for a therapist viewer; the agenda and
-   * /marcacoes never do, so their behaviour is unchanged.
+   * the row's own. The ficha sets it for a therapist viewer. Since APPT-EDIT-02
+   * the drawer also locks it on its own for EVERY therapist viewer on an edit
+   * (isTherapistEditLocked), so the agenda and /marcacoes need not pass it;
+   * for owner, admin and reception it is only ever set by a caller.
    */
   lockPractitioner?: boolean;
   /**
@@ -987,8 +994,9 @@ export function AppointmentDrawer({
     knownLabels: staffKnownLabels,
   });
   const selfTherapistName = staffOptions.selfName;
-  // APPT-EDIT-01: see `lockPractitioner`.
-  const practitionerLocked = !!editing && lockPractitioner;
+  // APPT-EDIT-01: see `lockPractitioner`. APPT-EDIT-02: and always for a
+  // therapist on an edit, because the server refuses them a new Terapeuta.
+  const practitionerLocked = !!editing && (lockPractitioner || isTherapistEditLocked(viewer.role, state.mode));
   const sharedResourceOptions = staffOptions.selfResources;
   const practitionerTwoOptions = staffOptions.practitionerTwoOptions;
   const therapistOptions = staffOptions.therapistOptions;
@@ -1441,8 +1449,9 @@ export function AppointmentDrawer({
             editable for per-booking exceptions. */}
         <Field label={s["appointment.therapist"]} required>
           {practitionerLocked && editing ? (
-            // APPT-EDIT-01: the ficha, for a therapist viewer. The row's own
-            // Terapeuta, read-only; submit sends it whatever the form holds.
+            // APPT-EDIT-01 / APPT-EDIT-02: a therapist viewer on an edit, from
+            // any screen. The row's own Terapeuta, read-only; submit sends it
+            // whatever the form holds.
             <div
               aria-readonly="true"
               data-testid="drawer-therapist-readonly"

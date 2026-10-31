@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { editPractitionerId, isTherapistSelfLocked, shouldPreselectPrimaryService } from "./self-lock-core";
+import {
+  editPractitionerId,
+  isTherapistEditLocked,
+  isTherapistSelfLocked,
+  shouldPreselectPrimaryService,
+} from "./self-lock-core";
 
 // PL-10 — pure decision helpers for the create-form therapist self-lock. The
 // component render test (appointment-drawer.test.tsx) proves the STATIC markup
@@ -53,5 +58,22 @@ describe("APPT-EDIT-01: editPractitionerId, the Terapeuta an edit saves", () => 
     expect(editPractitionerId({ locked: false, editingPractitionerId: "own", formPractitionerId: "colleague" })).toBe(
       "colleague",
     );
+  });
+});
+
+// APPT-EDIT-02: owner ruling 2026-10-31, "A therapist may NOT change the
+// therapist of a visit; reception does it." The drawer locks the Terapeuta of
+// an edit for a therapist on every screen; the create form is PL-10's.
+describe("APPT-EDIT-02: isTherapistEditLocked", () => {
+  it("locks a therapist editing an existing visit", () => {
+    expect(isTherapistEditLocked("therapist", "edit")).toBe(true);
+  });
+
+  it.each(["owner", "admin", "reception"] as const)("does not lock %s on an edit", (role) => {
+    expect(isTherapistEditLocked(role, "edit")).toBe(false);
+  });
+
+  it.each(["therapist", "owner", "admin", "reception"] as const)("does not touch the create form (%s)", (role) => {
+    expect(isTherapistEditLocked(role, "create")).toBe(false);
   });
 });

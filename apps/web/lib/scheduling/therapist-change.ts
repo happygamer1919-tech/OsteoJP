@@ -28,10 +28,10 @@ type Row = Pick<
 
 /**
  * Who is OFFERED the field: owner, admin and reception, when they may edit this
- * patient's appointments at all. A therapist holds appointments:write too and
- * changes the Terapeuta on the agenda; whether they also get this field is an
- * open question, so they are not handed it. Only the affordance:
- * rescheduleAppointment has no rule of its own about it.
+ * patient's appointments at all. A therapist holds appointments:write too, but
+ * the owner ruled on 2026-10-31 (APPT-EDIT-02): "A therapist may NOT change the
+ * therapist of a visit; reception does it." Only the affordance:
+ * rescheduleAppointment refuses a therapist a new Terapeuta (`forbidden`).
  */
 export function offersTherapistChange(role: Role, canEditAppointments: boolean): boolean {
   return canEditAppointments && role !== "therapist";
@@ -40,10 +40,10 @@ export function offersTherapistChange(role: Role, canEditAppointments: boolean):
 /**
  * APPT-EDIT-01: the ficha's Reagendar opens the agenda's edit panel. For a
  * THERAPIST viewer it locks the Terapeuta to the row's own, for the reason
- * `offersTherapistChange` gives: whether a therapist may hand a visit to a
- * colleague from the ficha is an open question, and before the edit panel the
- * ficha's Reagendar always sent the row's own practitioner. Date, hour and
- * clinic stay editable. (The agenda's own panel is not changed here.)
+ * `offersTherapistChange` gives. Date, hour and clinic stay editable. Since
+ * APPT-EDIT-02 the drawer locks it for a therapist on every edit by itself
+ * (isTherapistEditLocked in self-lock-core.ts), so this is now the same answer
+ * said twice, and the server is what enforces it.
  */
 export function locksFichaPractitioner(role: Role): boolean {
   return role === "therapist";
