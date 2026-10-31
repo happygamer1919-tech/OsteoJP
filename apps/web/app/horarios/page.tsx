@@ -171,13 +171,11 @@ export default async function HorariosPage({
   );
 
   // HOR-01: which schedule each listed therapist is on (own rows, the clinic's
-  // default hours, or neither), for the label on each card. `availability` is
-  // every active row this viewer may see, so a therapist absent from it has no
-  // active row of their own.
+  // default hours, or neither), for the label on each card, and whether
+  // "Usar horario da clinica" would actually bring in the clinic's hours.
   const scheduleKinds = await listScheduleKinds(
     actor,
     therapists.map((t) => t.id),
-    new Set(availability.map((a) => a.userId)),
   );
   const clinicHoursLabels: ClinicHoursLabels = {
     kindOwn: s["schedule.kindOwn"],
@@ -359,7 +357,7 @@ export default async function HorariosPage({
                     />
                     {/* HOR-01: which schedule is in force for this person. */}
                     <ScheduleKindLabel
-                      kind={scheduleKinds.get(t.id) ?? "none"}
+                      kind={scheduleKinds.get(t.id)?.kind ?? "none"}
                       labels={clinicHoursLabels}
                     />
                   </div>
@@ -377,7 +375,7 @@ export default async function HorariosPage({
                       openBlockId={editBlock ?? null}
                       triggerVariant="primary"
                     />
-                    {scheduleKinds.get(t.id) === "own" && (
+                    {scheduleKinds.get(t.id)?.canUseClinicHours === true && (
                       <UseClinicHoursButton
                         therapistId={t.id}
                         therapistName={t.label}

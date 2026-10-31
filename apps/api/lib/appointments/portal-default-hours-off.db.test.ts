@@ -191,10 +191,29 @@ d("HOR-01: the portal does NOT give a therapist without rows the clinic's hours"
       endsAt: new Date(startsAt.getTime() + 60 * 60_000),
     });
     await expect(attempt).rejects.toBeInstanceOf(AppointmentError);
-    const [count] = (await db.execute(raw`
-      select count(*)::int as n from appointments where tenant_id = ${tenantId}
-    `)) as unknown as [{ n: number }];
-    expect(count.n).toBe(0);
+    // `no_slot` is the guard's answer for "no availability row covers it"; a
+    // refusal for any other reason (the clinic window, a closure) would carry
+    // another code and fail here.
+    await expect(attempt).rejects.toMatchObject({ code: "no_slot" });
+    const count = async () =>
+      (
+        (await db.execute(raw`
+          select count(*)::int as n from appointments where tenant_id = ${tenantId}
+        `)) as unknown as [{ n: number }]
+      )[0].n;
+    expect(await count()).toBe(0);
+
+    // CONTROL: the same write, same clinic, same instant, for C (rows 09:00 to
+    // 12:00 on Monday) goes through. Without it the refusal above could be a
+    // refusal of the instant rather than of N.
+    await realStore.createBooking(principal(), {
+      serviceId: osteo,
+      locationId: linda,
+      practitionerId: C,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 60 * 60_000),
+    });
+    expect(await count()).toBe(1);
   });
 
   it("PINNED: a clinic whose only member has no rows is not offered online", async () => {

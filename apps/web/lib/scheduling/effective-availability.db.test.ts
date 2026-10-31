@@ -54,6 +54,7 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     nesa: randomUUID(),
     memberOfArchivedOnly: randomUUID(),
     ownRows: randomUUID(),
+    rowsAtArchivedOnly: randomUUID(),
   };
 
   const ctx = { tenantId: tenant, role: "owner", userId: owner } as never;
@@ -103,8 +104,9 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     await user(who.nesa, "nesa", { shared: true });
     await user(who.memberOfArchivedOnly, "archived-only");
     await user(who.ownRows, "own-rows");
+    await user(who.rowsAtArchivedOnly, "rows-at-archived");
 
-    for (const id of [who.eligible, who.inactive, who.notBookable, who.nesa, who.ownRows]) {
+    for (const id of [who.eligible, who.inactive, who.notBookable, who.nesa, who.ownRows, who.rowsAtArchivedOnly]) {
       await db.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
         values (${tenant}::uuid, ${id}::uuid, ${lv}::uuid)`);
     }
@@ -115,6 +117,10 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     await db.execute(raw`insert into availability_templates
         (tenant_id, user_id, location_id, weekday, start_time, end_time, is_active)
       values (${tenant}::uuid, ${who.ownRows}::uuid, ${lv}::uuid, 1, '09:00', '13:00', true)`);
+    // A member of LV whose only row is at the ARCHIVED clinic.
+    await db.execute(raw`insert into availability_templates
+        (tenant_id, user_id, location_id, weekday, start_time, end_time, is_active)
+      values (${tenant}::uuid, ${who.rowsAtArchivedOnly}::uuid, ${archived}::uuid, 1, '09:00', '10:00', true)`);
   });
 
   afterAll(async () => {
@@ -127,10 +133,11 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     await db.execute(raw`delete from tenants where id = ${tenant}::uuid`);
   });
 
-  it("PREMISE: only the own-rows therapist has any availability row", async () => {
+  it("PREMISE: only the own-rows therapist has any availability row at the live clinic", async () => {
     const [r] = (await db.execute(raw`
       select count(*)::int as n, count(distinct user_id)::int as users
         from availability_templates where tenant_id = ${tenant}::uuid and is_active
+          and location_id = ${lv}::uuid
     `)) as unknown as [{ n: number; users: number }];
     expect(r).toEqual({ n: 1, users: 1 });
   });
@@ -178,10 +185,42 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     ["inactive", "inactive"],
     ["notBookable", "not bookable"],
     ["nesa", "a shared resource"],
-    ["memberOfArchivedOnly", "a member of an archived clinic only"],
   ] as const)("%s (%s) gets no default: still unconfigured, as before", async (key, why) => {
     expect(why.length).toBeGreaterThan(0);
     expect(await check(who[key], SUN, "03:00", "04:00")).toEqual({ ok: true, reason: "unconfigured" });
+  });
+
+  it("a member of an ARCHIVED clinic only gets no default there, and no auto-fill", async () => {
+    // Asked AT the archived clinic, where the membership exists: only the
+    // locations.is_active filter keeps the default out.
+    const v = await runScoped(ctx, (tx) =>
+      checkAvailability(tx, {
+        practitionerId: who.memberOfArchivedOnly,
+        locationId: archived,
+        startsAt: at(SUN, "03:00"),
+        endsAt: at(SUN, "04:00"),
+      }),
+    );
+    expect(v).toEqual({ ok: true, reason: "unconfigured" });
+    expect(await getTherapistLocationIds(ctx, who.memberOfArchivedOnly)).toEqual([]);
+  });
+
+  it("the Horarios label and the button follow the same rule", async () => {
+    const { listScheduleKinds } = await import("@/lib/admin/clinic-default-schedule");
+    const kinds = await listScheduleKinds(ctx, [
+      who.eligible,
+      who.ownRows,
+      who.notBookable,
+      who.memberOfArchivedOnly,
+      who.rowsAtArchivedOnly,
+    ]);
+    // A row at an archived clinic is not "Horario proprio": the default is what applies.
+    expect(kinds.get(who.rowsAtArchivedOnly)).toEqual({ kind: "clinic_default", canUseClinicHours: false });
+    expect(await check(who.rowsAtArchivedOnly, MON, "15:00", "16:00")).toEqual({ ok: true, reason: "covered" });
+    expect(kinds.get(who.eligible)).toEqual({ kind: "clinic_default", canUseClinicHours: false });
+    expect(kinds.get(who.ownRows)).toEqual({ kind: "own", canUseClinicHours: true });
+    expect(kinds.get(who.notBookable)).toEqual({ kind: "none", canUseClinicHours: false });
+    expect(kinds.get(who.memberOfArchivedOnly)).toEqual({ kind: "none", canUseClinicHours: false });
   });
 
   it("own rows override the default", async () => {

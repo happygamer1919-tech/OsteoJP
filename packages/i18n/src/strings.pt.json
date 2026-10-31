@@ -1996,7 +1996,7 @@
   "inspector.ruleClinica": "Horário da clínica",
   "inspector.ruleClinicaHint": "Sem horário próprio nesta clínica: segue o horário de abertura da clínica, exceto onde houver um bloqueio.",
   "schedule.kindOwn": "Horário próprio",
-  "schedule.kindOwnHint": "Este terapeuta tem horário definido em Horários. Esse horário é o que conta.",
+  "schedule.kindOwnHint": "Tem horário definido em Horários. Nas clínicas onde tem horário próprio, é esse que conta; nas outras clínicas a que pertence, aplica-se o horário da clínica.",
   "schedule.kindClinicDefault": "Horário da clínica (padrão)",
   "schedule.kindClinicDefaultHint": "Disponível no horário de abertura de cada clínica a que pertence, de segunda a sexta, e ao sábado onde a clínica abre ao sábado. Indisponível apenas onde houver um bloqueio.",
   "schedule.kindNone": "Sem horário aplicado",

@@ -1996,7 +1996,7 @@
   "inspector.ruleClinica": "Clinic hours",
   "inspector.ruleClinicaHint": "No own schedule at this clinic: follows the clinic's opening hours, except where a block is placed.",
   "schedule.kindOwn": "Own schedule",
-  "schedule.kindOwnHint": "This therapist has a schedule set in Horários. That schedule is what counts.",
+  "schedule.kindOwnHint": "Has a schedule set in Horários. At the clinics where it has one, that schedule counts; at the other clinics they belong to, the clinic's hours apply.",
   "schedule.kindClinicDefault": "Clinic hours (default)",
   "schedule.kindClinicDefaultHint": "Available during the opening hours of each clinic they belong to, Monday to Friday, and on Saturday where the clinic opens on Saturday. Unavailable only where a block is placed.",
   "schedule.kindNone": "No schedule applied",
