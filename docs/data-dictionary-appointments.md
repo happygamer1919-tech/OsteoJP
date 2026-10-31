@@ -481,8 +481,8 @@ next send; `fired` = the partner answered 200, 201 or 409; `needs_attention` = t
 Writers: insert `persistConsultation`, apps/web/lib/consultation/consultation-store.ts:96 (called
 from apps/web/app/consultation/actions.ts:381); state `markDelivered` (consultation-store.ts:147),
 `markPending` (160), `markNeedsAttention` (178), decided in
-apps/web/lib/consultation/fire-attempt.ts:113-132; retries every 5 minutes by
-apps/web/lib/consultation/inngest/functions.ts:20-97. `audit_log`: `patient.recording_consent` on
+apps/web/lib/consultation/fire-attempt.ts:113-132; retries every 2 hours from 08:00 to 20:00 Lisbon by
+apps/web/lib/consultation/inngest/functions.ts:34-111 (R27; it was every 5 minutes). `audit_log`: `patient.recording_consent` on
 consent (apps/web/app/consultation/actions.ts:156-160); none for insert or state changes.
 
 ### `ai_ingestion_requests`
