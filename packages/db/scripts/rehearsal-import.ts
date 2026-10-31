@@ -25,6 +25,11 @@
 
 import { arg, runEntrypoint } from "./import-core";
 import { PROD_REFS, parseProjectRef } from "../seed/seed-guard";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: a rehearsal never runs in the production apply checkout. Exit 1, not
+// 86: the import tooling's exit codes are fixed at 0, 1, 2 (CLAUDE.md).
+refuseProdApplyCwd(import.meta.url, { code: 1 });
 
 export {
   attachmentMapping,

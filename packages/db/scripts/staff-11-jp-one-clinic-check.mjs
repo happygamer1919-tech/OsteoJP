@@ -35,6 +35,14 @@
  * forced the change: it fails the moment the portal's predicate and this one disagree,
  * which is exactly what it did when the window landed.
  *
+ * SINCE R15 (strategy, 2026-10-26) THE TWO DIFFER, AND THIS ONE IS THE NARROWER. The
+ * portal now counts a row whose window overlaps [today, today + the 14-day slot
+ * horizon] (OPEN_SLOTS_HORIZON_DAYS in apps/api/lib/appointments/booking.ts); this
+ * check still counts a row valid TODAY. So a row that starts within the horizon can
+ * put a therapist on the portal list at a clinic while this check does not count it.
+ * The test above still passes, because it pins the shape of the two bounds, not the
+ * date each is read against. Aligning this check with the portal is a follow-up.
+ *
  * OUT OF SCOPE: is_bookable (the ruling on the row not taking patients is still open;
  * it is printed, it decides nothing) and names (ruled: they already differ).
  *

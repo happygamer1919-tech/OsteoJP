@@ -45,6 +45,10 @@ import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { argv, env, exit, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
+import { refuseProdApplyCwd } from "./refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 export const SECRET_ENV = "AI_INGESTION_HMAC_SECRET";
 export const DEFAULT_PATH = "/api/v1/ingestion/clinical-records";

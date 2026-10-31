@@ -42,6 +42,10 @@
  */
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { refuseProdApplyCwd } from "../../../scripts/refuse-prod-apply-cwd.mjs";
+
+// R17: never in the production apply checkout (exit 86, scripts/refuse-prod-apply-cwd.mjs).
+refuseProdApplyCwd(import.meta.url);
 
 const url = process.env.DATABASE_URL;
 if (!url) { console.error("DATABASE_URL required"); process.exit(2); }
