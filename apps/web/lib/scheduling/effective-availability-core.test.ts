@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateAvailability, type AvailabilityTemplate } from "./availability";
 import { buildDay } from "./day-availability-core";
 import {
+  clinicDefaultSwitchVerdict,
   clinicDefaultTemplates,
   isClinicDefaultEligible,
   resolveEffectiveTemplates,
@@ -25,6 +26,11 @@ const at = (date: string, hhmm: string) => new Date(`${date}T${hhmm}:00.000Z`);
 
 const LV = "loc-lv";
 const CB = "loc-cb";
+
+/** "Today" for the in-force question, pinned: never the machine's clock. */
+const TODAY = "2026-10-30";
+const resolve = (a: Omit<Parameters<typeof resolveEffectiveTemplates>[0], "today">) =>
+  resolveEffectiveTemplates({ today: TODAY, ...a });
 
 const ELIGIBLE: ClinicDefaultEligibility = { isActive: true, isBookable: true, isSharedResource: false };
 
@@ -104,7 +110,7 @@ describe("isClinicDefaultEligible", () => {
 
 describe("resolveEffectiveTemplates", () => {
   it("no rows: Monday to Friday inside clinic hours is covered, outside is not", () => {
-    const t = resolveEffectiveTemplates({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
+    const t = resolve({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
     expect(covered(t, LV, MON, "08:00", "09:00")).toEqual({ configured: true, covered: true });
     expect(covered(t, LV, MON, "20:00", "21:00")).toEqual({ configured: true, covered: true });
     expect(covered(t, LV, MON, "07:00", "08:00")).toEqual({ configured: true, covered: false });
@@ -112,10 +118,10 @@ describe("resolveEffectiveTemplates", () => {
   });
 
   it("Saturday: refused without a Saturday closing time, covered until it with one", () => {
-    const without = resolveEffectiveTemplates({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
+    const without = resolve({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
     expect(covered(without, LV, SAT, "09:00", "10:00").covered).toBe(false);
 
-    const withSat = resolveEffectiveTemplates({
+    const withSat = resolve({
       own: [],
       eligibility: ELIGIBLE,
       memberClinics: [clinic({ saturdayClosesAt: "13:00:00" })],
@@ -125,7 +131,7 @@ describe("resolveEffectiveTemplates", () => {
   });
 
   it("Sunday: never covered", () => {
-    const t = resolveEffectiveTemplates({
+    const t = resolve({
       own: [],
       eligibility: ELIGIBLE,
       memberClinics: [clinic({ saturdayClosesAt: "13:00:00" })],
@@ -140,7 +146,7 @@ describe("resolveEffectiveTemplates", () => {
     ["a shared resource (NESA)", { ...ELIGIBLE, isSharedResource: true }, [clinic()]],
     ["no user row at all", null, [clinic()]],
   ])("%s: gets no generated rows, so nothing changes for them", (_why, eligibility, memberClinics) => {
-    const t = resolveEffectiveTemplates({ own: [], eligibility, memberClinics });
+    const t = resolve({ own: [], eligibility, memberClinics });
     expect(t).toEqual([]);
     // The same "unconfigured" answer every reader gave before this change.
     expect(covered(t, LV, SUN, "03:00", "04:00")).toEqual({ configured: false, covered: true });
@@ -148,7 +154,7 @@ describe("resolveEffectiveTemplates", () => {
 
   it("own rows at a clinic override the default there, and are returned unchanged", () => {
     const mine = [own()];
-    const t = resolveEffectiveTemplates({ own: mine, eligibility: ELIGIBLE, memberClinics: [clinic()] });
+    const t = resolve({ own: mine, eligibility: ELIGIBLE, memberClinics: [clinic()] });
     expect(t).toEqual(mine);
     // 15:00 is inside clinic hours but outside the therapist's own 09:00-13:00.
     expect(covered(t, LV, MON, "15:00", "16:00").covered).toBe(false);
@@ -156,7 +162,7 @@ describe("resolveEffectiveTemplates", () => {
   });
 
   it("an INACTIVE own row does not count as own hours: the default applies", () => {
-    const t = resolveEffectiveTemplates({
+    const t = resolve({
       own: [own({ isActive: false })],
       eligibility: ELIGIBLE,
       memberClinics: [clinic()],
@@ -165,7 +171,7 @@ describe("resolveEffectiveTemplates", () => {
   });
 
   it("multi-clinic: generated rows at every member clinic without own rows", () => {
-    const t = resolveEffectiveTemplates({
+    const t = resolve({
       own: [],
       eligibility: ELIGIBLE,
       memberClinics: [clinic(), clinic({ locationId: CB, opensAt: "09:00", closesAt: "19:00" })],
@@ -175,18 +181,52 @@ describe("resolveEffectiveTemplates", () => {
     expect(covered(t, CB, MON, "09:00", "10:00").covered).toBe(true);
   });
 
-  it("multi-clinic with own rows at ONE clinic: own rows there, the default at the other", () => {
-    const t = resolveEffectiveTemplates({
+  it("PER THERAPIST: own rows at ONE clinic mean NO default at ANY clinic", () => {
+    const t = resolve({
       own: [own()],
       eligibility: ELIGIBLE,
       memberClinics: [clinic(), clinic({ locationId: CB })],
     });
+    expect(t).toEqual([own()]);
     expect(covered(t, LV, MON, "15:00", "16:00").covered).toBe(false);
-    expect(covered(t, CB, MON, "15:00", "16:00").covered).toBe(true);
+    // At CB the therapist is exactly where they were before HOR-01: unconfigured.
+    expect(covered(t, CB, MON, "15:00", "16:00")).toEqual({ configured: false, covered: true });
+  });
+
+  it("a row that starts in the FUTURE is in force: no default", () => {
+    const t = resolve({
+      own: [own({ validFrom: "2026-12-01" })],
+      eligibility: ELIGIBLE,
+      memberClinics: [clinic()],
+    });
+    expect(t.some((r) => r.source === "clinic_default")).toBe(false);
+  });
+
+  it("a row whose validity ENDED before today is not in force: the default applies", () => {
+    const t = resolve({
+      own: [own({ validFrom: "2026-01-01", validUntil: "2026-10-29" })],
+      eligibility: ELIGIBLE,
+      memberClinics: [clinic()],
+    });
+    expect(covered(t, LV, MON, "15:00", "16:00").covered).toBe(true);
+  });
+
+  it("a row ending TODAY is still in force", () => {
+    const t = resolve({
+      own: [own({ validFrom: "2026-10-30", validUntil: TODAY })],
+      eligibility: ELIGIBLE,
+      memberClinics: [clinic()],
+    });
+    expect(t.some((r) => r.source === "clinic_default")).toBe(false);
+  });
+
+  it("locationId narrows OWN rows too, while the in-force question still sees every clinic", () => {
+    const t = resolve({ own: [own()], eligibility: ELIGIBLE, memberClinics: [clinic({ locationId: CB })], locationId: CB });
+    expect(t).toEqual([]);
   });
 
   it("locationId narrows the generated rows to that clinic", () => {
-    const t = resolveEffectiveTemplates({
+    const t = resolve({
       own: [],
       eligibility: ELIGIBLE,
       memberClinics: [clinic(), clinic({ locationId: CB })],
@@ -196,7 +236,7 @@ describe("resolveEffectiveTemplates", () => {
   });
 
   it("blocks subtract from generated hours exactly as from typed ones", () => {
-    const t = resolveEffectiveTemplates({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
+    const t = resolve({ own: [], eligibility: ELIGIBLE, memberClinics: [clinic()] });
     const day = buildDay(
       MON,
       t,
@@ -229,5 +269,41 @@ describe("scheduleKindFor: the Horarios label", () => {
         memberClinicCount: 2,
       }),
     ).toBe("none");
+  });
+});
+
+describe("clinicDefaultSwitchVerdict: the server refusal and the button, one rule", () => {
+  const lv = { locationId: LV, name: "Linda-a-Velha" };
+  const cb = { locationId: CB, name: "Castelo Branco" };
+
+  it("ok, naming the clinics whose rows will be switched off", () => {
+    expect(
+      clinicDefaultSwitchVerdict({ eligibility: ELIGIBLE, rowClinics: [lv, lv, cb], activeMemberClinicIds: new Set([LV, CB]) }),
+    ).toEqual({ ok: true, clinics: [cb, lv] });
+  });
+
+  it("nothing to switch when there is no row in force", () => {
+    expect(clinicDefaultSwitchVerdict({ eligibility: ELIGIBLE, rowClinics: [], activeMemberClinicIds: new Set([LV]) })).toEqual({
+      ok: false,
+      reason: "nothing_to_switch",
+    });
+  });
+
+  it.each([
+    ["inactive", { ...ELIGIBLE, isActive: false }],
+    ["not bookable", { ...ELIGIBLE, isBookable: false }],
+    ["a shared resource", { ...ELIGIBLE, isSharedResource: true }],
+    ["no user row", null],
+  ])("refused for %s", (_why, eligibility) => {
+    expect(clinicDefaultSwitchVerdict({ eligibility, rowClinics: [lv], activeMemberClinicIds: new Set([LV]) })).toEqual({
+      ok: false,
+      reason: "not_eligible",
+    });
+  });
+
+  it("refused, naming the clinic, when rows sit where the therapist is not an active member", () => {
+    expect(
+      clinicDefaultSwitchVerdict({ eligibility: ELIGIBLE, rowClinics: [lv, cb], activeMemberClinicIds: new Set([LV]) }),
+    ).toEqual({ ok: false, reason: "not_member", clinics: [cb] });
   });
 });

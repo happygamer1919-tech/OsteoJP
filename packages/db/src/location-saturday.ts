@@ -24,7 +24,11 @@ import { sql, type SQL } from "drizzle-orm";
  * any role with a privilege on `locations`: `authenticated` (staff, via
  * runScoped) and the owning role both qualify.
  */
-type SqlExecutor = { execute: (query: SQL) => PromiseLike<unknown> };
+type SqlExecutor = {
+  execute: (query: SQL) => PromiseLike<unknown>;
+  /** Present on a Drizzle transaction: a nested call is a SAVEPOINT. */
+  transaction?: <T>(fn: (tx: SqlExecutor) => Promise<T>) => Promise<T>;
+};
 
 const ABSENT_RECHECK_MS = 60_000;
 
@@ -57,12 +61,37 @@ export function resetLocationSaturdayColumnCache(): void {
 }
 
 /**
+ * Tests only: behave as if the column had been seen, which is the state a
+ * running process is in after the column existed once. Used to prove the
+ * rollback path below on a database that does not have it.
+ */
+export function markLocationSaturdayColumnPresentForTests(): void {
+  present = true;
+}
+
+/** Postgres 42703 (undefined_column), however a driver or ORM wraps it. */
+function isUndefinedColumn(e: unknown): boolean {
+  for (let cur: unknown = e, i = 0; cur && i < 5; i++) {
+    if (typeof cur === "object" && (cur as { code?: unknown }).code === "42703") return true;
+    cur = typeof cur === "object" ? (cur as { cause?: unknown }).cause : undefined;
+  }
+  return false;
+}
+
+/**
  * The Saturday closing time of each named clinic, as "HH:MM:SS", or null where
  * the clinic has none. Every id asked about is in the answer; an id the caller
  * cannot read, or every id while the column is absent, maps to null.
  *
  * Runs on the caller's executor, so on a tenant-scoped transaction RLS decides
  * which rows are visible, exactly as for any other read of `locations`.
+ *
+ * IF THE COLUMN DISAPPEARS UNDER A RUNNING PROCESS (the migration rolled back
+ * after "present" was cached), the read fails with 42703. It runs inside a
+ * SAVEPOINT when the executor is a transaction, so that failure does not abort
+ * the caller's transaction: the cache is cleared, and the answer is "no Saturday
+ * hours", as if the column had never been seen. Booking keeps working without a
+ * redeploy, and the next ask after a minute re-checks the catalogue.
  */
 export async function readLocationSaturdayClosesAt(
   db: SqlExecutor,
@@ -73,14 +102,25 @@ export async function readLocationSaturdayClosesAt(
   for (const id of ids) out.set(id, null);
   if (ids.length === 0) return out;
   if (!(await locationSaturdayColumnPresent(db))) return out;
-  const rows = (await db.execute(sql`
+  const query = sql`
     select l.id::text as id, l.saturday_closes_at::text as saturday_closes_at
       from public.locations l
      where l.id in (${sql.join(
        ids.map((id) => sql`${id}::uuid`),
        sql`, `,
      )})
-  `)) as unknown as ReadonlyArray<{ id: string; saturday_closes_at: string | null }>;
+  `;
+  let rows: ReadonlyArray<{ id: string; saturday_closes_at: string | null }>;
+  try {
+    rows = (await (db.transaction
+      ? db.transaction((sp) => Promise.resolve(sp.execute(query)))
+      : db.execute(query))) as unknown as ReadonlyArray<{ id: string; saturday_closes_at: string | null }>;
+  } catch (e) {
+    if (!isUndefinedColumn(e)) throw e;
+    present = false;
+    absentCheckedAt = Date.now();
+    return out;
+  }
   for (const r of rows) out.set(r.id, r.saturday_closes_at ?? null);
   return out;
 }

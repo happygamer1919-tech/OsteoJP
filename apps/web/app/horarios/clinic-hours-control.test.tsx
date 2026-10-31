@@ -14,6 +14,7 @@ vi.mock("@osteojp/ui", () => ({
   Button: ({ children, ...rest }: { children?: ReactNode }) => createElement("button", rest, children),
   useAnimatedDialog: () => ({ ref: { current: null }, shown: false }),
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: () => {} }) }));
 
 const { ScheduleKindLabel, UseClinicHoursButton } = await import("./ClinicHoursControl");
 const { s } = await import("@/lib/i18n");
@@ -47,13 +48,19 @@ describe("ScheduleKindLabel", () => {
   });
 });
 
+const { clinicDefaultConfirmClinics } = await import("@/lib/admin/clinic-default-message");
+
 describe("UseClinicHoursButton", () => {
   const html = renderToStaticMarkup(
     createElement(UseClinicHoursButton, {
       therapistId: "t-1",
       therapistName: "Ana",
       labels,
-      action: async () => {},
+      confirmClinics: clinicDefaultConfirmClinics([
+        { locationId: "a", name: "Castelo Branco" },
+        { locationId: "b", name: "Linda-a-Velha" },
+      ]),
+      action: async () => ({ ok: true as const }),
     }),
   );
 
@@ -64,8 +71,7 @@ describe("UseClinicHoursButton", () => {
     expect(html).toContain(s["schedule.useClinicHoursKeep"]);
   });
 
-  it("posts the therapist's id and nothing else", () => {
-    expect(html).toContain('name="userId"');
-    expect(html).toContain('value="t-1"');
+  it("the confirm names every clinic whose rows will be switched off", () => {
+    expect(html).toContain("O horário próprio será desativado em: Castelo Branco, Linda-a-Velha.");
   });
 });

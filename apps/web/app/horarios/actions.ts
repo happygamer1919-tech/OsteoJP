@@ -13,6 +13,8 @@ import { applyAlternatingWeeks } from "@/lib/admin/alternating-schedule";
 import { applyDayByDaySchedule } from "@/lib/admin/day-by-day-schedule";
 import { removeDayDefined } from "@/lib/admin/day-defined-remove";
 import { applyClinicDefaultSchedule } from "@/lib/admin/clinic-default-schedule";
+import { clinicDefaultRefusalMessage } from "@/lib/admin/clinic-default-message";
+import { s } from "@/lib/i18n";
 // formatCreatedAt is the existing pt-PT Lisbon "dd/mm/yyyy HH:mm" formatter;
 // reused rather than adding a second one that could format differently.
 import { formatCreatedAt } from "@/lib/scheduling/time";
@@ -129,22 +131,30 @@ export async function removeDayDefinedAction(input: {
  * HOR-01 - "Usar horario da clinica". Switches off (never deletes) every active
  * Horarios row of one therapist, so the clinic's opening hours apply to them.
  *
- * The writer re-checks schedule:manage and the target's scope inside, so this
- * wrapper adds no authority. The agenda is revalidated too, because it books
- * against the same hours.
+ * RETURNS A RESULT RATHER THAN REDIRECTING, like removeDayDefinedAction: a
+ * refusal names the clinics that block it, and that sentence has to be read in
+ * the dialog, not flattened into the page banner's generic error.
+ *
+ * The writer re-checks schedule:manage, the target's scope AND the switch
+ * verdict inside its own transaction, so this wrapper adds no authority. The
+ * agenda is revalidated too, because it books against the same hours.
  */
-export async function switchToClinicHoursAction(fd: FormData): Promise<void> {
+export async function switchToClinicHoursAction(input: {
+  userId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   const actor = await requireRequestContext();
-  const userId = String(fd.get("userId") ?? "");
-  let code = "clinic_default";
   try {
-    await applyClinicDefaultSchedule(actor, userId);
-  } catch (e) {
-    code = isAdminError(e) ? `err:${e.code}` : "err";
+    const res = await applyClinicDefaultSchedule(actor, input.userId);
+    if (!res.ok) return { ok: false, error: clinicDefaultRefusalMessage(res) };
+    revalidatePath("/horarios");
+    revalidatePath("/agenda");
+    revalidatePath("/admin/staff");
+    return { ok: true };
+  } catch {
+    // Scope refusals (forbidden / not_found) and anything unexpected: the
+    // page's own generic sentence, never an internal message.
+    return { ok: false, error: s["schedule.error"] };
   }
-  revalidatePath("/horarios");
-  revalidatePath("/agenda");
-  redirect(`/horarios?m=${code}`);
 }
 
 /**

@@ -94,48 +94,107 @@ export function clinicDefaultTemplates(clinic: MemberClinic): AvailabilityTempla
   return out;
 }
 
-/** The clinics where a therapist's OWN active rows exist. */
-export function clinicsWithOwnRows(own: readonly AvailabilityTemplate[]): Set<string> {
-  const out = new Set<string>();
-  for (const t of own) {
-    if (t.isActive && t.locationId) out.add(t.locationId);
-  }
-  return out;
+/**
+ * Is this own row still IN FORCE from `today` on? Active, and its validity
+ * either open or reaching today or later (Lisbon calendar date). A row that
+ * starts in the future counts: it is a schedule somebody typed for later. A
+ * row whose `valid_until` is in the past does not: it describes days that are
+ * over and says nothing about who works next week.
+ */
+export function isCurrentOwnRow(t: AvailabilityTemplate, today: string): boolean {
+  return t.isActive && (t.validUntil == null || t.validUntil >= today);
+}
+
+/** Does the therapist have ANY own row in force, at ANY clinic? */
+export function hasCurrentOwnRows(own: readonly AvailabilityTemplate[], today: string): boolean {
+  return own.some((t) => isCurrentOwnRow(t, today));
 }
 
 /**
- * THE RESOLVER. A therapist's effective rows: their own rows, plus generated
- * rows at every member clinic where they have no active row of their own.
+ * THE RESOLVER. PER THERAPIST, NOT PER CLINIC (ruled 2026-10-30, the owner's
+ * intent): a therapist with ANY own row in force anywhere keeps their typed
+ * Horario as their WHOLE schedule, at every clinic, exactly as before HOR-01,
+ * and gets no generated row anywhere. Only a therapist with ZERO such rows
+ * gets the clinic's opening hours, at every clinic they are an active member
+ * of (and only if they are eligible).
  *
- * `own` must already be scoped to the therapist (and to `locationId`, when the
- * caller names one). Own rows are returned unchanged, inactive ones included,
- * so a caller that measures "configured" from `isActive` keeps measuring it the
- * same way. `locationId`, when given, narrows the generated rows to that clinic.
+ * `own` is EVERY active own row of the therapist, at every clinic: the "any row
+ * anywhere" question needs all of them even when the caller asks about one
+ * clinic. What is returned is narrowed to `locationId` when given. Expired own
+ * rows are returned too (they apply to the past days they cover, as before);
+ * they simply no longer stop the default.
  */
 export function resolveEffectiveTemplates(args: {
   own: readonly AvailabilityTemplate[];
   eligibility: ClinicDefaultEligibility | null;
   memberClinics: readonly MemberClinic[];
+  /** Lisbon calendar date, "yyyy-mm-dd". */
+  today: string;
   locationId?: string | null;
 }): AvailabilityTemplate[] {
-  const out: AvailabilityTemplate[] = [...args.own];
+  const here = (loc: string | null | undefined) => !args.locationId || loc === args.locationId;
+  const out: AvailabilityTemplate[] = args.own.filter((t) => here(t.locationId));
+  if (hasCurrentOwnRows(args.own, args.today)) return out;
   if (!isClinicDefaultEligible(args.eligibility)) return out;
-  const covered = clinicsWithOwnRows(args.own);
   const seen = new Set<string>();
   for (const clinic of args.memberClinics) {
-    if (args.locationId && clinic.locationId !== args.locationId) continue;
-    if (covered.has(clinic.locationId) || seen.has(clinic.locationId)) continue;
+    if (!here(clinic.locationId) || seen.has(clinic.locationId)) continue;
     seen.add(clinic.locationId);
     out.push(...clinicDefaultTemplates(clinic));
   }
   return out;
 }
 
+/** A clinic named for a person to read: its id and its name. */
+export type NamedClinic = { locationId: string; name: string };
+
+/**
+ * "USAR HORARIO DA CLINICA": MAY IT RUN, AND WHAT WOULD IT DO. One function for
+ * the server's refusal and for the button, so the two cannot disagree.
+ *
+ * - `nothing_to_switch`: no own row in force, so there is nothing to switch
+ *   off (and nothing is written, not even an audit row).
+ * - `not_eligible`: inactive, not bookable, or a shared resource. Switching
+ *   their rows off would not give them the clinic's hours; it would leave them
+ *   with none enforced.
+ * - `not_member`: they have rows at a clinic where they are not an active
+ *   member. With the rows gone they would get nothing there, so the switch
+ *   would quietly drop that clinic. Named, so reception can fix it in Equipa.
+ * - `ok`: the clinics whose rows will be switched off, for the confirm text.
+ */
+export type ClinicDefaultSwitchVerdict =
+  | { ok: true; clinics: NamedClinic[] }
+  | { ok: false; reason: "nothing_to_switch" }
+  | { ok: false; reason: "not_eligible" }
+  | { ok: false; reason: "not_member"; clinics: NamedClinic[] };
+
+export function clinicDefaultSwitchVerdict(args: {
+  eligibility: ClinicDefaultEligibility | null;
+  /** The clinics where the therapist has own rows IN FORCE (any clinic, archived ones included). */
+  rowClinics: readonly NamedClinic[];
+  /** The ACTIVE clinics the therapist is a staff_locations member of. */
+  activeMemberClinicIds: ReadonlySet<string>;
+}): ClinicDefaultSwitchVerdict {
+  const rowClinics = dedupeClinics(args.rowClinics);
+  if (rowClinics.length === 0) return { ok: false, reason: "nothing_to_switch" };
+  if (!isClinicDefaultEligible(args.eligibility)) return { ok: false, reason: "not_eligible" };
+  const missing = rowClinics.filter((c) => !args.activeMemberClinicIds.has(c.locationId));
+  if (missing.length > 0) return { ok: false, reason: "not_member", clinics: missing };
+  return { ok: true, clinics: rowClinics };
+}
+
+function dedupeClinics(clinics: readonly NamedClinic[]): NamedClinic[] {
+  const seen = new Map<string, NamedClinic>();
+  for (const c of clinics) if (!seen.has(c.locationId)) seen.set(c.locationId, c);
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, "pt"));
+}
+
 /**
  * Which schedule a therapist is on, for the Horarios label.
  *
- * - `own`: at least one active row of their own, anywhere. The label says
- *   "Horario proprio", and "Usar horario da clinica" is offered.
+ * - `own`: at least one own row IN FORCE, anywhere. The label says
+ *   "Horario proprio"; "Usar horario da clinica" is offered when
+ *   `clinicDefaultSwitchVerdict` says it may run.
  * - `clinic_default`: no own rows, and the default applies at one or more
  *   clinics. The label says "Horario da clinica (padrao)".
  * - `none`: no own rows and no default (not bookable, inactive, a shared

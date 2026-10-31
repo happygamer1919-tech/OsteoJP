@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button, useAnimatedDialog } from "@osteojp/ui";
 import type { ScheduleKind } from "@/lib/scheduling/effective-availability-core";
 
@@ -12,10 +13,11 @@ import type { ScheduleKind } from "@/lib/scheduling/effective-availability-core"
  * it answers ("why is this person bookable at 19:00 when nobody typed 19:00?")
  * is the first one reception will ask once rows stop being required.
  *
- * THE BUTTON IS SHOWN ONLY ON `own`. On `clinic_default` there is nothing to
- * switch off, and on `none` switching rows off would not make the default
- * apply (the therapist is not bookable, not a member of a clinic, or a shared
- * resource), so offering it would promise something it cannot do.
+ * THE BUTTON IS SHOWN ONLY WHEN THE SERVER WOULD ACCEPT IT: the page passes
+ * the same `clinicDefaultSwitchVerdict` the action re-checks, and renders the
+ * button only on `ok`. A refusal that still happens (the data changed between
+ * the render and the press) is shown in the dialog, in Portuguese, naming the
+ * clinics.
  *
  * THE CONFIRM IS A SEPARATE STEP ON PURPOSE. The action changes the therapist's
  * hours at every clinic at once; a single press would be too easy to make
@@ -76,15 +78,26 @@ export function UseClinicHoursButton({
   therapistId,
   therapistName,
   labels,
+  confirmClinics,
   action,
 }: {
   therapistId: string;
   therapistName: string;
   labels: ClinicHoursLabels;
-  action: (fd: FormData) => Promise<void>;
+  /** "O horario proprio sera desativado em: ...", built on the server from the
+   *  same verdict the action re-checks. */
+  confirmClinics: string;
+  action: (input: { userId: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
   const { ref, shown } = useAnimatedDialog(open);
+  const close = () => {
+    setOpen(false);
+    setError(null);
+  };
   return (
     <>
       <Button
@@ -101,10 +114,10 @@ export function UseClinicHoursButton({
         aria-label={`${labels.title} ${therapistName}`}
         onCancel={(e) => {
           e.preventDefault();
-          setOpen(false);
+          close();
         }}
         onClick={(e) => {
-          if (e.target === e.currentTarget) setOpen(false);
+          if (e.target === e.currentTarget) close();
         }}
         className={[
           "m-auto w-full max-w-lg rounded-v2 bg-v2-surface p-0 shadow-v2-float",
@@ -113,21 +126,45 @@ export function UseClinicHoursButton({
           shown ? "opacity-100" : "opacity-0",
         ].join(" ")}
       >
-        <form action={action} className="flex flex-col gap-4 p-6" data-testid="use-clinic-hours-form">
-          <input type="hidden" name="userId" value={therapistId} />
+        <div className="flex flex-col gap-4 p-6" data-testid="use-clinic-hours-form">
           <h3 className="text-lg font-semibold text-v2-text-primary">{labels.title}</h3>
           <p className="text-sm font-medium text-v2-text-primary">{therapistName}</p>
           <p className="text-sm text-v2-text-primary">{labels.body}</p>
+          <p className="text-sm text-v2-text-primary" data-testid="use-clinic-hours-clinics">
+            {confirmClinics}
+          </p>
           <p className="text-sm text-v2-text-secondary">{labels.keep}</p>
+          {error && (
+            <p role="alert" className="rounded-v2 border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {error}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" size="sm" onClick={close}>
               {labels.cancel}
             </Button>
-            <Button type="submit" variant="primary" size="sm" data-testid="use-clinic-hours-confirm">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={pending}
+              data-testid="use-clinic-hours-confirm"
+              onClick={() =>
+                startTransition(async () => {
+                  const res = await action({ userId: therapistId });
+                  if (!res.ok) {
+                    setError(res.error);
+                    return;
+                  }
+                  close();
+                  router.push("/horarios?m=clinic_default");
+                })
+              }
+            >
               {labels.confirm}
             </Button>
           </div>
-        </form>
+        </div>
       </dialog>
     </>
   );

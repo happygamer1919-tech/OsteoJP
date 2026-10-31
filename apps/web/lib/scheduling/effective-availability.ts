@@ -10,8 +10,9 @@ import {
 } from "@osteojp/db";
 
 import type { AvailabilityTemplate } from "./availability";
+import { lisbonParts } from "./time";
 import {
-  clinicsWithOwnRows,
+  hasCurrentOwnRows,
   isClinicDefaultEligible,
   resolveEffectiveTemplates,
   type ClinicDefaultEligibility,
@@ -38,20 +39,17 @@ import {
  * availability_templates, so a therapist with no rows stays invisible online
  * exactly as before (pinned by apps/api/lib/appointments/portal-default-hours-off.db.test.ts).
  *
- * THE COST IS PAID ONLY BY A THERAPIST WITHOUT ROWS. When the caller names a
- * clinic and the therapist has an active row there, this is the one query it
- * always was. The membership and eligibility reads run only when a default
- * could apply.
+ * THE COST IS PAID ONLY BY A THERAPIST WITHOUT ROWS. A therapist with any own
+ * row in force costs one query, as before (it now reads their rows at every
+ * clinic rather than one, and narrows in memory). The membership and
+ * eligibility reads run only when a default could apply.
  */
 export async function readEffectiveTemplates(
   tx: DbTx,
-  args: { therapistId: string; locationId?: string | null },
+  args: { therapistId: string; locationId?: string | null; today?: string },
 ): Promise<AvailabilityTemplate[]> {
-  const ownConds: SQL[] = [
-    eq(availabilityTemplates.userId, args.therapistId),
-    eq(availabilityTemplates.isActive, true),
-  ];
-  if (args.locationId) ownConds.push(eq(availabilityTemplates.locationId, args.locationId));
+  // EVERY active own row, at every clinic: whether the default applies is a
+  // question about the therapist, not about the clinic being asked about.
   const ownRows = await tx
     .select({
       id: availabilityTemplates.id,
@@ -64,7 +62,12 @@ export async function readEffectiveTemplates(
       locationId: availabilityTemplates.locationId,
     })
     .from(availabilityTemplates)
-    .where(and(...ownConds));
+    .where(
+      and(
+        eq(availabilityTemplates.userId, args.therapistId),
+        eq(availabilityTemplates.isActive, true),
+      ),
+    );
 
   const own: AvailabilityTemplate[] = ownRows.map((r) => ({
     id: r.id,
@@ -76,26 +79,34 @@ export async function readEffectiveTemplates(
     isActive: r.isActive === true,
     locationId: r.locationId,
   }));
+  const today = args.today ?? lisbonToday();
+  const narrowed = () => (args.locationId ? own.filter((t) => t.locationId === args.locationId) : own);
 
-  // The common case for a configured therapist: one named clinic, rows there.
-  // Nothing else can change the answer, so nothing else is read.
-  const covered = clinicsWithOwnRows(own);
-  if (args.locationId && covered.has(args.locationId)) return own;
+  // The common case: the therapist has a typed Horario in force somewhere.
+  // That is their whole schedule, as before HOR-01, and nothing else is read.
+  if (hasCurrentOwnRows(own, today)) return narrowed();
 
   const eligibility = await readDefaultEligibility(tx, args.therapistId);
-  if (!isClinicDefaultEligible(eligibility)) return own;
+  if (!isClinicDefaultEligible(eligibility)) return narrowed();
 
-  const memberClinics = (
-    await readMemberClinics(tx, { therapistId: args.therapistId, locationId: args.locationId })
-  ).filter((c) => !covered.has(c.locationId));
-  if (memberClinics.length === 0) return own;
+  const memberClinics = await readMemberClinics(tx, {
+    therapistId: args.therapistId,
+    locationId: args.locationId,
+  });
+  if (memberClinics.length === 0) return narrowed();
 
   return resolveEffectiveTemplates({
     own,
     eligibility,
     memberClinics,
+    today,
     locationId: args.locationId,
   });
+}
+
+/** Today's Lisbon calendar date, "yyyy-mm-dd": the day "in force" is measured from. */
+export function lisbonToday(now: Date = new Date()): string {
+  return lisbonParts(now).date;
 }
 
 /** Active, bookable, not a shared resource: the three flags the default needs. */

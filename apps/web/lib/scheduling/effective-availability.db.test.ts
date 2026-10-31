@@ -44,6 +44,7 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
   const tenant = randomUUID();
   const lv = randomUUID();
   const archived = randomUUID();
+  const second = randomUUID();
   const owner = randomUUID();
 
   const who = {
@@ -55,7 +56,23 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     memberOfArchivedOnly: randomUUID(),
     ownRows: randomUUID(),
     rowsAtArchivedOnly: randomUUID(),
+    // MINOR d: two clinics. A has rows at LV only and is a member of both; B has
+    // no rows and is a member of both.
+    twoClinicsRowsAtOne: randomUUID(),
+    twoClinicsNoRows: randomUUID(),
+    // Only an EXPIRED row: not in force, so the default applies.
+    expiredOnly: randomUUID(),
   };
+
+  const checkAt = (therapist: string, loc: string, date: string, from: string, to: string) =>
+    runScoped(ctx, (tx) =>
+      checkAvailability(tx, {
+        practitionerId: therapist,
+        locationId: loc,
+        startsAt: at(date, from),
+        endsAt: at(date, to),
+      }),
+    );
 
   const ctx = { tenantId: tenant, role: "owner", userId: owner } as never;
 
@@ -90,7 +107,8 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     );
     await db.execute(raw`insert into locations (id, tenant_id, name, opens_at, closes_at, is_active)
       values (${lv}::uuid, ${tenant}::uuid, 'HOR Linda', '08:00', '21:00', true),
-             (${archived}::uuid, ${tenant}::uuid, 'HOR Fechada', '08:00', '21:00', false)`);
+             (${archived}::uuid, ${tenant}::uuid, 'HOR Fechada', '08:00', '21:00', false),
+             (${second}::uuid, ${tenant}::uuid, 'HOR Segunda', '09:00', '19:00', true)`);
 
     const user = (id: string, label: string, f: { active?: boolean; bookable?: boolean; shared?: boolean } = {}) =>
       db.execute(raw`insert into users (id, tenant_id, email, full_name, is_active, is_bookable, is_shared_resource)
@@ -105,13 +123,30 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     await user(who.memberOfArchivedOnly, "archived-only");
     await user(who.ownRows, "own-rows");
     await user(who.rowsAtArchivedOnly, "rows-at-archived");
+    await user(who.twoClinicsRowsAtOne, "two-rows-at-one");
+    await user(who.twoClinicsNoRows, "two-no-rows");
+    await user(who.expiredOnly, "expired-only");
 
-    for (const id of [who.eligible, who.inactive, who.notBookable, who.nesa, who.ownRows, who.rowsAtArchivedOnly]) {
+    for (const id of [
+      who.eligible,
+      who.inactive,
+      who.notBookable,
+      who.nesa,
+      who.ownRows,
+      who.rowsAtArchivedOnly,
+      who.twoClinicsRowsAtOne,
+      who.twoClinicsNoRows,
+      who.expiredOnly,
+    ]) {
       await db.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
         values (${tenant}::uuid, ${id}::uuid, ${lv}::uuid)`);
     }
     await db.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
       values (${tenant}::uuid, ${who.memberOfArchivedOnly}::uuid, ${archived}::uuid)`);
+    for (const id of [who.twoClinicsRowsAtOne, who.twoClinicsNoRows]) {
+      await db.execute(raw`insert into staff_locations (tenant_id, user_id, location_id)
+        values (${tenant}::uuid, ${id}::uuid, ${second}::uuid)`);
+    }
 
     // Own rows: Monday 09:00 to 13:00 only.
     await db.execute(raw`insert into availability_templates
@@ -121,6 +156,13 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     await db.execute(raw`insert into availability_templates
         (tenant_id, user_id, location_id, weekday, start_time, end_time, is_active)
       values (${tenant}::uuid, ${who.rowsAtArchivedOnly}::uuid, ${archived}::uuid, 1, '09:00', '10:00', true)`);
+    await db.execute(raw`insert into availability_templates
+        (tenant_id, user_id, location_id, weekday, start_time, end_time, is_active)
+      values (${tenant}::uuid, ${who.twoClinicsRowsAtOne}::uuid, ${lv}::uuid, 1, '09:00', '13:00', true)`);
+    await db.execute(raw`insert into availability_templates
+        (tenant_id, user_id, location_id, weekday, start_time, end_time, is_active, valid_from, valid_until)
+      values (${tenant}::uuid, ${who.expiredOnly}::uuid, ${lv}::uuid, 1, '09:00', '10:00', true,
+              '2020-01-01'::date, '2020-12-31'::date)`);
   });
 
   afterAll(async () => {
@@ -133,13 +175,14 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
     await db.execute(raw`delete from tenants where id = ${tenant}::uuid`);
   });
 
-  it("PREMISE: only the own-rows therapist has any availability row at the live clinic", async () => {
+  it("PREMISE: three therapists have a row at the live clinic, one of them expired", async () => {
     const [r] = (await db.execute(raw`
       select count(*)::int as n, count(distinct user_id)::int as users
         from availability_templates where tenant_id = ${tenant}::uuid and is_active
           and location_id = ${lv}::uuid
     `)) as unknown as [{ n: number; users: number }];
-    expect(r).toEqual({ n: 1, users: 1 });
+    // own-rows, two-rows-at-one and expired-only.
+    expect(r).toEqual({ n: 3, users: 3 });
   });
 
   it("the eligible member is BOOKABLE inside the clinic's hours on a weekday", async () => {
@@ -213,14 +256,74 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
       who.notBookable,
       who.memberOfArchivedOnly,
       who.rowsAtArchivedOnly,
+      who.expiredOnly,
     ]);
-    // A row at an archived clinic is not "Horario proprio": the default is what applies.
-    expect(kinds.get(who.rowsAtArchivedOnly)).toEqual({ kind: "clinic_default", canUseClinicHours: false });
-    expect(await check(who.rowsAtArchivedOnly, MON, "15:00", "16:00")).toEqual({ ok: true, reason: "covered" });
-    expect(kinds.get(who.eligible)).toEqual({ kind: "clinic_default", canUseClinicHours: false });
-    expect(kinds.get(who.ownRows)).toEqual({ kind: "own", canUseClinicHours: true });
-    expect(kinds.get(who.notBookable)).toEqual({ kind: "none", canUseClinicHours: false });
-    expect(kinds.get(who.memberOfArchivedOnly)).toEqual({ kind: "none", canUseClinicHours: false });
+    expect(kinds.get(who.eligible)).toEqual({
+      kind: "clinic_default",
+      switchVerdict: { ok: false, reason: "nothing_to_switch" },
+    });
+    expect(kinds.get(who.ownRows)).toEqual({
+      kind: "own",
+      switchVerdict: { ok: true, clinics: [{ locationId: lv, name: "HOR Linda" }] },
+    });
+    expect(kinds.get(who.notBookable)).toEqual({
+      kind: "none",
+      switchVerdict: { ok: false, reason: "nothing_to_switch" },
+    });
+    expect(kinds.get(who.memberOfArchivedOnly)).toEqual({
+      kind: "none",
+      switchVerdict: { ok: false, reason: "nothing_to_switch" },
+    });
+    // A row in force at an ARCHIVED clinic is still an own schedule (per
+    // therapist: any row anywhere), and the switch is refused, naming the
+    // clinic, because the therapist is not an active member there.
+    expect(kinds.get(who.rowsAtArchivedOnly)).toEqual({
+      kind: "own",
+      switchVerdict: { ok: false, reason: "not_member", clinics: [{ locationId: archived, name: "HOR Fechada" }] },
+    });
+    expect(await check(who.rowsAtArchivedOnly, MON, "15:00", "16:00")).toEqual({ ok: true, reason: "unconfigured" });
+    // An EXPIRED row is not in force: the clinic default is what applies.
+    expect(kinds.get(who.expiredOnly)?.kind).toBe("clinic_default");
+    expect(await check(who.expiredOnly, MON, "15:00", "16:00")).toEqual({ ok: true, reason: "covered" });
+  });
+
+  it("two clinics, PER THERAPIST: rows at one clinic mean nothing generated at the other", async () => {
+    // A: rows at LV only (Monday 09:00 to 13:00), a member of LV and of Segunda.
+    expect(await checkAt(who.twoClinicsRowsAtOne, lv, MON, "15:00", "16:00")).toEqual({
+      ok: false,
+      windows: [{ startTime: "09:00", endTime: "13:00" }],
+    });
+    expect(await checkAt(who.twoClinicsRowsAtOne, second, MON, "10:00", "11:00")).toEqual({
+      ok: true,
+      reason: "unconfigured",
+    });
+    // B: no rows, a member of both: the default at both, each clinic's own hours.
+    expect(await checkAt(who.twoClinicsNoRows, lv, MON, "08:00", "09:00")).toEqual({ ok: true, reason: "covered" });
+    expect(await checkAt(who.twoClinicsNoRows, second, MON, "08:00", "09:00")).toEqual({
+      ok: false,
+      windows: [{ startTime: "09:00", endTime: "19:00" }],
+    });
+    expect(await checkAt(who.twoClinicsNoRows, second, MON, "09:00", "10:00")).toEqual({ ok: true, reason: "covered" });
+    expect((await getTherapistLocationIds(ctx, who.twoClinicsNoRows)).sort()).toEqual([lv, second].sort());
+    expect(await getTherapistLocationIds(ctx, who.twoClinicsRowsAtOne)).toEqual([lv]);
+  });
+
+  it("a Saturday column that vanishes under a cached 'present' does not break booking", async () => {
+    const dbmod = await import("@osteojp/db");
+    dbmod.markLocationSaturdayColumnPresentForTests();
+    try {
+      // The whole check runs in ONE transaction: if the failed Saturday read
+      // were not inside a savepoint, the transaction would be aborted and this
+      // would throw instead of answering.
+      expect(await check(who.eligible, MON, "10:00", "11:00")).toEqual({ ok: true, reason: "covered" });
+      expect(await check(who.eligible, SAT, "10:00", "11:00")).toEqual({ ok: false, windows: [] });
+      if (!saturdayColumnPresent) {
+        // And the cache now says absent, so the column is not re-queried per booking.
+        expect(await dbmod.locationSaturdayColumnPresent(db)).toBe(false);
+      }
+    } finally {
+      dbmod.resetLocationSaturdayColumnCache();
+    }
   });
 
   it("own rows override the default", async () => {
@@ -245,7 +348,7 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
 
   it("Usar horario da clinica switches the own rows off, deletes none, and the default then applies", async () => {
     const res = await applyClinicDefaultSchedule(ctx, who.ownRows);
-    expect(res).toEqual({ deactivated: 1 });
+    expect(res).toEqual({ ok: true, deactivated: 1, clinics: [{ locationId: lv, name: "HOR Linda" }] });
     const [rows] = (await db.execute(raw`
       select count(*)::int as total, count(*) filter (where is_active)::int as active
         from availability_templates where user_id = ${who.ownRows}::uuid
@@ -258,5 +361,32 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
          and entity_id = ${who.ownRows}::uuid
     `)) as unknown as [{ n: number }];
     expect(audit.n).toBe(1);
+
+    // Pressed again: nothing in force any more, so nothing is written, not even
+    // a second audit row.
+    expect(await applyClinicDefaultSchedule(ctx, who.ownRows)).toEqual({ ok: false, reason: "nothing_to_switch" });
+    const [again] = (await db.execute(raw`
+      select count(*)::int as n from audit_log
+       where tenant_id = ${tenant}::uuid and action = 'availability_template.use_clinic_default'
+    `)) as unknown as [{ n: number }];
+    expect(again.n).toBe(1);
+  });
+
+  it("the server refuses the switch where the default would not replace the rows, and writes nothing", async () => {
+    expect(await applyClinicDefaultSchedule(ctx, who.rowsAtArchivedOnly)).toEqual({
+      ok: false,
+      reason: "not_member",
+      clinics: [{ locationId: archived, name: "HOR Fechada" }],
+    });
+    const [rows] = (await db.execute(raw`
+      select count(*) filter (where is_active)::int as active from availability_templates
+       where user_id = ${who.rowsAtArchivedOnly}::uuid
+    `)) as unknown as [{ active: number }];
+    expect(rows.active).toBe(1);
+    const [audit] = (await db.execute(raw`
+      select count(*)::int as n from audit_log
+       where tenant_id = ${tenant}::uuid and entity_id = ${who.rowsAtArchivedOnly}::uuid
+    `)) as unknown as [{ n: number }];
+    expect(audit.n).toBe(0);
   });
 });

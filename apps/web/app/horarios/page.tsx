@@ -29,6 +29,7 @@ import {
   updateTimeOffBlockAction,
 } from "./actions";
 import { listScheduleKinds } from "@/lib/admin/clinic-default-schedule";
+import { clinicDefaultConfirmClinics } from "@/lib/admin/clinic-default-message";
 import {
   ScheduleKindLabel,
   UseClinicHoursButton,
@@ -375,14 +376,18 @@ export default async function HorariosPage({
                       openBlockId={editBlock ?? null}
                       triggerVariant="primary"
                     />
-                    {scheduleKinds.get(t.id)?.canUseClinicHours === true && (
-                      <UseClinicHoursButton
-                        therapistId={t.id}
-                        therapistName={t.label}
-                        labels={clinicHoursLabels}
-                        action={switchToClinicHoursAction}
-                      />
-                    )}
+                    {(() => {
+                      const v = scheduleKinds.get(t.id)?.switchVerdict;
+                      return v?.ok ? (
+                        <UseClinicHoursButton
+                          therapistId={t.id}
+                          therapistName={t.label}
+                          labels={clinicHoursLabels}
+                          confirmClinics={clinicDefaultConfirmClinics(v.clinics)}
+                          action={switchToClinicHoursAction}
+                        />
+                      ) : null;
+                    })()}
                     {/* ITEM 5: sits beside Bloquear horario because both are
                         "change this therapist's availability", and reception
                         looks for them in the same place. */}
