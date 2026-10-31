@@ -223,11 +223,18 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * THE GAP THAT REMAINS. Every writer of those two rows records the start, but
  * not every path that changes `starts_at` writes one: the patient's own move
  * in the portal (apps/api/lib/appointments/store.ts, `rescheduleOwn`) and the
- * importer's re-upsert change it with no audit row and no event. A start
- * changed that way after the last row and before a move after the mark is
- * read stale only when no move after the mark recorded `fromStartsAt`, so
- * only through rule 2: then a move back to the old start reads as kept and
- * counts nothing, or the reverse. Rule 1 also trusts the read of the row it
+ * importer's re-upsert change it with no audit row and no event. Either rule
+ * can then read a stale start: rule 1 when such a change falls between the
+ * mark and the first move after it (that move's `fromStartsAt` is the start
+ * the unaudited change left, not the start at the mark), rule 2 when it falls
+ * between the last row and the mark. A move back to the start at the mark
+ * then reads as a change and counts (the mark is skipped), or a move that
+ * keeps the start now reads as kept when the start at the mark was another
+ * (a mark the live job never had is taken). The trail cannot say on which
+ * side of the mark such a change fell. Exposure: the 48h email through the
+ * portal (`rescheduleOwn` refuses a start under 24h away, so the 24h SMS is
+ * out of its reach), and either mark through the importer. The real fix is
+ * an audit row of its own for the portal move, carded. Rule 1 also trusts the read of the row it
  * moved, which takes no row lock: a second move of the same row committing
  * between that read and the update would make it one move behind.
  *
