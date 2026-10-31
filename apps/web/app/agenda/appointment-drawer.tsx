@@ -369,7 +369,13 @@ export function AppointmentDrawer({
   // date/time). `presetPatient` unifies both preset sources for the combobox.
   const lockedPatient = state.mode === "create" ? state.lockedPatient ?? null : null;
   const guestRequestId = state.mode === "create" ? state.guestRequestId ?? null : null;
-  const patientLocked = lockedPatient !== null;
+  // APPT-EDIT-01: an EDIT never changes the patient. No save path sends it
+  // (rescheduleAppointment and updateAppointment carry no patient), so a
+  // patient picked here was dropped in silence and the drawer said "Marcação
+  // guardada" over a booking that still belonged to the first patient. The
+  // field is shown read-only instead, exactly as the deep-linked create shows
+  // its locked patient. Rebooking for another patient is a new marcação.
+  const patientLocked = lockedPatient !== null || editing !== null;
   // SEC-appointment-vanishes-with-patient-scope: on a withheld patient the
   // combobox shows the same "reserved" label the grid does. It is NOT a
   // searchable option - `patientSearchResults` comes from a scoped search that
@@ -1369,12 +1375,15 @@ export function AppointmentDrawer({
             // W6-03: deep-link flow. The patient is fixed. Show it read-only so
             // the user only picks therapist + date/time. The id is already in the
             // form state (init from lockedPatient.value), which is what submit uses.
+            // APPT-EDIT-01: an edit shows its own patient the same way, with the
+            // label the grid uses (a withheld patient reads as reserved).
             <div
               id="appt-patient"
               aria-readonly="true"
+              data-testid="drawer-patient-readonly"
               className="flex items-center rounded border border-border-strong bg-surface-muted px-3 py-2 text-sm text-text-primary"
             >
-              {lockedPatient?.label}
+              {presetPatient?.label}
             </div>
           ) : (
             <Combobox

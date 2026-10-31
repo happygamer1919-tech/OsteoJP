@@ -25,13 +25,14 @@
  *   - "E2E Terapeuta Clinica Unica" works Monday 09:00 to 13:00 at
  *     Linda-a-Velha (ensureLocationFixtures), so a Monday 15:00 is outside.
  *
- * DAY BANDS 181, 183 to 189 and 191 are this file's own (the highest offset any
- * other spec uses is 170). 183 to 189 is one test: it books on the first Monday
- * at or after 183. Each retry moves 100 days on, as marcacoes-tab-edit does,
+ * DAY BANDS 181, 183 to 189, 191, 193 to 199 and 203 to 209 are this file's
+ * own (the highest offset any other spec uses is 170). 183 to 189, 193 to 199
+ * and 203 to 209 are one test each: each books on the first Monday at or after
+ * its start. Each retry moves 100 days on, as marcacoes-tab-edit does,
  * because these tests leave real rows behind.
  */
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { openNewAppointment, fillAppointment } from "./helpers";
+import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
 import {
   LOCATION,
   PATIENTS,
@@ -213,6 +214,79 @@ test("a therapist with a conflict is refused with the agenda's conflict list, an
   await field.getByLabel("Terapeuta", { exact: true }).selectOption({ label: THERAPIST_NAME });
   await expect(warning).toHaveCount(0);
 
+  await openMarcacoes(page);
+  await expect(row(page, date, "15:00").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);
+});
+
+/**
+ * APPT-EDIT-01 - the clinic manager's case: a new therapist AND a new hour, in
+ * ONE save from the ficha.
+ *
+ * The 15:00 booking with "E2E Therapist" cannot go to "E2E Terapeuta Clinica
+ * Unica" at 15:00 (she works Monday 09:00-13:00, the G2 test above), and the
+ * old date-and-hour panel kept the old therapist, so the move was two saves,
+ * each refused alone. Reagendar now opens the agenda's edit panel, where both
+ * change together and the hours are checked against the NEW therapist.
+ *
+ * DAY BAND 193 to 199 is this test's own: it books on the first Monday at or
+ * after 193.
+ */
+test("Reagendar changes the therapist and the hour together, checked against the new therapist (APPT-EDIT-01)", async ({
+  page,
+}, testInfo) => {
+  const date = bandMonday(193, testInfo.retry);
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "15:00" });
+
+  await openMarcacoes(page);
+  const r = row(page, date, "15:00");
+  await r.getByText("Gerir marcação").click();
+  await r.getByRole("button", { name: "Reagendar", exact: true }).click();
+
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toBeVisible();
+  // The patient is shown, read-only: an edit never changes it.
+  await expect(drawer.getByTestId("drawer-patient-readonly")).toContainText(PATIENT.name);
+  await expect(drawer.getByRole("combobox", { name: /Paciente/i })).toHaveCount(0);
+
+  await drawer.getByRole("combobox", { name: "Terapeuta", exact: true }).selectOption({ label: THERAPIST_ONE_LOCATION });
+  await fillTime(drawer, "10:00");
+  await drawer.getByRole("button", { name: SAVE, exact: true }).click();
+
+  await expect(drawer).toBeHidden({ timeout: 12_000 });
+  // A fresh read: the row moved to 10:00 and names the new therapist.
+  await openMarcacoes(page);
+  const after = row(page, date, "10:00");
+  await expect(after).toHaveCount(1, { timeout: 8_000 });
+  await expect(after.getByTestId("marcacao-therapist")).toContainText(THERAPIST_ONE_LOCATION);
+  await expect(row(page, date, "15:00")).toHaveCount(0);
+});
+
+test("Reagendar shows the real refusal: the new therapist outside her hours is named, not a generic error (APPT-EDIT-01)", async ({
+  page,
+}, testInfo) => {
+  const date = bandMonday(203, testInfo.retry);
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "15:00" });
+
+  await openMarcacoes(page);
+  const r = row(page, date, "15:00");
+  await r.getByText("Gerir marcação").click();
+  await r.getByRole("button", { name: "Reagendar", exact: true }).click();
+
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("combobox", { name: "Terapeuta", exact: true }).selectOption({ label: THERAPIST_ONE_LOCATION });
+  await fillTime(drawer, "16:00");
+  await drawer.getByRole("button", { name: SAVE, exact: true }).click();
+
+  await expect(
+    drawer.getByText(
+      "Fora do horário do terapeuta nesse dia. Horário nesse dia: 09:00-13:00. " +
+        "Para marcar fora deste horário, altere primeiro a disponibilidade do terapeuta em Horários.",
+    ),
+  ).toBeVisible({ timeout: 8_000 });
+  await expect(drawer.getByText("Ocorreu um erro. Tente novamente.")).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+
+  // Nothing was written.
   await openMarcacoes(page);
   await expect(row(page, date, "15:00").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);
 });

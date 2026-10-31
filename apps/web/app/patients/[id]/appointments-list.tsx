@@ -8,12 +8,10 @@ import {
   Dialog,
   Drawer,
   EmptyState,
-  DatePicker,
   Field,
   Input,
   Select,
   StatusChip,
-  TimeField,
   ToastProvider,
   useToast,
   type StatusTone,
@@ -22,6 +20,7 @@ import { Calendar, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { AppointmentDrawer } from "@/app/agenda/appointment-drawer";
 import { AppointmentNotesBoard } from "@/app/agenda/appointment-notes-board";
 import { ConflictBanner } from "@/app/agenda/conflict-banner";
 import {
@@ -32,7 +31,6 @@ import { s } from "@/lib/i18n";
 import {
   correctAppointmentEstadoAction,
   cancelAppointment,
-  cloneAppointment,
   rescheduleAppointment,
   updateAppointment,
 } from "@/lib/scheduling/actions";
@@ -54,9 +52,10 @@ import {
   outsideClinicHoursMessage,
   type ClinicWindowRefusal,
 } from "@/lib/scheduling/clinic-hours-message";
-import { formatCreatedAt, formatTimeOfDay, lisbonDateTimeToUtc, lisbonParts } from "@/lib/scheduling/time";
+import { formatCreatedAt, formatTimeOfDay } from "@/lib/scheduling/time";
 import type {
   AgendaAppointment,
+  AgendaOptions,
   AppointmentStatusValue,
   ConflictInfo,
 } from "@/lib/scheduling/types";
@@ -98,6 +97,17 @@ function isEditable(a: AgendaAppointment): boolean {
   return a.status === "scheduled" || a.status === "confirmed";
 }
 
+/**
+ * APPT-EDIT-01: what the ficha needs to open the agenda's own edit panel
+ * (AppointmentDrawer) on one of its rows. The same three things the agenda,
+ * /marcacoes and the Notas tab hand it.
+ */
+export type FichaEditDrawer = {
+  options: AgendaOptions;
+  viewer: Parameters<typeof AppointmentDrawer>[0]["viewer"];
+  canHardDelete: boolean;
+};
+
 export function AppointmentsList({
   appointments,
   canEdit,
@@ -105,6 +115,7 @@ export function AppointmentsList({
   ownCancelIds = [],
   filtered = false,
   therapistStaff = null,
+  editDrawer = null,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -128,6 +139,13 @@ export function AppointmentsList({
    * Only the affordance: rescheduleAppointment re-checks everything.
    */
   therapistStaff?: TherapistChangeStaff | null;
+  /**
+   * APPT-EDIT-01: "Reagendar" opens the agenda's edit panel with this, so the
+   * Terapeuta, the clinic, the date and the hour change in ONE save
+   * (`rescheduleAppointment`), checked against the NEW Terapeuta. Null: no
+   * Reagendar on this list.
+   */
+  editDrawer?: FichaEditDrawer | null;
 }) {
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
@@ -138,6 +156,7 @@ export function AppointmentsList({
         ownCancelIds={ownCancelIds}
         filtered={filtered}
         therapistStaff={therapistStaff}
+        editDrawer={editDrawer}
       />
     </ToastProvider>
   );
@@ -155,6 +174,7 @@ function AppointmentsListInner({
   ownCancelIds,
   filtered,
   therapistStaff,
+  editDrawer,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -162,6 +182,7 @@ function AppointmentsListInner({
   ownCancelIds: readonly string[];
   filtered: boolean;
   therapistStaff: TherapistChangeStaff | null;
+  editDrawer: FichaEditDrawer | null;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
@@ -191,6 +212,7 @@ function AppointmentsListInner({
           key={a.id}
           appt={a}
           canEdit={canEdit}
+          canReschedule={canEdit && editDrawer !== null}
           canCancel={canCancel}
           canCancelRow={canCancel || ownCancelIds.includes(a.id)}
           therapistStaff={therapistStaff}
@@ -228,8 +250,27 @@ function AppointmentsListInner({
           onCreated={() => router.refresh()}
         />
       )}
-      {action?.kind === "reschedule" && (
-        <RescheduleDrawer appt={action.appt} onClose={() => setAction(null)} />
+      {/* APPT-EDIT-01: Reagendar is the agenda's own edit panel, the one the
+          agenda, /marcacoes and the Notas tab open. It changes the Terapeuta,
+          the clinic, the date and the hour together, in ONE call to
+          rescheduleAppointment, so the working hours are checked against the
+          NEW Terapeuta. The date-and-hour-only panel that stood here kept the
+          old Terapeuta, so "new therapist, new hour" was two saves, each
+          refused alone, and every refusal but a conflict read "Ocorreu um
+          erro". The panel shows the real sentence (refusal-message.ts). */}
+      {action?.kind === "reschedule" && editDrawer && (
+        <AppointmentDrawer
+          state={{ mode: "edit", appt: action.appt }}
+          options={editDrawer.options}
+          anchor={action.appt.startsAt.slice(0, 10)}
+          canHardDelete={editDrawer.canHardDelete}
+          viewer={editDrawer.viewer}
+          onClose={() => setAction(null)}
+          onDone={() => {
+            setAction(null);
+            router.refresh();
+          }}
+        />
       )}
       {action?.kind === "cancel" && (
         <CancelDrawer appt={action.appt} onClose={() => setAction(null)} />
@@ -241,6 +282,7 @@ function AppointmentsListInner({
 function AppointmentRow({
   appt: a,
   canEdit,
+  canReschedule,
   canCancel,
   canCancelRow,
   therapistStaff,
@@ -251,6 +293,8 @@ function AppointmentRow({
 }: {
   appt: AgendaAppointment;
   canEdit: boolean;
+  /** APPT-EDIT-01: canEdit, and the page handed the list the edit panel's data. */
+  canReschedule: boolean;
   canCancel: boolean;
   /** SCHED-30: this viewer may cancel THIS row and bring it back. */
   canCancelRow: boolean;
@@ -264,10 +308,10 @@ function AppointmentRow({
   // disclosure with Reagendar / Cancelar. It is only offered while the lifecycle
   // is open AND has at least one legal onward transition.
   const editable = isEditable(a);
-  const showReschedule = canEdit && editable;
+  const showReschedule = canReschedule && editable;
   // MARC-THERAPIST-01: the Terapeuta field, on the rows Reagendar is on
   // (Agendada and Confirmada), for a viewer the page hands the staff lists to.
-  const showTherapist = showReschedule && therapistStaff !== null;
+  const showTherapist = canEdit && editable && therapistStaff !== null;
   // SCHED-27 (owner, 2026-09-13): a Cancelada row also gets the Estado control,
   // to go back to Agendada or Confirmada - but only for a viewer who can CANCEL
   // (owner, admin, reception), because bringing one back is the inverse of
@@ -283,7 +327,7 @@ function AppointmentRow({
   // `canCancel` is the appointments:delete capability - owner/admin/reception,
   // never therapist - which is the ruling's "reception and up".
   const showCorrect = canCancel && correctionTargets(a.status).length > 0;
-  const showManage = showReschedule || showEstado || showCancel || showCorrect;
+  const showManage = showReschedule || showTherapist || showEstado || showCancel || showCorrect;
 
   return (
     // WRAPPED, NOT PASSED TO <Card>. `Card` destructures a fixed prop set and
@@ -655,7 +699,7 @@ function CorrigirEstadoInline({ appt }: { appt: AgendaAppointment }) {
   const [next, setNext] = useState<AppointmentStatusValue>(targets[0]!);
   const [submitting, setSubmitting] = useState(false);
   // SCHED-28: a correction into Concluída can collide with a booking made since
-  // the cancel. Shown and overridable exactly as RescheduleDrawer does it, and
+  // the cancel. Shown and overridable exactly as the agenda's edit panel does it, and
   // reset whenever the chosen target changes, so "Guardar mesmo assim" can never
   // apply to a target that was not the one checked.
   const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
@@ -729,125 +773,6 @@ function CorrigirEstadoInline({ appt }: { appt: AgendaAppointment }) {
       )}
       <p className="text-xs text-text-secondary">{s["appointment.correctEstadoHelp"]}</p>
     </div>
-  );
-}
-
-/**
- * Reschedule drawer: date/time only. PRIMARY-ONLY semantics — the practitioner
- * and location come from the row's own (primary) pair and are NOT re-asked or
- * changed here; only the temporal window moves. Wired to the EXISTING
- * rescheduleAppointment action, which runs the availability/conflict check
- * (findConflictsForWindow). A conflict surfaces inline and offers an explicit
- * "Guardar mesmo assim" (allowConflict) — never auto-applied.
- */
-function RescheduleDrawer({
-  appt,
-  onClose,
-}: {
-  appt: AgendaAppointment;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const toast = useToast();
-  const start = new Date(appt.startsAt);
-  const parts = lisbonParts(start);
-  const durationMin = Math.max(
-    1,
-    Math.round((new Date(appt.endsAt).getTime() - start.getTime()) / 60_000),
-  );
-  const [date, setDate] = useState(parts.date);
-  const [time, setTime] = useState(
-    `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`,
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const [conflicts, setConflicts] = useState<ConflictInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // A conflict banner describes one specific date/time. If either changes after
-  // a conflict is shown, the next confirm must re-check from scratch (same
-  // render-time reset the Agenda drawer uses), so "Guardar mesmo assim" can
-  // never silently skip the check for a never-validated slot.
-  const slotKey = `${date}|${time}`;
-  const [checkedKey, setCheckedKey] = useState(slotKey);
-  if (slotKey !== checkedKey) {
-    setCheckedKey(slotKey);
-    setConflicts(null);
-  }
-
-  async function submit(allowConflict: boolean) {
-    if (!date || !time) return;
-    setError(null);
-    setSubmitting(true);
-    const startsAt = lisbonDateTimeToUtc(date, time);
-    const endsAt = new Date(startsAt.getTime() + durationMin * 60_000);
-    const r = await rescheduleAppointment(appt.id, {
-      startsAt: startsAt.toISOString(),
-      endsAt: endsAt.toISOString(),
-      // Primary pair, reused verbatim — no therapist/location editing here.
-      practitionerId: appt.practitionerId,
-      locationId: appt.locationId,
-      allowConflict,
-    });
-    setSubmitting(false);
-    if (r.ok) {
-      toast({ tone: "success", message: s["appointment.rescheduled"] });
-      onClose();
-      router.refresh();
-      return;
-    }
-    if (r.error === "conflict") {
-      setConflicts(r.conflicts ?? []);
-      return;
-    }
-    setError(r.error === "forbidden" ? s["errors.forbidden"] : s["errors.generic"]);
-  }
-
-  return (
-    <Drawer
-      open
-      onClose={onClose}
-      title={s["appointment.reschedule"]}
-      closeLabel={s["common.close"]}
-      cancelLabel={s["common.cancel"]}
-      confirmLabel={conflicts ? s["appointment.saveAnyway"] : s["appointment.reschedule"]}
-      confirmVariant={conflicts ? "destructive" : "primary"}
-      confirmDisabled={!date || !time}
-      confirmLoading={submitting}
-      onConfirm={() => void submit(!!conflicts)}
-    >
-      <div className="flex flex-col gap-4">
-        <Field label={s["appointment.date"]} required>
-          <DatePicker
-            value={date === "" ? null : date}
-            onChange={setDate}
-            triggerLabel={s["appointment.date"]}
-          />
-        </Field>
-        <Field label={s["appointment.time"]} required>
-          <TimeField value={time} onChange={setTime} />
-        </Field>
-
-        {conflicts && (
-          <Banner tone="warning">
-            <span className="flex flex-col gap-1">
-              <span className="font-medium">{s["agenda.conflict"]}</span>
-              {conflicts.map((c) => (
-                <span key={c.id} className="block text-sm">
-                  {[conflictPatientLabel(c), c.room].filter(Boolean).join(" · ")}
-                  {conflictPatientLabel(c) || c.room ? ": " : ""}
-                  {formatTimeOfDay(new Date(c.startsAt))}-{formatTimeOfDay(new Date(c.endsAt))}
-                </span>
-              ))}
-            </span>
-          </Banner>
-        )}
-        {error && (
-          <p role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
-      </div>
-    </Drawer>
   );
 }
 

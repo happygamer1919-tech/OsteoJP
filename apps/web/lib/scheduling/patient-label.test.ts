@@ -69,9 +69,11 @@ describe("the name on a conflict line", () => {
       uses += src.split("conflictPatientLabel(c)").length - 1;
     }
     // conflict-lines 1, schedule-again-drawer 1, pending-requests 1,
-    // appointments-list 3 banners x 2 reads. A zero here would mean the
-    // regex above passed over files that render nothing.
-    expect(uses).toBe(9);
+    // appointments-list 2 banners x 2 reads (APPT-EDIT-01 removed its third,
+    // the date-and-hour panel, for the agenda's edit panel, which draws the
+    // shared warning). A zero here would mean the regex above passed over
+    // files that render nothing.
+    expect(uses).toBe(7);
   });
 });
 

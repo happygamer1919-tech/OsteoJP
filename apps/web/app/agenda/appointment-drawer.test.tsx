@@ -239,6 +239,33 @@ describe("AppointmentDrawer W6-03: locked patient on deep-link create", () => {
   });
 });
 
+// APPT-EDIT-01: no save path of an edit carries the patient
+// (rescheduleAppointment and updateAppointment take none), so an editable
+// patient field on an edit was a value dropped in silence. An edit shows its
+// patient read-only, as the deep-linked create does.
+describe("AppointmentDrawer APPT-EDIT-01: the patient is read-only on an edit", () => {
+  const readonly = (html: string) => {
+    const at = html.indexOf('data-testid="drawer-patient-readonly"');
+    return at === -1 ? null : html.slice(at, html.indexOf("</div>", at));
+  };
+
+  it("an edit renders its own patient read-only, with the same label the grid uses", () => {
+    const field = readonly(render({ mode: "edit", appt: editAppt }));
+    expect(field).not.toBeNull();
+    expect(field).toContain("Ana Silva");
+  });
+
+  it("a withheld patient on an edit reads as reserved, never as a name", () => {
+    const field = readonly(render({ mode: "edit", appt: { ...editAppt, patientName: null } }));
+    expect(field).not.toBeNull();
+    expect(field).not.toContain("Ana Silva");
+  });
+
+  it("a normal create keeps the search field", () => {
+    expect(readonly(render({ mode: "create" }))).toBeNull();
+  });
+});
+
 describe("AppointmentDrawer - created-by / created-at provenance (W9-06 item 10)", () => {
   it("shows the creator name + created-at on the edit detail when created by staff", () => {
     const html = render({
