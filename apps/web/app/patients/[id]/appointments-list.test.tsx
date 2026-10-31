@@ -27,7 +27,17 @@ vi.mock("@/lib/patients/actions", () => ({
   editAppointmentNoteAction: vi.fn(),
 }));
 
-import { AppointmentsList } from "./appointments-list";
+// APPT-EDIT-01: Reagendar now mounts the agenda's edit panel. A static render
+// never opens it (no click), so it is stubbed to keep the server graph out.
+vi.mock("@/app/agenda/appointment-drawer", () => ({ AppointmentDrawer: () => null }));
+
+import { AppointmentsList, type FichaEditDrawer } from "./appointments-list";
+
+const EDIT_DRAWER: FichaEditDrawer = {
+  options: { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] },
+  viewer: { role: "reception", userId: "00000000-0000-0000-0000-0000000000d1" },
+  canHardDelete: false,
+};
 
 const base: AgendaAppointment = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -67,6 +77,7 @@ function render(
     canCancel?: boolean;
     ownCancelIds?: string[];
     therapistStaff?: TherapistChangeStaff | null;
+    editDrawer?: FichaEditDrawer | null;
   } = {},
 ): string {
   return renderToStaticMarkup(
@@ -76,6 +87,7 @@ function render(
       canCancel: caps.canCancel ?? true,
       ownCancelIds: caps.ownCancelIds,
       therapistStaff: caps.therapistStaff,
+      editDrawer: caps.editDrawer === undefined ? EDIT_DRAWER : caps.editDrawer,
     }),
   );
 }
@@ -156,6 +168,13 @@ describe("AppointmentsList — per-row edit actions (W5-09)", () => {
     // Reschedule + Estado still offered (write); Cancel is not.
     expect(count(html, "Reagendar")).toBe(1);
     expect(count(html, "Cancelar marcação")).toBe(0);
+  });
+
+  it("APPT-EDIT-01: no Reagendar when the page hands the list no edit panel data", () => {
+    const html = render({ ...base, status: "scheduled" }, { editDrawer: null });
+    expect(count(html, "Reagendar")).toBe(0);
+    // The rest of the row's actions are unaffected.
+    expect(count(html, "Cancelar marcação")).toBe(1);
   });
 
   it("hides every edit action when the viewer lacks appointments:write and :delete", () => {
