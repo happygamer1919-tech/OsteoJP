@@ -14,6 +14,7 @@ import {
   type AppointmentScheduledData,
   type AppointmentStatusChangedData,
 } from "./inngest/client";
+import { followUpRunCanResult } from "./follow-up-start";
 
 export { REMINDER_OFFSETS, computeDueReminders, reminderIdempotencyKey } from "./offsets";
 export {
@@ -88,14 +89,27 @@ export async function enqueueAppointmentReminders(args: {
  * Emit the appointment/completed event so the follow-up notification can be
  * scheduled. endsAt is included in the payload so the Inngest function can sleep
  * until endsAt + 24 h without a DB read. Called after the DB transaction commits.
+ *
+ * R37: ONLY WHEN A MESSAGE CAN RESULT. This is the one sender of the event in
+ * the application (the Estado save and "Corrigir estado" both reach it), so the
+ * cut lives here and no caller can skip it. The switch is read now, at
+ * completion (`followUpRunCanResult`, ./follow-up-start.ts): off with the
+ * follow-up unapproved starts nothing, canary starts a listed patient's run
+ * only, on starts every one. Returns whether the event was sent. The payload
+ * is unchanged: the patient id decides here and never rides the event.
  */
 export async function enqueueFollowUp(args: {
   appointmentId: string;
   tenantId: string;
   endsAt: Date;
+  /** R37: the appointment's patient, for the canary list. null: not read, fails closed. */
+  patientId: string | null;
   /** Q-O: true only for a "Corrigir estado" into Concluida: the survey alone. */
   surveyOnly?: boolean;
-}): Promise<void> {
+}): Promise<boolean> {
+  if (!followUpRunCanResult({ patientId: args.patientId, surveyOnly: args.surveyOnly === true })) {
+    return false;
+  }
   await inngest.send({
     name: EVENT_APPOINTMENT_COMPLETED,
     data: {
@@ -106,6 +120,7 @@ export async function enqueueFollowUp(args: {
       ...(args.surveyOnly === true ? { surveyOnly: true as const } : {}),
     } satisfies AppointmentStatusChangedData,
   });
+  return true;
 }
 
 /**
