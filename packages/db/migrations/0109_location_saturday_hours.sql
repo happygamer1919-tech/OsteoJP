@@ -21,7 +21,8 @@
 /* NUMBER: 0109, RULED BY STRATEGY ON 2026-10-31 (R38). It sits after     */
 /* 0108, the pack read function. The file was first authored as           */
 /* 0109_location_saturday_closes_at with one column, and was renamed and  */
-/* rewritten for the owner's answer before any database applied it.       */
+/* rewritten for the owner's answer before any shared or production      */
+/* database applied it.                                                   */
 /*                                                                        */
 /* ====================================================================== */
 /* 1. WHAT IT DOES                                                        */
@@ -69,7 +70,7 @@
 /* 3. THE LOCK                                                            */
 /* ====================================================================== */
 /* ALTER TABLE takes ACCESS EXCLUSIVE on public.locations until the       */
-/* transaction commits. Every booking read joins `locations`, so they     */
+/* transaction commits. Booking reads join `locations`, so they           */
 /* wait for the commit, which on a table this small is milliseconds. The  */
 /* two bounds below make a lock this transaction cannot take in 5 seconds */
 /* a clean failure with nothing applied.                                  */

@@ -84,6 +84,21 @@ d("HOR-02: locations.saturday_opens_at and locations.saturday_closes_at", () => 
     ]);
   });
 
+  it("each new column carries its comment", async () => {
+    const rows = await sql<{ column_name: string; has_comment: boolean }[]>`
+      select a.attname::text as column_name,
+             coalesce(length(col_description(a.attrelid, a.attnum)), 0) > 0 as has_comment
+        from pg_attribute a
+       where a.attrelid = 'public.locations'::regclass
+         and a.attname in ('saturday_opens_at', 'saturday_closes_at')
+         and not a.attisdropped
+       order by a.attname`;
+    expect(rows).toEqual([
+      { column_name: "saturday_closes_at", has_comment: true },
+      { column_name: "saturday_opens_at", has_comment: true },
+    ]);
+  });
+
   it("a clinic written without them reads NULL in both, and one written with them reads the values", async () => {
     const rows = await sql<{ id: string; opens: string | null; closes: string | null }[]>`
       select id::text, saturday_opens_at::text as opens, saturday_closes_at::text as closes from locations
