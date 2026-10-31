@@ -193,6 +193,17 @@ describe("bulkSelfOverlap (preview only)", () => {
 
 describe("expectedStartsAt", () => {
   const ok: BulkRequest = { patientId: "p1", rows: [{ id: "a1" }], change: { shiftDays: 7 }, mode: "apply" };
+  it("an apply without it on every row is refused; a preview does not need it", () => {
+    expect(validBulkRequest(ok)).toBe(false);
+    expect(validBulkRequest({ ...ok, mode: "preview" })).toBe(true);
+    expect(
+      validBulkRequest({
+        ...ok,
+        rows: [{ id: "a1", expectedStartsAt: "2031-05-12T14:00:00.000Z" }, { id: "a2" }],
+      }),
+    ).toBe(false);
+  });
+
   it("an ISO start passes; garbage does not", () => {
     expect(validBulkRequest({ ...ok, rows: [{ id: "a1", expectedStartsAt: "2031-05-12T14:00:00.000Z" }] })).toBe(true);
     expect(validBulkRequest({ ...ok, rows: [{ id: "a1", expectedStartsAt: "soon" }] })).toBe(false);

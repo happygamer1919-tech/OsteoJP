@@ -68,9 +68,10 @@ export type BulkRowRequest = {
   time?: string | null;
   allowConflict?: boolean;
   /**
-   * The row's start as the client last saw it (ISO). A row whose start is no
-   * longer this is left alone with verdict `changed`: a save retried after
-   * its answer was lost cannot shift the visits a second time.
+   * The row's start as the client last saw it (ISO), REQUIRED on an apply. A
+   * row whose start is no longer this is left alone with verdict `changed`:
+   * a save retried after its answer was lost cannot shift the visits a
+   * second time.
    */
   expectedStartsAt?: string | null;
 };
@@ -208,6 +209,10 @@ export function validBulkRequest(req: BulkRequest | null | undefined): boolean {
     if (r.expectedStartsAt != null && (typeof r.expectedStartsAt !== "string" || Number.isNaN(Date.parse(r.expectedStartsAt)))) {
       return false;
     }
+    // An APPLY names the start it was planned from, on every row, so no
+    // caller (an older tab during a deploy, a direct call) can save without
+    // the protection against shifting the visits twice.
+    if (req.mode === "apply" && !r.expectedStartsAt) return false;
   }
   return validBulkChange(req.change);
 }

@@ -207,10 +207,20 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
     return { rows: await Promise.all(ids.map(stored)), audit: await auditLog() };
   }
 
-  const move = (p: string, ids: string[], mode: "preview" | "apply", extra: Record<string, unknown> = {}) =>
+  /** The rows as the panel sends them: each with the start it was planned from. */
+  async function seen(ids: string[], extra: Record<string, unknown> = {}) {
+    const out = [];
+    for (const id of ids) {
+      const [r] = await rows(raw`select starts_at from appointments where id = ${id}`);
+      out.push({ id, expectedStartsAt: new Date(String(r!.starts_at)).toISOString(), ...((extra[id] as object) ?? {}) });
+    }
+    return out;
+  }
+
+  const move = async (p: string, ids: string[], mode: "preview" | "apply", extra: Record<string, unknown> = {}) =>
     actions.bulkRescheduleAppointments({
       patientId: p,
-      rows: ids.map((id) => ({ id, ...((extra[id] as object) ?? {}) })),
+      rows: await seen(ids, extra),
       change: { practitionerId: tNew, time: "10:00" },
       mode,
     });
@@ -309,7 +319,7 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
     const before = await snapshot(ids);
     const r = await actions.bulkRescheduleAppointments({
       patientId: p,
-      rows: ids.map((id) => ({ id, allowConflict: true })),
+      rows: await seen(ids, Object.fromEntries(ids.map((id) => [id, { allowConflict: true }]))),
       change: { practitionerId: tMornings },
       mode: "apply",
     });
@@ -372,8 +382,9 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
     const ids = await threeVisits(p);
     await sql.execute(raw`update appointments set status = 'confirmed' where tenant_id = ${tenantId}`);
     const change = { shiftDays: 7 };
+    const asked = await seen(ids);
     const rowsOf = (mode: "preview" | "apply") =>
-      actions.bulkRescheduleAppointments({ patientId: p, rows: ids.map((id) => ({ id })), change, mode });
+      actions.bulkRescheduleAppointments({ patientId: p, rows: asked, change, mode });
 
     const preview = await rowsOf("preview");
     expect(preview.ok && preview.data.rows.map((x) => x.verdict.kind)).toEqual(["ok", "ok", "ok"]);
@@ -399,7 +410,7 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
     await sql.execute(raw`update appointments set status = 'confirmed' where tenant_id = ${tenantId}`);
     const r = await actions.bulkRescheduleAppointments({
       patientId: p,
-      rows: ids.map((id) => ({ id })),
+      rows: await seen(ids),
       change: { shiftDays: -7 },
       mode: "apply",
     });

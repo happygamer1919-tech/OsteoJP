@@ -210,13 +210,28 @@ beforeEach(() => {
   arrange();
 });
 
-const req = (over: Partial<BulkRequest> = {}): BulkRequest => ({
-  patientId: PATIENT,
-  rows: rows.map((r) => ({ id: r.id })),
-  change: { practitionerId: NEW, time: "10:00" },
-  mode: "preview",
-  ...over,
-});
+/**
+ * A request as the panel sends it: every row names the start it was planned
+ * from (required on an apply), taken from the fake database unless the test
+ * gives one.
+ */
+const req = (over: Partial<BulkRequest> = {}): BulkRequest => {
+  const r: BulkRequest = {
+    patientId: PATIENT,
+    rows: rows.map((x) => ({ id: x.id })),
+    change: { practitionerId: NEW, time: "10:00" },
+    mode: "preview",
+    ...over,
+  };
+  return {
+    ...r,
+    rows: r.rows.map((x) => ({
+      ...x,
+      expectedStartsAt:
+        x.expectedStartsAt ?? rows.find((y) => y.id === x.id)?.startsAt.toISOString() ?? "2031-01-01T00:00:00.000Z",
+    })),
+  };
+};
 
 const nothingWritten = () => {
   expect(updates).toEqual([]);
@@ -500,7 +515,8 @@ describe("bulkRescheduleAppointments: which rows and who", () => {
   });
 
   it("a malformed request is refused before any read", async () => {
-    for (const bad of [req({ rows: [] }), req({ change: {} }), req({ mode: "write" as never })]) {
+    const noStart = { ...req({ mode: "apply" }), rows: [{ id: "appt-12" }] };
+    for (const bad of [req({ rows: [] }), req({ change: {} }), req({ mode: "write" as never }), noStart]) {
       expect(await bulkRescheduleAppointments(bad)).toEqual({ ok: false, error: "validation" });
     }
     expect(mockRunScoped).not.toHaveBeenCalled();
