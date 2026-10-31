@@ -43,6 +43,10 @@
  *      over, is never taken: no claim, no send, no ledger row. Saved before or
  *      AT its mark it is sent as before, and a reminder held back before such
  *      a save is still tried again.
+ *  13. R33: only a save that re-armed the sleeping job keeps a mark out; a
+ *      booked visit confirmed by hand, in review or by SMS is sent. R33's two
+ *      GATE checks. R34: the held-back retry after such a save runs to
+ *      EXACTLY 3 hours after the mark, both channels, and stops there.
  *
  * WHY A DATABASE. The selection reads `appointments`, the audit trail and
  * `reminder_claims` under the job's own claims, and "sent once" is the claim's
@@ -1229,6 +1233,47 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(await pass(tenantA, plus(now, 61))).toMatchObject({ due: 0, taken: 0, sent: 0 });
   });
 
+  /**
+   * R34, strategy's ruling: "the owner's hourly held-back retry wins. It is
+   * the one named exception to R24, capped at 3 hours after the mark, with its
+   * own label in the compare." Both sides of the cap, both channels: requests
+   * held back at their first try, accepted after their mark, tried again at
+   * EXACTLY 3 hours after the mark (sent) and at 3 hours and a minute (nothing:
+   * not taken, not recorded too late, not counted; an email would otherwise
+   * still be inside its own 12 hours). One tenant each side: accepted, they
+   * are confirmed visits of one therapist, and those may not overlap.
+   */
+  it("R34: a reminder held back before a save after its mark is tried again up to EXACTLY 3 hours after the mark, SMS and email; a minute later nothing", async () => {
+    const now = clockOf(24);
+    const v = {
+      smsAt3h: await smsDue(now, 30, { origin: "patient_portal" }),
+      emailAt3h: await emailDue(now, 30, { origin: "patient_portal" }),
+      smsPast3h: await smsDue(now, 31, { origin: "patient_portal", tenant: tenantB }),
+      emailPast3h: await emailDue(now, 31, { origin: "patient_portal", tenant: tenantB }),
+    };
+    const tenantOf = (x: { id: string }) => (x === v.smsPast3h || x === v.emailPast3h ? tenantB : tenantA);
+
+    // The first try: each held back, an unaccepted request.
+    expect(await pass(tenantA, now)).toMatchObject({ due: 2, taken: 2, heldBack: 2 });
+    expect(await pass(tenantB, now)).toMatchObject({ due: 2, taken: 2, heldBack: 2 });
+    // Accepted ten minutes later, after every mark and after that try.
+    for (const x of Object.values(v)) {
+      await sql.execute(raw`update appointments set status = 'confirmed' where id = ${x.id}`);
+      await savedAt(x.id, "appointment.update", { changed: ["status"], via: "portal_request_confirm" }, plus(now, 10), tenantOf(x));
+    }
+
+    // 2 hours 30 minutes on: the A pair is 3 hours after its mark exactly, the B pair 3 hours and 1 minute.
+    const atCap = plus(now, 150);
+    expect(await pass(tenantA, atCap)).toMatchObject({ due: 2, taken: 2, sent: 2, tooLate: 0 });
+    expect(await pass(tenantB, atCap)).toMatchObject({ due: 0, taken: 0, sent: 0, tooLate: 0 });
+    expect([...h.sends].sort()).toEqual([`email:${v.emailAt3h.id}`, `sms:${v.smsAt3h.id}`].sort());
+    expect(await ledgerOf(v.smsPast3h.id)).toEqual(["reminder.24h.sms:suppressed:unconfirmed"]);
+    expect(await ledgerOf(v.emailPast3h.id)).toEqual(["reminder.48h.email:suppressed:unconfirmed"]);
+    expect((await claimsOf(v.emailPast3h.id)).map((c) => c.released)).toEqual([true]);
+    // And never later, though an email is inside its own late rule for nine hours more.
+    expect(await pass(tenantB, plus(now, 5 * H))).toMatchObject({ due: 0, taken: 0, sent: 0 });
+  });
+
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows, the R24 arms' saves, and nothing else", async () => {
     const audit = await rows(raw`select action, count(*)::int as n from audit_log
       where tenant_id in (${tenantA}, ${tenantB}) group by action order by action`);
@@ -1236,7 +1281,7 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
       "appointment.patient_sms_reply": 3,
       "appointment.reschedule": 6,
       "appointment.sms_reply_reviewed": 1,
-      "appointment.update": 4,
+      "appointment.update": 8,
     });
     const bookings = audit.find((r) => r.action === "appointment.create");
     expect(Number(bookings?.n ?? 0)).toBeGreaterThan(0);

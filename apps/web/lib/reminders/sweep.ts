@@ -101,9 +101,9 @@ import { REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER, hasReArmingSaveAfter, hasSched
  *
  * "Before the pass" is read as before the mark was first HANDED OVER. The
  * shadow takes a mark once (its own row), so for it the two readings are one.
- * The sending pass retries a reminder that was held back (the owner's rule):
- * there a save written after a claim of this mark was taken does not stop the
- * retry (./sweep-send.ts, `selectSendableMarks`).
+ * The sending pass retries a reminder that was held back (the owner's rule),
+ * and strategy's ruling R34 keeps that retry past a later re-arming save, for
+ * at most 3 hours after the mark (./sweep-send.ts, `selectSendableMarks`).
  *
  * ==========================================================================
  * A MARK IS TAKEN ONCE: THE SWEEP'S OWN RECORD, NOT THE OUTCOME

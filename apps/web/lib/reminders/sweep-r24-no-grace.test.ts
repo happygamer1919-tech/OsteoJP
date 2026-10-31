@@ -16,7 +16,8 @@
  *   2. THE SHADOW PASS asks it, for both offsets, in the count of what is due
  *      and in the read of the marks it takes.
  *   3. THE SENDING PASS asks it the same way, and lifts it only for a save
- *      written after a claim of this mark was taken (at or before the save).
+ *      written after a claim of this mark was taken (at or before the save),
+ *      and only while the mark is at most 3 hours before the pass (R34).
  *
  * That the gate does what it says on rows (saved after, before, at the mark;
  * both passes; the retry) is proven in sweep.db.test.ts and
@@ -31,7 +32,7 @@ vi.mock("server-only", () => ({}));
 const { REMINDER_OFFSETS } = await import("./offsets");
 const { hasReArmingSaveAfter, hasSchedulingEvent } = await import("./reminder-population");
 const { notSavedAfterMark, selectDueMarks } = await import("./sweep");
-const { selectSendableMarks } = await import("./sweep-send");
+const { SWEEP_RETRY_AFTER_SAVE_LIMIT_MS, selectSendableMarks } = await import("./sweep-send");
 type DbTx = import("@osteojp/db").DbTx;
 type SQL = import("drizzle-orm").SQL;
 
@@ -131,7 +132,10 @@ describe("R24: both passes ask it", () => {
     expect(gated).toHaveLength(REMINDER_OFFSETS.length * 3);
     for (const q of gated) {
       expect(q).toContain(
-        `and not exists (select 1 from "reminder_claims" "reminder_send_claim_before_the_save" where (`,
+        `and not ("appointments"."starts_at" >= $`,
+      );
+      expect(q).toMatch(
+        /"appointments"\."starts_at" >= \$\d+ and exists \(select 1 from "reminder_claims" "reminder_send_claim_before_the_save" where \(/,
       );
       expect(q).toMatch(
         /"reminder_send_claim_before_the_save"\."created_at" <= "reminder_re_arming_save"\."created_at"/,
@@ -141,6 +145,24 @@ describe("R24: both passes ask it", () => {
       expect(q).toContain(
         `"reminder_send_claim_before_the_save"."starts_at" = date_trunc('milliseconds', "appointments"."starts_at")`,
       );
+    }
+  });
+
+  it("R34: the retry after a save is lifted only while the mark is at most 3 hours before the pass, `>=` on the start", async () => {
+    expect(SWEEP_RETRY_AFTER_SAVE_LIMIT_MS).toBe(3 * 60 * 60_000);
+    const { tx, full: seen } = recordingTx();
+    await selectSendableMarks(tx, { tenantId: TENANT, now: NOW, limit: 50, includeNeverReminded: false });
+    const CAP = /and not \("appointments"\."starts_at" >= \$(\d+) and exists \(select 1 from "reminder_claims" "reminder_send_claim_before_the_save"/;
+    const gated = seen.filter((q) => q.sql.match(AFTER_THE_MARK)?.length === 1);
+    expect(gated).toHaveLength(REMINDER_OFFSETS.length * 3);
+    for (const q of gated) {
+      const cap = CAP.exec(q.sql);
+      expect(cap, q.sql).not.toBeNull();
+      // The offset this query selects, read off the mark of the R24 clause.
+      const minutes = Number(q.params[Number([...q.sql.matchAll(AFTER_THE_MARK)][0]![1]) - 1]);
+      expect(REMINDER_OFFSETS.map((o) => o.minutesBefore)).toContain(minutes);
+      // On the start: the pass, less 3 hours, plus the offset. So the mark is at or after the pass less 3 hours.
+      expect(q.params[Number(cap![1]) - 1]).toBe(new Date(NOW.getTime() - 3 * 60 * 60_000 + minutes * 60_000).toISOString());
     }
   });
 
