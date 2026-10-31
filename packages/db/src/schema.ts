@@ -311,6 +311,14 @@ export const locations = pgTable(
     /* NOT blockable-around.                                              */
     middayClosedFrom: time("midday_closed_from"),
     middayClosedTo: time("midday_closed_to"),
+    /* ================================================================== */
+    /* HOR-02 - when the clinic closes on SATURDAY; it opens at opensAt.  */
+    /* NULL means no Saturday hours are recorded, and then the staff-side */
+    /* clinic default (HOR-01) gives nobody Saturday hours. Sunday has no */
+    /* column: the clinics do not open on Sunday. Clinic hours are data,  */
+    /* so the value is written by a ruled data op, never by code.         */
+    /* ================================================================== */
+    saturdayClosesAt: time("saturday_closes_at"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -330,6 +338,11 @@ export const locations = pgTable(
     check(
       "locations_midday_order",
       sql`${t.middayClosedFrom} is null or ${t.middayClosedFrom} < ${t.middayClosedTo}`,
+    ),
+    // HOR-02: a Saturday that closes before it opens has no bookable minute.
+    check(
+      "locations_saturday_after_open",
+      sql`${t.saturdayClosesAt} is null or ${t.saturdayClosesAt} > ${t.opensAt}`,
     ),
     // A closure outside opening hours takes nothing and would be a band drawn
     // over a part of the day the grid does not show.
