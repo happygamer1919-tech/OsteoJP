@@ -312,13 +312,24 @@ export const locations = pgTable(
     middayClosedFrom: time("midday_closed_from"),
     middayClosedTo: time("midday_closed_to"),
     /* ================================================================== */
-    /* HOR-02 - when the clinic closes on SATURDAY; it opens at opensAt.  */
-    /* NULL means no Saturday hours are recorded, and then the staff-side */
-    /* clinic default (HOR-01) gives nobody Saturday hours. Sunday has no */
-    /* column: the clinics do not open on Sunday. Clinic hours are data,  */
-    /* so the value is written by a ruled data op, never by code.         */
+    /* HOR-02 - `saturday_opens_at` AND `saturday_closes_at` (migration   */
+    /* 0109) ARE DELIBERATELY NOT DECLARED HERE.                          */
     /* ================================================================== */
-    saturdayClosesAt: time("saturday_closes_at"),
+    /* A column declared on this table is named by every Drizzle select   */
+    /* of `locations` that lists no fields, and by every insert. 0109 is  */
+    /* a held migration: this code ships to databases that do not have    */
+    /* the columns yet, where such a query fails with 42703 and takes     */
+    /* every booking read down with it. So the staff app reads them by    */
+    /* name, only after asking the catalogue whether BOTH exist, in       */
+    /* packages/db/src/location-saturday.ts (HOR-01), which says the same */
+    /* from its side. Declaring them here is a later change, once 0109 is */
+    /* applied everywhere this code runs.                                 */
+    /*                                                                    */
+    /* Saturday is its own pair (owner, 2026-10-31: "Saturday hours per   */
+    /* clinic: 9am to 1pm", while weekdays open at 08:00), both NULL or   */
+    /* both set with closing after opening: CHECK                         */
+    /* locations_saturday_hours_valid, in the migration only.             */
+    /* ================================================================== */
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -338,11 +349,6 @@ export const locations = pgTable(
     check(
       "locations_midday_order",
       sql`${t.middayClosedFrom} is null or ${t.middayClosedFrom} < ${t.middayClosedTo}`,
-    ),
-    // HOR-02: a Saturday that closes before it opens has no bookable minute.
-    check(
-      "locations_saturday_after_open",
-      sql`${t.saturdayClosesAt} is null or ${t.saturdayClosesAt} > ${t.opensAt}`,
     ),
     // A closure outside opening hours takes nothing and would be a band drawn
     // over a part of the day the grid does not show.
