@@ -97,6 +97,7 @@ const endedAgo = (msAgo: number) => {
 let row = {
   id: APPT,
   status: "no_show" as AppointmentStatusValue,
+  patientId: "33333333-3333-4333-8333-333333333333",
   practitionerId: "therapist-1",
   practitionerTwoId: null as string | null,
   locationId: "loc-1",
@@ -183,6 +184,16 @@ describe("correctionAsksSurvey: into Concluida, a visit that ended in the last 7
 const COMPLETED = "appointment/completed";
 
 describe("correctAppointmentEstadoAction emits the survey's event exactly when the rule says", () => {
+  // R37: the event is started only when a survey can result, so the arms
+  // below, which hold WHICH corrections ask, run with the switch on. Off and
+  // canary at this door are lib/scheduling/follow-up-start.test.ts.
+  beforeEach(() => {
+    vi.stubEnv("SURVEY_SEND_MODE", "on");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("Falta to Concluida, the visit ended 6 days 23 hours ago: ONE completed event, survey only", async () => {
     row = { ...row, status: "no_show", ...endedAgo(6 * DAY + 23 * HOUR) };
     expect(await correctAppointmentEstadoAction(APPT, "completed")).toEqual({ ok: true, data: { id: APPT } });

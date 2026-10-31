@@ -420,6 +420,28 @@ async function readStaffTransitionFanOut(
   }
 }
 
+/**
+ * R37. Each completed appointment's patient, so the completion can ask the
+ * survey's canary list whether the 24 hour run may start
+ * (lib/reminders/follow-up-start.ts). INSIDE the save's transaction, under RLS,
+ * like every read here. `resolveSeries` is not widened for it, for the reason
+ * `StaffTransitionFanOut` gives.
+ *
+ * NO CATCH, deliberately, unlike `readStaffTransitionFanOut`: a failed
+ * statement aborts the Postgres transaction whatever JavaScript does with the
+ * error, so swallowing it here would only hide why the save failed. The limit
+ * is the number of ids asked: one row per appointment at most.
+ */
+async function readPatientIdsOf(tx: DbTx, ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: appointments.id, patientId: appointments.patientId })
+    .from(appointments)
+    .where(inArray(appointments.id, ids))
+    .limit(ids.length);
+  return new Map(rows.map((r) => [r.id, r.patientId]));
+}
+
 /** The read itself. Separated so the caller above owns the failure policy. */
 async function readStaffTransitionFanOutOrThrow(
   tx: DbTx,
@@ -1994,7 +2016,18 @@ export async function updateAppointment(
         }
 
         if (patch.status === "completed" || patch.status === "no_show") {
-          statusTargets = affected.map((a) => ({ appointmentId: a.id, endsAt: a.endsAt }));
+          // R37: a completion carries each row's patient, for the canary list
+          // the follow-up run's start is decided against. A no-show does not
+          // need it and does not read it.
+          const patientOf =
+            patch.status === "completed"
+              ? await readPatientIdsOf(tx, affected.map((a) => a.id))
+              : new Map<string, string>();
+          statusTargets = affected.map((a) => ({
+            appointmentId: a.id,
+            endsAt: a.endsAt,
+            patientId: patientOf.get(a.id) ?? null,
+          }));
         }
 
         // W14-02's accepted pedidos, plus SCHED-27: a FUTURE appointment brought
@@ -2669,6 +2702,9 @@ export async function correctAppointmentEstadoAction(
         .select({
           id: appointments.id,
           status: appointments.status,
+          // R37: the canary list is asked about this patient before the
+          // survey's run is started (enqueueSurveyAfterCorrection).
+          patientId: appointments.patientId,
           practitionerId: appointments.practitionerId,
           practitionerTwoId: appointments.practitionerTwoId,
           locationId: appointments.locationId,
@@ -2785,7 +2821,7 @@ export async function correctAppointmentEstadoAction(
       // the key, and that visit gets no survey. Its own key would need a
       // Resync, so it is accepted and documented (docs/DECISIONS.md, Q-V).
       if (correctionAsksSurvey(row.status, to, row.endsAt, Date.now())) {
-        surveyTarget = { appointmentId: row.id, endsAt: row.endsAt };
+        surveyTarget = { appointmentId: row.id, endsAt: row.endsAt, patientId: row.patientId };
       }
       return { ok: true, data: { id } };
     });
