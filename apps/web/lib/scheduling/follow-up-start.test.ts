@@ -204,6 +204,71 @@ describe.each(DOORS)("R37 at %s: appointment/completed is sent only where a surv
   });
 });
 
+/* ------------------------- a series, two patients ------------------------- */
+
+const APPT_TWO = "55555555-5555-4555-8555-555555555555";
+
+/**
+ * A two-row series concluded in one save, each row a DIFFERENT patient: the
+ * parent (the save's target) is not on the list, the child is. Each select is
+ * answered by what it projects, as the database would:
+ *   resolveSeries' target read      `.limit(1)`, the parent
+ *   resolveSeries' member read      awaited at `.where`, both rows
+ *   readPatientIdsOf ({id, patientId})  `.limit(n)`, the first n rows, the
+ *                                   UNLISTED parent first
+ * So a read cut to one row loses the listed child, and every target given
+ * the first row's patient makes both unlisted: either way the listed row
+ * starts nothing, and the arm below sees it.
+ */
+function seriesTx() {
+  const at = { startsAt: new Date(ENDS_AT.getTime() - 45 * 60_000), endsAt: ENDS_AT };
+  const common = {
+    status: "confirmed",
+    practitionerId: "therapist-1",
+    practitionerTwoId: null,
+    locationId: "loc-1",
+    room: null,
+    ...at,
+  };
+  const parent = { ...common, id: APPT, patientId: UNLISTED, recurrenceParentId: null };
+  const child = { ...common, id: APPT_TWO, patientId: LISTED, recurrenceParentId: APPT };
+  const patientRows = [
+    { id: parent.id, patientId: parent.patientId },
+    { id: child.id, patientId: child.patientId },
+  ];
+  return {
+    execute: async () => [],
+    select: (fields: Record<string, unknown>) => {
+      const keys = Object.keys(fields).sort().join(",");
+      const chain: Record<string, unknown> = {
+        from: () => chain,
+        where: () => chain,
+        limit: async (n: number) => (keys === "id,patientId" ? patientRows : [parent, child]).slice(0, n),
+        then: (resolve: (v: unknown) => void) => resolve([parent, child]),
+      };
+      return chain;
+    },
+    update: () => ({ set: () => ({ where: async () => [] }) }),
+    insert: () => ({ values: async () => [] }),
+  };
+}
+
+describe("R37 at the Estado save, a series of two patients concluded in one save", () => {
+  it("canary: ONE event, for the listed patient's row only", async () => {
+    vi.stubEnv("SURVEY_SEND_MODE", "canary");
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(seriesTx() as never)));
+    expect((await updateAppointment(APPT, { status: "completed" }, { scope: "series" })).ok).toBe(true);
+    expect(h.sent.map((e) => [e.name, e.data.appointmentId])).toEqual([["appointment/completed", APPT_TWO]]);
+  });
+
+  it("CONTROL: on, the same save sends both rows' events, so the series really is two rows", async () => {
+    vi.stubEnv("SURVEY_SEND_MODE", "on");
+    mockRunScoped.mockImplementation((_a, cb) => Promise.resolve(cb(seriesTx() as never)));
+    expect((await updateAppointment(APPT, { status: "completed" }, { scope: "series" })).ok).toBe(true);
+    expect(h.sent.map((e) => e.data.appointmentId).sort()).toEqual([APPT, APPT_TWO].sort());
+  });
+});
+
 describe("R37: the follow-up approved one day, off starts the ordinary run again and never a correction's", () => {
   it("off, a follow-up body approved: the Estado save sends the event, Corrigir estado does not", async () => {
     vi.stubEnv("SURVEY_SEND_MODE", "off");
