@@ -1111,6 +1111,116 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     expect(both!.n).toBe(2);
   });
 
+  /**
+   * THE START AT THE MARK FOR A VISIT WITH NO BOOKING ROW (R4 round 3 on
+   * #1678). An accepted online request has no `appointment.create` (the portal
+   * writes none) and its acceptance records no start; an imported visit has no
+   * audit row at all. Every move now records the start it left
+   * (`fromStartsAt`), and the earliest move after the mark is read first.
+   */
+  it("R33: a visit with no booking row on record: a move after the mark that kept the start is taken, one that changed it is not", async () => {
+    const now = clockOf(14);
+    const H = 60;
+    const accepted = { changed: ["status"], from_status: "scheduled", to_status: "confirmed", via: "portal_request_confirm" };
+    // Each starts 10 hours on and more, 50 minutes apart (two confirmed visits of one therapist may not overlap).
+    const one = async (i: number, over: { request: boolean }) => {
+      const v = await visit({
+        now,
+        startIn: 10 * H + 50 * i,
+        createdIn: -20 * H,
+        booked: false,
+        origin: over.request ? "patient_portal" : undefined,
+        status: over.request ? "confirmed" : undefined,
+      });
+      const mark = plus(v.start, -24 * H);
+      // Accepted at reception before the mark: its row records no start.
+      if (over.request) await savedAt(v.id, "appointment.update", accepted, plus(mark, -60));
+      await seedClaim(v.id, v.start, { taker: "run" });
+      await seedLedger(v.id, "sent");
+      return { ...v, mark };
+    };
+    const move = (x: { id: string; start: Date; mark: Date }, fromStartIn: number) =>
+      savedAt(
+        x.id,
+        "appointment.reschedule",
+        { fromStartsAt: plus(x.start, fromStartIn).toISOString(), startsAt: x.start.toISOString(), scope: "one" },
+        plus(x.mark, 5),
+      );
+    const v = {
+      requestKept: await one(0, { request: true }),
+      requestMoved: await one(1, { request: true }),
+      importedKept: await one(2, { request: false }),
+      importedMoved: await one(3, { request: false }),
+      // Away and back after the mark: the EARLIEST move's start left is the start at the mark.
+      requestAwayAndBack: await one(4, { request: true }),
+      // Booked at another hour; moved by the patient in the portal (no row) to this
+      // start before the mark; then kept after it. The move's own start left wins over
+      // the stale booking row.
+      movedInThePortal: await visit({ now, startIn: 10 * H + 50 * 5, createdIn: -20 * H, bookedStartIn: -2 * H }),
+      // Moved TO this start exactly AT the mark (so at the mark it was here), then kept after it.
+      movedAtMarkThenKept: await one(6, { request: true }),
+    };
+    await move(v.requestKept, 0);
+    await move(v.requestMoved, -2 * H);
+    await move(v.importedKept, 0);
+    await move(v.importedMoved, -2 * H);
+    await savedAt(
+      v.requestAwayAndBack.id,
+      "appointment.reschedule",
+      { fromStartsAt: v.requestAwayAndBack.start.toISOString(), startsAt: plus(v.requestAwayAndBack.start, 2 * H).toISOString(), scope: "one" },
+      plus(v.requestAwayAndBack.mark, 5),
+    );
+    await savedAt(
+      v.requestAwayAndBack.id,
+      "appointment.reschedule",
+      { fromStartsAt: plus(v.requestAwayAndBack.start, 2 * H).toISOString(), startsAt: v.requestAwayAndBack.start.toISOString(), scope: "one" },
+      plus(v.requestAwayAndBack.mark, 10),
+    );
+    await move({ ...v.movedInThePortal, mark: plus(v.movedInThePortal.start, -24 * H) }, 0);
+    await savedAt(
+      v.movedAtMarkThenKept.id,
+      "appointment.reschedule",
+      { fromStartsAt: plus(v.movedAtMarkThenKept.start, -2 * H).toISOString(), startsAt: v.movedAtMarkThenKept.start.toISOString(), scope: "one" },
+      v.movedAtMarkThenKept.mark,
+    );
+    await move(v.movedAtMarkThenKept, 0);
+
+    const taken = ["importedKept", "movedAtMarkThenKept", "movedInThePortal", "requestAwayAndBack", "requestKept"];
+    expect(await pass(tenantA, now, "no-booking-row")).toEqual({ due: taken.length, recorded: taken.length, overCeiling: false });
+    for (const [name, x] of Object.entries(v)) {
+      expect(await shadowsOf(x.id), name).toHaveLength(taken.includes(name) ? 1 : 0);
+    }
+  });
+
+  /**
+   * THE COMPARISON AS TEXT, ON A SUMMER DAY, IN A LISBON SESSION. The stored
+   * start carries microseconds; the rows carry milliseconds, as `toISOString()`
+   * writes them. Read in a transaction whose time zone is Europe/Lisbon (UTC+1
+   * in summer), so the start now is rendered in UTC only because the read
+   * says so (`at time zone 'UTC'`). A kept start is taken.
+   */
+  it("R33: a kept start is read as kept for a stored start with microseconds, in a session on Lisbon summer time", async () => {
+    const now = clockOf(33);
+    const H = 60;
+    const v = await visit({ now, startIn: 20 * H, createdIn: -10 * H, micros: 123_456, bookedStartIn: 0 });
+    // The start as a sender's clock reads it: to the millisecond, the microseconds dropped.
+    const startMs = new Date(v.start.getTime() + 123);
+    const mark = plus(v.start, -24 * H);
+    await savedAt(v.id, "appointment.reschedule", { fromStartsAt: startMs.toISOString(), startsAt: startMs.toISOString(), scope: "one" }, plus(mark, 5));
+    const [stored] = await rows(raw`select to_char(starts_at at time zone 'UTC', 'HH24:MI:SS.US') as utc from appointments where id = ${v.id}`);
+    expect(String(stored!.utc).endsWith(".123456")).toBe(true);
+
+    const { withReminderTenantContext } = await import("./context");
+    const { selectDueMarks } = await import("./sweep");
+    const selected = await withReminderTenantContext(tenantA, async (tx) => {
+      await tx.execute(raw`set local timezone = 'Europe/Lisbon'`);
+      const [tz] = (await tx.execute(raw`select current_setting('TimeZone') as tz`)) as unknown as { tz: string }[];
+      expect(tz!.tz).toBe("Europe/Lisbon");
+      return selectDueMarks(tx, { tenantId: tenantA, now, limit: 50 });
+    });
+    expect(selected.marks.map((m) => m.appointmentId)).toEqual([v.id]);
+  });
+
   /* ---------------------------------------------------------------- */
   /* 4 and 5. The ceiling, the heartbeat, and a tenant that fails      */
   /* ---------------------------------------------------------------- */
@@ -1333,9 +1443,9 @@ d("SWEEP-03: the sweep in shadow selects each due mark once and sends nothing", 
     // The bookings, and the saves the R24 arm wrote itself at chosen instants. Nothing else.
     expect(laterSaves).toEqual({
       "appointment.patient_sms_reply": 4,
-      "appointment.reschedule": 21,
+      "appointment.reschedule": 31,
       "appointment.sms_reply_reviewed": 2,
-      "appointment.update": 10,
+      "appointment.update": 14,
     });
     expect(audit).toEqual([
       { action: "appointment.create", entity_type: "appointment", n: bookingRows },

@@ -1376,14 +1376,61 @@ d("SWEEP-47: the sweep as the sender sends each due reminder once, and with the 
     expect(await ledgerOf(v.laterSameDay.id)).toEqual([]);
   });
 
+  /**
+   * THE START AT THE MARK FOR A VISIT WITH NO BOOKING ROW (R4 round 3 on
+   * #1678): an accepted online request (no `appointment.create`, an acceptance
+   * with no start) and an imported visit (no audit row). The move's own
+   * `fromStartsAt` says whether it kept the start.
+   */
+  it("R33: a visit with no booking row on record: a move after the mark that kept the start is sent, one that changed it is not", async () => {
+    const now = clockOf(27);
+    const accepted = { changed: ["status"], from_status: "scheduled", to_status: "confirmed", via: "portal_request_confirm" };
+    const one = async (minutesAgo: number, over: { request: boolean }) => {
+      const v = await smsVisit(now, {
+        startIn: 24 * H - minutesAgo,
+        booked: false,
+        origin: over.request ? "patient_portal" : undefined,
+        status: over.request ? "confirmed" : undefined,
+      });
+      const mark = plus(v.start, -24 * H);
+      if (over.request) await savedAt(v.id, "appointment.update", accepted, plus(mark, -60));
+      return { ...v, mark };
+    };
+    const move = (x: { id: string; start: Date; mark: Date }, fromStartIn: number) =>
+      savedAt(
+        x.id,
+        "appointment.reschedule",
+        { fromStartsAt: plus(x.start, fromStartIn).toISOString(), startsAt: x.start.toISOString(), scope: "one" },
+        plus(x.mark, 5),
+      );
+    // Two confirmed requests of one therapist: 50 minutes apart.
+    const v = {
+      requestKept: await one(30, { request: true }),
+      requestMoved: await one(80, { request: true }),
+      importedKept: await one(40, { request: false }),
+      importedMoved: await one(60, { request: false }),
+    };
+    await move(v.requestKept, 0);
+    await move(v.requestMoved, -2 * H);
+    await move(v.importedKept, 0);
+    await move(v.importedMoved, -2 * H);
+
+    expect(await pass(tenantA, now)).toMatchObject({ due: 2, taken: 2, sent: 2, tooLate: 0 });
+    expect([...h.sends].sort()).toEqual([`sms:${v.importedKept.id}`, `sms:${v.requestKept.id}`].sort());
+    for (const x of [v.requestMoved, v.importedMoved]) {
+      expect(await claimsOf(x.id)).toEqual([]);
+      expect(await ledgerOf(x.id)).toEqual([]);
+    }
+  });
+
   it("nothing a pass writes is in the audit trail: the two tenants hold their booking rows, the R24 arms' saves, and nothing else", async () => {
     const audit = await rows(raw`select action, count(*)::int as n from audit_log
       where tenant_id in (${tenantA}, ${tenantB}) group by action order by action`);
     expect(laterSaves).toEqual({
       "appointment.patient_sms_reply": 3,
-      "appointment.reschedule": 11,
+      "appointment.reschedule": 15,
       "appointment.sms_reply_reviewed": 1,
-      "appointment.update": 9,
+      "appointment.update": 11,
     });
     const bookings = audit.find((r) => r.action === "appointment.create");
     expect(Number(bookings?.n ?? 0)).toBeGreaterThan(0);

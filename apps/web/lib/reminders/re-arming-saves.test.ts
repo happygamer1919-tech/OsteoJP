@@ -346,7 +346,13 @@ describe("R33: the conditions the table's clauses are read from", () => {
     const actions = srcOf("apps/web/lib/scheduling/actions.ts");
     expect(bodyOf("apps/web/lib/scheduling/actions.ts:createAppointment")).toContain("startsAt: created[i].startsAt.toISOString(),");
     expect(bodyOf("apps/web/lib/scheduling/actions.ts:cloneAppointment")).toContain("startsAt: values.startsAt.toISOString(),");
-    expect(bodyOf("apps/web/lib/scheduling/actions.ts:moveAppointment")).toContain("startsAt: t.startsAt.toISOString(),");
+    const move = bodyOf("apps/web/lib/scheduling/actions.ts:moveAppointment");
+    expect(move).toContain("startsAt: t.startsAt.toISOString(),");
+    // ...and the start it left, from the row as this transaction read it.
+    expect(move).toContain("const startBeforeTheMove = new Map(affected.map((a) => [a.id, a.startsAt]));");
+    expect(move).toContain("fromStartsAt: startBeforeTheMove.get(t.id)?.toISOString() ?? null,");
+    // Exactly one writer of a move row, so every move records both.
+    expect(move.match(/action: "appointment\.reschedule"/g)).toHaveLength(1);
     const batch = bodyOf("apps/web/lib/scheduling/batch.ts:batchSchedule");
     expect(batch).toContain("startsAt: toBook[i].startsAt.toISOString(),");
     expect(batch).toContain("startsAt: b.startsAt,");
@@ -407,19 +413,38 @@ describe("R33: the gate's SQL is the table, clause for clause", () => {
     // No clause reads a `toStatus` without the `fromStatus` beside it.
     expect(sql.match(/->>'toStatus'/g)).toHaveLength(3);
     expect(sql.match(/->>'fromStatus'/g)).toHaveLength(2);
-    // A move counts only when the start at the mark is not the start now: the
-    // latest booking or move row AT OR BEFORE the mark (`<=`), newest first,
-    // its `startsAt` against the start now as millisecond text, and no row
-    // (null) counts. One such read, on the `moved` clause only.
-    const AT_THE_MARK =
-      /"reminder_re_arming_save"\."action" = \$(\d+) and \(\(select "reminder_start_at_the_mark"\."metadata"->>'startsAt' from "audit_log" "reminder_start_at_the_mark" where \("reminder_start_at_the_mark"\."entity_type" = \$\d+ and "reminder_start_at_the_mark"\."entity_id" = "appointments"\."id" and "reminder_start_at_the_mark"\."action" in \(\$(\d+), \$(\d+)\) and "reminder_start_at_the_mark"\."created_at" <= now\(\)\) order by "reminder_start_at_the_mark"\."created_at" desc, "reminder_start_at_the_mark"\."id" desc limit \$(\d+)\)\) is distinct from to_char\(date_trunc\('milliseconds', "appointments"\."starts_at"\) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS\.MS"Z"'\)\)/g;
+    // A move counts only when the start at the mark is not the start now. The
+    // start at the mark: the `fromStartsAt` of the EARLIEST move strictly
+    // after the mark (`>`, oldest first), else the `startsAt` of the latest
+    // booking or move AT OR BEFORE it (`<=`, newest first), else null, which
+    // counts (`is distinct from`). One such read, on the `moved` clause only.
+    const AT_THE_MARK = new RegExp(
+      [
+        `"reminder_re_arming_save"\\."action" = \\$(\\d+) and coalesce\\(`,
+        `\\(\\(select "reminder_move_after_the_mark"\\."metadata"->>'fromStartsAt' from "audit_log" "reminder_move_after_the_mark" `,
+        `where \\("reminder_move_after_the_mark"\\."entity_type" = \\$\\d+ and "reminder_move_after_the_mark"\\."entity_id" = "appointments"\\."id" `,
+        `and "reminder_move_after_the_mark"\\."action" = \\$(\\d+) and "reminder_move_after_the_mark"\\."created_at" > now\\(\\)\\) `,
+        `order by "reminder_move_after_the_mark"\\."created_at" asc, "reminder_move_after_the_mark"\\."id" asc limit \\$(\\d+)\\)\\), `,
+        `\\(\\(select "reminder_start_at_the_mark"\\."metadata"->>'startsAt' from "audit_log" "reminder_start_at_the_mark" `,
+        `where \\("reminder_start_at_the_mark"\\."entity_type" = \\$\\d+ and "reminder_start_at_the_mark"\\."entity_id" = "appointments"\\."id" `,
+        `and "reminder_start_at_the_mark"\\."action" in \\(\\$(\\d+), \\$(\\d+)\\) and "reminder_start_at_the_mark"\\."created_at" <= now\\(\\)\\) `,
+        `order by "reminder_start_at_the_mark"\\."created_at" desc, "reminder_start_at_the_mark"\\."id" desc limit \\$(\\d+)\\)\\)\\) `,
+        `is distinct from to_char\\(date_trunc\\('milliseconds', "appointments"\\."starts_at"\\) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS\\.MS"Z"'\\)\\)`,
+      ].join(""),
+      "g",
+    );
     const reads = [...sql.matchAll(AT_THE_MARK)];
     expect(reads).toHaveLength(1);
-    const [, moved, a, b, limit] = reads[0]!;
+    const [, moved, next, nextLimit, a, b, limit] = reads[0]!;
     expect(params[Number(moved) - 1]).toBe("appointment.reschedule");
+    expect(params[Number(next) - 1]).toBe("appointment.reschedule");
+    expect(params[Number(nextLimit) - 1]).toBe(1);
     expect([params[Number(a) - 1], params[Number(b) - 1]]).toEqual(["appointment.create", "appointment.reschedule"]);
     expect(params[Number(limit) - 1]).toBe(1);
-    expect(sql.match(/"reminder_start_at_the_mark"/g)!.length).toBe(sql.match(AT_THE_MARK)!.join("").match(/"reminder_start_at_the_mark"/g)!.length);
+    // The two reads appear nowhere else in the gate.
+    for (const alias of ['"reminder_move_after_the_mark"', '"reminder_start_at_the_mark"']) {
+      expect(sql.split(alias).length).toBe(reads[0]![0].split(alias).length);
+    }
     // Strictly after.
     expect(sql).toContain(`"reminder_re_arming_save"."created_at" > now()`);
     expect(sql).not.toContain(`"reminder_re_arming_save"."created_at" >= `);

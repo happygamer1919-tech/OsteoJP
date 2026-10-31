@@ -201,14 +201,35 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * would leave the patient with no reminder at all: the event cancels the
  * job's run, its re-plan has no mark left, and the gate holds the sweep. So
  * an `appointment.reschedule` after the mark counts only while the visit's
- * start AT THE MARK differs from its start now. The start at the mark is the
- * `startsAt` of the latest `appointment.create` or `appointment.reschedule`
- * row of the visit written at or before the mark; every writer of those two
- * puts it there with `toISOString()` (pinned in re-arming-saves.test.ts), so
- * it is compared as millisecond text with the start now, the way
- * scripts/db/read-sweep-unexplained-20261030.sql compares them. With no such
- * row, or one without `startsAt` (an imported visit, a row of another shape),
- * the move counts, as before. Audit rows only: no claim is read.
+ * start AT THE MARK differs from its start now. The start at the mark is read
+ * from the audit trail, first found wins:
+ *   1. the `fromStartsAt` of the EARLIEST `appointment.reschedule` written
+ *      strictly after the mark: the start that move left, which is the start
+ *      at the mark unless something changed it in between without a row
+ *      (below). Every move writes it since R4 round 3 on #1678
+ *      (`moveAppointment`, read from the row in the same transaction);
+ *   2. the `startsAt` of the latest `appointment.create` or
+ *      `appointment.reschedule` written at or before the mark. This is what
+ *      reads a move written before `fromStartsAt` existed;
+ *   3. none: the move counts, as before.
+ * Both keys are written with `toISOString()` (pinned in
+ * re-arming-saves.test.ts), so they are compared as millisecond text with the
+ * start now, the way scripts/db/read-sweep-unexplained-20261030.sql compares
+ * them. The first one is what covers the visits with no booking row: an
+ * online request (the portal writes no `appointment.create`, and an
+ * acceptance records no start) and an imported visit (the importer writes no
+ * audit row). Audit rows only: no claim is read.
+ *
+ * THE GAP THAT REMAINS. Every writer of those two rows records the start, but
+ * not every path that changes `starts_at` writes one: the patient's own move
+ * in the portal (apps/api/lib/appointments/store.ts, `rescheduleOwn`) and the
+ * importer's re-upsert change it with no audit row and no event. A start
+ * changed that way after the last row and before a move after the mark is
+ * read stale only when no move after the mark recorded `fromStartsAt`, so
+ * only through rule 2: then a move back to the old start reads as kept and
+ * counts nothing, or the reverse. Rule 1 also trusts the read of the row it
+ * moved, which takes no row lock: a second move of the same row committing
+ * between that read and the update would make it one move behind.
  *
  * re-arming-saves.test.ts lists the doors from the source and holds this table
  * to them: a door added, removed or given another condition fails it.
@@ -264,15 +285,29 @@ export type ReArmingClause = (typeof RE_ARMING_SAVES)[number]["clause"];
 const REQUEST_ORIGIN = "patient_portal";
 
 /**
- * The visit's start AT `mark`, as millisecond text: the `startsAt` of its
- * latest `appointment.create` or `appointment.reschedule` row written at or
- * before the mark. Null when there is none, or it carries no `startsAt`.
+ * The visit's start AT `mark`, as millisecond text, by the three rules of the
+ * table's notes: the `fromStartsAt` of the earliest move after the mark, else
+ * the `startsAt` of the latest booking or move at or before it, else null.
  */
 function startAtTheMark(tx: DbTx, mark: SQL): SQL {
+  const next = alias(auditLog, "reminder_move_after_the_mark");
   const prior = alias(auditLog, "reminder_start_at_the_mark");
   // Qualified by hand: a select list renders a column without its alias, and
   // the enclosing query has another `metadata` in scope.
-  return sql`(${tx
+  const leftByTheFirstMoveAfter = tx
+    .select({ startsAt: sql.raw(`"reminder_move_after_the_mark"."metadata"->>'fromStartsAt'`) })
+    .from(next)
+    .where(
+      and(
+        eq(next.entityType, "appointment"),
+        eq(next.entityId, appointments.id),
+        eq(next.action, "appointment.reschedule"),
+        sql`${next.createdAt} > ${mark}`,
+      ),
+    )
+    .orderBy(sql`${next.createdAt} asc`, sql`${next.id} asc`)
+    .limit(1);
+  const recordedAtOrBefore = tx
     .select({ startsAt: sql.raw(`"reminder_start_at_the_mark"."metadata"->>'startsAt'`) })
     .from(prior)
     .where(
@@ -284,7 +319,8 @@ function startAtTheMark(tx: DbTx, mark: SQL): SQL {
       ),
     )
     .orderBy(sql`${prior.createdAt} desc`, sql`${prior.id} desc`)
-    .limit(1)})`;
+    .limit(1);
+  return sql`coalesce((${leftByTheFirstMoveAfter}), (${recordedAtOrBefore}))`;
 }
 
 /**
