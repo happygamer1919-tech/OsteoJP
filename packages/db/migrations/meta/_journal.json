@@ -736,6 +736,13 @@
       "when": 1788502800000,
       "tag": "0107_record_annulments_insert_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1788502900000,
+      "tag": "0108_pack_instance_consuming_sessions",
+      "breakpoints": true
     }
   ]
 }
