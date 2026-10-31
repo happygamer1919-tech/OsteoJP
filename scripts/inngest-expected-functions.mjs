@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// HOW MANY FUNCTIONS THE osteojp-reminders APP SHOULD REGISTER, READ FROM THE CODE.
+// HOW MANY FUNCTIONS AN INNGEST APP SHOULD REGISTER, READ FROM THE CODE.
+//
+// Two apps, and only these two, are synced by every production deploy:
+// osteojp-reminders (R6, the default) and osteojp-consultation (R27, strategy,
+// 2026-10-30: `--app osteojp-consultation`). Each is one serve route and one
+// array the route hands to serve(); APPS below names both.
 //
 // R6 (strategy, 2026-10-25): after every production deploy of osteojp-platform,
 // .github/workflows/inngest-auto-sync.yml syncs the app and then checks the
@@ -8,11 +13,15 @@
 // and is never a constant somebody forgets to move.
 //
 // WHAT IT READS, and why each step can fail loudly rather than guess:
-//   1. apps/web/app/api/inngest/route.ts must hand `servedFunctions` to serve().
-//      If the route serves some other list, counting servedFunctions would count
-//      the wrong thing, so that is a failure, not a warning.
-//   2. apps/web/lib/reminders/inngest/served.ts: the array literal assigned to
-//      `export const servedFunctions`. Each entry is an identifier or a spread.
+//   1. The app's serve route must hand its list to serve() (`functions:
+//      servedFunctions` for the reminders, `functions` for the consultation app),
+//      and must import that list from the module APPS names. If the route serves
+//      some other list, counting it would count the wrong thing, so that is a
+//      failure, not a warning.
+//   2. That module's array literal (`export const servedFunctions = [ ... ]` in
+//      apps/web/lib/reminders/inngest/served.ts, `export const functions = [ ... ]`
+//      in apps/web/lib/consultation/inngest/functions.ts). Each entry is an
+//      identifier or a spread.
 //   3. A spread `...name` is followed to the module that `name` is imported
 //      from, and that module's `export const name = [ ... ]` is read the same way.
 //   4. Every identifier left at the end must be declared in its module as
@@ -24,8 +33,11 @@
 // outgrows it reddens the workflow instead of producing a wrong number.
 //
 // Usage:
-//   node scripts/inngest-expected-functions.mjs           # prints the count
+//   node scripts/inngest-expected-functions.mjs           # the reminders app's count
 //   node scripts/inngest-expected-functions.mjs --list    # one function per line
+//   node scripts/inngest-expected-functions.mjs --app osteojp-consultation [--list]
+// Any other argument, or an app not in APPS, is refused (exit 1): a typo must not
+// quietly count the default app.
 // Exit codes: 0 counted, 1 could not count (reason on stderr).
 
 import { existsSync, readFileSync } from "node:fs";
@@ -33,9 +45,21 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ROUTE = "apps/web/app/api/inngest/route.ts";
-const SERVED = "apps/web/lib/reminders/inngest/served.ts";
-const LIST = "servedFunctions";
+
+/** The apps the auto-sync workflow syncs: its serve route, and the list that route serves. */
+export const APPS = Object.freeze({
+  "osteojp-reminders": Object.freeze({
+    route: "apps/web/app/api/inngest/route.ts",
+    list: "servedFunctions",
+    module: "apps/web/lib/reminders/inngest/served.ts",
+  }),
+  "osteojp-consultation": Object.freeze({
+    route: "apps/web/app/api/inngest/consultation/route.ts",
+    list: "functions",
+    module: "apps/web/lib/consultation/inngest/functions.ts",
+  }),
+});
+export const DEFAULT_APP = "osteojp-reminders";
 
 class CountError extends Error {}
 
@@ -104,14 +128,25 @@ function expand(root, rel, name, seen) {
   return out;
 }
 
-/** The functions the reminders app serves, each checked to be a createFunction. */
-export function expectedFunctions(root = DEFAULT_ROOT) {
+/** The functions an app serves, each checked to be a createFunction. */
+export function expectedFunctions(root = DEFAULT_ROOT, app = DEFAULT_APP) {
+  const spec = Object.hasOwn(APPS, app) ? APPS[app] : null;
+  if (!spec) throw new CountError(`unknown app "${app}"; known: ${Object.keys(APPS).join(", ")}`);
+  const { route: ROUTE, list: LIST, module: SERVED } = spec;
   const route = stripComments(read(root, ROUTE));
-  if (!/serve\(\s*\{[^}]*\bfunctions\s*:\s*servedFunctions\b/.test(route)) {
+  // `functions: <list>`, or the shorthand `functions,` when the list is itself named `functions`.
+  const passes = new RegExp(
+    `serve\\(\\s*\\{[^}]*\\bfunctions\\s*${LIST === "functions" ? "(?::\\s*functions\\s*)?[,}]" : `:\\s*${LIST}\\b`}`,
+  );
+  if (!passes.test(route)) {
     throw new CountError(`${ROUTE} does not pass "functions: ${LIST}" to serve(), so ${LIST} is not what it registers`);
   }
   const list = expand(root, SERVED, LIST, new Set());
   if (list.length === 0) throw new CountError(`${SERVED}: ${LIST} is empty`);
+  const from = importSource(route, LIST);
+  if (!from || resolveModule(root, ROUTE, from) !== SERVED) {
+    throw new CountError(`${ROUTE} does not import ${LIST} from ${SERVED}`);
+  }
   const ids = new Set();
   for (const { id, module } of list) {
     if (ids.has(id)) throw new CountError(`${id} is listed twice`);
@@ -123,10 +158,26 @@ export function expectedFunctions(root = DEFAULT_ROOT) {
   return list;
 }
 
+/** `--list` and `--app <id>`, nothing else. */
+function parseArgs(argv) {
+  let app = DEFAULT_APP;
+  let list = false;
+  let sawApp = false;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--list") list = true;
+    else if (argv[i] === "--app" && !sawApp && i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
+      app = argv[++i];
+      sawApp = true;
+    } else throw new CountError(`argument not understood: "${argv[i]}" (usage: [--app <id>] [--list])`);
+  }
+  return { app, list };
+}
+
 export function main(argv = process.argv.slice(2), { root = DEFAULT_ROOT, log = console.log, err = console.error } = {}) {
   try {
-    const list = expectedFunctions(root);
-    if (argv.includes("--list")) for (const { id, module } of list) log(`${id}  ${module}`);
+    const args = parseArgs(argv);
+    const list = expectedFunctions(root, args.app);
+    if (args.list) for (const { id, module } of list) log(`${id}  ${module}`);
     else log(String(list.length));
     return 0;
   } catch (e) {
