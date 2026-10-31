@@ -27,6 +27,22 @@ export function isTherapistSelfLocked(
 }
 
 /**
+ * APPT-EDIT-02: is the Terapeuta of an EDIT locked to the row's own for this
+ * viewer? Owner ruling 2026-10-31: "A therapist may NOT change the therapist of
+ * a visit; reception does it." So a therapist editing an existing visit sees
+ * its Terapeuta read-only on every screen that opens the drawer (the agenda,
+ * /marcacoes, the ficha's Reagendar, the ficha's Notas tab); owner, admin and
+ * reception keep the select. The
+ * create form is PL-10's self-lock above and is not touched.
+ *
+ * Only the affordance: rescheduleAppointment refuses the change itself
+ * (`therapist_change_reception_only`), so a stale tab or a hand-made request is refused too.
+ */
+export function isTherapistEditLocked(role: Role, mode: "create" | "edit"): boolean {
+  return mode === "edit" && role === "therapist";
+}
+
+/**
  * APPT-EDIT-01: the Terapeuta an EDIT saves. When the screen locks the
  * practitioner (the ficha, for a therapist viewer), it is always the row's
  * own, whatever the form holds; otherwise the form's choice.
