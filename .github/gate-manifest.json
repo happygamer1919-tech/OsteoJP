@@ -120,7 +120,7 @@
     "scripts/read-montemor-online-20261025.test.mjs": "9977f780f8009daa5f9dbdd1cc6ffc3801104c27879f5e74c61b5544222379b0",
     "scripts/read-r14-profile-20261027.test.mjs": "503a7e3fd5d13d2b436fce0ecaa6f60f478b12e20c1b6a3cddbf2077ab16dd15",
     "scripts/read-shadow-compare-20261029.test.mjs": "304d89284f44bb9cef97d6e67ee161d9f4cf5961dfa5c9698afa3d4c710f6557",
-    "scripts/refuse-prod-apply-cwd.test.mjs": "4dd3b4294147f2bb90f6e89417ee8e780173fd2f1aa8e4880e44d63338c6698e",
+    "scripts/refuse-prod-apply-cwd.test.mjs": "fc3c1915b8bef5955601adcdfca6081af09e5601f6e3f19ffa8467a2e2649baa",
     "scripts/registo-episode-key-0105.test.mjs": "7c46f3b59fc7013a6cf0d3d75c4474948a4dae7f5eeddcf17756a34a5c84b472",
     "scripts/registo-writes-0097.test.mjs": "066a843ab350612642229d8b9f2e172275b2ac87fba983643fca9131e0001944",
     "scripts/reminder-claims-0106.test.mjs": "cfac2be3eb1cef0cca9556536f2d034d6731114de8d13a99036c5589670a0738",
