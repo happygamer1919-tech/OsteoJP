@@ -122,6 +122,17 @@ const DOORS: [string, ReminderEnqueueTarget[]][] = [
     "rescheduleAppointment (the Terapeuta only)",
     [{ appointmentId: APPT, startsAt: T1, practitionerId: PRAC, status: "confirmed", confirmation: "therapist_only" }],
   ],
+  // APPT-BULK-01: several visits in ONE save, each target built by the move's
+  // own code (moveAppointment), in one call. The arms below prove they share
+  // one marker and one confirmation, and that two saves get two markers.
+  [
+    "bulkRescheduleAppointments (several visits, one save)",
+    [
+      { appointmentId: APPT, startsAt: T1, practitionerId: PRAC, status: "confirmed" },
+      { appointmentId: APPT_2, startsAt: T2, practitionerId: PRAC, status: "scheduled" },
+      { appointmentId: APPT_3, startsAt: T3, practitionerId: PRAC, status: "confirmed", confirmation: "therapist_only" },
+    ],
+  ],
 ];
 
 describe("every door's confirmation-eligible event carries a fresh save marker", () => {
@@ -255,8 +266,10 @@ describe("every emitter of appointment/scheduled goes through the one that makes
     const actions = APP_SOURCES.find((s) => s.file === "apps/web/lib/scheduling/actions.ts")!.src;
     expect(functionsCalling(actions, "enqueueRemindersAfterCommit(").sort()).toEqual([
       // create (and the guest link), batch (and the guest link), clone,
-      // the acceptance and the uncancel, the move, the Pedidos acceptance.
+      // the acceptance and the uncancel, the move, the Pedidos acceptance,
+      // and the bulk change (APPT-BULK-01: many moves, one save).
       "batchScheduleAppointments",
+      "bulkRescheduleAppointments",
       "cloneAppointment",
       "confirmAppointmentRequest",
       "createAppointment",
