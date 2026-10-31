@@ -457,7 +457,11 @@ describe("bulkRescheduleAppointments: a refused row is skipped and writes nothin
 
   it("the tick never passes the therapist's working hours", async () => {
     // Monday 09:00-09:30 only: 10:00 is outside.
-    templates = [{ weekday: 1, startTime: "09:00:00", endTime: "09:30:00", validFrom: null, validUntil: null, isActive: true }];
+    // The row's clinic, as every real row carries (location_id NOT NULL): the
+    // HOR-01 resolver narrows a therapist's rows to the clinic asked about.
+    templates = [
+      { weekday: 1, startTime: "09:00:00", endTime: "09:30:00", validFrom: null, validUntil: null, isActive: true, locationId: LOC },
+    ];
     const r = await bulkRescheduleAppointments(
       req({ mode: "apply", rows: rows.map((x) => ({ id: x.id, allowConflict: true })) }),
     );
