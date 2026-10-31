@@ -3,6 +3,7 @@ import { can } from "@osteojp/auth";
 
 import { requireRequestContext } from "@/lib/auth/context";
 import { defaultKpiFrom, getKpiReports, type KpiFilters } from "@/lib/statistics/kpi-queries";
+import { isYmd } from "@/lib/statistics/day-bounds";
 import { getAgendaOptions } from "@/lib/scheduling/data";
 import { relabelStaffRows, staffLabelContext } from "@/lib/scheduling/staff-options";
 import { s } from "@/lib/i18n";
@@ -40,9 +41,13 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   // period picker renders the dates actually being queried. getKpiReports
   // applies the same floor independently; this is the half that keeps the
   // screen honest about which window it is showing.
+  // R29 review: a date the queries reject (a hand-typed 2026-02-30) is never
+  // handed to the picker, so the screen shows only the window actually queried.
+  const rawFrom = firstParam(sp.from);
+  const rawTo = firstParam(sp.to);
   const filters: KpiFilters = {
-    from: firstParam(sp.from) ?? defaultKpiFrom(new Date()),
-    to: firstParam(sp.to),
+    from: isYmd(rawFrom) ? rawFrom : defaultKpiFrom(new Date()),
+    to: isYmd(rawTo) ? rawTo : null,
   };
   // PERF-timing-admin-stats: `collectFor` opens a span store around the reads
   // and changes NOTHING about them - same calls, same order, same concurrency.

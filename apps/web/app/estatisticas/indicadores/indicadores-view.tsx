@@ -8,6 +8,7 @@ import { DatePicker } from "@osteojp/ui";
 
 import { s } from "@/lib/i18n";
 import type { KpiFilters, KpiReports } from "@/lib/statistics/kpi-queries";
+import { presetRange, type PeriodPreset } from "@/lib/statistics/day-bounds";
 
 import { DonutReport, HBarReport, LineReport, MultiLineReport, VBarReport } from "./kpi-charts";
 
@@ -40,11 +41,9 @@ const REPORTS: { key: ReportKey; titleKey: keyof typeof s }[] = [
   { key: "topLocalities", titleKey: "statistics.kpiTopLocalities" },
 ];
 
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-type PresetKey = "thisMonth" | "last3" | "thisYear" | "last12" | "all";
+// R29: the presets count back from TODAY IN LISBON (lib/statistics/day-bounds.ts),
+// not from the browser's UTC date.
+type PresetKey = PeriodPreset;
 const PRESETS: { key: PresetKey; labelKey: keyof typeof s }[] = [
   { key: "thisMonth", labelKey: "statistics.periodThisMonth" },
   { key: "last3", labelKey: "statistics.periodLast3" },
@@ -52,15 +51,6 @@ const PRESETS: { key: PresetKey; labelKey: keyof typeof s }[] = [
   { key: "last12", labelKey: "statistics.periodLast12" },
   { key: "all", labelKey: "statistics.periodAll" },
 ];
-
-function presetRange(key: PresetKey, today: Date): { from: string | null; to: string | null } {
-  const to = ymd(today);
-  if (key === "all") return { from: null, to: null };
-  if (key === "thisMonth") return { from: ymd(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))), to };
-  if (key === "thisYear") return { from: ymd(new Date(Date.UTC(today.getUTCFullYear(), 0, 1))), to };
-  const months = key === "last3" ? 3 : 12;
-  return { from: ymd(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - months, today.getUTCDate()))), to };
-}
 
 export function IndicadoresView({ reports, filters }: { reports: KpiReports; filters: KpiFilters }) {
   const router = useRouter();
