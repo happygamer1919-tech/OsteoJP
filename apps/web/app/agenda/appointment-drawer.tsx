@@ -27,7 +27,7 @@ import { s } from "@/lib/i18n";
 import { runAction } from "@/lib/actions/run-action";
 import { useActionOwner } from "@/lib/actions/use-action-owner";
 import { useLatestCallback } from "@/lib/actions/use-latest-callback";
-import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
+import { editPractitionerId, isTherapistSelfLocked, shouldPreselectPrimaryService } from "@/lib/scheduling/self-lock-core";
 import { patientLabel } from "@/lib/scheduling/patient-label";
 import { getPatientContraindications, getPatientNoSmsReason, searchPatientsAction } from "@/lib/patients/actions";
 import { NO_SMS_MESSAGE_KEY } from "@/lib/patients/phone-preview";
@@ -176,11 +176,25 @@ export function AppointmentDrawer({
   viewer,
   onClose,
   onDone,
+  lockPractitioner = false,
+  movedMessage,
 }: {
   state: ModalState;
   options: AgendaOptions;
   anchor: string;
   canHardDelete: boolean;
+  /**
+   * APPT-EDIT-01: on an EDIT, show the Terapeuta read-only and always save
+   * the row's own. The ficha sets it for a therapist viewer; the agenda and
+   * /marcacoes never do, so their behaviour is unchanged.
+   */
+  lockPractitioner?: boolean;
+  /**
+   * APPT-EDIT-01: the success message when the save only MOVED the visit
+   * (date, hour, clinic or therapist, nothing else). The ficha passes its old
+   * "Marcação remarcada."; absent, every save says "Marcação guardada".
+   */
+  movedMessage?: string;
   // PL-10: the logged-in viewer's identity. When the viewer is a THERAPIST on
   // the CREATE form, the drawer self-locks: practitioner is forced to `userId`
   // and the Terapeuta selector is replaced by a static label of their own name.
@@ -973,6 +987,8 @@ export function AppointmentDrawer({
     knownLabels: staffKnownLabels,
   });
   const selfTherapistName = staffOptions.selfName;
+  // APPT-EDIT-01: see `lockPractitioner`.
+  const practitionerLocked = !!editing && lockPractitioner;
   const sharedResourceOptions = staffOptions.selfResources;
   const practitionerTwoOptions = staffOptions.practitionerTwoOptions;
   const therapistOptions = staffOptions.therapistOptions;
@@ -1151,7 +1167,13 @@ export function AppointmentDrawer({
       if (form.status !== editing.status && form.status !== "cancelled") patch.status = form.status;
 
       const timeOfDayChanged = form.time !== init.time || form.durationMin !== init.durationMin;
-      const practOrLocChanged = form.practitionerId !== editing.practitionerId || form.locationId !== editing.locationId;
+      // APPT-EDIT-01: a locked Terapeuta is always the row's own.
+      const practitionerId = editPractitionerId({
+        locked: practitionerLocked,
+        editingPractitionerId: editing.practitionerId,
+        formPractitionerId: form.practitionerId,
+      });
+      const practOrLocChanged = practitionerId !== editing.practitionerId || form.locationId !== editing.locationId;
       const dateChanged = form.date !== init.date;
       const temporalChanged = scope === "one" ? dateChanged || timeOfDayChanged || practOrLocChanged : timeOfDayChanged || practOrLocChanged;
 
@@ -1180,7 +1202,7 @@ export function AppointmentDrawer({
         const out = await runAction(() => rescheduleAppointment(editing.id, {
           startsAt: startISO,
           endsAt: endISO,
-          practitionerId: form.practitionerId,
+          practitionerId,
           locationId: form.locationId,
           scope,
           allowConflict,
@@ -1214,14 +1236,15 @@ export function AppointmentDrawer({
         // it. When nothing can be sent to its patient, say so.
         if (out.value.ok) noticeToast(out.value.data.notice);
       }
-      succeed();
+      // APPT-EDIT-01: a save that only moved the visit can say so.
+      succeed(movedFirst && Object.keys(patch).length === 0 ? movedMessage : undefined);
     } finally {
       setSubmitting(false);
     }
   }
 
-  function succeed() {
-    toast({ tone: "success", message: s["appointment.saved"] });
+  function succeed(message?: string) {
+    toast({ tone: "success", message: message ?? s["appointment.saved"] });
     onDone();
   }
 
@@ -1417,7 +1440,18 @@ export function AppointmentDrawer({
             therapist's default service (see the effect above) and stays
             editable for per-booking exceptions. */}
         <Field label={s["appointment.therapist"]} required>
-          {selfLocked && sharedResourceOptions.length > 0 ? (
+          {practitionerLocked && editing ? (
+            // APPT-EDIT-01: the ficha, for a therapist viewer. The row's own
+            // Terapeuta, read-only; submit sends it whatever the form holds.
+            <div
+              aria-readonly="true"
+              data-testid="drawer-therapist-readonly"
+              data-practitioner-id={editing.practitionerId}
+              className="flex items-center rounded border border-border-strong bg-surface-muted px-3 py-2 text-sm text-text-primary"
+            >
+              {editing.practitionerName}
+            </div>
+          ) : selfLocked && sharedResourceOptions.length > 0 ? (
             // SCHED-17: a therapist still books only for themselves - PL-10 is
             // not relaxed - OR for a shared resource installed at one of their
             // clinics. NESA-SCOPE: only the one installed at the form's

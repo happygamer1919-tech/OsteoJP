@@ -47,8 +47,8 @@ describe("the name on a conflict line", () => {
   });
 
   it("every surface that renders a conflict line goes through it", () => {
-    // Six lines render a conflict's patient. A seventh written
-    // as `c.patientName` would print a bare time for a booking whose patient
+    // Seven calls, in the six files below, render a conflict's patient. One
+    // more written as `c.patientName` would print a bare time for a booking whose patient
     // the caller does not read, so the files are read and pinned. The agenda
     // drawer and the ficha's Terapeuta field (MARC-THERAPIST-01) draw one
     // shared warning, whose words are lib/scheduling/conflict-lines.ts; the

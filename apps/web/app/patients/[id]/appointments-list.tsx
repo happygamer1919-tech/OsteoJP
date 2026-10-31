@@ -44,6 +44,7 @@ import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import { appointmentRefusalMessage, isOverridableConflict } from "@/lib/scheduling/refusal-message";
 import {
+  locksFichaPractitioner,
   therapistChangeInput,
   therapistChangeOptions,
   type TherapistChangeStaff,
@@ -265,6 +266,10 @@ function AppointmentsListInner({
           anchor={action.appt.startsAt.slice(0, 10)}
           canHardDelete={editDrawer.canHardDelete}
           viewer={editDrawer.viewer}
+          // A therapist moves the visit in time and place from here, never
+          // to a colleague (see locksFichaPractitioner).
+          lockPractitioner={locksFichaPractitioner(editDrawer.viewer.role)}
+          movedMessage={s["appointment.rescheduled"]}
           onClose={() => setAction(null)}
           onDone={() => {
             setAction(null);

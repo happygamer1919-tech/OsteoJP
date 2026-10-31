@@ -243,6 +243,49 @@ describe("AppointmentDrawer W6-03: locked patient on deep-link create", () => {
 // (rescheduleAppointment and updateAppointment take none), so an editable
 // patient field on an edit was a value dropped in silence. An edit shows its
 // patient read-only, as the deep-linked create does.
+// APPT-EDIT-01: the ficha passes lockPractitioner for a therapist viewer. The
+// Terapeuta is the row's own, read-only, with no select to change it; the
+// save sends that id (editPractitionerId, self-lock-core.test.ts).
+describe("AppointmentDrawer APPT-EDIT-01: lockPractitioner on an edit", () => {
+  const THERAPIST: Viewer = { role: "therapist", userId: "therapist-1" };
+  const withColleague: AgendaOptions = {
+    ...options,
+    therapists: [
+      { id: "therapist-1", label: "Dr. Costa" },
+      { id: "therapist-2", label: "Dra. Colega" },
+    ],
+  };
+  const renderLocked = (lockPractitioner: boolean) =>
+    renderToStaticMarkup(
+      createElement(AppointmentDrawer, {
+        state: { mode: "edit", appt: editAppt },
+        options: withColleague,
+        anchor: "2026-08-06",
+        canHardDelete: false,
+        viewer: THERAPIST,
+        lockPractitioner,
+        onClose: vi.fn(),
+        onDone: vi.fn(),
+      }),
+    );
+
+  it("locked: the row's own Terapeuta, read-only, and no colleague offered", () => {
+    const html = renderLocked(true);
+    const at = html.indexOf('data-testid="drawer-therapist-readonly"');
+    expect(at).toBeGreaterThan(-1);
+    const field = html.slice(at, html.indexOf("</div>", at));
+    expect(field).toContain('data-practitioner-id="therapist-1"');
+    expect(field).toContain("Dr. Costa");
+    expect(html).not.toContain(">Dra. Colega<");
+  });
+
+  it("not locked (the agenda, unchanged): the therapist list is offered as before", () => {
+    const html = renderLocked(false);
+    expect(html).not.toContain('data-testid="drawer-therapist-readonly"');
+    expect(html).toContain(">Dra. Colega<");
+  });
+});
+
 describe("AppointmentDrawer APPT-EDIT-01: the patient is read-only on an edit", () => {
   const readonly = (html: string) => {
     const at = html.indexOf('data-testid="drawer-patient-readonly"');
