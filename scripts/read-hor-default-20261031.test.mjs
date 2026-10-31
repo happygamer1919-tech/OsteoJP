@@ -2,8 +2,8 @@
 // (pull request #1683) would affect. Its document and its one block agree with each other, the read
 // writes nothing and prints no person, every halt in the block is explicit (proven by fault
 // injection), and, on a local database, every count is exact on a seeded throwaway, every verdict
-// flips on its own seeded fault, and every predicate of the read is mutated once and the mutant is
-// caught.
+// flips on its own seeded fault, and the mutation sweep (MUTANTS, and every tenant condition found
+// mechanically) is caught except for the listed equivalent survivors.
 //
 // WHAT THIS PROVES, with no database:
 //   * the document pins the real read, guard and module, and the sidecar pins the document;
@@ -26,8 +26,9 @@
 // WITH A LOCAL DATABASE (HOR_READ_TEST_PGURL names one on 127.0.0.1 or localhost whose `public`
 // schema is the repository's): the read runs on a seeded throwaway per case, as the block runs it,
 // with its one clock line set to a fixed instant, and every case is asserted exactly. Then every
-// mutant in MUTANTS is run against every case and must make at least one case's assertion fail. Any
-// other host is refused. Without the variable those cases are skipped.
+// mutant in MUTANTS and every tenant condition (TENANT_MUTANTS) is run against every case and must
+// make at least one case's assertion fail, except TENANT_SURVIVORS, which must be exactly the
+// survivors. Any other host is refused. Without the variable those cases are skipped.
 //
 // Run: node --test scripts/read-hor-default-20261031.test.mjs
 
@@ -141,6 +142,10 @@ test("the block's shape: pipefail on line 2, no set -e, no # line, one read-only
   assert.ok(lines.some((l) => l.startsWith('[ "${FH}" = "${PRHEAD}" ] ||')), "the fetched head is not checked by full sha");
   assert.ok(lines.some((l) => l.startsWith('[ "${HD}" = "${PRHEAD}" ] ||')), "the checkout is not checked by full sha");
   assert.doesNotMatch(block, /origin\/main|merge-base/, "the block reads main");
+  const envAt = lines.findIndex((l) => l.startsWith("set -o allexport && . "));
+  const urlAt = lines.findIndex((l) => l.startsWith('[ -n "${DATABASE_URL_DIRECT}" ] || { echo "STOP: '));
+  const guardAt = lines.findIndex((l) => l.startsWith("node scripts/assert-production-target.mjs || "));
+  assert.ok(envAt > 0 && urlAt === envAt + 1 && guardAt === urlAt + 1, "the empty-URL check is not between the env file and the guard");
   assert.ok(!/(^|[^A-Za-z])\/tmp\//.test(block), "the block writes under /tmp");
   for (const l of lines) {
     if (/\|\| \{/.test(l)) assert.match(l, /\|\| \{ echo "STOP: [^"]+"; exit 1; \}$/, `a halt that is not one STOP and exit 1: ${l}`);
@@ -396,6 +401,12 @@ for (const shell of shells) {
       const r2 = runOnce(shell, base, filled(base).replaceAll(join(base, "prod.env"), join(base, "no-such.env")));
       assertStop(r2, /production environment file could not be loaded/, "missing env file");
       assert.ok(!/^(node|psql):/m.test(r2.calls), `the guard or psql ran without the env file: ${r2.calls}`);
+      for (const [label, body] of [["no DATABASE_URL_DIRECT", "OTHER_SETTING=x\n"], ["an empty DATABASE_URL_DIRECT", "DATABASE_URL_DIRECT=\n"]]) {
+        writeFileSync(join(base, "prod-empty.env"), body);
+        const r = runOnce(shell, base, filled(base).replaceAll(join(base, "prod.env"), join(base, "prod-empty.env")));
+        assertStop(r, /set no DATABASE_URL_DIRECT/, label);
+        assert.ok(!/^(node|psql):/m.test(r.calls), `${label}: the guard or psql ran: ${r.calls}`);
+      }
       const r3 = runOnce(shell, base, filled(base).replaceAll(join(base, "handover"), join(base, "no-such-handover")));
       assertStop(r3, /handover folder is not there/, "missing handover folder");
       assert.ok(!/^(git|node|psql):/m.test(r3.calls), `a command ran without the handover folder: ${r3.calls}`);
@@ -418,38 +429,43 @@ const LV = id(0x1001);
 const CB = id(0x1002);
 const ARQ = id(0x1003);
 const BL = id(0x1004);
-const S = { S1: id(0x2001), S2: id(0x2002), S3: id(0x2003), S4: id(0x2004), S5: id(0x2005) };
+const S = { S1: id(0x2001), S2: id(0x2002), S3: id(0x2003), S4: id(0x2004), S5: id(0x2005), SB: id(0x2006) };
 
 /**
  * Synthetic people, by what each one tests. `t` is the tenant, `f` the flags (active, bookable,
  * shared), `m` the clinics they are members of (staff_locations), `r` their schedule rows
- * [clinic, valid_from, valid_until, is_active], `s` their mapped services. The clock is
+ * [clinic, valid_from, valid_until, is_active, row tenant], `s` their mapped services (a name, or
+ * [name, row tenant]), `m` entries a clinic or [clinic, row tenant]. A row tenant other than the
+ * person's own is a cross-tenant row: the application's tenant-scoped reads never see it. The clock is
  * 2026-10-31 10:00 Lisbon, so today is 2026-10-31 and the portal's horizon ends 2026-11-14.
  */
 const P = {
   d1: { n: 0x101, t: TA, m: [LV] }, // no rows, one clinic: the default
   d2: { n: 0x102, t: TA, m: [LV, CB] }, // no rows, two clinics: the default at both
   d3: { n: 0x103, t: TA, m: [ARQ] }, // no rows, only an archived clinic: nothing
-  d4: { n: 0x104, t: TA }, // no rows, no clinic: nothing
+  d4: { n: 0x104, t: TA, m: [[BL, TB]] }, // no rows; its only membership row carries another tenant
   x1: { n: 0x105, t: TA, m: [LV], r: [[LV, null, "2026-10-30", true]], s: ["S1"] }, // only expired rows: newly the default
-  x2: { n: 0x106, t: TA, r: [[CB, null, "2026-10-30", true]] }, // only expired rows, no clinic
+  x2: { n: 0x106, t: TA, m: [[BL, TB]], r: [[CB, null, "2026-10-30", true]] }, // only expired rows; its only membership row carries another tenant
   i1: { n: 0x107, t: TA, m: [LV], r: [[LV, null, null, false]], s: ["S1"] }, // only a switched-off row
-  o1: { n: 0x108, t: TA, m: [LV], r: [[LV, null, null, true]], s: ["S1"] }, // own, portal at LV
-  o2: { n: 0x109, t: TA, m: [CB], r: [[CB, null, "2026-10-31", true]], s: ["S2"] }, // own, ends today, portal at CB
-  o3: { n: 0x10a, t: TA, m: [LV], r: [[CB, null, null, true]], s: ["S1"] }, // rows at CB, member LV: refused
+  o1: { n: 0x108, t: TA, m: [LV], r: [[LV, null, null, true], [BL, null, null, true, TB]], s: ["S1"] }, // own, portal at LV; a row carrying another tenant at its clinic
+  o2: { n: 0x109, t: TA, m: [CB, [BL, TB]], r: [[CB, null, "2026-10-31", true]], s: ["S2"] }, // own, ends today, portal at CB; a membership row carrying another tenant
+  o3: { n: 0x10a, t: TA, m: [LV], r: [[CB, null, null, true], [LV, null, null, true, TB]], s: ["S1"] }, // rows at CB, member LV: refused; a row at LV carrying another tenant
   o4: { n: 0x10b, t: TA, m: [LV, ARQ], r: [[ARQ, null, null, true]], s: ["S1"] }, // rows at the archived clinic: refused
   o5: { n: 0x10c, t: TA, m: [LV], r: [[LV, "2026-12-01", null, true]], s: ["S1"] }, // starts after the horizon
   o6: { n: 0x10d, t: TA, m: [LV], r: [[LV, "2026-11-10", null, true]], s: ["S1"] }, // starts inside the horizon
   o7: { n: 0x10e, t: TA, m: [LV], r: [[LV, null, null, true]], s: ["S3", "S4", "S5"] }, // no portal service
   o8: { n: 0x10f, t: TA, m: [LV], r: [[LV, null, null, true]], s: ["S2"] }, // a service of another clinic
-  o9: { n: 0x110, t: TA, m: [LV], r: [[LV, null, null, true], [CB, null, "2026-10-30", true]] }, // an expired row elsewhere
+  o9: { n: 0x110, t: TA, m: [LV], r: [[LV, null, null, true], [CB, null, "2026-10-30", true]], s: [["SB", TA], ["SB", TB]] }, // an expired row elsewhere; two cross-tenant mappings
+  o10: { n: 0x116, t: TA, m: [LV], r: [[LV, null, null, true], [BL, null, null, true, TA]] }, // a row at another tenant's clinic
+  o11: { n: 0x117, t: TA, m: [LV], r: [[LV, null, null, true, TB]], s: ["S1"] }, // its only row carries another tenant
   n1: { n: 0x111, t: TA, f: [true, true, true], m: [LV] }, // NESA, no rows
   n2: { n: 0x112, t: TA, f: [true, true, true], m: [LV], r: [[LV, null, null, true]], s: ["S1"] }, // NESA with rows
   n3: { n: 0x115, t: TA, f: [true, false, true] }, // a shared resource that is not bookable
   r1: { n: 0x113, t: TA, f: [true, false, false], m: [LV], r: [[LV, null, null, true]], s: ["S1"] }, // not bookable
   r2: { n: 0x114, t: TA, f: [false, true, false], m: [LV], r: [[LV, null, null, true]], s: ["S1"] }, // inactive
   b1: { n: 0x201, t: TB, m: [BL] }, // tenant 2, the default
-  b2: { n: 0x202, t: TB, xm: [LV] }, // tenant 2, a membership row pointing at tenant 1's clinic
+  b2: { n: 0x202, t: TB, m: [LV] }, // tenant 2, a membership row pointing at tenant 1's clinic
+  b3: { n: 0x203, t: TB, r: [[LV, null, null, true, TA]], s: [["S1", TA]] }, // tenant 2, a row and a mapping at tenant 1
 };
 
 function seedSql() {
@@ -467,19 +483,25 @@ function seedSql() {
     ('${S.S2}', '${TA}', '${CB}', 'Synthetic S2', true, false, true),
     ('${S.S3}', '${TA}', null, 'Synthetic S3', true, true, true),
     ('${S.S4}', '${TA}', null, 'Synthetic S4', false, false, true),
-    ('${S.S5}', '${TA}', null, 'Synthetic S5', true, false, false);`);
+    ('${S.S5}', '${TA}', null, 'Synthetic S5', true, false, false),
+    ('${S.SB}', '${TB}', null, 'Synthetic SB', true, false, true);`);
   for (const [k, p] of Object.entries(P)) {
     const [a, b, s] = p.f ?? [true, true, false];
     const uid = id(p.n);
     out.push(`insert into public.users (id, tenant_id, email, full_name, is_active, is_bookable, is_shared_resource)
       values ('${uid}', '${p.t}', 'synthetic-${k}@example.invalid', 'Synthetic ${k}', ${a}, ${b}, ${s});`);
-    for (const loc of p.m ?? []) out.push(`insert into public.staff_locations (tenant_id, user_id, location_id) values ('${p.t}', '${uid}', '${loc}');`);
-    for (const loc of p.xm ?? []) out.push(`insert into public.staff_locations (tenant_id, user_id, location_id) values ('${p.t}', '${uid}', '${loc}');`);
-    for (const [loc, from, until, active] of p.r ?? []) {
-      out.push(`insert into public.availability_templates (tenant_id, user_id, location_id, weekday, start_time, end_time, valid_from, valid_until, is_active)
-        values ('${p.t}', '${uid}', '${loc}', 1, '09:00', '17:00', ${from ? `'${from}'` : "null"}, ${until ? `'${until}'` : "null"}, ${active});`);
+    for (const m of p.m ?? []) {
+      const [loc, rt] = Array.isArray(m) ? m : [m, p.t];
+      out.push(`insert into public.staff_locations (tenant_id, user_id, location_id) values ('${rt}', '${uid}', '${loc}');`);
     }
-    for (const sv of p.s ?? []) out.push(`insert into public.therapist_services (tenant_id, therapist_user_id, service_id) values ('${p.t}', '${uid}', '${S[sv]}');`);
+    for (const [loc, from, until, active, rt] of p.r ?? []) {
+      out.push(`insert into public.availability_templates (tenant_id, user_id, location_id, weekday, start_time, end_time, valid_from, valid_until, is_active)
+        values ('${rt ?? p.t}', '${uid}', '${loc}', 1, '09:00', '17:00', ${from ? `'${from}'` : "null"}, ${until ? `'${until}'` : "null"}, ${active});`);
+    }
+    for (const sv of p.s ?? []) {
+      const [name, rt] = Array.isArray(sv) ? sv : [sv, p.t];
+      out.push(`insert into public.therapist_services (tenant_id, therapist_user_id, service_id) values ('${rt}', '${uid}', '${S[name]}');`);
+    }
   }
   return out.join("\n");
 }
@@ -496,19 +518,19 @@ const verdicts = (faults) => ({ ...ALLOK, ...faults });
 
 const BASE_ROWS = {
   "20 the read's clock (Lisbon), and the day \"in force\" is measured from": "2026-10-31 10:00, today 2026-10-31",
-  ...tenantRows(T1, [16, 9, 7, 2, 7, 3, 3, 1, 2, 1, 5, "2, 2, 1"]),
-  ...tenantRows(T2, [2, 0, 0, 0, 2, 1, 1, 0, 0, 0, 2, "0, 0, 0"]),
-  ...clinicRows(C.LV, ["active, opens 08:00, closes 21:00, midday none, Saturday no column", 12, 4, 1, 6, 0, 2, 2]),
+  ...tenantRows(T1, [18, 10, 8, 2, 8, 3, 4, 1, 2, 1, 6, "2, 2, 1"]),
+  ...tenantRows(T2, [3, 0, 0, 0, 3, 2, 1, 0, 0, 0, 3, "0, 0, 0"]),
+  ...clinicRows(C.LV, ["active, opens 08:00, closes 21:00, midday none, Saturday no column", 14, 5, 1, 7, 0, 2, 2]),
   ...clinicRows(C.CB, ["active, opens 08:00, closes 20:00, midday 13:00 to 14:00, Saturday no column", 2, 1, 0, 2, 1, 0, 2]),
   ...clinicRows(C.ARQ, ["archived, opens 09:00, closes 18:00, midday none, Saturday no column", 0, 0, 0, 1, 1, 0, 0]),
   ...clinicRows(C.BL, ["active, opens 08:00, closes 20:00, midday none, Saturday no column", 1, 1, 0, 0, 0, 0, 0]),
-  "50 HOR_SUMMARY": "eligible=18 own=9 switch_runs=7 switch_refuses=2 zero_in_force=9 clinics_0=4 clinics_1=4 clinics_2plus=1 get_default=5 expired_only=2 expired_only_get_default=1 no_active_row=7 portal_visible=4",
+  "50 HOR_SUMMARY": "eligible=21 own=10 switch_runs=8 switch_refuses=2 zero_in_force=11 clinics_0=5 clinics_1=5 clinics_2plus=1 get_default=6 expired_only=2 expired_only_get_default=1 no_active_row=9 portal_visible=4",
   "1 tenants": "2",
   "3 active clinics whose closes_at is not after opens_at (the default generates nothing there)": "0 of 3",
   "4 active clinics whose midday closure is half set, not ordered, or outside its hours": "0 of 3 (with a closure: 1)",
   "5 the column locations.saturday_closes_at (information_schema, pg_attribute)": "absent",
-  "7 the groups add up": "18 = 7 + 2 + 9; 9 = 4 + 4 + 1; default 5, expired-only 2, recount 5",
-  "8 the clinic counts add up": "per clinic 15 and 6, per therapist 15 and 6",
+  "7 the groups add up": "21 = 8 + 2 + 11; 11 = 5 + 5 + 1; default 6, expired-only 2, recount 6",
+  "8 the clinic counts add up": "per clinic 17 and 7, per therapist 17 and 7",
   "9 therapists the portal shows today with no own row in force (the default must never reach the portal)": "0 of 4",
 };
 
@@ -525,18 +547,24 @@ const CASES = [
     name: "nobody eligible: every user not bookable",
     seed: "update public.users set is_bookable = false;",
     want: verdicts({ 6: "VACUOUS", 7: "VACUOUS", 8: "VACUOUS", 9: "VACUOUS" }),
-    rows: { [`32 ${T1}`]: "0, 20, 1", [`32 ${T2}`]: "0, 2, 0" },
+    rows: { [`32 ${T1}`]: "0, 22, 1", [`32 ${T2}`]: "0, 3, 0" },
   },
   {
     name: "no active clinic: every clinic archived",
     seed: "update public.locations set is_active = false;",
     want: verdicts({ 2: "VACUOUS", 3: "VACUOUS", 4: "VACUOUS", 8: "VACUOUS", 9: "VACUOUS" }),
-    rows: { ...tenantRows(T1, [16, 9, 0, 9, 7, 7, 0, 0, 2, 0, 5, "2, 2, 1"]) },
+    rows: { ...tenantRows(T1, [18, 10, 0, 10, 8, 8, 0, 0, 2, 0, 6, "2, 2, 1"]) },
   },
   {
     name: "a clinic that closes when it opens",
     seed: `alter table public.locations drop constraint locations_open_before_close;
            update public.locations set closes_at = opens_at where id = '${LV}';`,
+    want: verdicts({ 3: "FAIL" }),
+    rows: { "3 active clinics whose closes_at is not after opens_at (the default generates nothing there)": "1 of 3" },
+  },
+  {
+    name: "a clinic that closes 30 seconds after it opens (the same minute; its CHECK still holds)",
+    seed: `update public.locations set opens_at = '08:00:00', closes_at = '08:00:30' where id = '${LV}';`,
     want: verdicts({ 3: "FAIL" }),
     rows: { "3 active clinics whose closes_at is not after opens_at (the default generates nothing there)": "1 of 3" },
   },
@@ -596,7 +624,7 @@ const CASES = [
 ];
 
 /**
- * THE MUTATION SWEEP: every predicate of the read, mutated once. Each `from` must occur exactly once in
+ * THE NAMED MUTANTS, one text change each (the tenant conditions are swept separately below). Each `from` must occur exactly once in
  * the read; the mutant must make at least one case above fail its assertions.
  */
 const MUTANTS = [
@@ -607,7 +635,6 @@ const MUTANTS = [
   ["eligible: bookable", "and u.is_bookable = true and u.is_shared_resource is distinct from true", "and true and u.is_shared_resource is distinct from true"],
   ["eligible: not NESA", " and u.is_shared_resource is distinct from true) as eligible", ") as eligible"],
   ["member: active clinic", "   where ml.is_active = true\n", "   where true\n"],
-  ["member: same tenant", " and ml.tenant_id = s.tenant_id", ""],
   ["has rows in force", "o2.user_id = p.user_id and o2.in_force", "o2.user_id = p.user_id"],
   ["refusal: rows in force only", "o3.user_id = p.user_id and o3.in_force", "o3.user_id = p.user_id"],
   ["refusal: membership of that clinic", "\n                                       and m2.location_id = o3.location_id", ""],
@@ -637,14 +664,15 @@ const MUTANTS = [
   ["clinic: members eligible", "where cm.location_id = c.location_id and cf.eligible) as members", "where cm.location_id = c.location_id) as members"],
   ["clinic: default here", "cf.eligible and not cf.in_force) as default_here", "cf.eligible) as default_here"],
   ["clinic: expired here", "not cf.in_force and cf.has_active_rows) as expired_here", "not cf.in_force) as expired_here"],
-  ["clinic: own here in force", "where co.location_id = c.location_id and co.in_force and cf.eligible\n             and not exists", "where co.location_id = c.location_id and cf.eligible\n             and not exists"],
-  ["clinic: own here (row 44) in force", "where co.location_id = c.location_id and co.in_force and cf.eligible) as own_here", "where co.location_id = c.location_id and cf.eligible) as own_here"],
+  ["clinic: own here in force", "co.tenant_id = c.tenant_id and co.in_force and cf.eligible\n             and not exists", "co.tenant_id = c.tenant_id and cf.eligible\n             and not exists"],
+  ["clinic: own here (row 44) in force", "co.tenant_id = c.tenant_id and co.in_force and cf.eligible) as own_here", "co.tenant_id = c.tenant_id and cf.eligible) as own_here"],
   ["clinic: refused here, membership of this clinic", "\n                                and cm.location_id = co.location_id)) as refused_here", ")) as refused_here"],
   ["clinic: elsewhere, rows here", "\n                                and co.location_id = cm.location_id and co.in_force)) as elsewhere_here", "\n                                and co.in_force)) as elsewhere_here"],
   ["clinic: portal here", "from portal pv where pv.location_id = c.location_id) as portal_here", "from portal pv where pv.tenant_id = c.tenant_id) as portal_here"],
   ["recount: in force", "\n                        and (ra.valid_until is null or ra.valid_until >= day.today))", ")"],
   ["recount: active clinic", "rs.user_id = ru.id and rsl.is_active)", "rs.user_id = ru.id)"],
-  ["verdict 3: strictly after", "when count(*) filter (where is_active and not (opens_at < closes_at)) > 0 then 'FAIL'", "when count(*) filter (where is_active and not (opens_at <= closes_at)) > 0 then 'FAIL'"],
+  ["verdict 3: strictly after", "when count(*) filter (where is_active and not (date_trunc('minute', opens_at::interval) < date_trunc('minute', closes_at::interval))) > 0 then 'FAIL'", "when count(*) filter (where is_active and not (date_trunc('minute', opens_at::interval) <= date_trunc('minute', closes_at::interval))) > 0 then 'FAIL'"],
+  ["verdict 3: whole minutes", "when count(*) filter (where is_active and not (date_trunc('minute', opens_at::interval) < date_trunc('minute', closes_at::interval))) > 0 then 'FAIL'", "when count(*) filter (where is_active and not (opens_at < closes_at)) > 0 then 'FAIL'"],
   ["verdict 4: both or neither", "or (midday_closed_from is not null and midday_closed_to is not null\n                    and midday_closed_from < midday_closed_to", "or (true\n                    and midday_closed_from < midday_closed_to"],
   ["verdict 4: ordered", "\n                    and midday_closed_from < midday_closed_to\n                    and midday_closed_from >= opens_at and midday_closed_to <= closes_at))) > 0", "\n                    and midday_closed_from >= opens_at and midday_closed_to <= closes_at))) > 0"],
   ["verdict 4: inside the hours", "\n                    and midday_closed_from >= opens_at and midday_closed_to <= closes_at))) > 0", "))) > 0"],
@@ -653,9 +681,33 @@ const MUTANTS = [
   ["verdict 5: present is REVIEW", "when by_info and by_catalog then 'REVIEW'", "when by_info and by_catalog then 'OK'"],
 ];
 
+/**
+ * THE TENANT SWEEP: every `a.tenant_id = b.tenant_id` condition of the read, found mechanically and
+ * replaced by `true` one at a time. Named by its text and its occurrence among identical texts.
+ */
+const TENANT_RE = /\b\w+\.tenant_id = \w+\.tenant_id/g;
+const TENANT_MUTANTS = (() => {
+  const seen = new Map();
+  return [...sql.matchAll(TENANT_RE)].map((m) => {
+    const k = (seen.get(m[0]) ?? 0) + 1;
+    seen.set(m[0], k);
+    return [`tenant: ${m[0]} #${k}`, (s) => s.slice(0, m.index) + "true" + s.slice(m.index + m[0].length)];
+  });
+})();
+
+/**
+ * Tenant conditions no data can catch, each with its reason. The test asserts this list is exactly
+ * the sweep's survivors, so a new survivor or a newly caught one both fail it.
+ */
+const TENANT_SURVIVORS = [
+  ["tenant: m2.tenant_id = o3.tenant_id #1", "equivalent: a membership row's tenant is its clinic's (member), and so is the own row's (rl), so at one clinic the two always agree"],
+  ["tenant: cm.tenant_id = co.tenant_id #1", "equivalent: the own row's tenant is the clinic's (co.tenant_id = c.tenant_id), and so is the membership row's (member)"],
+  ["tenant: pf.tenant_id = pv.tenant_id #1", "equivalent: a portal row carries its user's own tenant (u.tenant_id = c.tenant_id), and a user id is unique across tenants"],
+];
+
 const PGURL = process.env.HOR_READ_TEST_PGURL;
 
-test("the read on a local database: exact counts, every verdict's own fault, and a mutant per predicate caught", { skip: PGURL ? false : "HOR_READ_TEST_PGURL is not set" }, (t) => {
+test("the read on a local database: exact counts, every verdict's own fault, and the mutation sweep caught", { skip: PGURL ? false : "HOR_READ_TEST_PGURL is not set" }, (t) => {
   const url = new URL(PGURL);
   assert.ok(["127.0.0.1", "localhost"].includes(url.hostname), `REFUSE: HOR_READ_TEST_PGURL must name a database on this machine, not ${url.hostname}`);
   const dbUrl = (name) => { const u = new URL(PGURL); u.pathname = `/${name}`; return u.toString(); };
@@ -720,16 +772,24 @@ test("the read on a local database: exact counts, every verdict's own fault, and
       t.diagnostic(`case as expected: ${CASES[i].name}`);
     }
 
+    const sweep = (name, mutated) => {
+      assert.notEqual(mutated, sql, `the mutant "${name}" changed nothing`);
+      for (let i = 0; i < CASES.length; i++) {
+        if (failures(mutated, i).length > 0) { t.diagnostic(`mutant killed: ${name} <- ${CASES[i].name}`); return true; }
+      }
+      t.diagnostic(`mutant SURVIVED: ${name}`);
+      return false;
+    };
     const survivors = [];
     for (const [name, from, to] of MUTANTS) {
       assert.equal(sql.split(from).length, 2, `the mutant "${name}" does not find its text exactly once`);
-      const mutated = sql.replace(from, to);
-      let killedBy = null;
-      for (let i = 0; i < CASES.length && !killedBy; i++) if (failures(mutated, i).length > 0) killedBy = CASES[i].name;
-      if (!killedBy) survivors.push(name);
-      else t.diagnostic(`mutant killed: ${name} <- ${killedBy}`);
+      if (!sweep(name, sql.replace(from, to))) survivors.push(name);
     }
     assert.deepEqual(survivors, [], `mutants no case caught: ${survivors.join("; ")}`);
+    const tenantSurvivors = [];
+    for (const [name, apply] of TENANT_MUTANTS) if (!sweep(name, apply(sql))) tenantSurvivors.push(name);
+    assert.deepEqual(tenantSurvivors, TENANT_SURVIVORS.map(([n]) => n), "the tenant sweep's survivors are not the listed ones");
+    t.diagnostic(`mutants: ${MUTANTS.length} named, ${TENANT_MUTANTS.length} tenant conditions, ${tenantSurvivors.length} tenant survivors`);
   } finally {
     rmSync(work, { recursive: true, force: true });
     for (let i = 0; i < CASES.length; i++) spawnSync("psql", [PGURL, "-X", "-q", "-c", `drop database if exists ${caseDb(i)}`], { encoding: "utf8" });

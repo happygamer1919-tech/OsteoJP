@@ -1,7 +1,7 @@
 # HOR-DEFAULT-READ, 2026-10-31: who the new Horarios default (#1683) would affect, counts only
 
 **READ ONLY. One block. No apply, no write.**
-**Status: AUTHORED 2026-10-31 by SOLO's builder; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below) WITH A MUTATION SWEEP OF EVERY PREDICATE; THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-hor-default-20261031.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). R4: NOT YET REVIEWED.** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit SOLO names.
+**Status: AUTHORED 2026-10-31 by SOLO's builder; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below) WITH A MUTATION SWEEP (78 MUTANTS, 3 EQUIVALENT SURVIVORS); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-hor-default-20261031.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). R4 ROUND 1 (2026-10-31, on `b85bfc2b`): SHIP AFTER FIXES, NO MAJOR; ITS FOUR ITEMS ANSWERED (see "R4 round 1"), NOT RE-REVIEWED; THE TEST FILE RE-RUN ON LANE BLUE ON THE CHANGED READ, EVERY CASE AS EXPECTED.** The block's two value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit SOLO names.
 
 ## Why this read exists
 
@@ -9,7 +9,7 @@ Pull request #1683 (HOR-01, branch `scheduling/HOR-01-clinic-hours-default`, not
 
 ## What it reads
 
-`scripts/db/read-hor-default-20261031.sql`, sha256 `7f8285b65dedee02c22f117dc63c953bb3882a044af19b0311c7fb2279720944`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, times of day, the read's Lisbon clock, a tenant ORDINAL (`tenant 1`, by creation order; never a tenant id or name) and clinic names. No person's id, name, email or phone. Tables read: `tenants`, `locations`, `users` (the three flags only), `availability_templates`, `staff_locations`, `therapist_services`, `services`, and the catalogue (`information_schema.columns`, `pg_attribute`) for the Saturday probe.
+`scripts/db/read-hor-default-20261031.sql`, sha256 `93f52a2d17c7f9c0fd5d142c20d2b667d5f7f3f3d8bf984ec07c3399ebaa0bc6`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, times of day, the read's Lisbon clock, a tenant ORDINAL (`tenant 1`, by creation order; never a tenant id or name) and clinic names. No person's id, name, email or phone. Tables read: `tenants`, `locations`, `users` (the three flags only), `availability_templates`, `staff_locations`, `therapist_services`, `services`, and the catalogue (`information_schema.columns`, `pg_attribute`) for the Saturday probe.
 
 ## The resolver's definitions, and where each comes from
 
@@ -23,12 +23,12 @@ Every predicate is copied from the code, not paraphrased. Line numbers are at th
 | who gets the default | per therapist: ANY own row in force anywhere means the typed schedule is the whole schedule and no clinic hours anywhere; ZERO such rows and eligible means the clinic's hours at every active clinic they are a member of | `effective-availability-core.ts:127-146` (`resolveEffectiveTemplates`), `effective-availability.ts:85-104` |
 | member | a `staff_locations` row at a location with `is_active` true, both rows of the same tenant | `effective-availability.ts:140-161` (`readMemberClinics`), `apps/web/lib/admin/clinic-default-schedule.ts:55-59` |
 | the switch refuses | an eligible therapist with own rows in force, one of which sits at a clinic (archived clinics included) that is not an active clinic they are a member of (`not_member`) | `effective-availability-core.ts:171-184` (`clinicDefaultSwitchVerdict`), fed by `clinic-default-schedule.ts:37-89` (rows in force at `:60-74`) |
-| the clinic's hours | `locations.opens_at` to `closes_at`, Monday to Friday; nothing is generated unless `closes_at` is after `opens_at` | `effective-availability-core.ts:73-95` (`clinicDefaultTemplates`) |
+| the clinic's hours | `locations.opens_at` to `closes_at`, Monday to Friday; nothing is generated unless `closes_at` is after `opens_at` in whole minutes (seconds are ignored, so the read compares `date_trunc('minute', ...)`) | `effective-availability-core.ts:73-95` (`clinicDefaultTemplates`), `availability.ts:95-98` (`timeToMinutes`) |
 | the midday closure | `midday_closed_from`, `midday_closed_to`: printed for reference, still its own rule | the PR body, default 8 |
 | Saturday | `locations.saturday_closes_at` does not exist yet (#1682, held). Probed in the catalogue (`information_schema.columns` and `pg_attribute`), never named as a column; its value is read as `to_jsonb(l) ->> 'saturday_closes_at'`, which is NULL when the column is absent instead of raising 42703 | `packages/db/src/location-saturday.ts` (the same `information_schema` probe) |
 | the portal shows | active, bookable, not a shared resource; an active template at the clinic whose dates overlap today to today + 14; mapped to an active, patient-bookable, not internal-only service offered at that clinic (`location_id` null or this clinic); the clinic active | `apps/api/lib/appointments/store.ts:867-886` (`listBookableTherapists`), `:299-309` (the mapping), `:418-425` and `:433-435` (the catalogue's services), `booking.ts:419` (`OPEN_SLOTS_HORIZON_DAYS = 14`), all on `main` |
 
-Every table is read at its own tenant, as the application's tenant-scoped reads see it: a membership row whose location belongs to another tenant is not a membership.
+Every table is read at its own tenant, as the application's tenant-scoped reads see it: a row whose clinic, service or person belongs to another tenant is invisible to the reads that would use it, so every join between two tables in the read also requires the same `tenant_id` (a membership row whose location belongs to another tenant is not a membership; a schedule row at another tenant's clinic does not make the switch refuse; a mapping to another tenant's service does not put anyone on the portal).
 
 ## THE VERDICTS, AND WHAT EACH EXPECTS
 
@@ -39,7 +39,7 @@ A PASS is **10 OK / 0 REVIEW / 0 VACUOUS / 0 FAIL**. A zero is never a pass: a v
 | 0 | the transaction is READ ONLY | `on` | never | anything else |
 | 1 | tenants | at least 1 | none | never |
 | 2 | active clinics, every tenant | at least 1 | none | never |
-| 3 | active clinics whose `closes_at` is not after `opens_at` (the default would generate nothing there) | 0 of at least 1 | no active clinic | any |
+| 3 | active clinics whose `closes_at` is not after `opens_at` in whole minutes (the default would generate nothing there) | 0 of at least 1 | no active clinic | any |
 | 4 | active clinics whose midday closure is half set, not ordered, or outside the clinic's hours | 0 of at least 1 | no active clinic | any |
 | 5 | the column `locations.saturday_closes_at`, by `information_schema` and by `pg_attribute` | `absent` (OK). `present` reads REVIEW: #1682 has been applied, the Saturday hours in rows 40 apply to the default, and SOLO reads them | never | the two probes disagree, or there is no `locations` table |
 | 6 | eligible therapists, every tenant | at least 1 | none | never |
@@ -84,6 +84,13 @@ A clinic row is labelled `tenant <n> / <clinic name>`, with ` (archived)` for a 
 - **The day.** "In force" is measured from the read's own Lisbon date. A row whose `valid_until` is today counts as in force, as in the resolver.
 - **Saturday.** When the column exists, row 40 prints its value; this read does not judge it. Verdict 5 reads REVIEW so a person looks.
 
+## R4 round 1 (2026-10-31, on `b85bfc2b`): SHIP AFTER FIXES, no MAJOR, and what changed
+
+- M1: the mutant count was 51, not 52; this document and the pull request said 52. Corrected (see "Rehearsal").
+- M2: two tenant conditions survived mutation (`sv.tenant_id = ts.tenant_id`, `rl.tenant_id = o3.tenant_id`). The base seed now has cross-tenant rows, and the test sweeps every tenant condition mechanically: both are killed, and the three that survive are equivalent and listed. Rows 44 and 45 now also require the schedule row's tenant to be the clinic's.
+- M3: the block STOPs before the target guard when the environment file sets no `DATABASE_URL_DIRECT` (an empty value would send psql to its local defaults). The fault-injection test covers a missing and an empty value, and proves neither the guard nor psql runs.
+- M4: verdict 3 compares in whole minutes, as `timeToMinutes` does. A new case (08:00:00 to 08:00:30) reads FAIL, and a mutant without the truncation is killed by it.
+
 ## THE HALT RULE
 
 Any STOP line ends the block: nothing after it is pasted or run again, and GREEN reports the output as printed. A REFUSE line from the target guard, and any harness or classifier refusal, is a STOP. **Nothing in this block writes to production, so no STOP leaves anything changed there.** A VACUOUS or FAIL verdict stops the block after the table is written: GREEN reports the printed lines, and SOLO reads the file.
@@ -92,7 +99,7 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-hor-default-20261031.sql`, sha256 `7f8285b65dedee02c22f117dc63c953bb3882a044af19b0311c7fb2279720944` |
+| The read | `scripts/db/read-hor-default-20261031.sql`, sha256 `93f52a2d17c7f9c0fd5d142c20d2b667d5f7f3f3d8bf984ec07c3399ebaa0bc6` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes the shadow-compare documents pin) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-hor-default-20261031.sha256` pins it |
@@ -116,7 +123,7 @@ set -o pipefail
 PRHEAD=PENDING
 DOCSHA=PENDING
 PRNUM=1686
-SHAREAD=7f8285b65dedee02c22f117dc63c953bb3882a044af19b0311c7fb2279720944
+SHAREAD=93f52a2d17c7f9c0fd5d142c20d2b667d5f7f3f3d8bf984ec07c3399ebaa0bc6
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-hor-default-20261031.sql
@@ -153,6 +160,7 @@ M=$(shasum -a 256 scripts/production-target.mjs | cut -d' ' -f1) || { echo "STOP
 echo "module:      ${M}"
 [ "${M}" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the approved file. Nothing was read"; exit 1; }
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport || { echo "STOP: the production environment file could not be loaded. Nothing was read"; exit 1; }
+[ -n "${DATABASE_URL_DIRECT}" ] || { echo "STOP: the production environment file set no DATABASE_URL_DIRECT, and an empty one would send psql to its local defaults. Nothing was read"; exit 1; }
 node scripts/assert-production-target.mjs || { echo "STOP: the target guard refused or failed (its lines are above). Nothing was read"; exit 1; }
 rm -f ${OUT} || { echo "STOP: the old transcript could not be removed. Nothing was read"; exit 1; }
 psql "${DATABASE_URL_DIRECT}" -X -v ON_ERROR_STOP=1 -P pager=off -c "begin read only" -c "set local statement_timeout = '120s'" -c "select 'read only: ' || current_setting('transaction_read_only') as hor_read_transaction" -f ${READFILE} -c "rollback" > ${OUT} 2>&1 || { echo "STOP: the read did not complete (an error, or longer than 120 seconds; psql's lines are in ${OUT}), or its transcript could not be written. Nothing was written: the transaction is read only"; exit 1; }
@@ -179,7 +187,7 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly: `set transaction read only; set local statement_timeout = '120s';`
 3. Below it, paste the whole of `scripts/db/read-hor-default-20261031.sql`. To copy it exactly, once a clone holds the pull request's head, type this in Claude Code. It copies the file only if it is the reviewed one, and otherwise prints a STOP and copies nothing:
-   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-hor-default-20261031.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "7f8285b65dedee02c22f117dc63c953bb3882a044af19b0311c7fb2279720944" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! F=/Users/ivan/Projects/GitHub/osteojp-solo-clone/scripts/db/read-hor-default-20261031.sql; [ "$(shasum -a 256 "$F" | cut -d' ' -f1)" = "93f52a2d17c7f9c0fd5d142c20d2b667d5f7f3f3d8bf984ec07c3399ebaa0bc6" ] && pbcopy < "$F" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run. EXPECT one table. Row 0 must read `on` and `OK`: if it does not, stop and send a screenshot, nothing else. Rows 1 to 9 must read `OK` (row 5 may read `REVIEW` once #1682 is applied, and that is not a pass).
 5. Send the whole table to SOLO privately (counts and clinic names; no person). Do not post it anywhere public.
 
@@ -189,15 +197,16 @@ The editor runs the text as one transaction, so the first line makes the server 
 
 2026-10-31, throwaway databases on the local stack, lane blue (127.0.0.1:54622), synthetic rows only. The lane was already up; it was not reset. The test copies the lane's `public` schema with `pg_dump --schema-only` into a throwaway base database, seeds it, makes one throwaway per case from that base, and drops them all at the end. The read ran as the block runs it (`begin read only`, 120 seconds, `rollback`) with ONE substitution: its single clock line `select now() as t1` replaced by a fixed instant, 2026-10-31 10:00 Lisbon unless the case says otherwise. The test (`HOR_READ_TEST_PGURL` set to the lane) refuses any host but 127.0.0.1 or localhost.
 
-**The seed.** Two synthetic tenants. Tenant 1 has clinics LV (08:00 to 21:00), CB (08:00 to 20:00, midday 13:00 to 14:00) and ARQ (archived), and five services (one for every clinic, one for CB only, one internal-only, one switched off, one not patient-bookable). Tenant 2 has clinic BL. 23 synthetic users, each built to one rule: no rows at one clinic, at two, at an archived one only, at none; only expired rows (with and without a clinic); only a switched-off row; rows in force at a clinic they belong to, ending today, starting inside and after the portal's 14 days, at a clinic they do not belong to, at the archived clinic; an expired row at another clinic beside rows in force; portal mappings that do and do not count; NESA with and without rows; NESA not bookable; not bookable; inactive; and in tenant 2 a membership row pointing at tenant 1's clinic.
+**The seed.** Two synthetic tenants. Tenant 1 has clinics LV (08:00 to 21:00), CB (08:00 to 20:00, midday 13:00 to 14:00) and ARQ (archived), and five services (one for every clinic, one for CB only, one internal-only, one switched off, one not patient-bookable). Tenant 2 has clinic BL and one service. 26 synthetic users, each built to one rule: no rows at one clinic, at two, at an archived one only, at none; only expired rows (with and without a clinic); only a switched-off row; rows in force at a clinic they belong to, ending today, starting inside and after the portal's 14 days, at a clinic they do not belong to, at the archived clinic; an expired row at another clinic beside rows in force; portal mappings that do and do not count; NESA with and without rows; NESA not bookable; not bookable; inactive; and in tenant 2 a membership row pointing at tenant 1's clinic. **Cross-tenant rows** (R4 round 1): a schedule row of tenant 1 at tenant 2's clinic; schedule rows, membership rows and service mappings that carry the other tenant's id; a mapping to tenant 2's service under each tenant's id; a tenant 2 person with a schedule row and a mapping at tenant 1. None of them moves a count: the application never sees them.
 
 | Case | Seeded | Verdicts | Counts asserted |
 |---|---|---|---|
-| base | the seed | 10 OK | every row 21 to 47 exactly, and row 50: `eligible=18 own=9 switch_runs=7 switch_refuses=2 zero_in_force=9 clinics_0=4 clinics_1=4 clinics_2plus=1 get_default=5 expired_only=2 expired_only_get_default=1 no_active_row=7 portal_visible=4`. Per clinic (41 to 47): LV 12, 4, 1, 6, 0, 2, 2; CB 2, 1, 0, 2, 1, 0, 2; ARQ (archived) 0, 0, 0, 1, 1, 0, 0; BL 1, 1, 0, 0, 0, 0, 0 |
+| base | the seed | 10 OK | every row 21 to 47 exactly, and row 50: `eligible=21 own=10 switch_runs=8 switch_refuses=2 zero_in_force=11 clinics_0=5 clinics_1=5 clinics_2plus=1 get_default=6 expired_only=2 expired_only_get_default=1 no_active_row=9 portal_visible=4`. Per clinic (41 to 47): LV 14, 5, 1, 7, 0, 2, 2; CB 2, 1, 0, 2, 1, 0, 2; ARQ (archived) 0, 0, 0, 1, 1, 0, 0; BL 1, 1, 0, 0, 0, 0, 0 |
 | empty | no tenant at all | 1, 2, 3, 4, 6, 7, 8, 9 VACUOUS; 0 and 5 OK | row 50 all zero |
-| nobody eligible | every user not bookable | 6, 7, 8, 9 VACUOUS | row 32: `0, 20, 1` and `0, 2, 0` |
-| no active clinic | every clinic archived | 2, 3, 4, 8, 9 VACUOUS; 7 OK | tenant 1: all 9 with rows in force refused, all 7 without rows at 0 clinics |
+| nobody eligible | every user not bookable | 6, 7, 8, 9 VACUOUS | row 32: `0, 22, 1` and `0, 3, 0` |
+| no active clinic | every clinic archived | 2, 3, 4, 8, 9 VACUOUS; 7 OK | tenant 1: all 10 with rows in force refused, all 8 without rows at 0 clinics |
 | closes when it opens | LV `closes_at = opens_at` (its CHECK dropped in the throwaway) | 3 FAIL | `1 of 3` |
+| closes 30 seconds after it opens (R4 round 1) | LV 08:00:00 to 08:00:30 (its CHECK holds) | 3 FAIL | `1 of 3`: the same minute generates nothing |
 | midday half set | CB `midday_closed_to` null (CHECK dropped) | 4 FAIL | |
 | midday outside the hours | CB 07:00 to 08:30 (CHECK dropped) | 4 FAIL | |
 | midday not ordered | CB 14:00 to 13:00 (CHECK dropped) | 4 FAIL | |
@@ -205,7 +214,11 @@ The editor runs the text as one transaction, so the first line makes the server 
 | Saturday column added and dropped | added, then dropped | 10 OK | every base count; `absent` (a dropped column is renamed in `pg_attribute`) |
 | Lisbon date | clock 2026-08-16 00:30 WEST (23:30 UTC the day before), a row ending 2026-08-15 | 10 OK | row 20 `2026-08-16 00:30, today 2026-08-16`; row 29 for tenant 1 reads 1 |
 
-**The mutation sweep** (one sweep, every predicate once, mechanically). 52 mutants, each a single text change to the read that must occur exactly once in it, each run against all 11 cases: **52 killed, 0 survivors.** They cover: "in force" (today counts, an open row counts, active rows only, the Lisbon date); eligible (active, bookable, not NESA, each alone); membership (active clinic, same tenant); the switch's refusal (rows in force only, membership of that clinic, archived clinics included); the 0, 1 and 2-or-more buckets; who gets the default; expired-only and its clinic condition; no active row; the context counts; every portal predicate (horizon, not expired, not NESA, bookable, active user, active clinic, active template, template at this clinic, the therapist's own mapping, active service, not internal, patient-bookable, service at this clinic); every per-clinic count; the recount's two conditions; verdict 3's strict order; verdict 4's three conditions; verdict 5's two probes and its REVIEW. The test lists which case killed each mutant. Two controls were run once by hand and both failed as they should: a wrong expected count (41 at LV set to 13) and a mutant that changes only a comment (listed as a survivor).
+**The mutation sweep** (one sweep, mechanical), each mutant run against all 12 cases.
+
+- **51 named mutants**, each a single text change that must occur exactly once in the read: **51 killed.** They cover: "in force" (today counts, an open row counts, active rows only, the Lisbon date); eligible (active, bookable, not NESA, each alone); membership (active clinic); the switch's refusal (rows in force only, membership of that clinic, archived clinics included); the 0, 1 and 2-or-more buckets; who gets the default; expired-only and its clinic condition; no active row; the context counts; every portal predicate (horizon, not expired, not NESA, bookable, active user, active clinic, active template, template at this clinic, the therapist's own mapping, active service, not internal, patient-bookable, service at this clinic); every per-clinic count; the recount's two conditions; verdict 3's strict order and its whole minutes; verdict 4's three conditions; verdict 5's two probes and its REVIEW.
+- **The tenant sweep**: every `a.tenant_id = b.tenant_id` condition in the read, found by the test with a pattern and replaced by `true` one at a time: **27 conditions, 24 killed, 3 survivors.** The three survivors are equivalent mutants, listed in the test with their reasons, and the test fails if the survivors are ever any other set: `m2.tenant_id = o3.tenant_id` (a membership row's tenant is its clinic's, and so is the schedule row's, so at one clinic they always agree), `cm.tenant_id = co.tenant_id` (the same, in row 45), and `pf.tenant_id = pv.tenant_id` (a portal row carries its user's own tenant, and a user id is unique across tenants).
+- So: 78 mutants, 75 killed, 3 equivalent survivors. **Not every expression is mutated on its own**: the conditions each count row combines from the flags above (for example `f.eligible and f.in_force` in row 22, or `not f.outside_membership` in row 23) are not each mutated; the exact base counts of rows 21 to 47 pin them. The test lists which case killed each mutant. Two controls were run once by hand (on the first version, `b85bfc2b`) and both failed as they should: a wrong expected count (41 at LV set to 13) and a mutant that changes only a comment (listed as a survivor).
 
 **What no case can reach, said plainly.** Verdicts 7, 8 and 9 compare the read with itself; on consistent data they cannot FAIL. Their FAIL arms are shown reachable by mutants of the other side (the recount, the per-clinic member count, the portal's expiry and template predicates each turn them FAIL), not by data. A mutant that disables one of those three comparisons would survive every case, so none is in the sweep.
 

@@ -27,7 +27,9 @@
 --              eligible means the clinic's hours at every ACTIVE clinic they are a member of.
 --   member     a staff_locations row at an ACTIVE location (effective-availability.ts:140-161
 --              readMemberClinics; clinic-default-schedule.ts:55-59). Each table is read at its
---              own tenant, as the application's tenant-scoped reads see it.
+--              own tenant, as the application's tenant-scoped reads see it: a row whose clinic
+--              or service belongs to another tenant is invisible to that tenant's reads, so
+--              every join between two tables also requires the same tenant_id.
 --   the switch "Usar horario da clinica" (effective-availability-core.ts:171-184
 --              clinicDefaultSwitchVerdict, fed by clinic-default-schedule.ts:37-89): for an
 --              eligible therapist with rows in force, it refuses (`not_member`) when any clinic
@@ -35,7 +37,7 @@
 --              is not an active clinic they are a member of.
 --   hours      locations.opens_at and closes_at, Monday to Friday
 --              (effective-availability-core.ts:73-95; it generates nothing unless closes_at is
---              after opens_at). The midday closure (midday_closed_from, midday_closed_to) stays
+--              after opens_at, compared in whole minutes by availability.ts:95-98 timeToMinutes). The midday closure (midday_closed_from, midday_closed_to) stays
 --              its own rule and is printed for reference.
 --   Saturday   locations.saturday_closes_at does not exist yet (#1682, held). It is PROBED, never
 --              named as a column: information_schema and pg_attribute for whether it exists, and
@@ -62,7 +64,8 @@
 --    0  the transaction is READ ONLY
 --    1  at least one tenant
 --    2  at least one active clinic
---    3  every active clinic closes after it opens
+--    3  every active clinic closes after it opens, at minute precision (timeToMinutes reads
+--       hours and minutes only)
 --    4  every active clinic's midday closure is both or neither, ordered, inside its hours
 --    5  the Saturday column: absent (OK), present (REVIEW), probes disagree (FAIL)
 --    6  at least one eligible therapist
@@ -215,9 +218,9 @@ ccount as (
          (select count(*) from member cm join fact cf on cf.tenant_id = cm.tenant_id and cf.user_id = cm.user_id
            where cm.location_id = c.location_id and cf.eligible and not cf.in_force and cf.has_active_rows) as expired_here,
          (select count(distinct co.user_id) from own co join fact cf on cf.tenant_id = co.tenant_id and cf.user_id = co.user_id
-           where co.location_id = c.location_id and co.in_force and cf.eligible) as own_here,
+           where co.location_id = c.location_id and co.tenant_id = c.tenant_id and co.in_force and cf.eligible) as own_here,
          (select count(distinct co.user_id) from own co join fact cf on cf.tenant_id = co.tenant_id and cf.user_id = co.user_id
-           where co.location_id = c.location_id and co.in_force and cf.eligible
+           where co.location_id = c.location_id and co.tenant_id = c.tenant_id and co.in_force and cf.eligible
              and not exists (select 1 from member cm where cm.tenant_id = co.tenant_id and cm.user_id = co.user_id
                                 and cm.location_id = co.location_id)) as refused_here,
          (select count(*) from member cm join fact cf on cf.tenant_id = cm.tenant_id and cf.user_id = cm.user_id
@@ -269,11 +272,11 @@ select n, "check", observed, expected, verdict from (
   union all
   select 3,
          'active clinics whose closes_at is not after opens_at (the default generates nothing there)',
-         (count(*) filter (where is_active and not (opens_at < closes_at)))::text || ' of '
+         (count(*) filter (where is_active and not (date_trunc('minute', opens_at::interval) < date_trunc('minute', closes_at::interval))))::text || ' of '
            || (count(*) filter (where is_active))::text,
          '0 of at least 1',
          case when count(*) filter (where is_active) = 0 then 'VACUOUS'
-              when count(*) filter (where is_active and not (opens_at < closes_at)) > 0 then 'FAIL'
+              when count(*) filter (where is_active and not (date_trunc('minute', opens_at::interval) < date_trunc('minute', closes_at::interval))) > 0 then 'FAIL'
               else 'OK' end
     from clinic
   union all
