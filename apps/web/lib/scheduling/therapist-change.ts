@@ -38,6 +38,18 @@ export function offersTherapistChange(role: Role, canEditAppointments: boolean):
 }
 
 /**
+ * APPT-EDIT-01: the ficha's Reagendar opens the agenda's edit panel. For a
+ * THERAPIST viewer it locks the Terapeuta to the row's own, for the reason
+ * `offersTherapistChange` gives: whether a therapist may hand a visit to a
+ * colleague from the ficha is an open question, and before the edit panel the
+ * ficha's Reagendar always sent the row's own practitioner. Date, hour and
+ * clinic stay editable. (The agenda's own panel is not changed here.)
+ */
+export function locksFichaPractitioner(role: Role): boolean {
+  return role === "therapist";
+}
+
+/**
  * The Terapeuta options for one row: the agenda edit panel's list for the row's
  * own clinic, the current Terapeuta always among them (STAFF-01), and the row's
  * Terapeuta 2 left out, because this field cannot move the second slot and one

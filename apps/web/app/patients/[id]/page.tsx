@@ -802,6 +802,13 @@ export default async function PatientProfilePage({
             ownCancelIds={ownCancelIds}
             filtered={marcacoesFiltered}
             therapistStaff={canChangeAppointmentTherapist ? consultasOptions : null}
+            // APPT-EDIT-01: Reagendar opens the agenda's edit panel, which reads
+            // the same reference data the agenda gives it.
+            editDrawer={{
+              options: consultasOptions,
+              viewer: { role: ctx.role, userId: ctx.userId },
+              canHardDelete,
+            }}
           />
         </div>
       )}

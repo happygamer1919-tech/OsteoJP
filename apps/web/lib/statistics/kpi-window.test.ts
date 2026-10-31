@@ -24,9 +24,13 @@ describe("PERF-06 - the KPI window has a floor", () => {
   });
 
   it("handles a month-end origin without rolling into the wrong month", () => {
-    // 2026-03-31 minus 12 months is 2025-03-31, which exists. The guard is that
-    // the arithmetic is on UTC parts, so a local timezone cannot shift the day.
-    expect(defaultKpiFrom(new Date("2026-03-31T23:30:00Z"))).toBe("2025-03-31");
+    // 2026-03-31 minus 12 months is 2025-03-31, which exists. The arithmetic is
+    // on calendar parts, so the machine's own timezone cannot shift the day.
+    expect(defaultKpiFrom(new Date("2026-03-31T12:00:00Z"))).toBe("2025-03-31");
+    // R29: the day counted back from is the LISBON day. 23:30 UTC on 31 March
+    // is 00:30 on 1 April in Lisbon (summer time), so the window starts on
+    // 1 April 2025. Before R29 it read the UTC date and started on 31 March.
+    expect(defaultKpiFrom(new Date("2026-03-31T23:30:00Z"))).toBe("2025-04-01");
     expect(defaultKpiFrom(new Date("2026-01-01T00:00:00Z"))).toBe("2025-01-01");
   });
 
@@ -56,6 +60,9 @@ describe("PERF-06 - the KPI window has a floor", () => {
     // Without this the picker would render blank while the query used a
     // 12-month window - a screen lying about its own scope.
     expect(src).toContain("defaultKpiFrom");
-    expect(src).toMatch(/firstParam\(sp\.from\)\s*\?\?\s*defaultKpiFrom/);
+    // R29 review: a from the queries reject falls back to the same default, so
+    // the picker never shows a date that was not queried.
+    expect(src).toMatch(/from:\s*isYmd\(rawFrom\)\s*\?\s*rawFrom\s*:\s*defaultKpiFrom/);
+    expect(src).toMatch(/to:\s*isYmd\(rawTo\)\s*\?\s*rawTo\s*:\s*null/);
   });
 });

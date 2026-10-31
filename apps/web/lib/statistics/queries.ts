@@ -11,6 +11,7 @@ import { assertCan } from "@osteojp/auth";
 import { appointments, invoices, locations, services, users } from "@osteojp/db";
 import { requireRequestContext, runScoped, type RequestContext } from "../auth/context";
 import { viewerLocationScope } from "../auth/viewer-locations";
+import { lisbonDayBounds } from "./day-bounds";
 
 export type StatisticsFilters = {
   /** Inclusive YYYY-MM-DD bounds (Europe/Lisbon civil day); optional. */
@@ -36,19 +37,6 @@ export type StatisticsResult = {
   appointmentsByStatus: { status: string; count: number }[];
 };
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** [from 00:00, to+1 00:00) UTC-ish day bounds from YYYY-MM-DD (null when unset). */
-function dayBounds(from?: string | null, to?: string | null): { start: Date | null; end: Date | null } {
-  const start = from && DATE_RE.test(from) ? new Date(`${from}T00:00:00.000Z`) : null;
-  let end: Date | null = null;
-  if (to && DATE_RE.test(to)) {
-    end = new Date(`${to}T00:00:00.000Z`);
-    end.setUTCDate(end.getUTCDate() + 1);
-  }
-  return { start, end };
-}
-
 const REVENUE_STATUSES = ["issued", "paid"] as const;
 
 /**
@@ -65,7 +53,8 @@ export async function getStatistics(
   const ctx = actorInput ?? (await requireRequestContext());
   assertCan(ctx.role, "statistics:read");
 
-  const { start, end } = dayBounds(filters.from, filters.to);
+  // R29: [00:00 Lisbon on `from`, 00:00 Lisbon on the day after `to`), not UTC.
+  const { start, end } = lisbonDayBounds(filters.from, filters.to);
   // PL-09 Phase 3: admin sees statistics ONLY for their location(s); owner is
   // all-locations (viewerLocationScope -> null). Every query below joins/reads
   // appointments, so one condition on appointments.location_id scopes them all.
@@ -136,7 +125,8 @@ export async function getStatistics(
       .groupBy(appointments.locationId, locations.name)
       .orderBy(desc(centsExpr));
 
-    const monthExpr = sql<string>`to_char(date_trunc('month', ${invoices.issuedAt}), 'YYYY-MM')`;
+    // R29: the month an invoice falls in is its Lisbon month, not its UTC month.
+    const monthExpr = sql<string>`to_char(${invoices.issuedAt} AT TIME ZONE 'Europe/Lisbon', 'YYYY-MM')`;
     const byMonth = await tx
       .select({ period: monthExpr, valueCents: centsExpr, count: count() })
       .from(invoices)
