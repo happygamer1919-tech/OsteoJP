@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTherapistSelfLocked, shouldPreselectPrimaryService } from "./self-lock-core";
+import { editPractitionerId, isTherapistSelfLocked, shouldPreselectPrimaryService } from "./self-lock-core";
 
 // PL-10 — pure decision helpers for the create-form therapist self-lock. The
 // component render test (appointment-drawer.test.tsx) proves the STATIC markup
@@ -42,5 +42,16 @@ describe("shouldPreselectPrimaryService (PL-10)", () => {
 
   it("still preselects after a manual Terapeuta change (unchanged path)", () => {
     expect(shouldPreselectPrimaryService(true, false)).toBe(true);
+  });
+});
+
+describe("APPT-EDIT-01: editPractitionerId, the Terapeuta an edit saves", () => {
+  it("locked: the row's own, whatever the form holds", () => {
+    expect(editPractitionerId({ locked: true, editingPractitionerId: "own", formPractitionerId: "colleague" })).toBe("own");
+  });
+  it("not locked: the form's choice", () => {
+    expect(editPractitionerId({ locked: false, editingPractitionerId: "own", formPractitionerId: "colleague" })).toBe(
+      "colleague",
+    );
   });
 });

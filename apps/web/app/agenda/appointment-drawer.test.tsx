@@ -239,6 +239,76 @@ describe("AppointmentDrawer W6-03: locked patient on deep-link create", () => {
   });
 });
 
+// APPT-EDIT-01: the ficha passes lockPractitioner for a therapist viewer. The
+// Terapeuta is the row's own, read-only, with no select to change it; the
+// save sends that id (editPractitionerId, self-lock-core.test.ts).
+describe("AppointmentDrawer APPT-EDIT-01: lockPractitioner on an edit", () => {
+  const THERAPIST: Viewer = { role: "therapist", userId: "therapist-1" };
+  const withColleague: AgendaOptions = {
+    ...options,
+    therapists: [
+      { id: "therapist-1", label: "Dr. Costa" },
+      { id: "therapist-2", label: "Dra. Colega" },
+    ],
+  };
+  const renderLocked = (lockPractitioner: boolean) =>
+    renderToStaticMarkup(
+      createElement(AppointmentDrawer, {
+        state: { mode: "edit", appt: editAppt },
+        options: withColleague,
+        anchor: "2026-08-06",
+        canHardDelete: false,
+        viewer: THERAPIST,
+        lockPractitioner,
+        onClose: vi.fn(),
+        onDone: vi.fn(),
+      }),
+    );
+
+  it("locked: the row's own Terapeuta, read-only, and no colleague offered", () => {
+    const html = renderLocked(true);
+    const at = html.indexOf('data-testid="drawer-therapist-readonly"');
+    expect(at).toBeGreaterThan(-1);
+    const field = html.slice(at, html.indexOf("</div>", at));
+    expect(field).toContain('data-practitioner-id="therapist-1"');
+    expect(field).toContain("Dr. Costa");
+    expect(html).not.toContain(">Dra. Colega<");
+  });
+
+  it("not locked (the agenda, unchanged): the therapist list is offered as before", () => {
+    const html = renderLocked(false);
+    expect(html).not.toContain('data-testid="drawer-therapist-readonly"');
+    expect(html).toContain(">Dra. Colega<");
+  });
+});
+
+// APPT-EDIT-01: no save path of an edit carries the patient
+// (rescheduleAppointment and updateAppointment take none), so an editable
+// patient field on an edit was a value dropped in silence. An edit shows its
+// patient read-only, as the deep-linked create does.
+describe("AppointmentDrawer APPT-EDIT-01: the patient is read-only on an edit", () => {
+  const readonly = (html: string) => {
+    const at = html.indexOf('data-testid="drawer-patient-readonly"');
+    return at === -1 ? null : html.slice(at, html.indexOf("</div>", at));
+  };
+
+  it("an edit renders its own patient read-only, with the same label the grid uses", () => {
+    const field = readonly(render({ mode: "edit", appt: editAppt }));
+    expect(field).not.toBeNull();
+    expect(field).toContain("Ana Silva");
+  });
+
+  it("a withheld patient on an edit reads as reserved, never as a name", () => {
+    const field = readonly(render({ mode: "edit", appt: { ...editAppt, patientName: null } }));
+    expect(field).not.toBeNull();
+    expect(field).not.toContain("Ana Silva");
+  });
+
+  it("a normal create keeps the search field", () => {
+    expect(readonly(render({ mode: "create" }))).toBeNull();
+  });
+});
+
 describe("AppointmentDrawer - created-by / created-at provenance (W9-06 item 10)", () => {
   it("shows the creator name + created-at on the edit detail when created by staff", () => {
     const html = render({

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { bookingStaffOptions } from "./booking-staff-options";
 import {
+  locksFichaPractitioner,
   offersTherapistChange,
   therapistChangeInput,
   therapistChangeOptions,
@@ -124,5 +125,14 @@ describe("what is sent", () => {
     const sent = therapistChangeInput({ ...row, startsAt: "2031-05-14T15:00:00+01:00", endsAt: "2031-05-14T15:45:00+01:00" }, bruno.id);
     expect(sent.startsAt).toBe("2031-05-14T14:00:00.000Z");
     expect(sent.endsAt).toBe("2031-05-14T14:45:00.000Z");
+  });
+});
+
+describe("APPT-EDIT-01: the ficha's edit panel locks the Terapeuta for a therapist", () => {
+  it("a therapist: locked", () => {
+    expect(locksFichaPractitioner("therapist")).toBe(true);
+  });
+  it.each(["owner", "admin", "reception"] as const)("%s: not locked", (role) => {
+    expect(locksFichaPractitioner(role)).toBe(false);
   });
 });

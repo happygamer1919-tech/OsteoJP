@@ -25,13 +25,14 @@
  *   - "E2E Terapeuta Clinica Unica" works Monday 09:00 to 13:00 at
  *     Linda-a-Velha (ensureLocationFixtures), so a Monday 15:00 is outside.
  *
- * DAY BANDS 181, 183 to 189 and 191 are this file's own (the highest offset any
- * other spec uses is 170). 183 to 189 is one test: it books on the first Monday
- * at or after 183. Each retry moves 100 days on, as marcacoes-tab-edit does,
+ * DAY BANDS 181, 183 to 189, 191, 193 to 199, 203 to 209 and 211 are this
+ * file's own (the highest offset any other spec uses is 170). 183 to 189, 193 to 199
+ * and 203 to 209 are one test each: each books on the first Monday at or after
+ * its start. Each retry moves 100 days on, as marcacoes-tab-edit does,
  * because these tests leave real rows behind.
  */
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { openNewAppointment, fillAppointment } from "./helpers";
+import { openNewAppointment, fillAppointment, fillTime } from "./helpers";
 import {
   LOCATION,
   PATIENTS,
@@ -215,4 +216,124 @@ test("a therapist with a conflict is refused with the agenda's conflict list, an
 
   await openMarcacoes(page);
   await expect(row(page, date, "15:00").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);
+});
+
+/**
+ * APPT-EDIT-01 - the clinic manager's case: a new therapist AND a new hour, in
+ * ONE save from the ficha.
+ *
+ * A booking with "E2E Therapist" in the afternoon cannot go to "E2E Terapeuta
+ * Clinica Unica" at the same hour (she works Monday 09:00-13:00, the G2 test
+ * above), and the old date-and-hour panel kept the old therapist, so the move
+ * was two saves, each refused alone. Reagendar now opens the agenda's edit panel, where both
+ * change together and the hours are checked against the NEW therapist.
+ *
+ * DAY BAND 193 to 199 is this test's own: it books on the first Monday at or
+ * after 193. Its hours, 16:30 and 11:15, and the next test's, 17:30, are used by
+ * no other test in this file, so two runs on a lane database that keeps its rows do not
+ * meet on one row.
+ */
+test("Reagendar changes the therapist and the hour together, checked against the new therapist (APPT-EDIT-01)", async ({
+  page,
+}, testInfo) => {
+  const date = bandMonday(193, testInfo.retry);
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "16:30" });
+
+  await openMarcacoes(page);
+  const r = row(page, date, "16:30");
+  await r.getByText("Gerir marcação").click();
+  await r.getByRole("button", { name: "Reagendar", exact: true }).click();
+
+  const drawer = page.getByRole("dialog");
+  await expect(drawer).toBeVisible();
+  // The patient is shown, read-only: an edit never changes it.
+  await expect(drawer.getByTestId("drawer-patient-readonly")).toContainText(PATIENT.name);
+  await expect(drawer.getByRole("combobox", { name: /Paciente/i })).toHaveCount(0);
+
+  await drawer.getByRole("combobox", { name: "Terapeuta", exact: true }).selectOption({ label: THERAPIST_ONE_LOCATION });
+  await fillTime(drawer, "11:15");
+  await drawer.getByRole("button", { name: SAVE, exact: true }).click();
+
+  await expect(drawer).toBeHidden({ timeout: 12_000 });
+  // A fresh read: the row moved to 11:15 and names the new therapist.
+  await openMarcacoes(page);
+  const after = row(page, date, "11:15");
+  await expect(after).toHaveCount(1, { timeout: 8_000 });
+  await expect(after.getByTestId("marcacao-therapist")).toContainText(THERAPIST_ONE_LOCATION);
+  await expect(row(page, date, "16:30")).toHaveCount(0);
+});
+
+test("Reagendar shows the real refusal: the new therapist outside her hours is named, not a generic error (APPT-EDIT-01)", async ({
+  page,
+}, testInfo) => {
+  const date = bandMonday(203, testInfo.retry);
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "17:30" });
+
+  await openMarcacoes(page);
+  const r = row(page, date, "17:30");
+  await r.getByText("Gerir marcação").click();
+  await r.getByRole("button", { name: "Reagendar", exact: true }).click();
+
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("combobox", { name: "Terapeuta", exact: true }).selectOption({ label: THERAPIST_ONE_LOCATION });
+  await fillTime(drawer, "16:00");
+  await drawer.getByRole("button", { name: SAVE, exact: true }).click();
+
+  await expect(
+    drawer.getByText(
+      "Fora do horário do terapeuta nesse dia. Horário nesse dia: 09:00-13:00. " +
+        "Para marcar fora deste horário, altere primeiro a disponibilidade do terapeuta em Horários.",
+    ),
+  ).toBeVisible({ timeout: 8_000 });
+  await expect(drawer.getByText("Ocorreu um erro. Tente novamente.")).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+
+  // Nothing was written.
+  await openMarcacoes(page);
+  await expect(row(page, date, "17:30").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME);
+});
+
+/**
+ * APPT-EDIT-01 - a THERAPIST on the ficha moves a visit in time, never to a
+ * colleague. The visit is booked by reception with "E2E Therapist" (the
+ * therapist login), so it is theirs; on the ficha, signed in as that
+ * therapist, Reagendar shows the Terapeuta read-only and the save keeps it.
+ * The agenda's own panel is not changed by this.
+ *
+ * DAY BAND 211 is this test's own; 17:15 and 18:15 are hours no other test
+ * in this file uses.
+ */
+test("a therapist's Reagendar on the ficha keeps the Terapeuta: read-only, and the save sends their own (APPT-EDIT-01)", async ({
+  page,
+  browser,
+}, testInfo) => {
+  const date = bandDay(211, testInfo.retry);
+  await book(page, { patient: PATIENT.name, therapist: THERAPIST_NAME, date, time: "17:15" });
+
+  const context = await browser.newContext({ storageState: STORAGE.therapist });
+  const tp = await context.newPage();
+  try {
+    await tp.goto(`/patients/${PATIENT.id}?tab=consultas`);
+    await expect(tp.getByRole("tabpanel", { name: /Marcações/i })).toBeVisible({ timeout: 8_000 });
+    const r = row(tp, date, "17:15");
+    await r.getByText("Gerir marcação").click();
+    await r.getByRole("button", { name: "Reagendar", exact: true }).click();
+
+    const drawer = tp.getByRole("dialog");
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByTestId("drawer-therapist-readonly")).toHaveText(THERAPIST_NAME);
+    await expect(drawer.getByRole("combobox", { name: "Terapeuta", exact: true })).toHaveCount(0);
+
+    await fillTime(drawer, "18:15");
+    await drawer.getByRole("button", { name: SAVE, exact: true }).click();
+    await expect(drawer).toBeHidden({ timeout: 12_000 });
+    await expect(tp.getByText("Marcação remarcada.")).toBeVisible({ timeout: 8_000 });
+
+    await tp.goto(`/patients/${PATIENT.id}?tab=consultas`);
+    await expect(row(tp, date, "18:15").getByTestId("marcacao-therapist")).toContainText(THERAPIST_NAME, {
+      timeout: 8_000,
+    });
+  } finally {
+    await context.close();
+  }
 });
