@@ -25,7 +25,7 @@
   "files": {
     ".env.example": "463dd0a4c495e522ec9ff8d695d2e580da3778188c8ff0d056367d63c430b584",
     ".github/scripts/assert-e2e-executed.mjs": "7406d30c857777d680a6f0888913c1e93ffdd288e91e230900f5c7e66de07fe4",
-    ".github/scripts/assert-rls-executed.mjs": "0e06a5a920e9e35e792c9db9bf2a1d85a7f14f5be1f28bbc03d8d8db6151d9ea",
+    ".github/scripts/assert-rls-executed.mjs": "334b18b3ea6e311f1c37784e5996034cbf2c7d36f644ada42aefbfb7dd5535cb",
     ".github/workflows/auto-update-prs.yml": "1f986aa41b47feccdd250e5e1f25ed442a978c485966bdd2517afc1a89e8a2e8",
     ".github/workflows/ci.yml": "56ca4e11b16209094ab3d7ae82dfcaf3a22ad59e2fcb5ca3918cd69df5b32ccd",
     ".github/workflows/db-tests.yml": "33900efba45c91ea1c5337378aecad322edea9c1e2e2626aade1e03d78f24bc0",
@@ -111,6 +111,7 @@
     "scripts/no-production-hosts-in-tests.test.mjs": "d3e0750f28b68a90b3890c7f2d67406103d82b598870b1a8bbae07bc71e3ca04",
     "scripts/obs-05-backfill-emit.test.mjs": "4004068875a0f56d4fd3149137fc0a672337e25114f359233ceeced9bb57e2a1",
     "scripts/owner-blocks-survive-zsh.test.mjs": "0a0d6e3446e0f14f0b77677bfb457864b14497b43ed6e6ca41b31813cf34396e",
+    "scripts/pack-instance-consuming-sessions-0108.test.mjs": "c15684cdee3af67b4436a3c821cdbacdd54fc024a36a9ab0000e54d842939c94",
     "scripts/pack-sessions-remaining-is-frozen.test.mjs": "be437f1f85e18076dcd6e3814275ea933161636d04bfe42efa56d3fc8cb56413",
     "scripts/perf-project-is-pinned.test.mjs": "02ea02d9624250362393e21c0541a4cd147514779fc775ef5dcaa184ecd7868c",
     "scripts/portal-frozen-locale-is-quarantined.test.mjs": "fff0f73ad106d9f74ea31fb9b4ac09c2c82568b2b0f8ccd12590b438bd93b27f",
