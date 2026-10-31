@@ -12,6 +12,7 @@ import { saveWeekSchedule } from "@/lib/admin/week-schedule";
 import { applyAlternatingWeeks } from "@/lib/admin/alternating-schedule";
 import { applyDayByDaySchedule } from "@/lib/admin/day-by-day-schedule";
 import { removeDayDefined } from "@/lib/admin/day-defined-remove";
+import { applyClinicDefaultSchedule } from "@/lib/admin/clinic-default-schedule";
 // formatCreatedAt is the existing pt-PT Lisbon "dd/mm/yyyy HH:mm" formatter;
 // reused rather than adding a second one that could format differently.
 import { formatCreatedAt } from "@/lib/scheduling/time";
@@ -122,6 +123,28 @@ export async function removeDayDefinedAction(input: {
   } catch (e) {
     return { ok: false, error: isAdminError(e) ? e.code : "generic" };
   }
+}
+
+/**
+ * HOR-01 - "Usar horario da clinica". Switches off (never deletes) every active
+ * Horarios row of one therapist, so the clinic's opening hours apply to them.
+ *
+ * The writer re-checks schedule:manage and the target's scope inside, so this
+ * wrapper adds no authority. The agenda is revalidated too, because it books
+ * against the same hours.
+ */
+export async function switchToClinicHoursAction(fd: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const userId = String(fd.get("userId") ?? "");
+  let code = "clinic_default";
+  try {
+    await applyClinicDefaultSchedule(actor, userId);
+  } catch (e) {
+    code = isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/horarios");
+  revalidatePath("/agenda");
+  redirect(`/horarios?m=${code}`);
 }
 
 /**

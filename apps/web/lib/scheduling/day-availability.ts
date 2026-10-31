@@ -1,9 +1,10 @@
 import "server-only";
 import { and, asc, eq, gt, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { RequestContext } from "@osteojp/auth";
-import { appointments, availabilityTemplates, locations, timeOff, type DbTx } from "@osteojp/db";
+import { appointments, locations, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { listSharedResourcesTx } from "./shared-resources";
+import { readEffectiveTemplates } from "./effective-availability";
 import { type AvailabilityTemplate } from "./availability";
 import { addDays, lisbonMidnightUtc } from "./time";
 import type { AppointmentStatusValue } from "./types";
@@ -87,16 +88,9 @@ export async function getTherapistAvailability(
       locationId ? readClinicHours(tx, locationId) : Promise.resolve(null),
     ]);
 
-    const templates: AvailabilityTemplate[] = templateRows.map((r) => ({
-      weekday: r.weekday,
-      startTime: r.startTime,
-      endTime: r.endTime,
-      validFrom: r.validFrom,
-      validUntil: r.validUntil,
-      isActive: true, // query already filters is_active = true
-      locationId: r.locationId,
-      id: r.id,
-    }));
+    // Own rows are read with is_active = true; generated rows are active by
+    // construction. `id` is present only on a real row.
+    const templates: AvailabilityTemplate[] = templateRows;
 
     return datesInRange(from, to).map((date) =>
       buildDay(date, templates, bookedRows, blockRows, clinicHours),
@@ -229,15 +223,7 @@ export async function listTherapistBlocksAndHours(
     ]);
     return {
       blocks,
-      templates: templateRows.map((r) => ({
-        weekday: r.weekday,
-        startTime: r.startTime,
-        endTime: r.endTime,
-        validFrom: r.validFrom,
-        validUntil: r.validUntil,
-        isActive: true, // query already filters is_active = true
-        locationId: r.locationId,
-      })),
+      templates: templateRows,
     };
   });
 }
@@ -263,31 +249,15 @@ async function readClinicHours(tx: DbTx, locationId: string): Promise<ClinicHour
   return row ?? null;
 }
 
+/**
+ * HOR-01: the therapist's EFFECTIVE rows, through the one staff-side resolver
+ * (effective-availability.ts): their own active rows, plus the clinic's opening
+ * hours at every member clinic where they have none. Nova marcacao, Agendar
+ * lote, the Horarios inspector and the agenda's off-hours band all read this.
+ */
 function readTemplateRows(
   tx: DbTx,
   args: { therapistId: string; locationId?: string | null },
-) {
-  const conds: SQL[] = [
-    eq(availabilityTemplates.userId, args.therapistId),
-    eq(availabilityTemplates.isActive, true),
-  ];
-  if (args.locationId) conds.push(eq(availabilityTemplates.locationId, args.locationId));
-  return tx
-    .select({
-      // SR-62 PU-3: the row id, so the inspector's Eliminar on a Dia definido
-      // names the row it removes. Selected always, for the reason given for
-      // locationId below.
-      id: availabilityTemplates.id,
-      weekday: availabilityTemplates.weekday,
-      startTime: availabilityTemplates.startTime,
-      endTime: availabilityTemplates.endTime,
-      validFrom: availabilityTemplates.validFrom,
-      validUntil: availabilityTemplates.validUntil,
-      // SCHED-09: the inspector names WHERE each window is worked. Selected
-      // always rather than conditionally - a column that appears only for one
-      // caller is a column the other caller silently reads as null.
-      locationId: availabilityTemplates.locationId,
-    })
-    .from(availabilityTemplates)
-    .where(and(...conds));
+): Promise<AvailabilityTemplate[]> {
+  return readEffectiveTemplates(tx, args);
 }

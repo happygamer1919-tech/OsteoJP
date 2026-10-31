@@ -54,6 +54,12 @@ export * from "./src/pack-balance";
 // disagree about whether NESA exists.
 export * from "./src/shared-resource";
 
+// HOR-01 - each clinic's Saturday closing time, read only once its held
+// migration exists on the database. Exported from the package for the reason
+// `shared-resource` above is: a presence check kept in two places is how two
+// readers come to disagree about whether the column exists.
+export * from "./src/location-saturday";
+
 // INTAKE-01 - whether 0087's guest_clinical_intakes table exists yet, and the
 // one write of an intake row. Exported from the package for the reason
 // `shared-resource` above is: the guest route and catalog (apps/api), the portal

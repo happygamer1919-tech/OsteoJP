@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, StatusBadge, useAnimatedDialog } from "@osteojp/ui";
+import { Button, StatusBadge, useAnimatedDialog, type ButtonVariant } from "@osteojp/ui";
 import { TimeFieldInput } from "@/components/time-field-input";
 import { DateFieldInput } from "@/components/date-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
@@ -119,6 +119,10 @@ export function TherapistBlocks({
     update: updateTimeOffBlockAction,
     remove: deleteTimeOffBlockAction,
   },
+  // HOR-01: once rows stop being required, a block is how a therapist becomes
+  // unavailable, so /horarios shows this as its first, filled button. Equipa
+  // keeps the quiet ghost button it had.
+  triggerVariant = "ghost",
 }: {
   therapistId: string;
   therapistName: string;
@@ -130,6 +134,7 @@ export function TherapistBlocks({
     update: (fd: FormData) => Promise<void>;
     remove: (fd: FormData) => Promise<void>;
   };
+  triggerVariant?: ButtonVariant;
 }) {
   // SCHED-21: the deep-linked block, resolved against THIS card's own list. A
   // block id that belongs to another therapist finds nothing here and the card
@@ -211,7 +216,7 @@ export function TherapistBlocks({
     <>
       <Button
         type="button"
-        variant="ghost"
+        variant={triggerVariant}
         size="sm"
         onClick={() => {
           startCreate();

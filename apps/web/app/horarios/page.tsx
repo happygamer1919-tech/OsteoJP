@@ -25,8 +25,15 @@ import { addDays } from "@/lib/scheduling/time";
 import {
   createTimeOffBlockAction,
   deleteTimeOffBlockAction,
+  switchToClinicHoursAction,
   updateTimeOffBlockAction,
 } from "./actions";
+import { listScheduleKinds } from "@/lib/admin/clinic-default-schedule";
+import {
+  ScheduleKindLabel,
+  UseClinicHoursButton,
+  type ClinicHoursLabels,
+} from "./ClinicHoursControl";
 
 // Weekday labels + clinical-week order (Mon → Sat → Sun), mirroring the Equipa
 // editor so a therapist's week reads identically on both surfaces.
@@ -163,6 +170,30 @@ export default async function HorariosPage({
     therapists.map((t) => t.id),
   );
 
+  // HOR-01: which schedule each listed therapist is on (own rows, the clinic's
+  // default hours, or neither), for the label on each card. `availability` is
+  // every active row this viewer may see, so a therapist absent from it has no
+  // active row of their own.
+  const scheduleKinds = await listScheduleKinds(
+    actor,
+    therapists.map((t) => t.id),
+    new Set(availability.map((a) => a.userId)),
+  );
+  const clinicHoursLabels: ClinicHoursLabels = {
+    kindOwn: s["schedule.kindOwn"],
+    kindOwnHint: s["schedule.kindOwnHint"],
+    kindClinicDefault: s["schedule.kindClinicDefault"],
+    kindClinicDefaultHint: s["schedule.kindClinicDefaultHint"],
+    kindNone: s["schedule.kindNone"],
+    kindNoneHint: s["schedule.kindNoneHint"],
+    useClinicHours: s["schedule.useClinicHours"],
+    title: s["schedule.useClinicHoursTitle"],
+    body: s["schedule.useClinicHoursBody"],
+    keep: s["schedule.useClinicHoursKeep"],
+    confirm: s["schedule.useClinicHoursConfirm"],
+    cancel: s["common.cancel"],
+  };
+
   const blockLabels: BlockLabels = {
     block: s["admin.workingHours.block"],
     blocksFor: s["admin.workingHours.blocksFor"],
@@ -223,6 +254,8 @@ export default async function HorariosPage({
   const banner =
     m === "ok"
       ? { tone: "ok" as const, text: s["schedule.saved"] }
+      : m === "clinic_default"
+      ? { tone: "ok" as const, text: s["schedule.useClinicHoursDone"] }
       : m === "err:dated_conflict"
         ? { tone: "err" as const, text: s["schedule.errorDatedConflict"] }
         : m && m.startsWith("err")
@@ -317,13 +350,41 @@ export default async function HorariosPage({
               <div data-testid="schedule-card" data-therapist-id={t.id}>
               <GlassPanel className="flex flex-col gap-3 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <CardHeading
-                    id={t.id}
-                    label={t.label}
-                    period={period}
-                    inInspector={t.id === inspectorTherapistId}
-                  />
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardHeading
+                      id={t.id}
+                      label={t.label}
+                      period={period}
+                      inInspector={t.id === inspectorTherapistId}
+                    />
+                    {/* HOR-01: which schedule is in force for this person. */}
+                    <ScheduleKindLabel
+                      kind={scheduleKinds.get(t.id) ?? "none"}
+                      labels={clinicHoursLabels}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* HOR-01: Bloquear horario comes FIRST and filled. With the
+                        clinic's hours as the default, a block is how a
+                        therapist becomes unavailable, so it is the action this
+                        card exists for. Same dialog and same writes as before. */}
+                    <TherapistBlocks
+                      therapistId={t.id}
+                      therapistName={t.label}
+                      blocks={timeOff.blocks}
+                      labels={blockLabels}
+                      actions={blockActions}
+                      openBlockId={editBlock ?? null}
+                      triggerVariant="primary"
+                    />
+                    {scheduleKinds.get(t.id) === "own" && (
+                      <UseClinicHoursButton
+                        therapistId={t.id}
+                        therapistName={t.label}
+                        labels={clinicHoursLabels}
+                        action={switchToClinicHoursAction}
+                      />
+                    )}
                     {/* ITEM 5: sits beside Bloquear horario because both are
                         "change this therapist's availability", and reception
                         looks for them in the same place. */}
@@ -339,14 +400,6 @@ export default async function HorariosPage({
                       therapistId={t.id}
                       therapistName={t.label}
                       locations={locations}
-                    />
-                    <TherapistBlocks
-                      therapistId={t.id}
-                      therapistName={t.label}
-                      blocks={timeOff.blocks}
-                      labels={blockLabels}
-                      actions={blockActions}
-                      openBlockId={editBlock ?? null}
                     />
                   </div>
                 </div>
