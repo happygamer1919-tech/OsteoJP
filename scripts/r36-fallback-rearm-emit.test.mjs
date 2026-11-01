@@ -36,6 +36,8 @@ import {
   MAX_PER_RUN,
   OWNER_FLAG,
   R36_HOME_NAME,
+  STALE_FLAG,
+  SWEEP_FUNCTION_ID,
   SWEEP_OK_LINE,
   countsOnly,
   heartbeatAnswer,
@@ -236,7 +238,68 @@ test("the heartbeats: each refusal is its own, and only a fresh shadow with no o
   no({ tenants: 2 }, /matched 2 tenants/);
   assert.deepEqual(v({}).lines, [
     "sweep    production's heartbeats: newest shadow, 10 minutes ago; shadow in the last 3 hours: 12; anything but shadow in the last 7 days: 0",
+    "sweep    the owner's word that Inngest shows no sweep-due-reminders run in the last hour: not given",
   ]);
+});
+
+test("Q-R36-F6, the matrix: heartbeat state x the owner's word that no sweep-due-reminders run happened in the last hour", () => {
+  assert.equal(SWEEP_FUNCTION_ID, "sweep-due-reminders");
+  assert.match(read("apps/web/lib/reminders/inngest/sweep.ts"), /id: "sweep-due-reminders",/);
+  const H = 3600;
+  const states = {
+    "fresh shadow, 10 minutes": [{ latestAgeS: 600 }, "pass", "refuse"],
+    "fresh shadow, exactly 1 hour": [{ latestAgeS: H }, "pass", "refuse"],
+    "fresh shadow, 1 hour 1 second": [{ latestAgeS: H + 1 }, "pass", "pass"],
+    "fresh shadow, exactly 12 hours": [{ latestAgeS: 12 * H }, "pass", "pass"],
+    "stale shadow, 12 hours 1 second": [{ latestAgeS: 12 * H + 1 }, "refuse", "stale"],
+    "stale shadow, 3 days": [{ latestAgeS: 72 * H, shadowLast3h: 0 }, "refuse", "stale"],
+    "missing": [{ latestMode: null, latestAgeS: null, shadowLast3h: 0 }, "refuse", "stale"],
+    "fresh send": [{ latestMode: "send", latestAgeS: 600, notShadowLast7d: 1 }, "refuse", "refuse"],
+    "fresh shadow, a send this week": [{ notShadowLast7d: 2 }, "refuse", "refuse"],
+    "stale send, this week": [{ latestMode: "send", latestAgeS: 20 * H, notShadowLast7d: 4 }, "refuse", "refuse"],
+    "stale send, older than 7 days": [{ latestMode: "send", latestAgeS: 8 * 24 * H, notShadowLast7d: 0 }, "refuse", "refuse"],
+    "stale, unrecognised mode": [{ latestMode: "weird", latestAgeS: 20 * H }, "refuse", "refuse"],
+    "two tenants": [{ tenants: 2 }, "refuse", "refuse"],
+  };
+  for (const [name, [over, without, withWord]] of Object.entries(states)) {
+    for (const [given, want] of [[false, without], [true, withWord]]) {
+      const r = heartbeatVerdict({ ...SHADOW_OK, ...over }, { ownerSawNoSweepRuns: given });
+      const got = !r.ok ? "refuse" : r.stalePath ? "stale" : "pass";
+      assert.equal(got, want, `${name}, word ${given ? "given" : "not given"}: ${r.why ?? ""}`);
+      const taken = r.lines.some((l) => l.startsWith("sweep    STALE-HEARTBEAT PATH TAKEN (Q-R36-F6)"));
+      assert.equal(taken, got === "stale", `${name}: the path line`);
+      assert.match(r.lines[1], given ? /: given$/ : /: not given$/);
+    }
+  }
+  assert.match(heartbeatVerdict({ ...SHADOW_OK, latestAgeS: 600 }, { ownerSawNoSweepRuns: true }).why, /contradicts production: the newest heartbeat is 10 minutes old/);
+});
+
+test("Q-R36-F6 through the program: the word is taken off the line, yes or no only, and the path is printed before the guard line", async () => {
+  const code = (argv) => {
+    try {
+      splitArgs(argv);
+      return 0;
+    } catch (e) {
+      return e.code;
+    }
+  };
+  assert.equal(splitArgs([...SLUG, ...SCOPE, STALE_FLAG, "yes"]).ownerSawNoSweepRuns, true);
+  assert.equal(splitArgs([...SLUG, ...SCOPE, STALE_FLAG, "no"]).ownerSawNoSweepRuns, false);
+  assert.equal(splitArgs([...SLUG, ...SCOPE]).ownerSawNoSweepRuns, false);
+  assert.deepEqual(splitArgs([...SLUG, ...SCOPE, STALE_FLAG, "yes", OWNER_FLAG]).rearmArgv, [...SLUG, ...SCOPE]);
+  for (const bad of [[STALE_FLAG], [STALE_FLAG, "YES"], [STALE_FLAG, "true"], [STALE_FLAG, "yes", STALE_FLAG, "yes"]]) assert.equal(code([...SLUG, ...SCOPE, ...bad]), 2, bad.join(" "));
+  const stale = { ...SHADOW_OK, latestAgeS: 50 * 3600, shadowLast3h: 0 };
+  const refused = await fallback([...SLUG, ...SCOPE, OWNER_FLAG, STALE_FLAG, "no"], { answer: stale });
+  assert.equal(refused.halt?.code, 1);
+  assert.match(refused.halt.message, /more than 12 hours old/);
+  const taken = await fallback([...SLUG, ...SCOPE, OWNER_FLAG, STALE_FLAG, "yes"], { answer: stale, rearm: async () => ({ sent: 0 }) });
+  assert.equal(taken.halt, null);
+  const at = taken.lines.findIndex((l) => l.startsWith("sweep    STALE-HEARTBEAT PATH TAKEN (Q-R36-F6): production's heartbeats are stale"));
+  assert.ok(at >= 0, taken.text);
+  assert.equal(taken.lines[at + 1], SWEEP_OK_LINE);
+  const send = await fallback([...SLUG, ...SCOPE, OWNER_FLAG, STALE_FLAG, "yes"], { answer: { ...stale, notShadowLast7d: 1 } });
+  assert.equal(send.halt?.code, 1);
+  assert.match(send.halt.message, /not shadow: the sweep has sent this week/);
 });
 
 test("the heartbeat answer is ONE row of the five values, read by name, and anything else is NO_COUNT", () => {
@@ -372,9 +435,18 @@ test("a whole sitting through the REAL run(): no uuid on any line, and every lin
   like("restSend", /^G3 AFTER THIS RUN: 0 {2}\(appointments checked: [0-9]+; handed to a provider: 0; expected 0\)$/);
   has("closing", "ELIGIBLE: 0");
   has("closing", "G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  (appointments checked: 12; handed to a provider: 0; not checkable: 0; expected 0)");
+  // The second pass: the marker skips Wednesday's twelve, the three left are sent, nothing twice.
+  for (const name of ["p2Dry", "p2Closing"]) like(name, /^held back: starts more than --max-days-ahead 27 days after the read: [0-9]+$/);
+  has("p2Dry", "skipped: already sent by an earlier run (marker): 12");
+  has("p2Dry", "skipped: attempted by an earlier run, outcome unknown (marker): 0");
+  has("p2Dry", "ELIGIBLE: 3");
+  has("p2Dry", "G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  (appointments checked: 12; handed to a provider: 0; not checkable: 0; expected 0)");
+  like("p2Send", /^SENT: 3 of 3 {2}/);
+  has("p2Closing", "ELIGIBLE: 0");
+  has("p2Closing", "skipped: already sent by an earlier run (marker): 15");
   // One event per appointment, with no id of its own, never a confirmation.
-  assert.equal(events.length, 12);
-  assert.equal(new Set(events.map((e) => e.data.appointmentId)).size, 12);
+  assert.equal(events.length, 15);
+  assert.equal(new Set(events.map((e) => e.data.appointmentId)).size, 15);
   for (const e of events) {
     assert.deepEqual(Object.keys(e).sort(), ["data", "name"]);
     assert.equal(e.data.confirmationEligible, false);

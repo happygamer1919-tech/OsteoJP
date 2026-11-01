@@ -57,7 +57,9 @@ const shadowHeartbeat = async () => ({
 
 /**
  * The sitting the document runs: BEFORE YOU START's dry run, the canary's dry run and send, THE
- * REST's dry run and send, and the closing dry run, over twelve appointments. Returns each step's
+ * REST's dry run and send, and the closing dry run, over twelve appointments; then the second
+ * pass (its first dry run, its sends and its closing dry run, `--max-days-ahead 27`) over the same
+ * twelve and three more. Returns each step's
  * printed lines, the events the sink received, the home folder and the sink.
  */
 export async function wholeSitting() {
@@ -66,16 +68,21 @@ export async function wholeSitting() {
   mkdirSync(home);
   const sink = join(dir, "sink.jsonl");
   const rows = Array.from({ length: 12 }, (_, i) => dbRow(i + 1));
+  // The second pass (Q-R36-F5): the same twelve, now in the marker, and three more that Wednesday
+  // skipped as touched and nobody touched since.
+  const rows2 = [...rows, ...[13, 14, 15].map((n) => dbRow(n))];
+  let reader = fakeReader(rows);
+  let days = "28";
   const step = async (extra) => {
     const lines = [];
     try {
-      await runFallback(["--tenant-slug", "osteojp", "--max-days-ahead", "28", OWNER_FLAG, "--sink-file", sink, ...extra], {
+      await runFallback(["--tenant-slug", "osteojp", "--max-days-ahead", days, OWNER_FLAG, "--sink-file", sink, ...extra], {
         env: { DATABASE_URL_DIRECT: SITTING_URL },
         out: (l) => lines.push(l),
         home,
         openHeartbeat: shadowHeartbeat,
         rearm: realRearm,
-        openReader: fakeReader(rows),
+        openReader: reader,
         sleep: async () => {},
       });
     } catch (e) {
@@ -92,6 +99,11 @@ export async function wholeSitting() {
   steps.restDry = await step(["--max", "200"]);
   steps.restSend = await step(["--max", "200", ...confirm, "--expect", "7"]);
   steps.closing = await step(["--max", "200"]);
+  reader = fakeReader(rows2);
+  days = "27";
+  steps.p2Dry = await step(["--max", "200"]);
+  steps.p2Send = await step(["--max", "200", ...confirm, "--expect", "3"]);
+  steps.p2Closing = await step(["--max", "200"]);
   const events = readFileSync(sink, "utf8").trim().split("\n").map((l) => JSON.parse(l));
   return { steps, events, home, sink };
 }

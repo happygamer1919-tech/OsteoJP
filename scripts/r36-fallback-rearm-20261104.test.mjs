@@ -2,7 +2,8 @@
 //
 // WHAT THIS PROVES, statically and with every external program a stub, with no database:
 //   * the document's first line is NOT READY until SOLO's READY line, and its sidecar pins it;
-//   * it has exactly four blocks (BEFORE YOU START, THE CANARY, THE REST, THE CLOSING DRY RUN);
+//   * it has exactly seven blocks (BEFORE YOU START, THE CANARY, THE REST, THE CLOSING DRY RUN, and the second pass's
+//     BEFORE YOU START, THE SENDS and THE CLOSING DRY RUN);
 //     each parses under bash -n and zsh -n; no `#` line, no `!` but `test !`, no backslash
 //     continuation, no `set -e`: line 2 is `set -o pipefail`, and the only other `set` loads the
 //     environment file;
@@ -36,7 +37,7 @@ import { cpus, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { HORIZON_DAYS, OWNER_FLAG, SWEEP_OK_LINE } from "../packages/db/scripts/r36-fallback-rearm-emit.mjs";
+import { HORIZON_DAYS, OWNER_FLAG, STALE_FLAG, SWEEP_OK_LINE } from "../packages/db/scripts/r36-fallback-rearm-emit.mjs";
 import { wholeSitting } from "./r36-fallback-rearm-sitting.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -82,6 +83,9 @@ const SUCCESS = Object.freeze({
   canary: "CANARY SENT: 5 of 5, G4 yes, G3 0.",
   rest: "THE REST: this run ended clean.",
   closing: "CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0",
+  p2bys: "SECOND PASS, BEFORE YOU START: every check passed.",
+  p2send: "SECOND PASS: this run ended clean.",
+  p2closing: "SECOND PASS, CLOSING DRY RUN: ELIGIBLE 0",
 });
 const NAMES = Object.keys(SUCCESS);
 export const blockOf = (name) => {
@@ -116,6 +120,16 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /^\*\*Nothing provably breaks on Friday 11-06, except a residual\.\*\*|^- \*\*Nothing provably breaks on Friday 11-06, except a residual\.\*\*/m);
   for (const q of ["Q-R36-F1", "Q-R36-F2", "Q-R36-F3", "Q-R36-F4", "Q-R36-F5", "Q-R36-F6"]) assert.match(doc, new RegExp(`^\\*\\*${q}\\. `, "m"), q);
   assert.match(doc, /^### After the closing dry run: the owner's look at the re-plan$/m);
+  // Strategy's rulings of 2026-11-01, each built and recorded.
+  assert.match(doc, /^## The Tuesday dry run \(Q-R36-F3, ruled 2026-11-01\): Tuesday 2026-11-03 after 21:00$/m);
+  assert.match(doc, /^## THE SECOND PASS: Thursday 2026-11-05 night \(Q-R36-F5, ruled 2026-11-01\)$/m);
+  assert.match(doc, /^## Weekly sittings after a fallback \(Q-R36-F1, ruled 2026-11-01\)$/m);
+  for (const q of ["Q-R36-F1", "Q-R36-F2", "Q-R36-F3", "Q-R36-F5", "Q-R36-F6"]) assert.match(doc, new RegExp(`^\\*\\*${q}\\. [^*]+\\*\\* ANSWERED 2026-11-01: "`, "m"), q);
+  assert.match(doc, /Functions, `sweep-due-reminders`, Runs, shows no run in the last hour/);
+  assert.match(doc, /`STALE-HEARTBEAT PATH TAKEN \(Q-R36-F6\)`/);
+  assert.match(doc, /SOLO sets `STALEPATH=yes` in a dispatch only on the ruling of Q-R36-F6/);
+  assert.ok(new Date(Date.parse("2026-11-25T21:00:00Z") + 28 * 86_400_000).toISOString().startsWith("2026-12-23"));
+  assert.match(doc, /A sitting on Wednesday 11-25 reaches visits starting up to Wednesday 2026-12-23\./);
   assert.ok(doc.indexOf("1. **The owner's three looks**") < doc.indexOf("2. **BEFORE YOU START**"), "the owner's looks come before BEFORE YOU START");
   assert.match(doc, /\*\*THE MERGE FREEZE, mandatory: no merge to `main` from before step 1 until GREEN reports\.\*\*/);
   assert.match(doc, /SOLO's written statement of THE MERGE FREEZE/);
@@ -139,12 +153,13 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /`fromStatus` `cancelled` and either `toStatus` `confirmed`, or `toStatus` `scheduled` on a visit whose `origin` is not `patient_portal`/);
   assert.match(doc, /^\*\*REHEARSED by a session that did not write this, on BLUE/m);
   assert.match(doc, /^\*\*NOT REHEARSED, said one by one:\*\*$/m);
-  assert.match(doc, /\*\*The four blocks of this document as it stands are byte-identical to blocks run 3 ran\*\*/);
+  assert.match(doc, /\*\*At `aaceb468` the four blocks were byte-identical to the blocks run 3 ran\*\*/);
+  assert.match(doc, /\*\*Since `aaceb468` \(2026-11-01, strategy's rulings\) the four blocks and the program have changed and three blocks were added; none of that is rehearsed/);
   assert.match(doc, /A script's own REFUSE or STOP line is a halt, the same as a harness refusal\. Never edit an env file, a URL, a flag, a label or a script to get past a guard\. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so\./);
 });
 
-test("exactly four blocks, each with its last line, each parsing under bash -n and zsh -n", (t) => {
-  assert.equal(blocksOf(doc).length, 4);
+test("exactly seven blocks, each with its last line, each parsing under bash -n and zsh -n", (t) => {
+  assert.equal(blocksOf(doc).length, 7);
   for (const name of NAMES) blockOf(name);
   for (const b of blocksOf(doc)) {
     const r = spawnSync("bash", ["--noprofile", "--norc", "-n", "-c", b], { encoding: "utf8" });
@@ -177,12 +192,12 @@ test("no block carries a # line, a !, a continuation, set -e or an unbraced para
 });
 
 const EXPLICIT_HALT = /\|\| \{ echo "STOP: [^"]+"; exit 1; \}$/;
-const SEND_HALT = /\|\| \{ touch \/tmp\/r36-last-send\.ok \|\| \{ echo "STOP: [^"]+"; exit 1; \}; echo "STOP: [^"]+"; exit 1; \}$/;
+const SEND_HALT = /\|\| \{ touch \/tmp\/r36(p2)?-last-send\.ok \|\| \{ echo "STOP: [^"]+"; exit 1; \}; echo "STOP: [^"]+"; exit 1; \}$/;
 const STRAY_HALT = /\|\| \{ echo "STOP: [^"]+"; echo "\$\{STRAY\}"; exit 1; \}$/;
 /** A command a later step relies on: its failure must halt the block by an explicit guard. */
 const MUST_HALT = [
   /^cd /, /\bgit /, /^rm /, /^touch /, /\| tee /, /\bnode /, /^set -o allexport/, /^shasum /,
-  /^(REC|HD|STRAY|TIP|DOC|TOP|SIDE|SW|SE|SG|SM|NOW|RDOW|NIGHT|EC|N|K|G3L|G4L|SL|RECENT|BEGAN|BEGANT|MAINSHA|MREC|MNOW|HB|TCH)=\$\(/, /^NEXTDAY=\$\(TZ=/,
+  /^(REC|HD|STRAY|TIP|DOC|TOP|SIDE|SW|SE|SG|SM|NOW|RDOW|NIGHT|EC|N|K|G3L|G4L|SL|RECENT|BEGAN|BEGANT|MAINSHA|MREC|MNOW|HB|TCH|SR)=\$\(/, /^NEXTDAY=\$\(TZ=/,
   /^test /, /^\[ /, /^grep /, /^echo "[^"]*" \| grep /, /^echo .* > \/tmp\//,
 ];
 export function unguardedLines(block) {
@@ -207,7 +222,7 @@ test("EVERY HALT IS EXPLICIT: each command a later step relies on carries its ow
     for (const s of sets.slice(1)) {
       assert.equal(s.replace(/ \|\| \{.*$/, ""), "set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport");
     }
-    for (const line of lines) if (line.includes('echo "STOP: ')) assert.match(line, /exit 1; (\}|fi)$/, line.slice(0, 120));
+    for (const line of lines) if (line.includes('echo "STOP: ')) assert.match(line, /exit 1; (\}|fi|\}; fi)$/, line.slice(0, 120));
   }
   for (const planted of ["git fetch origin --prune", "node x.mjs | tee /tmp/r36-x.out", "TIP=$(git rev-parse x)", "test -f /tmp/r36-head.sha", "[ a = b ]", "grep -qxF x /tmp/r36-x.out", 'echo "${TIP}" > /tmp/r36-head.sha', "touch /tmp/r36-canary.ok", "shasum -a 256 -c x"]) {
     assert.equal(unguardedLines(planted).length, 1, planted);
@@ -225,10 +240,10 @@ test("every pin is the real file's sha256 on this tree, and FIXSHA is the remind
   for (const [k, v] of Object.entries(want)) if (k !== "SHAWRAP") assert.ok(doc.includes(v), `${k} not in the document`);
 });
 
-test("PENDING lines: only BEFORE YOU START carries them, exactly HELD, DOCSHA and RUNDAY", () => {
+test("PENDING lines: only the two BEFORE YOU START blocks carry them, exactly HELD, DOCSHA, RUNDAY and STALEPATH", () => {
   const pend = (b) => b.split("\n").filter((l) => l.includes("PENDING")).map((l) => l.split("=")[0]);
-  assert.deepEqual(pend(blockOf("bys")).filter((x) => /^[A-Z]+$/.test(x)), ["HELD", "DOCSHA", "RUNDAY"]);
-  for (const name of ["canary", "rest", "closing"]) assert.deepEqual(pend(blockOf(name)), [], name);
+  for (const name of ["bys", "p2bys"]) assert.deepEqual(pend(blockOf(name)).filter((x) => /^[A-Z]+$/.test(x)), ["HELD", "DOCSHA", "RUNDAY", "STALEPATH"], name);
+  for (const name of ["canary", "rest", "closing", "p2send", "p2closing"]) assert.deepEqual(pend(blockOf(name)), [], name);
 });
 
 /** The program's invocations of a block, each as its argument list after the program's path. */
@@ -239,11 +254,19 @@ const wrapCalls = (block) =>
     return { caffeinate: Boolean(m[1]), args: m[2] };
   });
 
-test("the program runs with exactly the reviewed arguments, and sends only in THE CANARY and THE REST", () => {
+test("the program runs with exactly the reviewed arguments, and sends only in THE CANARY, THE REST and SECOND PASS, THE SENDS", () => {
   const base = `--tenant-slug osteojp --max-days-ahead ${HORIZON_DAYS}`;
-  const owner = OWNER_FLAG;
+  const base27 = "--tenant-slug osteojp --max-days-ahead 27";
+  const owner = `${OWNER_FLAG} ${STALE_FLAG} "\${SR}"`;
+  const ownerA = `${OWNER_FLAG} ${STALE_FLAG} "\${STALEPATH}"`;
   const confirm = '--confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings';
-  assert.deepEqual(wrapCalls(blockOf("bys")), [{ caffeinate: false, args: `${base} --max 200 ${owner}` }]);
+  assert.deepEqual(wrapCalls(blockOf("bys")), [{ caffeinate: false, args: `${base} --max 200 ${ownerA}` }]);
+  assert.deepEqual(wrapCalls(blockOf("p2bys")), [{ caffeinate: false, args: `${base27} --max 200 ${ownerA}` }]);
+  assert.deepEqual(wrapCalls(blockOf("p2send")), [
+    { caffeinate: false, args: `${base27} --max 200 ${owner}` },
+    { caffeinate: true, args: `${base27} --max 200 ${owner} ${confirm}` },
+  ]);
+  assert.deepEqual(wrapCalls(blockOf("p2closing")), [{ caffeinate: false, args: `${base27} --max 200 ${owner}` }]);
   assert.deepEqual(wrapCalls(blockOf("canary")), [
     { caffeinate: false, args: `--tenant-slug osteojp --min-days-ahead 3 --max-days-ahead 28 --max 5 ${owner}` },
     { caffeinate: true, args: `--tenant-slug osteojp --min-days-ahead 3 --max-days-ahead 28 --max 5 ${owner} ${confirm}` },
@@ -337,7 +360,10 @@ const FAKE_DB_URL = "postgresql://postgres.harness:x@harness.invalid:5432/postgr
 const FAKE_SHA = { MAIN: "1".repeat(40), OTHER: "2".repeat(40), BEFORE: "3".repeat(40) };
 const HARNESS_EPOCH = 1793827800;
 const HARNESS_HTTPDATE = new Date(HARNESS_EPOCH * 1000).toUTCString();
-const RECORDS = ["r36-head.sha", "r36-night.ok", "r36-canary.ok", "r36-last-send.ok", "r36-main.sha"];
+const RECORDS = [
+  "r36-head.sha", "r36-night.ok", "r36-canary.ok", "r36-last-send.ok", "r36-main.sha", "r36-stale.ok",
+  "r36p2-head.sha", "r36p2-night.ok", "r36p2-last-send.ok", "r36p2-main.sha", "r36p2-stale.ok",
+];
 const MAINLINE = "4".repeat(40);
 
 function realPath(name) {
@@ -413,7 +439,7 @@ case "$n" in
       ${WRAP}) [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || unexpected "the program ran without the harness environment"
         all=" $* "
         case "$all" in
-          *" --confirm "*) case "$all" in *" --max 5 "*) kind=canarySend;; *) kind=restSend;; esac;;
+          *" --confirm "*) case "$all" in *" --max 5 "*) kind=canarySend;; *) kind="\${HARNESS_SEND:-restSend}";; esac;;
           *) case "$all" in *" --max 5 "*) kind=canaryDry;; *) kind="$HARNESS_DRY";; esac;;
         esac
         f="$HARNESS_FIX/$kind.out"; e=0
@@ -457,6 +483,7 @@ async function fixtures() {
   f["g1no.out"] = swap(f["dryA.out"], "G1 UNDER THE LIMIT OF 20000: yes", "G1 UNDER THE LIMIT OF 20000: NO");
   f["canaryFew.out"] = swap(swap(f["canaryDry.out"], "ELIGIBLE: 12", "ELIGIBLE: 3"), "THIS RUN: 5 of 12", "THIS RUN: 3 of 3");
   f["canarySend4.out"] = swap(f["canarySend.out"], "SENT: 5 of 5", "SENT: 4 of 5");
+  f["p2Empty.out"] = swap(f["p2Dry.out"], "appointments checked: 12; handed", "appointments checked: 0; handed");
   f["restDryZero.out"] = swap(f["restDry.out"], "ELIGIBLE: 7", "ELIGIBLE: 0");
   f["refused.out"] = "sweep    production's heartbeats: newest send, 3 minutes ago; shadow in the last 3 hours: 9; anything but shadow in the last 7 days: 1\nFAILED: the sweep's newest heartbeat is not shadow (it reads send): the sweep may be sending. This operation must not run while it is. Refusing. Nothing was sent.\n";
   return f;
@@ -488,9 +515,9 @@ const readyDoc = () => withFirstLine("READY: the harness's copy");
 
 /** The block with its real paths moved into the run folder. A block that still names one is refused unrun. */
 export function localize(block, run, envFile) {
-  const out = block.replaceAll(PROD_APPLY, join(run, "apply")).replaceAll(PROD_ENV, envFile).replaceAll("/tmp/r36-", join(run, "tmp/r36-"));
-  const rest = out.replaceAll(join(run, "tmp/r36-"), "").replaceAll(join(run, "apply"), "").replaceAll(envFile, "");
-  for (const bad of ["/tmp/r36-", "osteojp-secrets", "osteojp-prod-apply", "/Users/ivan"]) {
+  const out = block.replaceAll(PROD_APPLY, join(run, "apply")).replaceAll(PROD_ENV, envFile).replaceAll("/tmp/r36", join(run, "tmp/r36"));
+  const rest = out.replaceAll(join(run, "tmp/r36"), "").replaceAll(join(run, "apply"), "").replaceAll(envFile, "");
+  for (const bad of ["/tmp/r36", "osteojp-secrets", "osteojp-prod-apply", "/Users/ivan"]) {
     if (rest.includes(bad)) throw new Error(`the localized block still names ${bad}`);
   }
   return out;
@@ -538,14 +565,14 @@ export async function runOnce(cfg, runId, fault) {
   writeFileSync(join(run, "t0"), "");
   utimesSync(join(run, "t0"), new Date(t0), new Date(t0));
   const text = localize(cfg.block, run, fault?.noEnv ? join(run, "no-such.env") : join(cfg.base, "fake-prod.env"));
-  const s = cfg.scenario ?? {};
+  const s = { ...(cfg.clockDefaults ?? {}), ...(cfg.scenario ?? {}) };
   const env = {
     PATH: `${join(cfg.base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
     HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL, HARNESS_MAIN: s.main ?? FAKE_SHA.MAIN, HARNESS_MAINLINE: s.mainline ?? MAINLINE,
     HARNESS_STAMP: s.stamp ?? "202611042130", HARNESS_DOW: s.dow ?? "3", HARNESS_ZONE: s.zone ?? "WET",
-    HARNESS_RDOW: s.rdow ?? "3", HARNESS_NEXT: "20261105", HARNESS_EPOCH: String(HARNESS_EPOCH), HARNESS_HTTPDATE,
+    HARNESS_RDOW: s.rdow ?? "3", HARNESS_NEXT: s.next ?? "20261105", HARNESS_EPOCH: String(HARNESS_EPOCH), HARNESS_HTTPDATE,
     HARNESS_SNTP: s.sntp ?? "", HARNESS_STRAY: s.stray ?? "", HARNESS_ANCESTOR: s.ancestor ?? "0",
-    HARNESS_DRY: cfg.dry ?? "", HARNESS_SWAP_KIND: s.swapKind ?? "", HARNESS_SWAP_FILE: s.swapFile ?? "", HARNESS_SWAP_EXIT: String(s.swapExit ?? 0),
+    HARNESS_DRY: cfg.dry ?? "", HARNESS_SEND: cfg.send ?? "restSend", HARNESS_SWAP_KIND: s.swapKind ?? "", HARNESS_SWAP_FILE: s.swapFile ?? "", HARNESS_SWAP_EXIT: String(s.swapExit ?? 0),
     HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_MODE: fault?.mode ?? "",
   };
   const r = await runShell(cfg.shell, text, env, join(cfg.base, "apply"));
@@ -582,8 +609,8 @@ function writePoints(positive, records) {
     const first = positive.calls.find((c) => c.exists.includes(m));
     wp[m] = first ? first.pos - 1 : positive.calls.length;
     // A send leaves the record of the time it returned on purpose, even when it fails.
-    const send = positive.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("tee#") && /r36-(canary|rest)-send\.out/.test(c.args)));
-    if (m === "r36-last-send.ok" && send.length) wp[m] = Math.min(...send.map((c) => c.pos));
+    const send = positive.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("tee#") && /r36(p2)?-(canary|rest)-send\.out/.test(c.args)));
+    if ((m === "r36-last-send.ok" || m === "r36p2-last-send.ok") && send.length) wp[m] = Math.min(...send.map((c) => c.pos));
   }
   return wp;
 }
@@ -639,7 +666,7 @@ export async function sweep(cfg) {
   faults.push({ kind: "env", label: ". the env file is not there", noEnv: true, pos: envAt.pos - 1 });
   const rows = await inPool(faults, Number(process.env.HARNESS_POOL) || Math.max(2, cpus().length), async (f, i) => {
     const r = await runOnce(cfg, `${cfg.id}-f${i}`, f);
-    const allowed = cfg.name === "bys" && f.at && isNetworkCall(f.at) ? "a network-time read: a source NOT READ goes on while another was read" : null;
+    const allowed = (cfg.name === "bys" || cfg.name === "p2bys") && f.at && isNetworkCall(f.at) ? "a network-time read: a source NOT READ goes on while another was read" : null;
     const id = f.mode === "empty" ? `${f.call}:empty` : f.call ?? f.kind;
     const halted = r.code !== 0 && !r.out.includes("TOOL-CHAIN-CONTINUED");
     const problems = [];
@@ -670,11 +697,13 @@ const SETUPS = {
     putRecord(tmp, "r36-head.sha", `${FAKE_SHA.MAIN}\n`, 5);
     putRecord(tmp, "r36-night.ok", "20261104 20261105\n", 5);
     putRecord(tmp, "r36-main.sha", `${MAINLINE}\n`, 5);
+    putRecord(tmp, "r36-stale.ok", "no\n", 5);
   },
   rest: (tmp) => {
     putRecord(tmp, "r36-head.sha", `${FAKE_SHA.MAIN}\n`, 30);
     putRecord(tmp, "r36-night.ok", "20261104 20261105\n", 30);
     putRecord(tmp, "r36-main.sha", `${MAINLINE}\n`, 30);
+    putRecord(tmp, "r36-stale.ok", "no\n", 30);
     putRecord(tmp, "r36-canary.ok", "", 20);
     putRecord(tmp, "r36-last-send.ok", "", 20);
   },
@@ -682,26 +711,52 @@ const SETUPS = {
     putRecord(tmp, "r36-head.sha", `${FAKE_SHA.MAIN}\n`, 60);
     putRecord(tmp, "r36-night.ok", "20261104 20261105\n", 60);
     putRecord(tmp, "r36-main.sha", `${MAINLINE}\n`, 60);
+    putRecord(tmp, "r36-stale.ok", "no\n", 60);
     putRecord(tmp, "r36-canary.ok", "", 50);
     putRecord(tmp, "r36-last-send.ok", "", 20);
   },
 };
-const DRY_OF = { bys: "dryA", canary: "", rest: "restDry", closing: "closing" };
-const RECORDS_OF = { bys: ["r36-head.sha", "r36-night.ok", "r36-main.sha"], canary: ["r36-last-send.ok", "r36-canary.ok"], rest: ["r36-last-send.ok"], closing: [] };
+/** The second pass: Thursday 2026-11-05, 21:30 WET; Wednesday's records lie about, never read. */
+const p2records = (tmp, ago) => {
+  SETUPS.closing(tmp);
+  putRecord(tmp, "r36p2-head.sha", `${FAKE_SHA.MAIN}\n`, ago);
+  putRecord(tmp, "r36p2-night.ok", "20261105 20261106\n", ago);
+  putRecord(tmp, "r36p2-main.sha", `${MAINLINE}\n`, ago);
+  putRecord(tmp, "r36p2-stale.ok", "no\n", ago);
+};
+SETUPS.p2bys = (tmp) => {
+  SETUPS.closing(tmp);
+  for (const m of RECORDS.filter((x) => x.startsWith("r36p2-"))) putRecord(tmp, m, "stale\n", 600);
+};
+SETUPS.p2send = (tmp) => p2records(tmp, 10);
+SETUPS.p2closing = (tmp) => {
+  p2records(tmp, 40);
+  putRecord(tmp, "r36p2-last-send.ok", "", 20);
+};
+const THURSDAY = Object.freeze({ stamp: "202611052130", dow: "4", rdow: "4", next: "20261106" });
+const DRY_OF = { bys: "dryA", canary: "", rest: "restDry", closing: "closing", p2bys: "p2Dry", p2send: "p2Dry", p2closing: "p2Closing" };
+const RECORDS_OF = {
+  bys: ["r36-head.sha", "r36-night.ok", "r36-main.sha", "r36-stale.ok"], canary: ["r36-last-send.ok", "r36-canary.ok"], rest: ["r36-last-send.ok"], closing: [],
+  p2bys: ["r36p2-head.sha", "r36p2-night.ok", "r36p2-main.sha", "r36p2-stale.ok"], p2send: ["r36p2-last-send.ok"], p2closing: [],
+};
 
 /** BEFORE YOU START as GREEN's dispatch fills it. */
 export const fillDispatch = (block, v) =>
   block
     .replace("HELD='PENDING: set at the READY line'", `HELD=${v.HELD}`)
     .replace("DOCSHA='PENDING: set at the READY line'", `DOCSHA=${v.DOCSHA}`)
-    .replace("RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'", `RUNDAY=${v.RUNDAY}`);
+    .replace("RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'", `RUNDAY=${v.RUNDAY}`)
+    .replace("STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'", `STALEPATH=${v.STALEPATH ?? "no"}`);
 
 function harnessConfig(name, shell, base, docSha, opts = {}) {
   const raw = blockOf(name);
-  const block = name === "bys" && !opts.raw ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: "20261104" }) : raw;
+  const p2 = name.startsWith("p2");
+  const filled = (name === "bys" || name === "p2bys") && !opts.raw;
+  const block = filled ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: p2 ? "20261105" : "20261104", STALEPATH: opts.stalepath }) : raw;
   return {
-    id: `${shell}-${name}${opts.tag ? `-${opts.tag}` : ""}`, name, shell, base, block, dry: DRY_OF[name], records: RECORDS_OF[name],
-    initialHead: opts.initialHead ?? (name === "bys" ? FAKE_SHA.BEFORE : FAKE_SHA.MAIN), setup: opts.setup ?? SETUPS[name], scenario: opts.scenario, applyDir: opts.applyDir,
+    id: `${shell}-${name}${opts.tag ? `-${opts.tag}` : ""}`, name, shell, base, block, dry: DRY_OF[name], send: p2 ? "p2Send" : "restSend", records: RECORDS_OF[name],
+    initialHead: opts.initialHead ?? (name === "bys" || name === "p2bys" ? FAKE_SHA.BEFORE : FAKE_SHA.MAIN), setup: opts.setup ?? SETUPS[name], scenario: opts.scenario, applyDir: opts.applyDir,
+    clockDefaults: p2 ? THURSDAY : {},
   };
 }
 
@@ -734,8 +789,8 @@ async function sweepAll(t, shell) {
       }
     }
     assert.deepEqual(bad, [], `fault rows that broke a rule:\n${bad.join("\n")}`);
-    t.diagnostic(`${shell}: ${faults} faults across the four blocks`);
-    assert.ok(faults >= 275, `only ${faults} faults across the four blocks (292 when this was written)`);
+    t.diagnostic(`${shell}: ${faults} faults across the seven blocks`);
+    assert.ok(faults >= 400, `only ${faults} faults across the seven blocks`);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
@@ -771,17 +826,24 @@ test("the program's calls in the positive controls carry exactly the arguments t
   const base = mkdtempSync(join(tmpdir(), "fault-r36-args-"));
   try {
     const docSha = await prepareHarness(base, readyDoc());
+    const W = [OWNER_FLAG, STALE_FLAG, "no"];
     const want = {
-      bys: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG]],
+      bys: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", ...W]],
       canary: [
-        [WRAP, "--tenant-slug", "osteojp", "--min-days-ahead", "3", "--max-days-ahead", "28", "--max", "5", OWNER_FLAG],
-        [WRAP, "--tenant-slug", "osteojp", "--min-days-ahead", "3", "--max-days-ahead", "28", "--max", "5", OWNER_FLAG, "--confirm", "--expect", "12", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
+        [WRAP, "--tenant-slug", "osteojp", "--min-days-ahead", "3", "--max-days-ahead", "28", "--max", "5", ...W],
+        [WRAP, "--tenant-slug", "osteojp", "--min-days-ahead", "3", "--max-days-ahead", "28", "--max", "5", ...W, "--confirm", "--expect", "12", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
       ],
       rest: [
-        [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG],
-        [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG, "--confirm", "--expect", "7", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
+        [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", ...W],
+        [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", ...W, "--confirm", "--expect", "7", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
       ],
-      closing: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG]],
+      closing: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", ...W]],
+      p2bys: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W]],
+      p2send: [
+        [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W],
+        [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W, "--confirm", "--expect", "3", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
+      ],
+      p2closing: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W]],
     };
     for (const name of NAMES) {
       const r = await runOnce(harnessConfig(name, "bash", base, docSha), `args-${name}`, null);
@@ -789,7 +851,7 @@ test("the program's calls in the positive controls carry exactly the arguments t
       const calls = r.calls.filter((c) => c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`)).map((c) => c.args.trim().split("\n"));
       assert.deepEqual(calls, want[name], name);
       const caf = r.calls.filter((c) => c.id.startsWith("caffeinate#"));
-      assert.equal(caf.length, name === "canary" || name === "rest" ? 1 : 0, name);
+      assert.equal(caf.length, name === "canary" || name === "rest" || name === "p2send" ? 1 : 0, name);
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
@@ -824,6 +886,19 @@ const SCENARIOS = [
   { name: "rest", tag: "marker-empty", scenario: { swapKind: "restDry", swapFile: "dryA.out" }, stop: /^STOP: the number of appointments checked did not read as a whole number above 0 \[0\]/m },
   { name: "rest", tag: "send-refused", scenario: { swapKind: "restSend", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the run failed or was refused/m, wrote: ["r36-last-send.ok"] },
   { name: "rest", tag: "nothing-left", scenario: { swapKind: "restDry", swapFile: "restDryZero.out" }, clean: /^THE REST: ELIGIBLE 0 at this read, so nothing is left to send/m },
+  { name: "bys", tag: "stalepath-bad", stalepath: "maybe", stop: /^STOP: STALEPATH is still PENDING, or is not no or yes/m },
+  { name: "canary", tag: "no-stale-record", setup: (tmp) => { SETUPS.canary(tmp); rmSync(join(tmp, "r36-stale.ok")); }, stop: /^STOP: BEFORE YOU START recorded no STALEPATH in this sitting/m },
+  { name: "rest", tag: "stale-record-bad", setup: (tmp) => { SETUPS.rest(tmp); putRecord(tmp, "r36-stale.ok", "perhaps\n", 30); }, stop: /^STOP: the recorded STALEPATH is not no or yes/m },
+  { name: "p2bys", tag: "unfilled", raw: true, stop: /^STOP: HELD is not a filled-in sha, so this block is NOT READY/m },
+  { name: "p2bys", tag: "wednesday-night", scenario: { stamp: "202611042130", dow: "3" }, stop: /^STOP: Lisbon 202611042130 is outside the window of the night/m },
+  { name: "p2bys", tag: "marker-empty", scenario: { swapKind: "p2Dry", swapFile: "p2Empty.out" }, stop: /^STOP: the number of appointments checked did not read as a whole number above 0 \[0\]: this operation's marker is empty/m },
+  { name: "p2bys", tag: "refused", scenario: { swapKind: "p2Dry", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the dry run failed or was refused/m },
+  { name: "p2send", tag: "no-p2-records", setup: (tmp) => SETUPS.closing(tmp), stop: /^STOP: SECOND PASS, BEFORE YOU START recorded no head in this sitting/m },
+  { name: "p2send", tag: "main-moved", scenario: { mainline: "5".repeat(40) }, stop: /^STOP: main moved during the sitting/m },
+  { name: "p2send", tag: "send-refused", scenario: { swapKind: "p2Send", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the run failed or was refused/m, wrote: ["r36p2-last-send.ok"] },
+  { name: "p2send", tag: "nothing-left", scenario: { swapKind: "p2Dry", swapFile: "p2Closing.out" }, clean: /^SECOND PASS: ELIGIBLE 0 at this read, so nothing is left to send/m },
+  { name: "p2closing", tag: "too-soon", setup: (tmp) => { SETUPS.p2closing(tmp); putRecord(tmp, "r36p2-last-send.ok", "", 5); }, stop: /^STOP: the last send of this pass returned less than 12 minutes ago/m },
+  { name: "p2closing", tag: "not-done", scenario: { swapKind: "p2Closing", swapFile: "p2Dry.out" }, stop: /^STOP: the closing dry run does not read ELIGIBLE: 0/m },
   { name: "closing", tag: "too-soon", setup: (tmp) => { SETUPS.closing(tmp); putRecord(tmp, "r36-last-send.ok", "", 5); }, stop: /^STOP: the last send returned less than 12 minutes ago/m },
   { name: "closing", tag: "not-done", scenario: { swapKind: "closing", swapFile: "restDry.out" }, stop: /^STOP: the closing dry run does not read ELIGIBLE: 0/m },
   { name: "closing", tag: "refused", scenario: { swapKind: "closing", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the closing dry run failed or was refused/m },
@@ -863,7 +938,7 @@ test("every scenario stops its block with its own sentence, or ends clean on the
         assert.ok(!r.out.includes("TOOL-CHAIN-CONTINUED"), `${label}: the tool chain continued`);
         assert.match(r.out, sc.stop, `${label}\n${r.out.slice(-1500)}`);
         assert.deepEqual(r.recordsAtEnd, sc.wrote ?? [], `${label}: records written`);
-        if (sc.raw && sc.name === "bys") assert.deepEqual(r.calls.map((c) => c.id.split("#")[0]), ["grep"], `${label}: it ran more than the first check`);
+        if (sc.raw && (sc.name === "bys" || sc.name === "p2bys")) assert.deepEqual(r.calls.map((c) => c.id.split("#")[0]), ["grep"], `${label}: it ran more than the first check`);
         if (sc.tag === "main-moved") {
           assert.deepEqual(r.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`))), [], `${label}: the program ran after main moved`);
         }
@@ -885,7 +960,7 @@ test("main moved before the canary sent: THE CANARY stops with no program call, 
       assert.match(stopped.out, /^STOP: main moved during the sitting \(4{40} to 5{40}\)/m, stopped.out.slice(-800));
       assert.deepEqual(stopped.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`))), [], "the program ran after main moved");
       const carry = (tmp) => {
-        for (const m of ["r36-head.sha", "r36-night.ok", "r36-main.sha"]) putRecord(tmp, m, stopped.recordText[m], 10);
+        for (const m of ["r36-head.sha", "r36-night.ok", "r36-main.sha", "r36-stale.ok"]) putRecord(tmp, m, stopped.recordText[m], 10);
       };
       assert.equal(stopped.recordText["r36-main.sha"], `${MAINLINE}\n`);
       const again = await runOnce(
@@ -905,7 +980,7 @@ test("main moved before the canary sent: THE CANARY stops with no program call, 
           tag: "c3",
           scenario: { mainline: moved },
           setup: (tmp) => {
-            for (const m of ["r36-head.sha", "r36-night.ok", "r36-main.sha"]) putRecord(tmp, m, again.recordText[m], 1);
+            for (const m of ["r36-head.sha", "r36-night.ok", "r36-main.sha", "r36-stale.ok"]) putRecord(tmp, m, again.recordText[m], 1);
           },
         }),
         `${shell}-rerecord-3`,
@@ -914,6 +989,33 @@ test("main moved before the canary sent: THE CANARY stops with no program call, 
       assert.equal(canary.code, 0, canary.out.slice(-1500));
       assert.ok(canary.out.includes(SUCCESS.canary), shell);
       assert.equal(canary.calls.filter((c) => c.id.startsWith("caffeinate#")).length, 1);
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("Q-R36-F6 in the blocks: STALEPATH=yes reaches the program in every block, and the second pass's closing needs no wait when it sent nothing", async () => {
+  const base = mkdtempSync(join(tmpdir(), "fault-r36-stale-"));
+  try {
+    const docSha = await prepareHarness(base, readyDoc());
+    for (const shell of shellsHere()) {
+      const a = await runOnce(harnessConfig("bys", shell, base, docSha, { tag: "y1", stalepath: "yes" }), `${shell}-stale-1`, null);
+      assert.equal(a.code, 0, a.out.slice(-1500));
+      assert.equal(a.recordText["r36-stale.ok"], "yes\n");
+      const words = (r) => r.calls.filter((c) => c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`)).map((c) => { const l = c.args.trim().split("\n"); return l[l.indexOf(STALE_FLAG) + 1]; });
+      assert.deepEqual(words(a), ["yes"]);
+      const c = await runOnce(
+        harnessConfig("canary", shell, base, docSha, { tag: "y2", setup: (tmp) => { SETUPS.canary(tmp); putRecord(tmp, "r36-stale.ok", a.recordText["r36-stale.ok"], 2); } }),
+        `${shell}-stale-2`,
+        null,
+      );
+      assert.equal(c.code, 0, c.out.slice(-1500));
+      assert.deepEqual(words(c), ["yes", "yes"]);
+      const d = await runOnce(harnessConfig("p2closing", shell, base, docSha, { tag: "nosend", setup: (tmp) => p2records(tmp, 40) }), `${shell}-stale-3`, null);
+      assert.equal(d.code, 0, d.out.slice(-1500));
+      assert.ok(d.out.includes(SUCCESS.p2closing), shell);
+      assert.deepEqual(d.calls.filter((x) => x.id.startsWith("find#")), [], "it read the age of a send that never happened");
     }
   } finally {
     rmSync(base, { recursive: true, force: true });

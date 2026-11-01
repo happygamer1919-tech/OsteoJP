@@ -1,8 +1,8 @@
-READY: R4 four rounds and an independent rehearsal done (2026-11-01). Issued only if the Wednesday 11-04 compare is not clean.
+NOT READY: awaiting R4 review
 
 # R36: the fallback re-arm of the reminders, for the night of Wednesday 2026-11-04
 
-**Status: AUTHORED 2026-10-31 BY SOLO. REVIEWED (R4, four rounds, see "Review history"). REHEARSED 2026-10-31 AND 2026-11-01 BY A SESSION THAT DID NOT WRITE IT (see "Rehearsal"). NOT RUN.** Nothing in this document may be pasted until the first line reads READY. The blocks below carry `PENDING` in the three lines GREEN's dispatch fills, and STOP at their first check while they do.
+**Status: AUTHORED 2026-10-31 BY SOLO. REVIEWED (R4, four rounds, see "Review history"). REHEARSED 2026-10-31 AND 2026-11-01 BY A SESSION THAT DID NOT WRITE IT (see "Rehearsal"). READY at `aaceb468`. CHANGED 2026-11-01 FOR STRATEGY'S RULINGS OF THAT NIGHT (see "Questions for strategy"): the four blocks and the program changed, and three blocks were added for the second pass, so the document is NOT READY again until an R4 round and a delta rehearsal (see "What must happen before READY"). NOT RUN.** Nothing in this document may be pasted until the first line reads READY. BEFORE YOU START and SECOND PASS, BEFORE YOU START carry `PENDING` in the four lines GREEN's dispatch fills, and STOP at their first check while they do.
 
 **In plain words.** The reminder re-arm of 2026-10-12 gave a fresh reminder job to every appointment starting within 28 days of that night. Appointments further ahead were left to the reminder sweep, which still runs in shadow and sends nothing. If the sweep is not switched to sending on Wednesday 2026-11-04, this document runs the same re-arm once more that night, for every appointment starting within the next 28 days, behind a refusal that stops it if the sweep is sending. It writes nothing to the database. It sends one scheduling event per appointment to the scheduler, which plans that appointment's two reminders again.
 
@@ -122,7 +122,7 @@ A sitting that starts at Wednesday 2026-11-04 21:00 re-arms every qualifying app
 
 1. **This shell's switch.** The value of the sweep's send switch in the environment the block loaded, compared exactly as `apps/web/lib/reminders/sweep-mode.ts` compares it: exactly `send` is send, anything else is shadow. It prints `SET` or `UNSET` and nothing more. A switch set so that the sweep would send is a refusal, whose sentence says only that.
 2. **The owner's word.** `--owner-says-sweep-is-not-sending`, which GREEN types only after the owner has said, in the sitting, that he has looked at the Production environment variables of the Vercel project and that the switch is absent or is not `send`, and that he will not change it during the sitting. Without it, a refusal.
-3. **Production's own record.** One READ ONLY read of `reminder_sweep_passes` (the sweep's heartbeat, migration `0106`): the newest heartbeat of the tenant must be `shadow` and no more than 12 hours old, and no heartbeat of the last 7 days may be anything but `shadow`. A pass writes `send` on its heartbeat only while the switch is on (`apps/web/lib/reminders/sweep-send.ts`). It prints the mode word and counts, nothing else.
+3. **Production's own record.** One READ ONLY read of `reminder_sweep_passes` (the sweep's heartbeat, migration `0106`): the newest heartbeat of the tenant must be `shadow` and no more than 12 hours old, and no heartbeat of the last 7 days may be anything but `shadow`. A pass writes `send` on its heartbeat only while the switch is on (`apps/web/lib/reminders/sweep-send.ts`). It prints the mode word and counts, nothing else. **The stale-heartbeat path (Q-R36-F6, ruled 2026-11-01):** when the newest heartbeat is older than 12 hours or missing, check 3 passes only on the owner's second word, `--owner-saw-no-sweep-runs-in-the-last-hour yes` (he sees no run of `sweep-due-reminders` in Inngest in the last hour), never when any heartbeat of the last 7 days is not `shadow`, never when the newest heartbeat is not `shadow`, and the program prints `STALE-HEARTBEAT PATH TAKEN (Q-R36-F6)`. With fresh heartbeats the word changes nothing, except that a heartbeat under an hour old contradicts it, and that is a refusal.
 
 All three passed, it prints `SWEEP GUARD: the sweep is in shadow by all three checks (this shell's switch, the owner's word, production's heartbeats)`, which every block requires.
 
@@ -134,7 +134,17 @@ All three passed, it prints `SWEEP GUARD: the sweep is in shadow by all three ch
 
 ### When the heartbeats refuse
 
-A newest heartbeat older than 12 hours, or none at all, is a refusal, and **this document has no path past it**: no flag skips check 3. That is likely on exactly the night this document is for: passes that fail leave no heartbeat (`sweep.ts`, "A pass that could not finish for a tenant leaves no heartbeat for it"), and failing passes are a likely cause of a compare that is not clean. So the read-only dry run of Tuesday 2026-11-03 (Q-R36-F3) prints production's heartbeat line and shows this a day early. The line comes before check 3's own refusal only: checks 1 and 2 refuse earlier, before the heartbeats are read. And since BEFORE YOU START carries `--owner-says-sweep-is-not-sending`, the Tuesday dispatch needs the owner's Vercel look too, before GREEN pastes it. What to do when the heartbeats are stale while the owner sees the switch off in Vercel is Q-R36-F6.
+A newest heartbeat older than 12 hours, or none at all, is a refusal, **unless the stale-heartbeat path of Q-R36-F6 is taken** (check 3 above; ruled 2026-11-01). That is likely on exactly the night this document is for: passes that fail leave no heartbeat (`sweep.ts`, "A pass that could not finish for a tenant leaves no heartbeat for it"), and failing passes are a likely cause of a compare that is not clean. So the read-only dry run of Tuesday 2026-11-03 (Q-R36-F3) prints production's heartbeat line and shows this a day early. The line comes before check 3's own refusal only: checks 1 and 2 refuse earlier, before the heartbeats are read. And since BEFORE YOU START carries `--owner-says-sweep-is-not-sending`, the Tuesday dispatch needs the owner's Vercel look too, before GREEN pastes it. What to do when the heartbeats are stale while the owner sees the switch off in Vercel is Q-R36-F6, now ruled: the path below, and an incident card SOLO opens for why the sweep stopped.
+
+## The Tuesday dry run (Q-R36-F3, ruled 2026-11-01): Tuesday 2026-11-03 after 21:00
+
+Strategy: "The fallback's read-only dry run is Tue 11-03 after 21:00, READY by Tue 18:00." **No block changes for it.** GREEN pastes **BEFORE YOU START alone**, from a dispatch of its own that fills `RUNDAY=20261103` (a Tuesday, so the block's window is Tuesday 21:00 to Wednesday 06:29), HELD and DOCSHA as for Wednesday, and `STALEPATH=no`. Before it, the owner's first look (the Vercel switch: the block carries `--owner-says-sweep-is-not-sending`); the Inngest settings, the deploy look and the merge freeze are for the sending nights and are not needed for a read.
+
+- **What it prints:** everything BEFORE YOU START prints (counts only): `ELIGIBLE`, `G1 UNDER THE LIMIT OF 20000:` (the answer Q-R36-F3 asked for), the G4 line, the G3 line, the touched count, and `for the owner: sweep    production's heartbeats: ...`. A refusal of check 3 prints the heartbeat line before it, so stale heartbeats show on Tuesday (checks 1 and 2 refuse before the heartbeats are read).
+- **What it does not do:** it sends nothing (no `--confirm`), takes no lock (only a confirm takes one) and writes no marker (only a confirm writes it). It writes its records in `/tmp/r36-` (the head, the night, `main`, STALEPATH).
+- **After it, GREEN pastes nothing else.** Its night record names Tuesday, so THE CANARY would STOP outside it on Wednesday 21:00.
+- **Wednesday's BEFORE YOU START starts clean:** its first commands remove every `/tmp/r36-` record, and its dry run requires this operation's marker to be empty, which the Tuesday run left it.
+- A `G1 ... NO` or a refusal on Tuesday goes to strategy that night.
 
 ## Which appointments get an event
 
@@ -213,7 +223,8 @@ The 2026-10-12 sitting's marker, `~/.osteojp-inc1007-rearm.json`, is that sittin
    - **Vercel**, Production environment variables of the project: the sweep's send switch is absent or is not `send`, and he will not change it during the sitting. With it `send`: this document is not used.
    - **Inngest**, as step 2 of 2026-10-12: `schedule-appointment-reminders` shows Debounce; `send-appointment-reminder` shows Singleton; the trigger of `send-appointment-confirmation` shows `event.data.confirmationEligible == true`. Every production deploy syncs the app since #1660, and the look is still made. With any of the three missing: stop.
    - **Vercel and GitHub Actions, the deploy has settled:** the latest Production deployment in Vercel reads Ready (not Building or Queued), and the scheduler sync of that deployment finished green. **The sync, step by step:** note the short commit sha Vercel shows for that Ready Production deployment; in GitHub, Actions, open the run named "Inngest auto-sync (osteojp-reminders, osteojp-consultation)" whose commit is that sha (the workflow starts on every deployment status, previews included, so runs of the same name sit beside it with their job Skipped: those are not the one); in that run the job "Sync osteojp-reminders and osteojp-consultation after a production deploy" shows a green check, not Skipped; and the run's summary shows the two headings "osteojp-reminders synced" and "osteojp-consultation synced". Any other state (no such run, the job Skipped, running, failed or cancelled, a heading missing): stop. Why: every production deploy syncs the scheduler (#1660) and restarts the functions, and a deploy or a sync while events arrive can fail the run that plans their reminders. What keeps a deploy from starting during the sitting is the MERGE FREEZE below, a precondition of the dispatch; this look checks that the last deploy before it has settled.
-   GREEN pastes the blocks, which carry `--owner-says-sweep-is-not-sending` and `--i-checked-inngest-settings`, only on those three words.
+   - **Only when the dispatch carries `STALEPATH=yes` (Q-R36-F6):** the owner confirms BOTH that the switch is off in Vercel (the first look) AND that the Inngest dashboard (Production), Functions, `sweep-due-reminders`, Runs, shows no run in the last hour. SOLO sets `STALEPATH=yes` in a dispatch only on the ruling of Q-R36-F6 (the Tuesday dry run refused on stale or missing heartbeats), and opens an incident card for why the sweep stopped. If the owner cannot confirm both, the fallback stops there. With `STALEPATH=no` this look is not made, and stale heartbeats are a refusal.
+   GREEN pastes the blocks, which carry `--owner-says-sweep-is-not-sending`, `--owner-saw-no-sweep-runs-in-the-last-hour` with the recorded STALEPATH, and `--i-checked-inngest-settings`, only on those words.
 2. **BEFORE YOU START**, from the dispatch's filled copy. Network time, the night, the held head, every pin, the target guard, the sweep refusal, and the first dry run (counts only). It records the head, the night and `main`, and prints production's heartbeat line and the touched count for the owner.
 3. **THE CANARY**: five appointments three or more days ahead.
 4. **G2, the owner's check of the canary** (below). THE REST waits for his word.
@@ -239,8 +250,9 @@ set -o pipefail
 HELD='PENDING: set at the READY line'
 DOCSHA='PENDING: set at the READY line'
 RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'
+STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
-SHAWRAP=65a48f488fd1f78fe3821f171c76e0588cb015e91b37ad07c55e3fc8a52b74e0
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -256,8 +268,9 @@ SWEEPOK="SWEEP GUARD: the sweep is in shadow by all three checks (this shell's s
 echo "${HELD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: HELD is not a filled-in sha, so this block is NOT READY: GREEN pastes the copy in its dispatch, where SOLO filled it. Nothing was read from production and nothing was sent"; exit 1; }
 echo "${DOCSHA} ${SHAWRAP} ${SHAEMIT} ${SHAGUARD} ${SHAPTM}" | grep -qxE '[0-9a-f]{64}( [0-9a-f]{64}){4}' || { echo "STOP: a sha256 in this block is still PENDING, so it is NOT READY. Nothing was read from production and nothing was sent"; exit 1; }
 echo "${RUNDAY}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9]' || { echo "STOP: RUNDAY is still PENDING, or is not a Lisbon date YYYYMMDD, so this block is NOT READY. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${STALEPATH}" | grep -qxE 'no|yes' || { echo "STOP: STALEPATH is still PENDING, or is not no or yes, so this block is NOT READY. Nothing was read from production and nothing was sent"; exit 1; }
 echo "${FIXSHA}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: FIXSHA is not a full 40-character sha. Nothing was read from production and nothing was sent"; exit 1; }
-rm -f /tmp/r36-head.sha /tmp/r36-night.ok /tmp/r36-canary.ok /tmp/r36-last-send.ok /tmp/r36-main.sha || { echo "STOP: the previous sitting's records could not be cleared. Nothing was read from production and nothing was sent"; exit 1; }
+rm -f /tmp/r36-head.sha /tmp/r36-night.ok /tmp/r36-canary.ok /tmp/r36-last-send.ok /tmp/r36-main.sha /tmp/r36-stale.ok || { echo "STOP: the previous sitting's records could not be cleared. Nothing was read from production and nothing was sent"; exit 1; }
 cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was read from production and nothing was sent"; exit 1; }
 TOK=""; TBAD=""; TNOT=""
 SN=$(sntp time.apple.com 2>&1) || SN=$(sntp time.apple.com 2>&1) || SN=$(sntp time.apple.com 2>&1) || SN=""
@@ -338,7 +351,7 @@ echo "every pin holds. The production environment loads now"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was read from production and nothing was sent"; exit 1; }
 node ${GUARD} 2>&1 | tee /tmp/r36-target-a.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was read from production and nothing was sent"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/r36-target-a.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was read from production and nothing was sent"; exit 1; }
-node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending 2>&1 | tee /tmp/r36-dry-a.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${STALEPATH}" 2>&1 | tee /tmp/r36-dry-a.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent"; exit 1; }
 grep -qxF "${SWEEPOK}" /tmp/r36-dry-a.out || { echo "STOP: the dry run does not show the sweep guard's line. Nothing was sent"; exit 1; }
 grep -qxF 'target   PRODUCTION' /tmp/r36-dry-a.out || { echo "STOP: the dry run does not show the line target PRODUCTION. Nothing was sent"; exit 1; }
 grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36-dry-a.out || { echo "STOP: the dry run does not show the line mode DRY RUN. Nothing was sent"; exit 1; }
@@ -359,7 +372,8 @@ echo "for the owner: ${TCH} (it holds any visit whose last touch was a confirm t
 echo "${TIP}" > /tmp/r36-head.sha || { echo "STOP: the held head could not be recorded. Nothing was sent"; exit 1; }
 echo "${RUNDAY} ${NEXTDAY}" > /tmp/r36-night.ok || { echo "STOP: the night could not be recorded. Nothing was sent"; exit 1; }
 echo "${MAINSHA}" > /tmp/r36-main.sha || { echo "STOP: origin/main could not be recorded. Nothing was sent"; exit 1; }
-echo "recorded:      the held head ${TIP}, the night ${RUNDAY} to ${NEXTDAY} and main ${MAINSHA}, for the blocks that follow"
+echo "${STALEPATH}" > /tmp/r36-stale.ok || { echo "STOP: STALEPATH could not be recorded. Nothing was sent"; exit 1; }
+echo "recorded:      the held head ${TIP}, the night ${RUNDAY} to ${NEXTDAY}, main ${MAINSHA} and STALEPATH ${STALEPATH}, for the blocks that follow"
 echo "BEFORE YOU START: every check passed. ELIGIBLE ${N} at this read. THE CANARY next."
 )
 ```
@@ -374,7 +388,7 @@ Pasted only after the owner's three looks, in the sitting. Three days, so both r
 (
 set -o pipefail
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
-SHAWRAP=65a48f488fd1f78fe3821f171c76e0588cb015e91b37ad07c55e3fc8a52b74e0
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -416,6 +430,9 @@ if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) 
 if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
 echo "Lisbon now:    ${NOWL}; the night recorded: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
 [ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the night BEFORE YOU START recorded (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). Nothing was sent by this block"; exit 1; }
+test -f /tmp/r36-stale.ok || { echo "STOP: BEFORE YOU START recorded no STALEPATH in this sitting. Nothing was sent by this block"; exit 1; }
+SR=$(cat /tmp/r36-stale.ok) || { echo "STOP: the recorded STALEPATH could not be read. Nothing was sent by this block"; exit 1; }
+echo "${SR}" | grep -qxE 'no|yes' || { echo "STOP: the recorded STALEPATH is not no or yes [${SR}]. Nothing was sent by this block"; exit 1; }
 test ! -f /tmp/r36-canary.ok || { echo "STOP: the canary already ran in this sitting. It is never sent twice. Nothing was sent by this block"; exit 1; }
 test -f /tmp/r36-main.sha || { echo "STOP: BEFORE YOU START recorded no main in this sitting. Nothing was sent by this block"; exit 1; }
 MREC=$(cat /tmp/r36-main.sha) || { echo "STOP: the recorded main could not be read. Nothing was sent by this block"; exit 1; }
@@ -427,7 +444,7 @@ echo "main:          ${MNOW}, unchanged since BEFORE YOU START"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was sent by this block"; exit 1; }
 node ${GUARD} 2>&1 | tee /tmp/r36-target-b.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was sent by this block"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/r36-target-b.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was sent by this block"; exit 1; }
-node ${WRAP} --tenant-slug osteojp --min-days-ahead 3 --max-days-ahead 28 --max 5 --owner-says-sweep-is-not-sending 2>&1 | tee /tmp/r36-canary-dry.out || { echo "STOP: the canary's dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent by this block"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --min-days-ahead 3 --max-days-ahead 28 --max 5 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" 2>&1 | tee /tmp/r36-canary-dry.out || { echo "STOP: the canary's dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent by this block"; exit 1; }
 grep -qxF "${SWEEPOK}" /tmp/r36-canary-dry.out || { echo "STOP: the canary's dry run does not show the sweep guard's line. Nothing was sent by this block"; exit 1; }
 grep -qxF 'target   PRODUCTION' /tmp/r36-canary-dry.out || { echo "STOP: the canary's dry run does not show the line target PRODUCTION. Nothing was sent by this block"; exit 1; }
 grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36-canary-dry.out || { echo "STOP: the canary's dry run does not show the line mode DRY RUN. Nothing was sent by this block"; exit 1; }
@@ -445,7 +462,7 @@ echo "${BEGAN}" | grep -qxE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-2][0-9]:[0-5][0-9] (W
 BEGANT=$(TZ=America/Toronto date '+%Y-%m-%d %H:%M %Z') || { echo "STOP: the Toronto clock could not be read for the time the canary begins. Nothing was sent by this block"; exit 1; }
 echo "${BEGANT}" | grep -qxE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-2][0-9]:[0-5][0-9] (EST|EDT)' || { echo "STOP: the time the canary begins did not read on the Toronto clock as YYYY-MM-DD HH:MM and the zone EST or EDT [${BEGANT}]. Nothing was sent by this block"; exit 1; }
 echo "canary began:  ${BEGAN}, Lisbon time, and ${BEGANT}, the clock of the owner's machine. The five are sent from this minute on"
-caffeinate -i node ${WRAP} --tenant-slug osteojp --min-days-ahead 3 --max-days-ahead 28 --max 5 --owner-says-sweep-is-not-sending --confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings 2>&1 | tee /tmp/r36-canary-send.out || { touch /tmp/r36-last-send.ok || { echo "STOP: the canary failed or was refused, and the time it returned could not be recorded; its lines are above. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }; echo "STOP: the canary failed or was refused; its lines are above. Conclude nothing from the exit code. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }
+caffeinate -i node ${WRAP} --tenant-slug osteojp --min-days-ahead 3 --max-days-ahead 28 --max 5 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" --confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings 2>&1 | tee /tmp/r36-canary-send.out || { touch /tmp/r36-last-send.ok || { echo "STOP: the canary failed or was refused, and the time it returned could not be recorded; its lines are above. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }; echo "STOP: the canary failed or was refused; its lines are above. Conclude nothing from the exit code. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }
 touch /tmp/r36-last-send.ok || { echo "STOP: the time the canary returned could not be recorded. What the lines above show as sent stays sent. Nothing further is sent"; exit 1; }
 grep -qE '^SENT: 5 of 5  ' /tmp/r36-canary-send.out || { echo "STOP: the canary does not show SENT: 5 of 5. What the lines above show as sent stays sent. Nothing further is sent"; exit 1; }
 grep -qxF 'G4 ATTEMPTED EQUALS SENT: yes (5 requests started, 5 sent)' /tmp/r36-canary-send.out || { echo "STOP: the canary does not show G4 ATTEMPTED EQUALS SENT: yes (5 requests started, 5 sent). Nothing further is sent"; exit 1; }
@@ -475,7 +492,7 @@ Pasted only after the owner's word that G2 passed. Then again after each run tha
 (
 set -o pipefail
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
-SHAWRAP=65a48f488fd1f78fe3821f171c76e0588cb015e91b37ad07c55e3fc8a52b74e0
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -517,6 +534,9 @@ if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) 
 if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
 echo "Lisbon now:    ${NOWL}; the night recorded: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
 [ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the night BEFORE YOU START recorded (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). Nothing was sent by this block"; exit 1; }
+test -f /tmp/r36-stale.ok || { echo "STOP: BEFORE YOU START recorded no STALEPATH in this sitting. Nothing was sent by this block"; exit 1; }
+SR=$(cat /tmp/r36-stale.ok) || { echo "STOP: the recorded STALEPATH could not be read. Nothing was sent by this block"; exit 1; }
+echo "${SR}" | grep -qxE 'no|yes' || { echo "STOP: the recorded STALEPATH is not no or yes [${SR}]. Nothing was sent by this block"; exit 1; }
 test -f /tmp/r36-canary.ok || { echo "STOP: the canary has not run in this sitting, so THE REST does not run. Nothing was sent by this block"; exit 1; }
 test -f /tmp/r36-main.sha || { echo "STOP: BEFORE YOU START recorded no main in this sitting. Nothing was sent by this block"; exit 1; }
 MREC=$(cat /tmp/r36-main.sha) || { echo "STOP: the recorded main could not be read. Nothing was sent by this block"; exit 1; }
@@ -528,7 +548,7 @@ echo "main:          ${MNOW}, unchanged since BEFORE YOU START"
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was sent by this block"; exit 1; }
 node ${GUARD} 2>&1 | tee /tmp/r36-target-c.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was sent by this block"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/r36-target-c.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was sent by this block"; exit 1; }
-node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending 2>&1 | tee /tmp/r36-rest-dry.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent by this block"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" 2>&1 | tee /tmp/r36-rest-dry.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent by this block"; exit 1; }
 grep -qxF "${SWEEPOK}" /tmp/r36-rest-dry.out || { echo "STOP: the dry run does not show the sweep guard's line. Nothing was sent by this block"; exit 1; }
 grep -qxF 'target   PRODUCTION' /tmp/r36-rest-dry.out || { echo "STOP: the dry run does not show the line target PRODUCTION. Nothing was sent by this block"; exit 1; }
 grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36-rest-dry.out || { echo "STOP: the dry run does not show the line mode DRY RUN. Nothing was sent by this block"; exit 1; }
@@ -543,7 +563,7 @@ echo "${K}" | grep -qxE '[1-9][0-9]{0,5}' || { echo "STOP: the number of appoint
 [ "${K}" -ge 5 ] || { echo "STOP: G3 checked ${K} appointments, fewer than the canary's five, so the marker is not this sitting's. The lead rules. Nothing was sent by this block"; exit 1; }
 if [ "${N}" = 0 ]; then echo "THE REST: ELIGIBLE 0 at this read, so nothing is left to send and nothing was sent by this block. Paste THE CLOSING DRY RUN 12 minutes or more after the last send returned."; exit 0; fi
 echo "the dry run passed: ${N} eligible, G3 0 for ${K} appointments checked. This run sends up to 200 now"
-caffeinate -i node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending --confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings 2>&1 | tee /tmp/r36-rest-send.out || { touch /tmp/r36-last-send.ok || { echo "STOP: the run failed or was refused, and the time it returned could not be recorded; its lines are above. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }; echo "STOP: the run failed or was refused; its lines are above. Conclude nothing from the exit code. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }
+caffeinate -i node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" --confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings 2>&1 | tee /tmp/r36-rest-send.out || { touch /tmp/r36-last-send.ok || { echo "STOP: the run failed or was refused, and the time it returned could not be recorded; its lines are above. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }; echo "STOP: the run failed or was refused; its lines are above. Conclude nothing from the exit code. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }
 touch /tmp/r36-last-send.ok || { echo "STOP: the time the run returned could not be recorded. What the lines above show as sent stays sent. Nothing further is sent"; exit 1; }
 SL=$(grep -cE '^SENT: [0-9]+ of [0-9]+  ' /tmp/r36-rest-send.out) || { echo "STOP: the run does not show a SENT line. Nothing further is sent"; exit 1; }
 [ "${SL}" = 1 ] || { echo "STOP: the run shows ${SL} SENT lines, not exactly one. Nothing further is sent"; exit 1; }
@@ -563,7 +583,7 @@ echo "THE REST: this run ended clean. Paste THE REST again; when its dry run rea
 (
 set -o pipefail
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
-SHAWRAP=65a48f488fd1f78fe3821f171c76e0588cb015e91b37ad07c55e3fc8a52b74e0
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -605,6 +625,9 @@ if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) 
 if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
 echo "Lisbon now:    ${NOWL}; the night recorded: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
 [ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the night BEFORE YOU START recorded (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). This block sends nothing"; exit 1; }
+test -f /tmp/r36-stale.ok || { echo "STOP: BEFORE YOU START recorded no STALEPATH in this sitting. This block sends nothing"; exit 1; }
+SR=$(cat /tmp/r36-stale.ok) || { echo "STOP: the recorded STALEPATH could not be read. This block sends nothing"; exit 1; }
+echo "${SR}" | grep -qxE 'no|yes' || { echo "STOP: the recorded STALEPATH is not no or yes [${SR}]. This block sends nothing"; exit 1; }
 test -f /tmp/r36-canary.ok || { echo "STOP: the canary has not run in this sitting. This block sends nothing"; exit 1; }
 test -f /tmp/r36-last-send.ok || { echo "STOP: no send of this sitting recorded the time it returned. This block sends nothing"; exit 1; }
 RECENT=$(find /tmp/r36-last-send.ok -mmin -12) || { echo "STOP: the age of the record of the last send could not be read. This block sends nothing"; exit 1; }
@@ -612,7 +635,7 @@ RECENT=$(find /tmp/r36-last-send.ok -mmin -12) || { echo "STOP: the age of the r
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. This block sends nothing"; exit 1; }
 node ${GUARD} 2>&1 | tee /tmp/r36-target-d.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. This block sends nothing"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/r36-target-d.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. This block sends nothing"; exit 1; }
-node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending 2>&1 | tee /tmp/r36-closing.out || { echo "STOP: the closing dry run failed or was refused; its lines are above. It is READ ONLY. This block sends nothing"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" 2>&1 | tee /tmp/r36-closing.out || { echo "STOP: the closing dry run failed or was refused; its lines are above. It is READ ONLY. This block sends nothing"; exit 1; }
 grep -qxF "${SWEEPOK}" /tmp/r36-closing.out || { echo "STOP: the closing dry run does not show the sweep guard's line. This block sends nothing"; exit 1; }
 grep -qxF 'target   PRODUCTION' /tmp/r36-closing.out || { echo "STOP: the closing dry run does not show the line target PRODUCTION. This block sends nothing"; exit 1; }
 grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36-closing.out || { echo "STOP: the closing dry run does not show the line mode DRY RUN. This block sends nothing"; exit 1; }
@@ -635,6 +658,329 @@ echo "CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the ${K} appointments this
 
 Each event cancels the appointment's sleeping jobs when it arrives, and their replacements exist only if the planning run, `schedule-appointment-reminders`, succeeds. A failed planning run (a deploy, a 5xx) leaves that appointment with no job at all, and no line any block reads shows it. So, after THE CLOSING DRY RUN, the owner looks in the Inngest dashboard (Production): **Functions, `schedule-appointment-reminders`, Runs, from the minute `canary began` printed: none with the status Failed**; and the same for `send-appointment-reminder`. Any Failed run: report it with its count, and the lead rules. The marker holds that appointment as sent, so no later run of this program sends it again unasked.
 
+## THE SECOND PASS: Thursday 2026-11-05 night (Q-R36-F5, ruled 2026-11-01)
+
+Strategy: "If the fallback runs Wed night, its second pass runs Thu 11-05 night." **Pasted only if Wednesday's sitting sent its canary**, from a dispatch of its own: `RUNDAY=20261105`, HELD, DOCSHA and STALEPATH. The same rules as Wednesday: the owner's looks of step 1, THE MERGE FREEZE from before them until GREEN reports, the same machine, the halt rule, counts only.
+
+**What it re-arms, and why it reaches the residual.** The events of Wednesday wrote no audit row, so Wednesday's sends do not make anything "touched" on Thursday; this operation's marker skips them instead, at the start each had then. By Thursday night, 25 hours or more after Wednesday's reads, a visit Wednesday skipped as touched is no longer touched unless it was saved again since. So the second pass sends to:
+
+- every visit Wednesday skipped as touched and nobody touched again since: THE RESIDUAL (a confirm that sent nothing), and also those whose touch did send an event (a fresh job for a healthy one: harmless, as on 2026-10-12; the program cannot tell them apart);
+- any visit Wednesday could not reach for another reason: rows left unsent by a halted Wednesday (a THE REST `main moved` stop), and a visit moved in the patient portal since Wednesday (the marker holds it at its old start);
+- **and nothing else new:** `--max-days-ahead 27`, so its reach (Thursday's read plus 27 days) is Wednesday's (Wednesday's read plus 28 days): it adds no day.
+
+It never sends twice: a visit Wednesday sent at its present start is `skipped: already sent by an earlier run (marker)`; an attempted one is skipped unless the lead rules `--resend-attempted`. **What stays out:** a residual visit that starts within 24 hours of Thursday's read (its SMS time has passed, as on 2026-10-12), and the residual of Thursday's own rule 7 (a confirm that sent nothing on Thursday), which its closing dry run counts for the owner. No third pass is ruled.
+
+**How it uses the marker.** BEFORE YOU START refuses a non-empty marker by design. The second pass has its own first block, which REQUIRES the marker to hold Wednesday's sends (G3 checks five or more appointments, none attempted), and its own records in `/tmp/r36p2-`, so nothing of Wednesday's records is read and Wednesday's blocks cannot be pasted on its night. It has no canary: Wednesday's canary and G2 checked that the events arrive and schedule.
+
+The order: the owner's looks of step 1; SECOND PASS, BEFORE YOU START (from the dispatch's filled copy); SECOND PASS, THE SENDS, pasted again and again until its dry run reads `ELIGIBLE: 0`; SECOND PASS, THE CLOSING DRY RUN, 12 minutes or more after its last send (at once if it sent nothing); the owner's look at the re-plan, from the minute the second pass's first send began.
+
+### SECOND PASS, BEFORE YOU START. GREEN pastes its dispatch's filled copy
+
+```
+(
+set -o pipefail
+HELD='PENDING: set at the READY line'
+DOCSHA='PENDING: set at the READY line'
+RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'
+STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'
+FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
+SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
+SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
+SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
+BR=origin/data/R36-fallback-rearm-20261104
+DOCF=docs/data-op-r36-fallback-rearm-20261104.md
+DOCPIN=docs/data-op-r36-fallback-rearm-20261104.sha256
+WRAP=packages/db/scripts/r36-fallback-rearm-emit.mjs
+EMIT=packages/db/scripts/inc-1007-rearm-reminders-emit.mjs
+GUARD=scripts/assert-production-target.mjs
+PTM=scripts/production-target.mjs
+SWEEPOK="SWEEP GUARD: the sweep is in shadow by all three checks (this shell's switch, the owner's word, production's heartbeats)"
+
+echo "${HELD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: HELD is not a filled-in sha, so this block is NOT READY: GREEN pastes the copy in its dispatch, where SOLO filled it. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${DOCSHA} ${SHAWRAP} ${SHAEMIT} ${SHAGUARD} ${SHAPTM}" | grep -qxE '[0-9a-f]{64}( [0-9a-f]{64}){4}' || { echo "STOP: a sha256 in this block is still PENDING, so it is NOT READY. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${RUNDAY}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9]' || { echo "STOP: RUNDAY is still PENDING, or is not a Lisbon date YYYYMMDD, so this block is NOT READY. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${STALEPATH}" | grep -qxE 'no|yes' || { echo "STOP: STALEPATH is still PENDING, or is not no or yes, so this block is NOT READY. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${FIXSHA}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: FIXSHA is not a full 40-character sha. Nothing was read from production and nothing was sent"; exit 1; }
+rm -f /tmp/r36p2-head.sha /tmp/r36p2-night.ok /tmp/r36p2-canary.ok /tmp/r36p2-last-send.ok /tmp/r36p2-main.sha /tmp/r36p2-stale.ok || { echo "STOP: the previous sitting's records could not be cleared. Nothing was read from production and nothing was sent"; exit 1; }
+cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was read from production and nothing was sent"; exit 1; }
+TOK=""; TBAD=""; TNOT=""
+SN=$(sntp time.apple.com 2>&1) || SN=$(sntp time.apple.com 2>&1) || SN=$(sntp time.apple.com 2>&1) || SN=""
+OFF=$(echo "${SN}" | awk '$1 ~ /^[+-][0-9]+[.][0-9]+$/ && $2 == "+/-" && $4 == "time.apple.com" { v = $1 } END { print v }')
+if echo "${OFF}" | grep -qxE '[+-][0-9]+[.][0-9]+'; then if awk -v o="${OFF}" 'BEGIN { o += 0; if (o < 0) o = -o; if (o <= 5) exit 0; exit 1 }'; then TOK="${TOK} sntp"; echo "network time:  sntp time.apple.com: read, the machine's clock is ${OFF} seconds from it, within 5 seconds"; else TBAD="${TBAD} sntp"; echo "network time:  sntp time.apple.com: read, the machine's clock is ${OFF} seconds from it, MORE THAN 5 seconds, or the offset could not be compared"; fi; else TNOT="${TNOT} sntp"; echo "network time:  sntp time.apple.com: NOT READ (it failed three times in a row, or no offset could be read out of its answer)"; fi
+for TU in https://api.github.com https://www.cloudflare.com; do
+TH=$(curl -sI --max-time 8 "${TU}" 2>/dev/null) || TH=""
+TL=$(date -u '+%s') || TL=""
+TD=$(printf '%s\n' "${TH}" | awk '{ sub(/\r$/, "") } tolower($1) == "date:" { v = $0; sub(/^[^ ]+ +/, "", v) } END { print v }')
+TE=""; if printf '%s\n' "${TD}" | grep -qxE '(Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT'; then TE=$(LC_ALL=C date -j -u -f '%a, %d %b %Y %H:%M:%S GMT' "${TD}" '+%s' 2>/dev/null) || TE=""; fi
+if printf '%s %s\n' "${TE}" "${TL}" | grep -qxE '[1-9][0-9]{8,10} [1-9][0-9]{8,10}'; then TDIF=$(( ${TL} - ${TE} )); if [ "${TDIF}" -ge -30 ] && [ "${TDIF}" -le 30 ]; then TOK="${TOK} ${TU}"; echo "network time:  ${TU}: read, its Date header says ${TD}, the machine's clock is ${TDIF} seconds ahead of it (a minus sign means behind), within 30 seconds"; else TBAD="${TBAD} ${TU}"; echo "network time:  ${TU}: read, its Date header says ${TD}, the machine's clock is ${TDIF} seconds ahead of it (a minus sign means behind), MORE THAN 30 seconds"; fi; else TNOT="${TNOT} ${TU}"; echo "network time:  ${TU}: NOT READ (curl failed or ran past 8 seconds, or it sent no Date header that could be parsed)"; fi
+done
+[ -z "${TBAD}" ] || { echo "STOP: the machine's clock disagrees with network time, by more than the tolerance, at:${TBAD} (the network time lines above carry the numbers). One source that can be read and disagrees stops the block, whatever the others say. Do not set the clock yourself. Nothing was read from production and nothing was sent"; exit 1; }
+[ -n "${TOK}" ] || { echo "STOP: the machine's clock could not be held against network time: none of the three sources could be read, so the clock is not shown to be right. Do not set the clock yourself. Nothing was read from production and nothing was sent"; exit 1; }
+echo "network time:  the machine's clock agrees with every source that could be read. Read:${TOK}. Not read:${TNOT:- none}."
+NOW=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %u %Z') || { echo "STOP: the Lisbon clock could not be read. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${NOW}" | grep -qxE '[0-9]{12} [1-7] (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM, a weekday and the zone WET or WEST, so the Lisbon zone may not have loaded [${NOW}]. Nothing was read from production and nothing was sent"; exit 1; }
+NOWL=$(echo "${NOW}" | cut -c1-12)
+DOW=$(echo "${NOW}" | cut -c14)
+LT=$(echo "${NOWL}" | cut -c9-12)
+DAY=$(echo "${NOWL}" | cut -c1-8)
+echo "${NOWL} ${DOW} ${LT} ${DAY}" | grep -qxE '[0-9]{12} [1-7] [0-2][0-9][0-5][0-9] [0-9]{8}' || { echo "STOP: the Lisbon time did not split into YYYYMMDDHHMM, a weekday, HHMM and YYYYMMDD. Nothing was read from production and nothing was sent"; exit 1; }
+if awk -v s="${DOW}${LT}" 'BEGIN { d = substr(s, 1, 1) + 0; t = substr(s, 2, 4) + 0; if (d == 7) exit 0; if (d >= 1 && d <= 5 && (t < 800 || t >= 2100)) exit 0; if (d == 6 && (t < 800 || t >= 1300)) exit 0; exit 1 }'; then CLOCK=closed; else CLOCK=open; fi
+echo "Lisbon now:    ${NOWL} (YYYYMMDDHHMM), weekday ${DOW} (1 is Monday, 7 is Sunday): ${CLOCK} by the weekday table (Monday to Friday 08:00 to 21:00, Saturday 08:00 to 13:00, Sunday closed)"
+[ "${CLOCK}" = closed ] || { echo "STOP: Lisbon ${NOWL} is inside clinic hours by the weekday table. This operation runs in closed hours only. Nothing was read from production and nothing was sent"; exit 1; }
+RDOW=$(TZ=Europe/Lisbon date -j -f '%Y%m%d%H%M' "${RUNDAY}1200" '+%u') || { echo "STOP: the weekday of RUNDAY could not be computed. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${RDOW}" | grep -qx '[1-5]' || { echo "STOP: RUNDAY ${RUNDAY} is not a Monday to Friday (it reads as weekday ${RDOW}). This operation runs on a weekday night only. Nothing was read from production and nothing was sent"; exit 1; }
+NEXTDAY=$(TZ=Europe/Lisbon date -j -v+1d -f '%Y%m%d%H%M' "${RUNDAY}1200" '+%Y%m%d') || { echo "STOP: the day after RUNDAY could not be computed. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${NEXTDAY}" | grep -qxE '[0-9]{8}' || { echo "STOP: the day after RUNDAY did not read as YYYYMMDD. Nothing was read from production and nothing was sent"; exit 1; }
+WIN=no
+if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) exit 0; exit 1 }'; then WIN=yes; fi
+if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
+echo "the night:     RUNDAY ${RUNDAY}, weekday ${RDOW}; the window runs from ${RUNDAY} 21:00 to ${NEXTDAY} 06:29, Lisbon; Lisbon now ${NOWL}; inside: ${WIN}"
+[ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the window of the night this block names (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). Nothing was read from production and nothing was sent"; exit 1; }
+git fetch origin --prune || { echo "STOP: the fetch failed, so the held head may be stale. Nothing was read from production and nothing was sent"; exit 1; }
+TIP=$(git rev-parse ${BR}) || { echo "STOP: the held head, ${BR}, could not be read. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${TIP}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the held head did not read as a full 40-character sha [${TIP}]. Nothing was read from production and nothing was sent"; exit 1; }
+echo "held head now: ${TIP}"
+[ "${TIP}" = "${HELD}" ] || { echo "STOP: the held head is not the commit this block names (${HELD}): the branch was pushed to since the READY line, or it is gone. Nothing was read from production and nothing was sent"; exit 1; }
+MAINSHA=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${MAINSHA}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: origin/main did not read as a full 40-character sha [${MAINSHA}]. Nothing was read from production and nothing was sent"; exit 1; }
+echo "main now:      ${MAINSHA}. No merge to main until the sitting ends"
+STRAY=$(git status --short) || { echo "STOP: git status failed in the apply worktree. Nothing was read from production and nothing was sent"; exit 1; }
+[ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean. Do not clean it. Nothing was read from production and nothing was sent"; echo "${STRAY}"; exit 1; }
+git checkout -q --detach ${TIP} || { echo "STOP: the checkout of the held head failed. Nothing was read from production and nothing was sent"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read after the checkout. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. Nothing was read from production and nothing was sent"; exit 1; }
+[ "${HD}" = "${TIP}" ] || { echo "STOP: the apply worktree is not on the held head after the checkout. Nothing was read from production and nothing was sent"; exit 1; }
+echo "checked out:   ${TIP}, the held head"
+git merge-base --is-ancestor ${FIXSHA} ${TIP} || { echo "STOP: the reminder fix of 2026-10-07 (#1562, ${FIXSHA}) is not in the history of the held head, or git could not say. Nothing was read from production and nothing was sent"; exit 1; }
+echo "the fix:       ${FIXSHA} is in the history of the held head"
+DOC=$(git show ${TIP}:${DOCF} | shasum -a 256 | cut -d' ' -f1) || { echo "STOP: the document could not be read and hashed at the held head. Nothing was read from production and nothing was sent"; exit 1; }
+echo "document:      ${DOC}"
+[ "${DOC}" = "${DOCSHA}" ] || { echo "STOP: the document at the held head is not the approved one. Nothing was read from production and nothing was sent"; exit 1; }
+TOP=$(git show ${TIP}:${DOCF} | sed -n 1p) || { echo "STOP: the document's first line could not be read. Nothing was read from production and nothing was sent"; exit 1; }
+echo "${TOP}" | grep -qvE '^NOT READY' || { echo "STOP: the document's first line at the held head still reads NOT READY, or it could not be searched. Nothing was read from production and nothing was sent"; exit 1; }
+echo "first line:    ${TOP}"
+SIDE=$(git show ${TIP}:${DOCPIN}) || { echo "STOP: the sidecar could not be read at the held head. Nothing was read from production and nothing was sent"; exit 1; }
+echo "sidecar:       ${SIDE}"
+[ "${SIDE}" = "${DOCSHA}  ${DOCF}" ] || { echo "STOP: the sidecar at the held head does not pin the approved document. Nothing was read from production and nothing was sent"; exit 1; }
+test -f ${WRAP} || { echo "STOP: the program is not on disk at the held head. Nothing was read from production and nothing was sent"; exit 1; }
+test -f ${EMIT} || { echo "STOP: the program of 2026-10-12 is not on disk at the held head. Nothing was read from production and nothing was sent"; exit 1; }
+test -f ${GUARD} || { echo "STOP: the target guard is not on disk at the held head. Nothing was read from production and nothing was sent"; exit 1; }
+test -f ${PTM} || { echo "STOP: the guard's module is not on disk at the held head. Nothing was read from production and nothing was sent"; exit 1; }
+SW=$(shasum -a 256 ${WRAP} | cut -d' ' -f1) || { echo "STOP: the program could not be hashed. Nothing was read from production and nothing was sent"; exit 1; }
+echo "program:       ${SW}"
+[ "${SW}" = "${SHAWRAP}" ] || { echo "STOP: the program on disk is not the approved file. Nothing was read from production and nothing was sent"; exit 1; }
+SE=$(shasum -a 256 ${EMIT} | cut -d' ' -f1) || { echo "STOP: the program of 2026-10-12 could not be hashed. Nothing was read from production and nothing was sent"; exit 1; }
+echo "2026-10-12:    ${SE}"
+[ "${SE}" = "${SHAEMIT}" ] || { echo "STOP: the program of 2026-10-12 on disk is not the pinned file. Nothing was read from production and nothing was sent"; exit 1; }
+SG=$(shasum -a 256 ${GUARD} | cut -d' ' -f1) || { echo "STOP: the target guard could not be hashed. Nothing was read from production and nothing was sent"; exit 1; }
+echo "guard:         ${SG}"
+[ "${SG}" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the pinned file. Nothing was read from production and nothing was sent"; exit 1; }
+SM=$(shasum -a 256 ${PTM} | cut -d' ' -f1) || { echo "STOP: the guard's module could not be hashed. Nothing was read from production and nothing was sent"; exit 1; }
+echo "module:        ${SM}"
+[ "${SM}" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the pinned file. Nothing was read from production and nothing was sent"; exit 1; }
+echo "every pin holds. The production environment loads now"
+set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was read from production and nothing was sent"; exit 1; }
+node ${GUARD} 2>&1 | tee /tmp/r36p2-target-a.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was read from production and nothing was sent"; exit 1; }
+grep -qxF 'target verified: production, session pooler.' /tmp/r36p2-target-a.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was read from production and nothing was sent"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --max-days-ahead 27 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${STALEPATH}" 2>&1 | tee /tmp/r36p2-dry-a.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent"; exit 1; }
+grep -qxF "${SWEEPOK}" /tmp/r36p2-dry-a.out || { echo "STOP: the dry run does not show the sweep guard's line. Nothing was sent"; exit 1; }
+grep -qxF 'target   PRODUCTION' /tmp/r36p2-dry-a.out || { echo "STOP: the dry run does not show the line target PRODUCTION. Nothing was sent"; exit 1; }
+grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36p2-dry-a.out || { echo "STOP: the dry run does not show the line mode DRY RUN. Nothing was sent"; exit 1; }
+EC=$(grep -cxE 'ELIGIBLE: [0-9]+' /tmp/r36p2-dry-a.out) || { echo "STOP: the dry run holds no ELIGIBLE line. Nothing was sent"; exit 1; }
+[ "${EC}" = 1 ] || { echo "STOP: the dry run holds ${EC} ELIGIBLE lines, not exactly one. Nothing was sent"; exit 1; }
+N=$(grep -xE 'ELIGIBLE: [0-9]+' /tmp/r36p2-dry-a.out | cut -d' ' -f2) || { echo "STOP: the ELIGIBLE number could not be read from the dry run. Nothing was sent"; exit 1; }
+echo "${N}" | grep -qxE '0|[1-9][0-9]{0,5}' || { echo "STOP: the ELIGIBLE number of the dry run did not read as a whole number [${N}]. Nothing was sent"; exit 1; }
+grep -qE '^held back: starts more than --max-days-ahead 27 days after the read: [0-9]+$' /tmp/r36p2-dry-a.out || { echo "STOP: the dry run does not show the 27 day bound. Nothing was sent"; exit 1; }
+grep -qxF 'skipped: attempted by an earlier run, outcome unknown (marker): 0' /tmp/r36p2-dry-a.out || { echo "STOP: this operation's marker holds attempted rows. The lead rules. Nothing was sent"; exit 1; }
+grep -qxF 'G1 UNDER THE LIMIT OF 20000: yes' /tmp/r36p2-dry-a.out || { echo "STOP: the dry run does not show G1 UNDER THE LIMIT OF 20000: yes. Strategy rules on the scope. Nothing was sent"; exit 1; }
+G3L=$(grep -xE 'G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  [(]appointments checked: [0-9]+; handed to a provider: 0; not checkable: 0; expected 0[)]' /tmp/r36p2-dry-a.out) || { echo "STOP: the dry run does not show the G3 line reading 0 with not checkable 0. Nothing was sent"; exit 1; }
+K=$(echo "${G3L}" | sed -E 's/.*appointments checked: ([0-9]+);.*/\1/') || { echo "STOP: the number of appointments checked could not be read from the G3 line. Nothing was sent"; exit 1; }
+echo "${K}" | grep -qxE '[1-9][0-9]{0,5}' || { echo "STOP: the number of appointments checked did not read as a whole number above 0 [${K}]: this operation's marker is empty, so Wednesday sent nothing and this is not a second pass. The lead rules. Nothing was sent"; exit 1; }
+[ "${K}" -ge 5 ] || { echo "STOP: this operation's marker holds ${K} sent rows, fewer than the canary's five: Wednesday's sitting did not send its canary, so this is not a second pass. The lead rules. Nothing was sent"; exit 1; }
+echo "the marker:    Wednesday's sitting sent ${K} appointments; each is skipped at the start it had then, and nothing is sent twice"
+grep -qE '^G4 NEXT 48 HOURS, NOT RE-ARMED: [0-9]+ ' /tmp/r36p2-dry-a.out || { echo "STOP: the dry run does not show the G4 line. Nothing was sent"; exit 1; }
+HB=$(grep -E "^sweep    production's heartbeats: " /tmp/r36p2-dry-a.out) || { echo "STOP: the dry run does not show production's heartbeat line. Nothing was sent"; exit 1; }
+echo "for the owner: ${HB}"
+TCH=$(grep -xE 'skipped: touched in the last 25 hours: [0-9]+' /tmp/r36p2-dry-a.out) || { echo "STOP: the dry run does not show the touched count. Nothing was sent"; exit 1; }
+echo "for the owner: ${TCH} (it holds any visit whose last touch was a confirm that sent nothing: the residual of Q-R36-F5)"
+echo "${TIP}" > /tmp/r36p2-head.sha || { echo "STOP: the held head could not be recorded. Nothing was sent"; exit 1; }
+echo "${RUNDAY} ${NEXTDAY}" > /tmp/r36p2-night.ok || { echo "STOP: the night could not be recorded. Nothing was sent"; exit 1; }
+echo "${MAINSHA}" > /tmp/r36p2-main.sha || { echo "STOP: origin/main could not be recorded. Nothing was sent"; exit 1; }
+echo "${STALEPATH}" > /tmp/r36p2-stale.ok || { echo "STOP: STALEPATH could not be recorded. Nothing was sent"; exit 1; }
+echo "recorded:      the held head ${TIP}, the night ${RUNDAY} to ${NEXTDAY}, main ${MAINSHA} and STALEPATH ${STALEPATH}, for the blocks that follow"
+echo "SECOND PASS, BEFORE YOU START: every check passed. ELIGIBLE ${N} at this read. SECOND PASS, THE SENDS next."
+)
+```
+
+**EXPECT:** as BEFORE YOU START, with `--max-days-ahead 27` and, instead of an empty marker, `the marker: Wednesday's sitting sent <K> appointments; ...` and the G3 line reading 0 for those K; then `SECOND PASS, BEFORE YOU START: every check passed. ELIGIBLE <N> at this read. ...`. Exit 0. It sends nothing.
+
+### SECOND PASS, THE SENDS: repeated until its dry run reads ELIGIBLE 0
+
+```
+(
+set -o pipefail
+FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
+SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
+SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
+SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
+DOCPIN=docs/data-op-r36-fallback-rearm-20261104.sha256
+WRAP=packages/db/scripts/r36-fallback-rearm-emit.mjs
+EMIT=packages/db/scripts/inc-1007-rearm-reminders-emit.mjs
+GUARD=scripts/assert-production-target.mjs
+PTM=scripts/production-target.mjs
+SWEEPOK="SWEEP GUARD: the sweep is in shadow by all three checks (this shell's switch, the owner's word, production's heartbeats)"
+
+cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was sent by this block"; exit 1; }
+test -f /tmp/r36p2-head.sha || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no head in this sitting. Nothing was sent by this block"; exit 1; }
+REC=$(cat /tmp/r36p2-head.sha) || { echo "STOP: the recorded head could not be read. Nothing was sent by this block"; exit 1; }
+echo "${REC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the recorded head did not read as a full 40-character sha [${REC}]. Nothing was sent by this block"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. Nothing was sent by this block"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. Nothing was sent by this block"; exit 1; }
+[ "${HD}" = "${REC}" ] || { echo "STOP: the apply worktree is not on the head SECOND PASS, BEFORE YOU START recorded. Nothing was sent by this block"; exit 1; }
+STRAY=$(git status --short) || { echo "STOP: git status failed in the apply worktree. Nothing was sent by this block"; exit 1; }
+[ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean. Do not clean it. Nothing was sent by this block"; echo "${STRAY}"; exit 1; }
+echo "running from:  ${REC}, the head SECOND PASS, BEFORE YOU START recorded"
+shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one. Nothing was sent by this block"; exit 1; }
+[ "$(shasum -a 256 ${WRAP} | cut -d' ' -f1)" = "${SHAWRAP}" ] || { echo "STOP: the program on disk is not the approved file. Nothing was sent by this block"; exit 1; }
+[ "$(shasum -a 256 ${EMIT} | cut -d' ' -f1)" = "${SHAEMIT}" ] || { echo "STOP: the program of 2026-10-12 on disk is not the pinned file. Nothing was sent by this block"; exit 1; }
+[ "$(shasum -a 256 ${GUARD} | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the pinned file. Nothing was sent by this block"; exit 1; }
+[ "$(shasum -a 256 ${PTM} | cut -d' ' -f1)" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the pinned file. Nothing was sent by this block"; exit 1; }
+echo "pins:          the program, the program of 2026-10-12, the target guard and its module are the pinned files"
+test -f /tmp/r36p2-night.ok || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no night in this sitting. Nothing was sent by this block"; exit 1; }
+NIGHT=$(cat /tmp/r36p2-night.ok) || { echo "STOP: the recorded night could not be read. Nothing was sent by this block"; exit 1; }
+RUNDAY=$(echo "${NIGHT}" | cut -d' ' -f1)
+NEXTDAY=$(echo "${NIGHT}" | cut -d' ' -f2)
+NOW=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %u %Z') || { echo "STOP: the Lisbon clock could not be read. Nothing was sent by this block"; exit 1; }
+echo "${NOW}" | grep -qxE '[0-9]{12} [1-7] (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM, a weekday and the zone WET or WEST [${NOW}]. Nothing was sent by this block"; exit 1; }
+NOWL=$(echo "${NOW}" | cut -c1-12)
+LT=$(echo "${NOWL}" | cut -c9-12)
+DAY=$(echo "${NOWL}" | cut -c1-8)
+echo "${NOWL} ${LT} ${DAY} ${RUNDAY} ${NEXTDAY}" | grep -qxE '[0-9]{12} [0-2][0-9][0-5][0-9] [0-9]{8} [0-9]{8} [0-9]{8}' || { echo "STOP: the Lisbon time or the recorded night did not read as dates and times. Nothing was sent by this block"; exit 1; }
+WIN=no
+if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) exit 0; exit 1 }'; then WIN=yes; fi
+if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
+echo "Lisbon now:    ${NOWL}; the night recorded: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
+[ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the night SECOND PASS, BEFORE YOU START recorded (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). Nothing was sent by this block"; exit 1; }
+test -f /tmp/r36p2-stale.ok || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no STALEPATH in this sitting. Nothing was sent by this block"; exit 1; }
+SR=$(cat /tmp/r36p2-stale.ok) || { echo "STOP: the recorded STALEPATH could not be read. Nothing was sent by this block"; exit 1; }
+echo "${SR}" | grep -qxE 'no|yes' || { echo "STOP: the recorded STALEPATH is not no or yes [${SR}]. Nothing was sent by this block"; exit 1; }
+test -f /tmp/r36p2-main.sha || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no main in this sitting. Nothing was sent by this block"; exit 1; }
+MREC=$(cat /tmp/r36p2-main.sha) || { echo "STOP: the recorded main could not be read. Nothing was sent by this block"; exit 1; }
+git fetch origin --prune || { echo "STOP: the fetch failed, so whether main moved is not known. Nothing was sent by this block"; exit 1; }
+MNOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. Nothing was sent by this block"; exit 1; }
+echo "${MNOW} ${MREC}" | grep -qxE '[0-9a-f]{40} [0-9a-f]{40}' || { echo "STOP: origin/main or the recorded main did not read as a full 40-character sha. Nothing was sent by this block"; exit 1; }
+[ "${MNOW}" = "${MREC}" ] || { echo "STOP: main moved during the sitting (${MREC} to ${MNOW}): a merge deploys production and re-syncs the scheduler. The lead rules. Nothing was sent by this block"; exit 1; }
+echo "main:          ${MNOW}, unchanged since SECOND PASS, BEFORE YOU START"
+set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was sent by this block"; exit 1; }
+node ${GUARD} 2>&1 | tee /tmp/r36p2-target-c.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was sent by this block"; exit 1; }
+grep -qxF 'target verified: production, session pooler.' /tmp/r36p2-target-c.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was sent by this block"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --max-days-ahead 27 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" 2>&1 | tee /tmp/r36p2-rest-dry.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY and nothing was sent by this block"; exit 1; }
+grep -qxF "${SWEEPOK}" /tmp/r36p2-rest-dry.out || { echo "STOP: the dry run does not show the sweep guard's line. Nothing was sent by this block"; exit 1; }
+grep -qxF 'target   PRODUCTION' /tmp/r36p2-rest-dry.out || { echo "STOP: the dry run does not show the line target PRODUCTION. Nothing was sent by this block"; exit 1; }
+grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36p2-rest-dry.out || { echo "STOP: the dry run does not show the line mode DRY RUN. Nothing was sent by this block"; exit 1; }
+EC=$(grep -cxE 'ELIGIBLE: [0-9]+' /tmp/r36p2-rest-dry.out) || { echo "STOP: the dry run holds no ELIGIBLE line. Nothing was sent by this block"; exit 1; }
+[ "${EC}" = 1 ] || { echo "STOP: the dry run holds ${EC} ELIGIBLE lines, not exactly one. Nothing was sent by this block"; exit 1; }
+N=$(grep -xE 'ELIGIBLE: [0-9]+' /tmp/r36p2-rest-dry.out | cut -d' ' -f2) || { echo "STOP: the ELIGIBLE number could not be read from the dry run. Nothing was sent by this block"; exit 1; }
+echo "${N}" | grep -qxE '0|[1-9][0-9]{0,5}' || { echo "STOP: the ELIGIBLE number of the dry run did not read as a whole number [${N}]. Nothing was sent by this block"; exit 1; }
+grep -qxF 'G1 UNDER THE LIMIT OF 20000: yes' /tmp/r36p2-rest-dry.out || { echo "STOP: the dry run does not show G1 UNDER THE LIMIT OF 20000: yes. Nothing was sent by this block"; exit 1; }
+G3L=$(grep -xE 'G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  [(]appointments checked: [0-9]+; handed to a provider: 0; not checkable: 0; expected 0[)]' /tmp/r36p2-rest-dry.out) || { echo "STOP: the dry run does not show the G3 line reading 0 with not checkable 0. Nothing was sent by this block"; exit 1; }
+K=$(echo "${G3L}" | sed -E 's/.*appointments checked: ([0-9]+);.*/\1/') || { echo "STOP: the number of appointments checked could not be read from the G3 line. Nothing was sent by this block"; exit 1; }
+echo "${K}" | grep -qxE '[1-9][0-9]{0,5}' || { echo "STOP: the number of appointments checked did not read as a whole number above 0 [${K}]. Nothing was sent by this block"; exit 1; }
+[ "${K}" -ge 5 ] || { echo "STOP: G3 checked ${K} appointments, fewer than the canary's five, so the marker is not this operation's. The lead rules. Nothing was sent by this block"; exit 1; }
+if [ "${N}" = 0 ]; then echo "SECOND PASS: ELIGIBLE 0 at this read, so nothing is left to send and nothing was sent by this block. Paste SECOND PASS, THE CLOSING DRY RUN 12 minutes or more after the last send of this pass returned, or at once if this pass sent nothing."; exit 0; fi
+echo "the dry run passed: ${N} eligible, G3 0 for ${K} appointments checked. This run sends up to 200 now"
+caffeinate -i node ${WRAP} --tenant-slug osteojp --max-days-ahead 27 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" --confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings 2>&1 | tee /tmp/r36p2-rest-send.out || { touch /tmp/r36p2-last-send.ok || { echo "STOP: the run failed or was refused, and the time it returned could not be recorded; its lines are above. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }; echo "STOP: the run failed or was refused; its lines are above. Conclude nothing from the exit code. What they show as sent stays sent and is in the marker. Nothing further is sent"; exit 1; }
+touch /tmp/r36p2-last-send.ok || { echo "STOP: the time the run returned could not be recorded. What the lines above show as sent stays sent. Nothing further is sent"; exit 1; }
+SL=$(grep -cE '^SENT: [0-9]+ of [0-9]+  ' /tmp/r36p2-rest-send.out) || { echo "STOP: the run does not show a SENT line. Nothing further is sent"; exit 1; }
+[ "${SL}" = 1 ] || { echo "STOP: the run shows ${SL} SENT lines, not exactly one. Nothing further is sent"; exit 1; }
+grep -qE '^G4 ATTEMPTED EQUALS SENT: yes [(]' /tmp/r36p2-rest-send.out || { echo "STOP: the run does not show G4 ATTEMPTED EQUALS SENT: yes. Nothing further is sent"; exit 1; }
+grep -qxE 'G3 AFTER THIS RUN: 0  [(]appointments checked: [0-9]+; handed to a provider: 0; expected 0[)]' /tmp/r36p2-rest-send.out || { echo "STOP: the run does not show G3 AFTER THIS RUN: 0. Nothing further is sent"; exit 1; }
+echo "SECOND PASS: this run ended clean. Paste SECOND PASS, THE SENDS again; when its dry run reads ELIGIBLE 0, paste SECOND PASS, THE CLOSING DRY RUN 12 minutes or more after this run."
+)
+```
+
+**EXPECT:** as THE REST, with `--max-days-ahead 27`, and no canary record asked for; then `SECOND PASS: ELIGIBLE 0 at this read, ...` (exit 0, nothing sent), or the run's lines with one `SENT:` line, `G4 ATTEMPTED EQUALS SENT: yes`, `G3 AFTER THIS RUN: 0` and `SECOND PASS: this run ended clean. ...`. Exit 0.
+
+### SECOND PASS, THE CLOSING DRY RUN
+
+```
+(
+set -o pipefail
+FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
+SHAWRAP=e7fbea9b5239a3cebc52762c5ebbaabe98318860f6117837b48df8926e652431
+SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
+SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
+SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
+DOCPIN=docs/data-op-r36-fallback-rearm-20261104.sha256
+WRAP=packages/db/scripts/r36-fallback-rearm-emit.mjs
+EMIT=packages/db/scripts/inc-1007-rearm-reminders-emit.mjs
+GUARD=scripts/assert-production-target.mjs
+PTM=scripts/production-target.mjs
+SWEEPOK="SWEEP GUARD: the sweep is in shadow by all three checks (this shell's switch, the owner's word, production's heartbeats)"
+
+cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. This block sends nothing"; exit 1; }
+test -f /tmp/r36p2-head.sha || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no head in this sitting. This block sends nothing"; exit 1; }
+REC=$(cat /tmp/r36p2-head.sha) || { echo "STOP: the recorded head could not be read. This block sends nothing"; exit 1; }
+echo "${REC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the recorded head did not read as a full 40-character sha [${REC}]. This block sends nothing"; exit 1; }
+HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. This block sends nothing"; exit 1; }
+echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. This block sends nothing"; exit 1; }
+[ "${HD}" = "${REC}" ] || { echo "STOP: the apply worktree is not on the head SECOND PASS, BEFORE YOU START recorded. This block sends nothing"; exit 1; }
+STRAY=$(git status --short) || { echo "STOP: git status failed in the apply worktree. This block sends nothing"; exit 1; }
+[ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean. Do not clean it. This block sends nothing"; echo "${STRAY}"; exit 1; }
+echo "running from:  ${REC}, the head SECOND PASS, BEFORE YOU START recorded"
+shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one. This block sends nothing"; exit 1; }
+[ "$(shasum -a 256 ${WRAP} | cut -d' ' -f1)" = "${SHAWRAP}" ] || { echo "STOP: the program on disk is not the approved file. This block sends nothing"; exit 1; }
+[ "$(shasum -a 256 ${EMIT} | cut -d' ' -f1)" = "${SHAEMIT}" ] || { echo "STOP: the program of 2026-10-12 on disk is not the pinned file. This block sends nothing"; exit 1; }
+[ "$(shasum -a 256 ${GUARD} | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the pinned file. This block sends nothing"; exit 1; }
+[ "$(shasum -a 256 ${PTM} | cut -d' ' -f1)" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the pinned file. This block sends nothing"; exit 1; }
+echo "pins:          the program, the program of 2026-10-12, the target guard and its module are the pinned files"
+test -f /tmp/r36p2-night.ok || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no night in this sitting. This block sends nothing"; exit 1; }
+NIGHT=$(cat /tmp/r36p2-night.ok) || { echo "STOP: the recorded night could not be read. This block sends nothing"; exit 1; }
+RUNDAY=$(echo "${NIGHT}" | cut -d' ' -f1)
+NEXTDAY=$(echo "${NIGHT}" | cut -d' ' -f2)
+NOW=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %u %Z') || { echo "STOP: the Lisbon clock could not be read. This block sends nothing"; exit 1; }
+echo "${NOW}" | grep -qxE '[0-9]{12} [1-7] (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM, a weekday and the zone WET or WEST [${NOW}]. This block sends nothing"; exit 1; }
+NOWL=$(echo "${NOW}" | cut -c1-12)
+LT=$(echo "${NOWL}" | cut -c9-12)
+DAY=$(echo "${NOWL}" | cut -c1-8)
+echo "${NOWL} ${LT} ${DAY} ${RUNDAY} ${NEXTDAY}" | grep -qxE '[0-9]{12} [0-2][0-9][0-5][0-9] [0-9]{8} [0-9]{8} [0-9]{8}' || { echo "STOP: the Lisbon time or the recorded night did not read as dates and times. This block sends nothing"; exit 1; }
+WIN=no
+if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) exit 0; exit 1 }'; then WIN=yes; fi
+if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
+echo "Lisbon now:    ${NOWL}; the night recorded: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
+[ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the night SECOND PASS, BEFORE YOU START recorded (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). This block sends nothing"; exit 1; }
+test -f /tmp/r36p2-stale.ok || { echo "STOP: SECOND PASS, BEFORE YOU START recorded no STALEPATH in this sitting. This block sends nothing"; exit 1; }
+SR=$(cat /tmp/r36p2-stale.ok) || { echo "STOP: the recorded STALEPATH could not be read. This block sends nothing"; exit 1; }
+echo "${SR}" | grep -qxE 'no|yes' || { echo "STOP: the recorded STALEPATH is not no or yes [${SR}]. This block sends nothing"; exit 1; }
+if test -f /tmp/r36p2-last-send.ok; then RECENT=$(find /tmp/r36p2-last-send.ok -mmin -12) || { echo "STOP: the age of the record of the last send could not be read. This block sends nothing"; exit 1; }; [ -z "${RECENT}" ] || { echo "STOP: the last send of this pass returned less than 12 minutes ago, so the window of its run has not closed. Wait, and paste this block again. This block sends nothing"; exit 1; }; fi
+set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. This block sends nothing"; exit 1; }
+node ${GUARD} 2>&1 | tee /tmp/r36p2-target-d.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. This block sends nothing"; exit 1; }
+grep -qxF 'target verified: production, session pooler.' /tmp/r36p2-target-d.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. This block sends nothing"; exit 1; }
+node ${WRAP} --tenant-slug osteojp --max-days-ahead 27 --max 200 --owner-says-sweep-is-not-sending --owner-saw-no-sweep-runs-in-the-last-hour "${SR}" 2>&1 | tee /tmp/r36p2-closing.out || { echo "STOP: the closing dry run failed or was refused; its lines are above. It is READ ONLY. This block sends nothing"; exit 1; }
+grep -qxF "${SWEEPOK}" /tmp/r36p2-closing.out || { echo "STOP: the closing dry run does not show the sweep guard's line. This block sends nothing"; exit 1; }
+grep -qxF 'target   PRODUCTION' /tmp/r36p2-closing.out || { echo "STOP: the closing dry run does not show the line target PRODUCTION. This block sends nothing"; exit 1; }
+grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36p2-closing.out || { echo "STOP: the closing dry run does not show the line mode DRY RUN. This block sends nothing"; exit 1; }
+grep -qxF 'ELIGIBLE: 0' /tmp/r36p2-closing.out || { echo "STOP: the closing dry run does not read ELIGIBLE: 0. Paste SECOND PASS, THE SENDS again, then this block 12 minutes or more after it. This block sends nothing"; exit 1; }
+G3L=$(grep -xE 'G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  [(]appointments checked: [0-9]+; handed to a provider: 0; not checkable: 0; expected 0[)]' /tmp/r36p2-closing.out) || { echo "STOP: the closing dry run does not show the G3 line reading 0 with not checkable 0. This block sends nothing"; exit 1; }
+K=$(echo "${G3L}" | sed -E 's/.*appointments checked: ([0-9]+);.*/\1/') || { echo "STOP: the number of appointments checked could not be read from the G3 line. This block sends nothing"; exit 1; }
+echo "${K}" | grep -qxE '[1-9][0-9]{0,5}' || { echo "STOP: the number of appointments checked did not read as a whole number above 0 [${K}]. This block sends nothing"; exit 1; }
+[ "${K}" -ge 5 ] || { echo "STOP: G3 checked ${K} appointments, fewer than the canary's five. The lead rules. This block sends nothing"; exit 1; }
+G4L=$(grep -E '^G4 NEXT 48 HOURS, NOT RE-ARMED: [0-9]+ ' /tmp/r36p2-closing.out) || { echo "STOP: the closing dry run does not show the G4 line. This block sends nothing"; exit 1; }
+echo "for the owner: ${G4L}"
+TCH=$(grep -xE 'skipped: touched in the last 25 hours: [0-9]+' /tmp/r36p2-closing.out) || { echo "STOP: the closing dry run does not show the touched count. This block sends nothing"; exit 1; }
+echo "for the owner: ${TCH} (it holds any visit whose last touch was a confirm that sent nothing: the residual of Q-R36-F5)"
+echo "SECOND PASS, CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the ${K} appointments this operation sent. The second pass is over."
+)
+```
+
+**EXPECT:** as THE CLOSING DRY RUN, with `--max-days-ahead 27`; the 12 minute wait applies only when this pass sent; `for the owner:` the G4 line and the touched count (Thursday's own residual, which stays); then `SECOND PASS, CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the <K> appointments this operation sent. The second pass is over.` Exit 0.
+
+## Weekly sittings after a fallback (Q-R36-F1, ruled 2026-11-01)
+
+Strategy: "Only if still in shadow after a fallback: a fallback sitting every Wednesday from 11-11, the last by Wed 11-25, then strategy re-rules." So if this fallback ran and the sweep still does not send, a fallback sitting runs on Wednesday 2026-11-11, 2026-11-18 and 2026-11-25, each from its own dispatch (RUNDAY, HELD, DOCSHA, STALEPATH, SOLO's statement of the merge freeze), each a whole sitting of this document with its own marker folder or the lead's word on continuing this one (BEFORE YOU START refuses a non-empty marker, so each Wednesday after the first needs that word, or the second pass's first block in its place). A sitting on Wednesday 11-25 reaches visits starting up to Wednesday 2026-12-23. After it, strategy re-rules. None of it runs if the sweep sends by then.
+
 ## If a block stops
 
 - **Before a send** (every STOP of BEFORE YOU START, and of the others before their `caffeinate` line): nothing was sent by that block. Report, and the lead rules.
@@ -653,7 +999,7 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 
 ## Rehearsal
 
-**REHEARSED by a session that did not write this, on BLUE (a local throwaway, Postgres at production's migration position, through `0108`), in three runs:** run 1 Sat 2026-10-31 14:57 to 15:14 WET and run 2 Sun 2026-11-01 20:47 to 21:01 WET at `3e674b3a` (run 2 re-seeded from scratch after a 30-hour stop; run 1 matched it line for line); run 3 Sun 2026-11-01 about 21:05 to 21:26 WET at `d5897b6d`, the delta. **The four blocks of this document as it stands are byte-identical to blocks run 3 ran** (compared fence by fence; the only block removed since is the resume block that R4 round 3 led to removing, whose run-3 logs are marked "removed block, not part of the record"), and the program `packages/db/scripts/r36-fallback-rearm-emit.mjs` is byte-identical to the one run 3 ran (`65a48f48...74e0`). Logs: SOLO's scratch area, `rehearse-r36/` (`out/`, `run3/out/`).
+**REHEARSED by a session that did not write this, on BLUE (a local throwaway, Postgres at production's migration position, through `0108`), in three runs:** run 1 Sat 2026-10-31 14:57 to 15:14 WET and run 2 Sun 2026-11-01 20:47 to 21:01 WET at `3e674b3a` (run 2 re-seeded from scratch after a 30-hour stop; run 1 matched it line for line); run 3 Sun 2026-11-01 about 21:05 to 21:26 WET at `d5897b6d`, the delta. **At `aaceb468` the four blocks were byte-identical to the blocks run 3 ran** (compared fence by fence; the only block removed since is the resume block that R4 round 3 led to removing, whose run-3 logs are marked "removed block, not part of the record"), and the program `packages/db/scripts/r36-fallback-rearm-emit.mjs` is byte-identical to the one run 3 ran (`65a48f48...74e0`). Logs: SOLO's scratch area, `rehearse-r36/` (`out/`, `run3/out/`). **Since `aaceb468` (2026-11-01, strategy's rulings) the four blocks and the program have changed and three blocks were added; none of that is rehearsed (see "What must happen before READY").**
 
 **The seed.** A tenant with slug `osteojp` and a second tenant; 20 appointments: in scope 8 staff-saved (scheduled and confirmed, 2 to 27 days ahead) and 1 imported-shape visit with no audit row; out of scope cancelled, completed, no-show, an unaccepted portal request, an unaccepted request found through a staff notification, one 40 days ahead, one with a soft-deleted patient, one 12 hours ahead, one saved 2 hours ago, one in the past, one of the other tenant. Heartbeats in the shape `sweep.ts` writes, one per 15-minute pass over 7 days, the other tenant always `send` 5 minutes old.
 
@@ -680,12 +1026,12 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 
 ## What must happen before READY, in this order, and none of it by GREEN
 
-1. **The R4 round:** DONE, four rounds (see "Review history").
-2. **The rehearsal:** DONE (see "Rehearsal").
+1. **The R4 round:** DONE, four rounds (see "Review history"). **OWED AGAIN for the changes of 2026-11-01:** the STALEPATH line and the second word in the four blocks, the stale-heartbeat path in the program, and the three blocks of the second pass. These are bytes that run against production, so the review-loop cap does not waive them.
+2. **The rehearsal:** DONE for `d5897b6d` (see "Rehearsal"). **A delta rehearsal is OWED** for the same changes: the stale-heartbeat path on a throwaway with stale and missing heartbeats, and the second pass after a first sitting into the sink.
 3. **No GATE-CHANGE is needed to land the two new test files.** Both are under `scripts/**/*.test.mjs`, a gate glob, but the freeze allows an ADDED gate file (`scripts/assert-gates-unchanged.mjs`: "ADDING A FILE IS ALLOWED, MODIFYING AND DELETING ARE NOT"), and `scripts/gate-freeze.test.mjs` passes on this branch (run 2026-10-31). They become frozen at the next GATE-CHANGE that regenerates the manifest; from then on any edit to them is a GATE-CHANGE of its own.
 4. **SOLO's READY line**: the first line of this document changes, the sidecar is regenerated in the same commit. `scripts/r36-fallback-rearm-20261104.test.mjs` accepts either first line (`NOT READY: awaiting R4 review`, or one starting `READY`), and runs its NOT READY scenario on a copy forced back to NOT READY, so the READY commit needs no test edit.
 5. **The pull request, opened held** (`held-for-apply`, unarmed).
-6. **GREEN's dispatch**: HELD (the held head), DOCSHA (this document's sha256 at that head) and RUNDAY (`20261104` for the ruled night), naming `packages/db/scripts/r36-fallback-rearm-emit.mjs`, the rollback (none) and that Replay is never pressed, and **SOLO's written statement of THE MERGE FREEZE**: every armed pull request disarmed, and no pull request opened, armed or merged from before step 1 until GREEN reports. **Issued only if the compare of Wednesday morning is not clean.**
+6. **GREEN's dispatch**: HELD (the held head), DOCSHA (this document's sha256 at that head), RUNDAY (`20261104` for the ruled night) and STALEPATH (`no`, or `yes` only on the ruling of Q-R36-F6), naming `packages/db/scripts/r36-fallback-rearm-emit.mjs`, the rollback (none) and that Replay is never pressed, and **SOLO's written statement of THE MERGE FREEZE**: every armed pull request disarmed, and no pull request opened, armed or merged from before step 1 until GREEN reports. **Issued only if the compare of Wednesday morning is not clean.**
 
 ## Review history
 
@@ -696,17 +1042,17 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 
 ## Questions for strategy
 
-**Q-R36-F1. A second sitting, if the sweep is still in shadow.**
+**Q-R36-F1. A second sitting, if the sweep is still in shadow.** ANSWERED 2026-11-01: "Q-R36-F1 = YES, conditional. Only if still in shadow after a fallback: a fallback sitting every Wednesday from 11-11, the last by Wed 11-25, then strategy re-rules." See "Weekly sittings after a fallback".
 - blocked_what: every reminder of a visit starting from Thursday 2026-12-03, whose email falls from Tuesday 2026-12-01 08:00.
 - options: (a) none: the sweep sends by then; (b) the same document once more, by the night of Monday 2026-11-30 at the latest; (c) weekly, each Wednesday night, while the sweep is in shadow.
 - recommendation: (c) if the switch has not happened by Wednesday 2026-11-11; it keeps a week of margin and costs one sitting a week. A second sitting needs its own marker folder or the lead's word on reusing this one.
 
-**Q-R36-F2. Visits never saved by the clinic (imported).**
+**Q-R36-F2. Visits never saved by the clinic (imported).** ANSWERED 2026-11-01: "Q-R36-F2 = keep imported visits."
 - blocked_what: nothing tonight; it is what the selection includes.
 - options: (a) include them, as on 2026-10-12 and as the R36 switch would; (b) leave them out, which needs a change to the selection and a new review.
 - recommendation: (a), the owner's recorded answer.
 
-**Q-R36-F3. G1 on the night.**
+**Q-R36-F3. G1 on the night.** ANSWERED 2026-11-01: "Q-R36-F3 = YES. The fallback's read-only dry run is Tue 11-03 after 21:00, READY by Tue 18:00." See "The Tuesday dry run".
 - blocked_what: the whole sitting, if BEFORE YOU START prints `NO` (770 appointments or more in scope).
 - options: (a) halt and rule on the night; (b) a read-only dry run ahead of the night (the BEFORE YOU START dry run alone, in a closed window on Tuesday 2026-11-03), so the count is known before Wednesday.
 - recommendation: (b), in the Tuesday dispatch that also carries the compare. That dry run also prints production's heartbeat line before check 3's refusal (checks 1 and 2 refuse before the heartbeats are read), so a stale heartbeat (Q-R36-F6) shows a day early. The Tuesday dispatch needs the owner's Vercel look before GREEN pastes it, because BEFORE YOU START carries `--owner-says-sweep-is-not-sending`.
@@ -715,13 +1061,13 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 - blocked_what: nothing tonight. `re-arming-saves.test.ts` on #1678 pins the two owner-run senders by the text `"appointment/scheduled"`. This program sends the event through the 2026-10-12 program's `buildEvent()` and does not carry the text, so that pin passes without naming it.
 - recommendation: whichever of #1678 and this branch merges second widens that pin to name `packages/db/scripts/r36-fallback-rearm-emit.mjs`.
 
-**Q-R36-F5. The residual of rule 7: a second pass, or accept it.**
+**Q-R36-F5. The residual of rule 7: a second pass, or accept it.** ANSWERED 2026-11-01: "Q-R36-F5 = YES. If the fallback runs Wed night, its second pass runs Thu 11-05 night." See "THE SECOND PASS".
 - blocked_what: the visits this sitting skips as touched where the touch was a confirm that sent nothing (a hand-set Confirmada, a review-queue confirmation, an SMS "confirmo" on an ordinary visit). They keep their old job, which may be older than 30 days at their reminder or destroyed by the incident. The count is inside `skipped: touched in the last 25 hours`, which the blocks print; the program cannot tell them apart from saves that sent.
 - options: (a) a short second pass at least 25 hours later, on Thursday 2026-11-05 night, as step 7 of the 2026-10-12 document did: it reaches every one of them still more than 24 hours ahead, unless touched again; (b) accept the residual and record its count from the closing dry run (and, after a REST main-moved stop, the visits left unsent, whose count is THE REST's last ELIGIBLE line). If strategy rules (b), they stay so until the sweep sends.
 - It is also the only remedy after THE REST stops on `main moved during the sitting` ("If a block stops").
 - recommendation: (a). It needs one more block (BEFORE YOU START stops on this operation's non-empty marker, by design), authored and reviewed on the ruling: THE REST's checks plus the clock and pins of BEFORE YOU START, run on the same machine with the same marker.
 
-**Q-R36-F6. Stale heartbeats with the switch seen off.**
+**Q-R36-F6. Stale heartbeats with the switch seen off.** ANSWERED 2026-11-01: "Q-R36-F6: stale heartbeats while Vercel shows the switch off mean the sweep is not running, so it cannot send. The fallback proceeds only when the owner confirms BOTH that the Vercel switch is off AND that Inngest shows no sweep-due-reminders runs in the last hour. SOLO opens an incident card for why the sweep stopped. If the owner cannot confirm both, the fallback stops." Built as the stale-heartbeat path of check 3 and the STALEPATH line of the dispatch.
 - blocked_what: the whole sitting, if check 3 refuses because the newest heartbeat is more than 12 hours old or missing, while the owner sees the switch off in Vercel. Failing sweep passes leave no heartbeat, and are a likely cause of a compare that is not clean.
 - options: (a) halt: the fallback does not run that night, and the reminders at risk from Sunday 11-08 stay at risk; (b) strategy rules a variant without check 3, on the owner's look at Vercel alone (a code change, its own R4 and its own rehearsal, before Wednesday 18:00); (c) find why the passes fail and fix that first.
 - recommendation: know by Tuesday night (Q-R36-F3). If the Tuesday dry run refuses on the heartbeats, rule (b) on Wednesday morning with (c) in parallel; do not route around the check on the night.

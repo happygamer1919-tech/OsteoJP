@@ -34,7 +34,12 @@
 //           its heartbeat only while the switch is on. The newest heartbeat
 //           must be `shadow` and under HEARTBEAT_FRESH_S old, and no heartbeat
 //           of the last 7 days may be anything but `shadow`. Counts and the
-//           mode word only, in a READ ONLY transaction.
+//           mode word only, in a READ ONLY transaction. Q-R36-F6 (strategy,
+//           2026-11-01): heartbeats that are stale or missing mean the sweep
+//           is not running, so it cannot send; check 3 then passes ONLY on
+//           STALE_FLAG `yes` (the owner sees no sweep-due-reminders run in
+//           the last hour), never with a non-shadow heartbeat this week, and
+//           the line STALE-HEARTBEAT PATH TAKEN says so.
 //      WHY: with the sweep sending, the sleeping reminder jobs are its
 //      backstop and the sweep decides what is due from the AUDIT TRAIL. An
 //      event from this program writes no audit row, so the sweep cannot see
@@ -90,6 +95,21 @@ export const HORIZON_DAYS = 28;
 export const MAX_PER_RUN = 200;
 /** The owner's word, given in the sitting, that the sweep's switch is not `send` in production. */
 export const OWNER_FLAG = "--owner-says-sweep-is-not-sending";
+/**
+ * Q-R36-F6 (strategy, 2026-11-01): the owner's second word, `yes` or `no`. `yes`
+ * says that he looked in Inngest and sees NO run of `sweep-due-reminders` (the
+ * sweep's function id, apps/web/lib/reminders/inngest/sweep.ts) in the last
+ * hour. With OWNER_FLAG (the Vercel switch is off) it is strategy's two
+ * confirmations: the sweep is not running, so it cannot send. It lets check 3
+ * pass ONLY when production's heartbeats are stale or missing, never when a
+ * heartbeat of the last 7 days is anything but shadow, and never when the
+ * newest heartbeat is under an hour old (that contradicts the word).
+ */
+export const STALE_FLAG = "--owner-saw-no-sweep-runs-in-the-last-hour";
+/** The sweep's function id at the scheduler, as the owner finds it in Inngest. */
+export const SWEEP_FUNCTION_ID = "sweep-due-reminders";
+/** A heartbeat this recent contradicts the owner's word that no sweep run happened in the last hour. */
+export const LAST_HOUR_S = 3600;
 /** The folder of this operation's marker and lock, under the operator's home folder. */
 export const R36_HOME_NAME = ".osteojp-r36-fallback-rearm";
 /** The newest heartbeat may be at most this old. The last pass of a day is at 21:45 Lisbon. */
@@ -127,7 +147,7 @@ select (select count(*)::int from k) as tenants,
 
 export const USAGE = `usage:
   node packages/db/scripts/r36-fallback-rearm-emit.mjs --tenant-slug <slug> --max-days-ahead <2 to ${HORIZON_DAYS}>
-       ${OWNER_FLAG} [--max <1 to ${MAX_PER_RUN}>] [--min-days-ahead <D>]
+       ${OWNER_FLAG} [${STALE_FLAG} <yes|no>] [--max <1 to ${MAX_PER_RUN}>] [--min-days-ahead <D>]
        [--confirm --expect <N> --fix-deployed-sha <40 hex> --i-checked-inngest-settings]
   every other argument is the 2026-10-12 script's own:
 ${REARM_USAGE}`;
@@ -149,9 +169,15 @@ function fail(msg) {
 export function splitArgs(argv) {
   const rearmArgv = [];
   let ownerSays = false;
-  for (const a of argv) {
+  let staleWord;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
     if (a === OWNER_FLAG) ownerSays = true;
-    else rearmArgv.push(a);
+    else if (a === STALE_FLAG) {
+      if (staleWord !== undefined) bad(`${STALE_FLAG} is given more than once`);
+      staleWord = argv[++i];
+      if (staleWord !== "yes" && staleWord !== "no") bad(`${STALE_FLAG} takes yes or no`);
+    } else rearmArgv.push(a);
   }
   const valueOf = (flag) => {
     const at = rearmArgv.indexOf(flag);
@@ -178,6 +204,7 @@ export function splitArgs(argv) {
   return {
     rearmArgv,
     ownerSays,
+    ownerSawNoSweepRuns: staleWord === "yes",
     tenantSlug,
     maxDaysAhead: Number(maxDays),
     confirm: rearmArgv.includes("--confirm"),
@@ -228,27 +255,17 @@ export function heartbeatAnswer(rows) {
  * a refusal, its sentence. The mode word is printed only when it is one the
  * table can hold.
  */
-export function heartbeatVerdict(a) {
+export function heartbeatVerdict(a, opts = {}) {
+  const sawNoRuns = opts.ownerSawNoSweepRuns === true;
   const mode = a.latestMode === null ? "none" : a.latestMode === SHADOW || a.latestMode === SEND ? a.latestMode : "unrecognised";
   const age = a.latestAgeS === null ? "no heartbeat at all" : `${Math.floor(a.latestAgeS / 60)} minutes ago`;
   const lines = [
     `sweep    production's heartbeats: newest ${mode}, ${age}; shadow in the last 3 hours: ${a.shadowLast3h}; ` +
       `anything but shadow in the last 7 days: ${a.notShadowLast7d}`,
+    `sweep    the owner's word that Inngest shows no ${SWEEP_FUNCTION_ID} run in the last hour: ${sawNoRuns ? "given" : "not given"}`,
   ];
   if (a.tenants !== 1) return { ok: false, lines, why: `the tenant slug matched ${a.tenants} tenants, not 1. Refusing.` };
-  if (a.latestMode === null || a.latestAgeS === null) {
-    return { ok: false, lines, why: "the sweep has written no heartbeat for this tenant, so its mode cannot be read from production. Refusing." };
-  }
-  if (a.latestAgeS > HEARTBEAT_FRESH_S) {
-    return {
-      ok: false,
-      lines,
-      why: `the sweep's newest heartbeat is more than ${HEARTBEAT_FRESH_S / 3600} hours old, so the sweep is not shown to be running, and its mode now cannot be read from production. Refusing.`,
-    };
-  }
-  if (a.latestMode !== SHADOW) {
-    return { ok: false, lines, why: `the sweep's newest heartbeat is not shadow (it reads ${mode}): the sweep may be sending. This operation must not run while it is. Refusing.` };
-  }
+  // Any heartbeat but shadow this week refuses, whatever the owner says (Q-R36-F6).
   if (a.notShadowLast7d > 0) {
     return {
       ok: false,
@@ -256,7 +273,38 @@ export function heartbeatVerdict(a) {
       why: `${a.notShadowLast7d} heartbeat(s) of the last 7 days are not shadow: the sweep has sent this week. Running this operation now needs a fresh ruling. Refusing.`,
     };
   }
-  return { ok: true, lines, why: null };
+  const missing = a.latestMode === null || a.latestAgeS === null;
+  const stale = missing || a.latestAgeS > HEARTBEAT_FRESH_S;
+  if (stale) {
+    // THE STALE-HEARTBEAT PATH (Q-R36-F6): the sweep is not running, so it cannot send. Only on the
+    // owner's word, and only when the newest heartbeat, if any, is shadow.
+    if (sawNoRuns && (missing || a.latestMode === SHADOW)) {
+      lines.push(
+        `sweep    STALE-HEARTBEAT PATH TAKEN (Q-R36-F6): production's heartbeats are ${missing ? "missing" : "stale"}, and the owner says ` +
+          `the switch is off in Vercel and Inngest shows no ${SWEEP_FUNCTION_ID} run in the last hour`,
+      );
+      return { ok: true, lines, why: null, stalePath: true };
+    }
+    if (missing) {
+      return { ok: false, lines, why: "the sweep has written no heartbeat for this tenant, so its mode cannot be read from production. Refusing." };
+    }
+    return {
+      ok: false,
+      lines,
+      why: `the sweep's newest heartbeat is more than ${HEARTBEAT_FRESH_S / 3600} hours old, so the sweep is not shown to be running, and its mode now cannot be read from production. Refusing.`,
+    };
+  }
+  if (sawNoRuns && a.latestAgeS <= LAST_HOUR_S) {
+    return {
+      ok: false,
+      lines,
+      why: `the owner's word that no ${SWEEP_FUNCTION_ID} run happened in the last hour contradicts production: the newest heartbeat is ${Math.floor(a.latestAgeS / 60)} minutes old. Refusing.`,
+    };
+  }
+  if (a.latestMode !== SHADOW) {
+    return { ok: false, lines, why: `the sweep's newest heartbeat is not shadow (it reads ${mode}): the sweep may be sending. This operation must not run while it is. Refusing.` };
+  }
+  return { ok: true, lines, why: null, stalePath: false };
 }
 
 /** Every uuid in a line reads `<id>`. PURE. */
@@ -363,7 +411,7 @@ export async function runFallback(argv, deps = {}) {
       }
     }
   }
-  const verdict = heartbeatVerdict(answer);
+  const verdict = heartbeatVerdict(answer, { ownerSawNoSweepRuns: a.ownerSawNoSweepRuns });
   for (const line of verdict.lines) out(line);
   if (!verdict.ok) fail(`${verdict.why} Nothing was sent.`);
   out(SWEEP_OK_LINE);
