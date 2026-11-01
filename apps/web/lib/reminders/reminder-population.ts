@@ -1,6 +1,6 @@
 import "server-only";
-import { and, eq, exists, inArray, or, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, exists, inArray, lte, not, or, sql, type SQL } from "drizzle-orm";
+import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { appointments, auditLog, type DbTx } from "@osteojp/db";
 
 /**
@@ -105,6 +105,314 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
               sql`${saved.metadata}->>'outcome' = 'confirmed'`,
             ),
           ),
+        ),
+      ),
+  );
+}
+
+/**
+ * ==========================================================================
+ * THE RE-ARMING SAVES (strategy's ruling R33)
+ * ==========================================================================
+ * R33, its words: "the gate does not count every save. It counts exactly the
+ * saves that make the live job re-plan this visit's reminders (the doors that
+ * emit appointment/scheduled with a re-arm). Derive them from code and pin
+ * them with a test listing those doors. A status-only save (an SMS "confirmo",
+ * a hand-set Confirmada) never counts."
+ *
+ * WHAT RE-PLANS. Every `appointment/scheduled` event cancels the visit's
+ * sleeping reminder runs and plans them again from the moment it is handled
+ * (`computeDueReminders`, ./inngest/functions.ts): a mark already past is
+ * dropped. In the application the event has ONE sender (./index.ts), called
+ * ONLY by `enqueueRemindersAfterCommit` (lib/scheduling/reminders.ts), and the
+ * functions that call that are the doors below. Each writes an audit row in
+ * the same transaction as the save, and THAT ROW is what the sweep reads: the
+ * table says which rows, under which condition, for which door.
+ *
+ * TWO SENDERS OUTSIDE THE APPLICATION, AND THE GATE CANNOT SEE THEM. The
+ * owner-run re-arm scripts packages/db/scripts/inc-1007-rearm-reminders-emit.mjs
+ * and obs-05-backfill-emit.mjs send `appointment/scheduled` straight to the
+ * scheduler and write no audit row, so a re-plan they cause is invisible
+ * here: the sleeping job drops a past mark and the sweep still takes it. So
+ * an owner-run re-arm must not run while the sweep is in send mode without a
+ * fresh ruling. re-arming-saves.test.ts pins them as the only two.
+ *
+ *   door (file: function)                  audit row, and the condition the door emits under
+ *   actions.ts: createAppointment          appointment.create: always
+ *   actions.ts: batchScheduleAppointments  appointment.create (written by batch.ts: batchSchedule): always
+ *   actions.ts: cloneAppointment           appointment.create: always
+ *   actions.ts: rescheduleAppointment      appointment.reschedule (written by actions.ts:
+ *   actions.ts: bulkRescheduleAppointments   moveAppointment, once per visit moved): always,
+ *                                          BUT counted only when it changed the START
+ *                                          (below), and see the question below
+ *   actions.ts: confirmAppointmentRequest  appointment.update with `via` portal_request_confirm: always
+ *   actions.ts: updateAppointment          appointment.update, two cases:
+ *     an online request accepted with the Estado control: `fromStatus`
+ *       scheduled, `toStatus` confirmed, on a visit whose `origin` is
+ *       patient_portal (the row was an unaccepted request before the save);
+ *     a visit brought back from Cancelada: `fromStatus` cancelled, and
+ *       `toStatus` confirmed, or `toStatus` scheduled on a visit whose
+ *       `origin` is not patient_portal (back to Agendada a request is
+ *       unaccepted again, and emits nothing);
+ *   inbound-store.ts: resolveReviewItem    appointment.sms_reply_reviewed, `resolution`
+ *                                          confirmed, `applied` true, `origin` patient_portal
+ *   inbound-reply.ts: applyInboundReply    appointment.patient_sms_reply, `outcome`
+ *                                          confirmed, `origin` patient_portal
+ *
+ * WHAT IS LEFT OUT, AND IS THE POINT: the same audit rows on a visit that is
+ * not an online request. A Confirmada set by hand, a review-queue "confirmada"
+ * and the patient's own SMS "confirmo" write the rows above on any visit, and
+ * re-plan nothing unless the visit was an unaccepted request. So on a booked
+ * visit they never count. So does every other `appointment.update` (a note, a
+ * room, a service, Agendada to Confirmada and back).
+ *
+ * WHY `origin` STANDS FOR "WAS AN UNACCEPTED REQUEST". The doors ask
+ * `public.is_unconfirmed_pedido` before the write: status scheduled, and
+ * origin patient_portal OR an `appointment_request` notification (0067). Each
+ * row above records the status it came from (`fromStatus`, or the review's
+ * and the reply's own guard: they move only a scheduled visit), and `origin`
+ * never changes after the insert. The notification half cannot be read here:
+ * 0055 lets a notification be read by its recipient only, and a job is nobody.
+ * It matters only for a request made in the hours between 0067's apply and
+ * its deploy and never backfilled, and the dispatcher reads `origin` alone for
+ * the same question (./dispatch.ts, `isUnacceptedPedido`), so here and there a
+ * visit is a request on the same reading.
+ *
+ * A VISIT BROUGHT BACK WHEN IT HAD ALREADY BEGUN emits nothing (its offsets
+ * are past) and its row counts all the same. That changes no answer: a visit
+ * the sweep reads starts after the pass, so if its start then was its start
+ * now, it was ahead and the door emitted; if the start changed since, a later
+ * move wrote its own row, after this one.
+ *
+ * THE QUESTION (not decided here): a move (`moveAppointment`, behind both
+ * move doors) emits nothing for
+ * a visit that is an unaccepted request at the move, and its audit row does
+ * not record the status the visit had. Until it is ruled, every move counts,
+ * as before R33. It can only differ for a visit that is an unaccepted request
+ * at the pass (nothing sends to it, and the sleeping job has no run for it),
+ * or one accepted afterwards through a door that writes none of the rows above.
+ *
+ * A MOVE COUNTS ONLY WHEN THE START IS NOT THE ONE THE MARK WAS FOR (R4
+ * round 2 on #1678, prepared for strategy). A move that keeps the start (a new
+ * therapist, clinic or length; a series or bulk change keeping the hour; a
+ * move away and back) re-arms the sleeping job too, but that job woke at the
+ * mark and sent the reminder before the save. Counted, it would leave the
+ * job's claim alone in the compare (no label fits it), and in send mode it
+ * would leave the patient with no reminder at all: the event cancels the
+ * job's run, its re-plan has no mark left, and the gate holds the sweep. So
+ * an `appointment.reschedule` after the mark counts only while the visit's
+ * start AT THE MARK differs from its start now. The start at the mark is read
+ * from the audit trail, first found wins:
+ *   1. the `fromStartsAt` of the EARLIEST `appointment.reschedule` written
+ *      strictly after the mark: the start that move left, which is the start
+ *      at the mark unless something changed it in between without a row
+ *      (below). Every move writes it since R4 round 3 on #1678
+ *      (`moveAppointment`, read from the row in the same transaction);
+ *   2. the `startsAt` of the latest `appointment.create` or
+ *      `appointment.reschedule` written at or before the mark. This is what
+ *      reads a move written before `fromStartsAt` existed;
+ *   3. none: the move counts, as before.
+ * Both keys are written with `toISOString()` (pinned in
+ * re-arming-saves.test.ts), so they are compared as millisecond text with the
+ * start now, the way scripts/db/read-sweep-unexplained-20261030.sql compares
+ * them. The first one is what covers the visits with no booking row: an
+ * online request (the portal writes no `appointment.create`, and an
+ * acceptance records no start) and an imported visit (the importer writes no
+ * audit row). Audit rows only: no claim is read.
+ *
+ * THE GAP THAT REMAINS. Every writer of those two rows records the start, but
+ * not every path that changes `starts_at` writes one: the patient's own move
+ * in the portal (apps/api/lib/appointments/store.ts, `rescheduleOwn`) and the
+ * importer's re-upsert change it with no audit row and no event. Either rule
+ * can then read a stale start: rule 1 when such a change falls between the
+ * mark and the first move after it (that move's `fromStartsAt` is the start
+ * the unaudited change left, not the start at the mark), rule 2 when it falls
+ * between the last row and the mark. A move back to the start at the mark
+ * then reads as a change and counts (the mark is skipped), or a move that
+ * keeps the start now reads as kept when the start at the mark was another
+ * (a mark the live job never had is taken). The trail cannot say on which
+ * side of the mark such a change fell. Exposure: the 48h email through the
+ * portal (`rescheduleOwn` refuses a start under 24h away, so the 24h SMS is
+ * out of its reach), and either mark through the importer. The real fix is
+ * an audit row of its own for the portal move, carded. Rule 1 also trusts the read of the row it
+ * moved, which takes no row lock: a second move of the same row committing
+ * between that read and the update would make it one move behind.
+ *
+ * re-arming-saves.test.ts lists the doors from the source and holds this table
+ * to them: a door added, removed or given another condition fails it.
+ */
+export const RE_ARMING_SAVES = [
+  {
+    clause: "booked",
+    action: "appointment.create",
+    doors: [
+      "apps/web/lib/scheduling/actions.ts:createAppointment",
+      "apps/web/lib/scheduling/actions.ts:batchScheduleAppointments",
+      "apps/web/lib/scheduling/actions.ts:cloneAppointment",
+    ],
+  },
+  {
+    clause: "moved",
+    action: "appointment.reschedule",
+    doors: [
+      "apps/web/lib/scheduling/actions.ts:rescheduleAppointment",
+      "apps/web/lib/scheduling/actions.ts:bulkRescheduleAppointments",
+    ],
+  },
+  {
+    clause: "accepted_in_pedidos",
+    action: "appointment.update",
+    doors: ["apps/web/lib/scheduling/actions.ts:confirmAppointmentRequest"],
+  },
+  {
+    clause: "accepted_with_estado",
+    action: "appointment.update",
+    doors: ["apps/web/lib/scheduling/actions.ts:updateAppointment"],
+  },
+  {
+    clause: "brought_back",
+    action: "appointment.update",
+    doors: ["apps/web/lib/scheduling/actions.ts:updateAppointment"],
+  },
+  {
+    clause: "accepted_in_sms_review",
+    action: "appointment.sms_reply_reviewed",
+    doors: ["apps/web/lib/reminders/inbound-store.ts:resolveReviewItem"],
+  },
+  {
+    clause: "accepted_by_sms_reply",
+    action: "appointment.patient_sms_reply",
+    doors: ["apps/web/lib/reminders/inbound-reply.ts:applyInboundReply"],
+  },
+] as const;
+
+export type ReArmingClause = (typeof RE_ARMING_SAVES)[number]["clause"];
+
+/** The `origin` of an online request (0067), as `is_unconfirmed_pedido` and the dispatcher read it. */
+const REQUEST_ORIGIN = "patient_portal";
+
+/**
+ * The visit's start AT `mark`, as millisecond text, by the three rules of the
+ * table's notes: the `fromStartsAt` of the earliest move after the mark, else
+ * the `startsAt` of the latest booking or move at or before it, else null.
+ */
+function startAtTheMark(tx: DbTx, mark: SQL): SQL {
+  const next = alias(auditLog, "reminder_move_after_the_mark");
+  const prior = alias(auditLog, "reminder_start_at_the_mark");
+  // Qualified by hand: a select list renders a column without its alias, and
+  // the enclosing query has another `metadata` in scope.
+  const leftByTheFirstMoveAfter = tx
+    .select({ startsAt: sql.raw(`"reminder_move_after_the_mark"."metadata"->>'fromStartsAt'`) })
+    .from(next)
+    .where(
+      and(
+        eq(next.entityType, "appointment"),
+        eq(next.entityId, appointments.id),
+        eq(next.action, "appointment.reschedule"),
+        sql`${next.createdAt} > ${mark}`,
+      ),
+    )
+    .orderBy(sql`${next.createdAt} asc`, sql`${next.id} asc`)
+    .limit(1);
+  const recordedAtOrBefore = tx
+    .select({ startsAt: sql.raw(`"reminder_start_at_the_mark"."metadata"->>'startsAt'`) })
+    .from(prior)
+    .where(
+      and(
+        eq(prior.entityType, "appointment"),
+        eq(prior.entityId, appointments.id),
+        inArray(prior.action, ["appointment.create", "appointment.reschedule"]),
+        lte(prior.createdAt, sql`${mark}`),
+      ),
+    )
+    .orderBy(sql`${prior.createdAt} desc`, sql`${prior.id} desc`)
+    .limit(1);
+  return sql`coalesce((${leftByTheFirstMoveAfter}), (${recordedAtOrBefore}))`;
+}
+
+/**
+ * The visit's start now, as the same millisecond text `toISOString()` writes.
+ * Built when asked, not at import: a test that replaces the database package
+ * imports this file without its tables.
+ */
+function startNowText(): SQL {
+  return sql`to_char(date_trunc('milliseconds', ${appointments.startsAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+}
+
+/**
+ * One clause of the table, on an alias of the audit table, for the enclosing
+ * `appointments` row; `mark` is the instant the gate reads saves after.
+ * Text against text on the metadata, so a row of another shape matches
+ * nothing and raises nothing.
+ */
+export function reArmingClause(
+  tx: DbTx,
+  clause: ReArmingClause,
+  saved: Record<"action" | "metadata", PgColumn>,
+  mark: SQL,
+): SQL {
+  const action = RE_ARMING_SAVES.find((c) => c.clause === clause)!.action;
+  const of = (...more: SQL[]) => and(eq(saved.action, action), ...more)!;
+  const isRequest = sql`${appointments.origin} = ${REQUEST_ORIGIN}`;
+  switch (clause) {
+    case "booked":
+      return of();
+    case "moved":
+      // Counted only when the start the mark was for is not the start now (see the table's notes).
+      return of(sql`${startAtTheMark(tx, mark)} is distinct from ${startNowText()}`);
+    case "accepted_in_pedidos":
+      return of(sql`${saved.metadata}->>'via' = 'portal_request_confirm'`);
+    case "accepted_with_estado":
+      return of(
+        sql`${saved.metadata}->>'fromStatus' = 'scheduled'`,
+        sql`${saved.metadata}->>'toStatus' = 'confirmed'`,
+        isRequest,
+      );
+    case "brought_back":
+      return of(
+        sql`${saved.metadata}->>'fromStatus' = 'cancelled'`,
+        or(
+          sql`${saved.metadata}->>'toStatus' = 'confirmed'`,
+          and(sql`${saved.metadata}->>'toStatus' = 'scheduled'`, sql`${appointments.origin} <> ${REQUEST_ORIGIN}`),
+        )!,
+      );
+    case "accepted_in_sms_review":
+      return of(
+        sql`${saved.metadata}->>'resolution' = 'confirmed'`,
+        sql`${saved.metadata}->>'applied' = 'true'`,
+        isRequest,
+      );
+    case "accepted_by_sms_reply":
+      return of(sql`${saved.metadata}->>'outcome' = 'confirmed'`, isRequest);
+  }
+}
+
+/**
+ * True for the `appointments` row of the enclosing query when a RE-ARMING SAVE
+ * (the table above) on its audit trail was written STRICTLY AFTER `instant`,
+ * by the row's own `created_at`, the database's clock at the save. A save
+ * written AT `instant` exactly is not after it.
+ *
+ * `unlessPrecededBy`, when given, is a condition on that save's `created_at`
+ * (passed in as SQL): a save it holds for does not count. The sending pass of
+ * the sweep uses it for the held-back retry (./sweep-send.ts).
+ *
+ * Read by the reminder sweep for strategy's rulings R24 and R33 (./sweep.ts,
+ * "NO GRACE FOR A VISIT SAVED AFTER ITS MARK").
+ */
+export function hasReArmingSaveAfter(tx: DbTx, instant: SQL, unlessPrecededBy?: (savedAt: SQL) => SQL): SQL {
+  const saved = alias(auditLog, "reminder_re_arming_save");
+  return exists(
+    tx
+      .select({ one: sql`1` })
+      .from(saved)
+      .where(
+        and(
+          eq(saved.entityType, "appointment"),
+          eq(saved.entityId, appointments.id),
+          or(...RE_ARMING_SAVES.map((c) => reArmingClause(tx, c.clause, saved, instant))),
+          sql`${saved.createdAt} > ${instant}`,
+          unlessPrecededBy ? not(unlessPrecededBy(sql`${saved.createdAt}`)) : undefined,
         ),
       ),
   );

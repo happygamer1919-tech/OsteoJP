@@ -2467,6 +2467,7 @@ async function moveAppointment(
         // wrote, and writes nothing.
         if (extras.expect && !(await stillAsSeen(true))) return { ok: false, error: "not_found" };
 
+        const startBeforeTheMove = new Map(affected.map((a) => [a.id, a.startsAt]));
         for (const t of targets) {
           const moved = tx
             .update(appointments)
@@ -2496,6 +2497,11 @@ async function moveAppointment(
             metadata: {
               practitionerId: input.practitionerId,
               locationId: input.locationId,
+              // R33 (the reminder sweep's gate): the start this move LEFT, as
+              // the row held it before this save (`affected`, read in this
+              // transaction). With `startsAt` it tells a move that kept the
+              // start from one that changed it (lib/reminders/reminder-population.ts).
+              fromStartsAt: startBeforeTheMove.get(t.id)?.toISOString() ?? null,
               startsAt: t.startsAt.toISOString(),
               endsAt: t.endsAt.toISOString(),
               scope,
