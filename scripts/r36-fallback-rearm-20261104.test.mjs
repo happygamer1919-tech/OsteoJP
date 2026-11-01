@@ -137,7 +137,9 @@ test("the document carries the sections the ruling asks for", () => {
   assert.doesNotMatch(doc, /RESUME|OWNERWORD|GitHub's list of pull requests/);
   assert.match(doc, /1bd32c069478a4d531ac3d6ff466c2d1bc2d6f8c/);
   assert.match(doc, /`fromStatus` `cancelled` and either `toStatus` `confirmed`, or `toStatus` `scheduled` on a visit whose `origin` is not `patient_portal`/);
-  assert.match(doc, /\*\*NOT REHEARSED\. Nothing in this document has run against any database\.\*\*/);
+  assert.match(doc, /^\*\*REHEARSED by a session that did not write this, on BLUE/m);
+  assert.match(doc, /^\*\*NOT REHEARSED, said one by one:\*\*$/m);
+  assert.match(doc, /\*\*The four blocks of this document as it stands are byte-identical to blocks run 3 ran\*\*/);
   assert.match(doc, /A script's own REFUSE or STOP line is a halt, the same as a harness refusal\. Never edit an env file, a URL, a flag, a label or a script to get past a guard\. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so\./);
 });
 

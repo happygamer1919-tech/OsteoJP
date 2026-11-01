@@ -1,8 +1,8 @@
-NOT READY: awaiting R4 review
+READY: R4 four rounds and an independent rehearsal done (2026-11-01). Issued only if the Wednesday 11-04 compare is not clean.
 
 # R36: the fallback re-arm of the reminders, for the night of Wednesday 2026-11-04
 
-**Status: AUTHORED 2026-10-31 BY SOLO. NOT REVIEWED (the R4 round is open). NOT REHEARSED (see "Rehearsal"). NOT RUN.** Nothing in this document may be pasted until the first line reads READY. The blocks below carry `PENDING` in the three lines GREEN's dispatch fills, and STOP at their first check while they do.
+**Status: AUTHORED 2026-10-31 BY SOLO. REVIEWED (R4, four rounds, see "Review history"). REHEARSED 2026-10-31 AND 2026-11-01 BY A SESSION THAT DID NOT WRITE IT (see "Rehearsal"). NOT RUN.** Nothing in this document may be pasted until the first line reads READY. The blocks below carry `PENDING` in the three lines GREEN's dispatch fills, and STOP at their first check while they do.
 
 **In plain words.** The reminder re-arm of 2026-10-12 gave a fresh reminder job to every appointment starting within 28 days of that night. Appointments further ahead were left to the reminder sweep, which still runs in shadow and sends nothing. If the sweep is not switched to sending on Wednesday 2026-11-04, this document runs the same re-arm once more that night, for every appointment starting within the next 28 days, behind a refusal that stops it if the sweep is sending. It writes nothing to the database. It sends one scheduling event per appointment to the scheduler, which plans that appointment's two reminders again.
 
@@ -653,24 +653,35 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 
 ## Rehearsal
 
-**NOT REHEARSED. Nothing in this document has run against any database.** The author had no database for this work, by the terms of the task. What is proven, and how:
+**REHEARSED by a session that did not write this, on BLUE (a local throwaway, Postgres at production's migration position, through `0108`), in three runs:** run 1 Sat 2026-10-31 14:57 to 15:14 WET and run 2 Sun 2026-11-01 20:47 to 21:01 WET at `3e674b3a` (run 2 re-seeded from scratch after a 30-hour stop; run 1 matched it line for line); run 3 Sun 2026-11-01 about 21:05 to 21:26 WET at `d5897b6d`, the delta. **The four blocks of this document as it stands are byte-identical to blocks run 3 ran** (compared fence by fence; the only block removed since is the resume block that R4 round 3 led to removing, whose run-3 logs are marked "removed block, not part of the record"), and the program `packages/db/scripts/r36-fallback-rearm-emit.mjs` is byte-identical to the one run 3 ran (`65a48f48...74e0`). Logs: SOLO's scratch area, `rehearse-r36/` (`out/`, `run3/out/`).
 
-- **The blocks, statically and under fault injection, with every external program a stub** (`scripts/r36-fallback-rearm-20261104.test.mjs`): each block's positive control reaches its last line in bash and in zsh, and every external call made to fail in turn, and every scenario listed there, stops it with a STOP line and without its last line. A stubbed command says that a block halts. It says nothing about production.
-- **The program, in this process, with the database replaced** (`scripts/r36-fallback-rearm-emit.test.mjs`): the three refusals, their order (each before anything is read), the ceilings, counts-only output over a whole canary, rest and closing run against the 2026-10-12 program's real `run()` with a fake reader and a sink, and the marker's own folder.
+**The seed.** A tenant with slug `osteojp` and a second tenant; 20 appointments: in scope 8 staff-saved (scheduled and confirmed, 2 to 27 days ahead) and 1 imported-shape visit with no audit row; out of scope cancelled, completed, no-show, an unaccepted portal request, an unaccepted request found through a staff notification, one 40 days ahead, one with a soft-deleted patient, one 12 hours ahead, one saved 2 hours ago, one in the past, one of the other tenant. Heartbeats in the shape `sweep.ts` writes, one per 15-minute pass over 7 days, the other tenant always `send` 5 minutes old.
 
-**NOT REHEARSED, and to be done before READY by a session that did not write this (SOLO arranges it; the lead's rule of 2026-09-30 applies, quoted below):**
+**The substitutions, and nothing else:** (a) the production connection string replaced by the throwaway's, inline for one command; (b) lines sourcing the environment file skipped; (c) `cd` into the apply checkout replaced by a scratch clone whose `origin` is a local bare repository; (d) `/tmp/` and the marker's home folder replaced by scratch folders; (e) the night's window not faked: its STOP recorded; (f) the target guard's refusal of 127.0.0.1 recorded, not passed; (g) the NOT READY first line proven to stop, then HELD, DOCSHA and RUNDAY filled as the dispatch fills them; (h) `--sink-file` on every program call, so events went to a local file, never the hosted scheduler; (i) the switch and the owner's flag set inline as test inputs. The lead's rule held throughout: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
 
-- **The heartbeat read on a database.** `HEARTBEAT_READ` has never been run. It needs a throwaway with `0106` applied and seeded heartbeats: a `shadow` one, a stale one, a `send` one. On a strict local target the program reads it exactly as on production.
-- **The program end to end on a local database,** with `--sink-file`: dry run, canary, rest, closing, as the 2026-10-12 round 4 did, through this program.
-- **The blocks on production.** They name the production target and the hosted scheduler only. No rehearsal can run them, and none may be made to.
-- **The hosted scheduler's behaviour and the dashboard checks.** The owner's.
+**Results.**
+- **Counts equal the seed:** FUTURE REMINDABLE 14, unaccepted 2, within 24 hours 1, beyond 28 days 1, touched in the last 25 hours 1; ELIGIBLE 9 (scheduled 6, confirmed 3); G1 260 for 10 in scope, `yes`.
+- **The sweep refusal, 13 cases:** the switch `send` and the missing owner flag refuse before any database read; a newest `send` heartbeat, a newest shadow 13 hours or 12 hours 1 minute old, a `send` heartbeat 3 days or 6 days 23 hours old, and no heartbeat at all refuse with only the heartbeat read run (`pg_stat_statements` counted); a shadow 11 hours 59 minutes old, a `send` heartbeat 8 days old, and a fresh shadow with the other tenant on `send` proceed. The switch line prints only `SET` or `UNSET`; a distinctive switch value appeared on 0 output lines.
+- **A whole sitting into the sink:** the canary `SENT: 5 of 5`, G3 AFTER 0 for 5; THE REST `SENT: 4 of 4`; THE REST again ELIGIBLE 0; THE CLOSING DRY RUN refused before 12 minutes and passed after, ELIGIBLE 0, G3 0 for 9. **9 events for the 9 in-scope appointments**, each `appointment/scheduled` with `name` and `data` only (no event id), `confirmationEligible` false; the marker 5 + 4 rows, `maxDaysAhead` 28.
+- **The main freeze:** with `main` moved after BEFORE YOU START, THE CANARY STOPPED before its dry run and send (no sink file); with `main` moved after the canary sent, THE REST STOPPED before sending (the sink still held exactly 5).
+- **The ceilings:** `--max 201`, `--max-days-ahead 29`, a missing `--max-days-ahead` and a repeated `--max` exit 2 before any read.
+- **Counts only:** 0 matches for uuids, the seeded names, phones and emails, `@`, the connection string or the switch value in any program output (the same search finds 21 in the seed as a control).
+- **The tests:** 37 of 37 at `3e674b3a`, 38 of 38 at `d5897b6d`.
 
-The lead's words, character for character: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
+**NOT REHEARSED, said one by one:**
+- network time (`sntp`, the Date headers): no remote host;
+- the night's window: not a Wednesday night;
+- the target guard's pass and `target PRODUCTION`: they refuse 127.0.0.1 by design;
+- the real send to the hosted scheduler, G2 and every owner look (Vercel, GitHub Actions, the Inngest settings, the re-plan look): the owner's;
+- the marker and lock in `~/.osteojp-r36-fallback-rearm`: sink runs keep them beside the sink file;
+- `OUT OF TIME`, a killed run, a failed send, and a row that changes between its read and its send.
+
+**Observations, no defect:** a refused confirm can leave the marker's empty folder behind; the heartbeat is read before the 2026-10-12 program's check for the event key, so a confirm with no key reads `reminder_sweep_passes` once before refusing (read only).
 
 ## What must happen before READY, in this order, and none of it by GREEN
 
-1. **The R4 round** on the program, its test, this document and its test (Tier C: a fresh-context reviewer given only the diff and the acceptance).
-2. **The rehearsal** listed under "NOT REHEARSED".
+1. **The R4 round:** DONE, four rounds (see "Review history").
+2. **The rehearsal:** DONE (see "Rehearsal").
 3. **No GATE-CHANGE is needed to land the two new test files.** Both are under `scripts/**/*.test.mjs`, a gate glob, but the freeze allows an ADDED gate file (`scripts/assert-gates-unchanged.mjs`: "ADDING A FILE IS ALLOWED, MODIFYING AND DELETING ARE NOT"), and `scripts/gate-freeze.test.mjs` passes on this branch (run 2026-10-31). They become frozen at the next GATE-CHANGE that regenerates the manifest; from then on any edit to them is a GATE-CHANGE of its own.
 4. **SOLO's READY line**: the first line of this document changes, the sidecar is regenerated in the same commit. `scripts/r36-fallback-rearm-20261104.test.mjs` accepts either first line (`NOT READY: awaiting R4 review`, or one starting `READY`), and runs its NOT READY scenario on a copy forced back to NOT READY, so the READY commit needs no test edit.
 5. **The pull request, opened held** (`held-for-apply`, unarmed).
