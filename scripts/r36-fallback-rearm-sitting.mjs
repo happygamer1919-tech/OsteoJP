@@ -73,6 +73,7 @@ export async function wholeSitting() {
   const rows2 = [...rows, ...[13, 14, 15].map((n) => dbRow(n))];
   let reader = fakeReader(rows);
   let days = "28";
+  let clock;
   const step = async (extra) => {
     const lines = [];
     try {
@@ -84,6 +85,7 @@ export async function wholeSitting() {
         rearm: realRearm,
         openReader: reader,
         sleep: async () => {},
+        ...(clock ? { now: clock } : {}),
       });
     } catch (e) {
       if (e instanceof Halt) throw new Error(`a step of the sitting halted: ${e.message}\n${lines.join("\n")}`);
@@ -101,7 +103,9 @@ export async function wholeSitting() {
   steps.closing = await step(["--max", "200"]);
   reader = fakeReader(rows2);
   days = "27";
-  steps.p2Dry = await step(["--max", "200"]);
+  // Thursday night: 26 hours after the first sending run's read (the marker records SITTING_T0).
+  clock = () => SITTING_T0 + 26 * 3_600_000;
+  steps.p2Dry = await step(["--max", "200", "--second-pass"]);
   steps.p2Send = await step(["--max", "200", ...confirm, "--expect", "3"]);
   steps.p2Closing = await step(["--max", "200"]);
   const events = readFileSync(sink, "utf8").trim().split("\n").map((l) => JSON.parse(l));

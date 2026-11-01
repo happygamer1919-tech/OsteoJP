@@ -37,8 +37,10 @@
 //           mode word only, in a READ ONLY transaction. Q-R36-F6 (strategy,
 //           2026-11-01): heartbeats that are stale or missing mean the sweep
 //           is not running, so it cannot send; check 3 then passes ONLY on
-//           STALE_FLAG `yes` (the owner sees no sweep-due-reminders run in
-//           the last hour), never with a non-shadow heartbeat this week, and
+//           STALE_FLAG `yes` (the owner sees no sweep-due-reminders run
+//           Completed since 07:00 Lisbon that day), never with a non-shadow
+//           heartbeat this week, never with a heartbeat from after that 07:00,
+//           and
 //           the line STALE-HEARTBEAT PATH TAKEN says so.
 //      WHY: with the sweep sending, the sleeping reminder jobs are its
 //      backstop and the sweep decides what is due from the AUDIT TRAIL. An
@@ -75,7 +77,7 @@
 //
 // EXIT 0 OK, 1 FAILED, 2 BAD_INVOCATION (the repository's tooling convention).
 
-import { mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,6 +88,7 @@ import {
   classifyTarget,
   describeError,
   parseArgs as parseRearmArgs,
+  readHistory,
   run as runRearm,
 } from "./inc-1007-rearm-reminders-emit.mjs";
 
@@ -97,19 +100,57 @@ export const MAX_PER_RUN = 200;
 export const OWNER_FLAG = "--owner-says-sweep-is-not-sending";
 /**
  * Q-R36-F6 (strategy, 2026-11-01): the owner's second word, `yes` or `no`. `yes`
- * says that he looked in Inngest and sees NO run of `sweep-due-reminders` (the
- * sweep's function id, apps/web/lib/reminders/inngest/sweep.ts) in the last
- * hour. With OWNER_FLAG (the Vercel switch is off) it is strategy's two
- * confirmations: the sweep is not running, so it cannot send. It lets check 3
- * pass ONLY when production's heartbeats are stale or missing, never when a
- * heartbeat of the last 7 days is anything but shadow, and never when the
- * newest heartbeat is under an hour old (that contradicts the word).
+ * says that the sweep is not running: in Inngest, `sweep-due-reminders` (the
+ * sweep's function id, apps/web/lib/reminders/inngest/sweep.ts) shows no run
+ * with the status Completed since 07:00 Lisbon on the sitting's day (any runs
+ * since then Failed, or none at all). With OWNER_FLAG (the Vercel switch is
+ * off) it is strategy's two confirmations. It lets check 3 pass ONLY when
+ * production's heartbeats are stale or missing, never when a heartbeat of the
+ * last 7 days is anything but shadow, and never when the newest heartbeat was
+ * written at or after that 07:00 (a pass that completed that day contradicts
+ * the word).
+ *
+ * THE WORDING IS SOLO'S PROPOSAL, PUT BACK TO STRATEGY (R4 round 5). The
+ * ruling said "no sweep-due-reminders runs in the last hour", which cannot
+ * tell anything at the sitting's hours: the cron (SWEEP_CRON, every 15
+ * minutes from 07:00 to 21:45 Lisbon) runs last at 21:45, so after 22:45
+ * every sweep shows no run in the last hour, running or not. The flag's name
+ * says only that the sweep is not running, so a re-worded ruling changes this
+ * comment and SWEEP_DAY_START_HOUR, not the name the blocks carry.
  */
-export const STALE_FLAG = "--owner-saw-no-sweep-runs-in-the-last-hour";
+export const STALE_FLAG = "--owner-saw-the-sweep-not-running";
 /** The sweep's function id at the scheduler, as the owner finds it in Inngest. */
 export const SWEEP_FUNCTION_ID = "sweep-due-reminders";
-/** A heartbeat this recent contradicts the owner's word that no sweep run happened in the last hour. */
-export const LAST_HOUR_S = 3600;
+/** The hour of the day's first pass (SWEEP_CRON), Lisbon: a heartbeat from this hour on the sitting's day contradicts `yes`. */
+export const SWEEP_DAY_START_HOUR = 7;
+/** --second-pass: the first send of this operation must be at least this many hours before the run. */
+export const SECOND_PASS_HOURS = 25;
+/** The 2026-10-12 program's marker file name (MARKER_NAME there, not exported; a test reads it). */
+export const MARKER_FILE = ".osteojp-inc1007-rearm.json";
+
+/**
+ * The instant of the latest 07:00 Lisbon at or before `nowMs`: the start of the
+ * sitting's day, from its 21:00 to the next morning's 06:29. PURE. Lisbon is
+ * UTC+0 or UTC+1, so 07:00 Lisbon is 07:00 or 06:00 UTC; the one that reads
+ * 07:00 on the Lisbon clock is the one.
+ */
+export function lastSweepDayStart(nowMs) {
+  const lisbon = (ms) =>
+    Object.fromEntries(
+      new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+        .formatToParts(new Date(ms))
+        .map((x) => [x.type, x.value]),
+    );
+  for (let back = 0; back <= 1; back++) {
+    const p = lisbon(nowMs - back * 24 * 3600 * 1000);
+    for (const utcHour of [SWEEP_DAY_START_HOUR, SWEEP_DAY_START_HOUR - 1]) {
+      const at = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), utcHour, 0, 0);
+      const q = lisbon(at);
+      if (Number(q.hour) === SWEEP_DAY_START_HOUR && q.minute === "00" && q.day === p.day && at <= nowMs) return at;
+    }
+  }
+  throw new Error("the start of the sitting's day could not be computed");
+}
 /** The folder of this operation's marker and lock, under the operator's home folder. */
 export const R36_HOME_NAME = ".osteojp-r36-fallback-rearm";
 /** The newest heartbeat may be at most this old. The last pass of a day is at 21:45 Lisbon. */
@@ -147,7 +188,7 @@ select (select count(*)::int from k) as tenants,
 
 export const USAGE = `usage:
   node packages/db/scripts/r36-fallback-rearm-emit.mjs --tenant-slug <slug> --max-days-ahead <2 to ${HORIZON_DAYS}>
-       ${OWNER_FLAG} [${STALE_FLAG} <yes|no>] [--max <1 to ${MAX_PER_RUN}>] [--min-days-ahead <D>]
+       ${OWNER_FLAG} [${STALE_FLAG} <yes|no>] [--second-pass] [--max <1 to ${MAX_PER_RUN}>] [--min-days-ahead <D>]
        [--confirm --expect <N> --fix-deployed-sha <40 hex> --i-checked-inngest-settings]
   every other argument is the 2026-10-12 script's own:
 ${REARM_USAGE}`;
@@ -170,9 +211,11 @@ export function splitArgs(argv) {
   const rearmArgv = [];
   let ownerSays = false;
   let staleWord;
+  let secondPass = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === OWNER_FLAG) ownerSays = true;
+    else if (a === "--second-pass") secondPass = true;
     else if (a === STALE_FLAG) {
       if (staleWord !== undefined) bad(`${STALE_FLAG} is given more than once`);
       staleWord = argv[++i];
@@ -205,6 +248,7 @@ export function splitArgs(argv) {
     rearmArgv,
     ownerSays,
     ownerSawNoSweepRuns: staleWord === "yes",
+    secondPass,
     tenantSlug,
     maxDaysAhead: Number(maxDays),
     confirm: rearmArgv.includes("--confirm"),
@@ -257,12 +301,16 @@ export function heartbeatAnswer(rows) {
  */
 export function heartbeatVerdict(a, opts = {}) {
   const sawNoRuns = opts.ownerSawNoSweepRuns === true;
+  const nowMs = opts.nowMs ?? Date.now();
+  const dayStart = lastSweepDayStart(nowMs);
+  const newestAt = a.latestAgeS === null || a.latestAgeS === undefined ? null : nowMs - a.latestAgeS * 1000;
+  const passedToday = newestAt !== null && newestAt >= dayStart;
   const mode = a.latestMode === null ? "none" : a.latestMode === SHADOW || a.latestMode === SEND ? a.latestMode : "unrecognised";
   const age = a.latestAgeS === null ? "no heartbeat at all" : `${Math.floor(a.latestAgeS / 60)} minutes ago`;
   const lines = [
     `sweep    production's heartbeats: newest ${mode}, ${age}; shadow in the last 3 hours: ${a.shadowLast3h}; ` +
       `anything but shadow in the last 7 days: ${a.notShadowLast7d}`,
-    `sweep    the owner's word that Inngest shows no ${SWEEP_FUNCTION_ID} run in the last hour: ${sawNoRuns ? "given" : "not given"}`,
+    `sweep    the owner's word that the sweep is not running (no ${SWEEP_FUNCTION_ID} run Completed since 07:00 Lisbon that day): ${sawNoRuns ? "given" : "not given"}`,
   ];
   if (a.tenants !== 1) return { ok: false, lines, why: `the tenant slug matched ${a.tenants} tenants, not 1. Refusing.` };
   // Any heartbeat but shadow this week refuses, whatever the owner says (Q-R36-F6).
@@ -278,10 +326,17 @@ export function heartbeatVerdict(a, opts = {}) {
   if (stale) {
     // THE STALE-HEARTBEAT PATH (Q-R36-F6): the sweep is not running, so it cannot send. Only on the
     // owner's word, and only when the newest heartbeat, if any, is shadow.
+    if (sawNoRuns && passedToday) {
+      return {
+        ok: false,
+        lines,
+        why: `the owner's word that the sweep is not running contradicts production: a heartbeat was written after 07:00 Lisbon on the sitting's day. Refusing.`,
+      };
+    }
     if (sawNoRuns && (missing || a.latestMode === SHADOW)) {
       lines.push(
         `sweep    STALE-HEARTBEAT PATH TAKEN (Q-R36-F6): production's heartbeats are ${missing ? "missing" : "stale"}, and the owner says ` +
-          `the switch is off in Vercel and Inngest shows no ${SWEEP_FUNCTION_ID} run in the last hour`,
+          `the switch is off in Vercel and that Inngest shows no ${SWEEP_FUNCTION_ID} run Completed since 07:00 Lisbon that day`,
       );
       return { ok: true, lines, why: null, stalePath: true };
     }
@@ -294,11 +349,11 @@ export function heartbeatVerdict(a, opts = {}) {
       why: `the sweep's newest heartbeat is more than ${HEARTBEAT_FRESH_S / 3600} hours old, so the sweep is not shown to be running, and its mode now cannot be read from production. Refusing.`,
     };
   }
-  if (sawNoRuns && a.latestAgeS <= LAST_HOUR_S) {
+  if (sawNoRuns && passedToday) {
     return {
       ok: false,
       lines,
-      why: `the owner's word that no ${SWEEP_FUNCTION_ID} run happened in the last hour contradicts production: the newest heartbeat is ${Math.floor(a.latestAgeS / 60)} minutes old. Refusing.`,
+      why: `the owner's word that the sweep is not running contradicts production: the newest heartbeat, ${Math.floor(a.latestAgeS / 60)} minutes old, was written after 07:00 Lisbon on the sitting's day. Refusing.`,
     };
   }
   if (a.latestMode !== SHADOW) {
@@ -363,6 +418,7 @@ export async function runFallback(argv, deps = {}) {
   const home = deps.home ?? homedir();
   const openHeartbeat = deps.openHeartbeat ?? openHeartbeatReader;
   const rearm = deps.rearm ?? runRearm;
+  const now = deps.now ?? Date.now;
 
   const a = splitArgs(argv);
   // Every argument the 2026-10-12 script takes is judged by it NOW, before
@@ -386,6 +442,25 @@ export async function runFallback(argv, deps = {}) {
       `the owner has not said that the sweep's switch is not send in production (${OWNER_FLAG}). This shell is not ` +
         "production: the switch the deployed application reads is in Vercel. Refusing; nothing was read and nothing was sent.",
     );
+  }
+  // THE SECOND PASS (Q-R36-F5): this operation's marker must hold a first sitting that ended
+  // settled: a sending run whose read was 25 hours or more ago (so every visit that sitting skipped
+  // as touched is past its 25 hours), no row of unknown outcome, and no lock. Local files only.
+  const r36Home = join(home, R36_HOME_NAME);
+  if (a.secondPass) {
+    const marker = a.sink ? `${a.rearmArgv[a.rearmArgv.indexOf("--sink-file") + 1]}.marker.json` : join(r36Home, MARKER_FILE);
+    const history = readHistory(marker);
+    const reads = history.entries.map((e) => (e && typeof e.readAt === "string" ? Date.parse(e.readAt) : NaN)).filter((t) => !Number.isNaN(t));
+    if (reads.length === 0) fail("--second-pass: this operation's marker holds no sending run, so this is not a second pass. Nothing was read and nothing was sent.");
+    const first = Math.min(...reads);
+    const hours = (now() - first) / 3_600_000;
+    out(`marker   the first sending run of this operation read the database at ${new Date(first).toISOString()}, ${hours.toFixed(1)} hours ago (a second pass needs ${SECOND_PASS_HOURS})`);
+    if (hours < SECOND_PASS_HOURS) {
+      fail(`--second-pass: the first sending run read the database ${hours.toFixed(1)} hours ago, fewer than ${SECOND_PASS_HOURS}: a visit it skipped as touched may still be touched. Wait. Nothing was read and nothing was sent.`);
+    }
+    if (history.attempted.size > 0) fail(`--second-pass: this operation's marker holds ${history.attempted.size} row(s) of unknown outcome. The lead rules. Nothing was read and nothing was sent.`);
+    if (existsSync(`${marker}.lock`)) fail("--second-pass: this operation's lock is present: a run is going, or one died and left it. The lead rules. Nothing was read and nothing was sent.");
+    out("marker   second pass: the first sitting is settled (no row of unknown outcome, no lock)");
   }
   // c. Production's heartbeats. Only the two targets the 2026-10-12 script reads.
   const raw = env.DATABASE_URL_DIRECT ?? env.DATABASE_URL;
@@ -411,13 +486,12 @@ export async function runFallback(argv, deps = {}) {
       }
     }
   }
-  const verdict = heartbeatVerdict(answer, { ownerSawNoSweepRuns: a.ownerSawNoSweepRuns });
+  const verdict = heartbeatVerdict(answer, { ownerSawNoSweepRuns: a.ownerSawNoSweepRuns, nowMs: now() });
   for (const line of verdict.lines) out(line);
   if (!verdict.ok) fail(`${verdict.why} Nothing was sent.`);
   out(SWEEP_OK_LINE);
 
   // The run of 2026-10-12, with its own marker folder and counts only.
-  const r36Home = join(home, R36_HOME_NAME);
   if (a.confirm && !a.sink) {
     try {
       mkdirSync(r36Home, { recursive: true, mode: 0o700 });

@@ -22,7 +22,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,8 +36,12 @@ import {
   MAX_PER_RUN,
   OWNER_FLAG,
   R36_HOME_NAME,
+  MARKER_FILE,
+  SECOND_PASS_HOURS,
   STALE_FLAG,
+  SWEEP_DAY_START_HOUR,
   SWEEP_FUNCTION_ID,
+  lastSweepDayStart,
   SWEEP_OK_LINE,
   countsOnly,
   heartbeatAnswer,
@@ -238,20 +242,25 @@ test("the heartbeats: each refusal is its own, and only a fresh shadow with no o
   no({ tenants: 2 }, /matched 2 tenants/);
   assert.deepEqual(v({}).lines, [
     "sweep    production's heartbeats: newest shadow, 10 minutes ago; shadow in the last 3 hours: 12; anything but shadow in the last 7 days: 0",
-    "sweep    the owner's word that Inngest shows no sweep-due-reminders run in the last hour: not given",
+    "sweep    the owner's word that the sweep is not running (no sweep-due-reminders run Completed since 07:00 Lisbon that day): not given",
   ]);
 });
 
-test("Q-R36-F6, the matrix: heartbeat state x the owner's word that no sweep-due-reminders run happened in the last hour", () => {
+test("Q-R36-F6, the matrix: heartbeat state x the owner's word that the sweep is not running (no run Completed since 07:00 Lisbon that day)", () => {
   assert.equal(SWEEP_FUNCTION_ID, "sweep-due-reminders");
   assert.match(read("apps/web/lib/reminders/inngest/sweep.ts"), /id: "sweep-due-reminders",/);
+  assert.match(read("apps/web/lib/reminders/sweep.ts"), /export const SWEEP_CRON = "TZ=Europe\/Lisbon \*\/15 7-21 \* \* \*";/);
+  assert.equal(SWEEP_DAY_START_HOUR, 7);
   const H = 3600;
+  // Wednesday 2026-11-04 21:30 Lisbon (WET): the day's 07:00 was 14.5 hours before.
+  const WED = Date.parse("2026-11-04T21:30:00Z");
+  const SINCE7 = 14.5 * H;
   const states = {
     "fresh shadow, 10 minutes": [{ latestAgeS: 600 }, "pass", "refuse"],
-    "fresh shadow, exactly 1 hour": [{ latestAgeS: H }, "pass", "refuse"],
-    "fresh shadow, 1 hour 1 second": [{ latestAgeS: H + 1 }, "pass", "pass"],
-    "fresh shadow, exactly 12 hours": [{ latestAgeS: 12 * H }, "pass", "pass"],
-    "stale shadow, 12 hours 1 second": [{ latestAgeS: 12 * H + 1 }, "refuse", "stale"],
+    "fresh shadow, 12 hours (09:30 that day)": [{ latestAgeS: 12 * H }, "pass", "refuse"],
+    "stale shadow, 13 hours (08:30 that day)": [{ latestAgeS: 13 * H }, "refuse", "refuse"],
+    "stale shadow, at 07:00 that day exactly": [{ latestAgeS: SINCE7 }, "refuse", "refuse"],
+    "stale shadow, one second before 07:00 that day": [{ latestAgeS: SINCE7 + 1 }, "refuse", "stale"],
     "stale shadow, 3 days": [{ latestAgeS: 72 * H, shadowLast3h: 0 }, "refuse", "stale"],
     "missing": [{ latestMode: null, latestAgeS: null, shadowLast3h: 0 }, "refuse", "stale"],
     "fresh send": [{ latestMode: "send", latestAgeS: 600, notShadowLast7d: 1 }, "refuse", "refuse"],
@@ -263,7 +272,7 @@ test("Q-R36-F6, the matrix: heartbeat state x the owner's word that no sweep-due
   };
   for (const [name, [over, without, withWord]] of Object.entries(states)) {
     for (const [given, want] of [[false, without], [true, withWord]]) {
-      const r = heartbeatVerdict({ ...SHADOW_OK, ...over }, { ownerSawNoSweepRuns: given });
+      const r = heartbeatVerdict({ ...SHADOW_OK, ...over }, { ownerSawNoSweepRuns: given, nowMs: WED });
       const got = !r.ok ? "refuse" : r.stalePath ? "stale" : "pass";
       assert.equal(got, want, `${name}, word ${given ? "given" : "not given"}: ${r.why ?? ""}`);
       const taken = r.lines.some((l) => l.startsWith("sweep    STALE-HEARTBEAT PATH TAKEN (Q-R36-F6)"));
@@ -271,7 +280,59 @@ test("Q-R36-F6, the matrix: heartbeat state x the owner's word that no sweep-due
       assert.match(r.lines[1], given ? /: given$/ : /: not given$/);
     }
   }
-  assert.match(heartbeatVerdict({ ...SHADOW_OK, latestAgeS: 600 }, { ownerSawNoSweepRuns: true }).why, /contradicts production: the newest heartbeat is 10 minutes old/);
+  assert.match(heartbeatVerdict({ ...SHADOW_OK, latestAgeS: 600 }, { ownerSawNoSweepRuns: true, nowMs: WED }).why, /contradicts production: the newest heartbeat, 10 minutes old, was written after 07:00 Lisbon/);
+  // After midnight the sitting's day is still the day before: Thursday 05:00 WET, Wednesday's 21:45 pass, 7.25 hours old.
+  const THU5 = Date.parse("2026-11-05T05:00:00Z");
+  assert.equal(new Date(lastSweepDayStart(THU5)).toISOString(), "2026-11-04T07:00:00.000Z");
+  assert.equal(heartbeatVerdict({ ...SHADOW_OK, latestAgeS: 7.25 * H }, { ownerSawNoSweepRuns: true, nowMs: THU5 }).ok, false);
+  assert.equal(heartbeatVerdict({ ...SHADOW_OK, latestAgeS: 7.25 * H }, { ownerSawNoSweepRuns: false, nowMs: THU5 }).ok, true);
+  // The two days of October when the clocks go back: 07:00 Lisbon is 06:00 UTC in summer time, 07:00 in winter.
+  assert.equal(new Date(lastSweepDayStart(Date.parse("2026-10-24T22:00:00Z"))).toISOString(), "2026-10-24T06:00:00.000Z");
+  assert.equal(new Date(lastSweepDayStart(Date.parse("2026-10-25T21:30:00Z"))).toISOString(), "2026-10-25T07:00:00.000Z");
+  assert.equal(new Date(lastSweepDayStart(Date.parse("2026-11-05T07:00:00Z"))).toISOString(), "2026-11-05T07:00:00.000Z");
+});
+
+test("--second-pass: only on a settled first sitting whose first send read the database 25 hours or more before", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "r36-p2-"));
+  const sink = join(dir, "sink.jsonl");
+  const marker = `${sink}.marker.json`;
+  const T = Date.parse("2026-11-04T21:30:00Z");
+  const entry = (rows, readAt = new Date(T).toISOString()) => ({ readAt, marginMs: 690000, state: "done", rows });
+  const sent = { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001", startsAt: "2026-11-10T08:00:00.000Z", state: "sent" };
+  const write = (doc) => writeFileSync(marker, JSON.stringify(doc));
+  const argv = [...SLUG, ...SCOPE, OWNER_FLAG, "--second-pass", "--sink-file", sink];
+  const go = (hoursLater) => fallback(argv, { deps: { now: () => T + hoursLater * 3_600_000 }, rearm: async () => ({ sent: 0 }) });
+  assert.equal(SECOND_PASS_HOURS, 25);
+  assert.match(read("packages/db/scripts/inc-1007-rearm-reminders-emit.mjs"), new RegExp(`const MARKER_NAME = "${MARKER_FILE.replaceAll(".", "\\.")}";`));
+  // No marker: not a second pass.
+  let r = await go(26);
+  assert.equal(r.halt?.code, 1);
+  assert.match(r.halt.message, /holds no sending run, so this is not a second pass/);
+  // 24 hours 59 minutes: too soon. 25 hours: through.
+  write({ history: [entry([sent])] });
+  r = await go(24 + 59 / 60);
+  assert.equal(r.halt?.code, 1);
+  assert.match(r.halt.message, /fewer than 25: a visit it skipped as touched may still be touched/);
+  assert.deepEqual(r.log, [], "the heartbeats were read before the refusal");
+  r = await go(25);
+  assert.equal(r.halt, null, r.halt?.message);
+  assert.ok(r.lines.includes("marker   the first sending run of this operation read the database at 2026-11-04T21:30:00.000Z, 25.0 hours ago (a second pass needs 25)"), r.text);
+  assert.ok(r.lines.includes("marker   second pass: the first sitting is settled (no row of unknown outcome, no lock)"));
+  // The earliest sending run counts, not the latest.
+  write({ history: [entry([sent], new Date(T + 2 * 3_600_000).toISOString()), entry([sent])] });
+  assert.equal((await go(25.5)).halt, null);
+  // A row of unknown outcome, or a lock, stops it.
+  write({ history: [entry([{ ...sent, state: "attempted" }])] });
+  r = await go(30);
+  assert.match(r.halt?.message ?? "", /1 row\(s\) of unknown outcome/);
+  write({ history: [entry([sent])] });
+  writeFileSync(`${marker}.lock`, "{}");
+  r = await go(30);
+  assert.match(r.halt?.message ?? "", /lock is present/);
+  // Without --second-pass none of it is asked.
+  const plain = await fallback([...SLUG, ...SCOPE, OWNER_FLAG, "--sink-file", sink], { rearm: async () => ({ sent: 0 }) });
+  assert.equal(plain.halt, null);
+  assert.ok(!plain.text.includes("marker   "));
 });
 
 test("Q-R36-F6 through the program: the word is taken off the line, yes or no only, and the path is printed before the guard line", async () => {
@@ -440,6 +501,7 @@ test("a whole sitting through the REAL run(): no uuid on any line, and every lin
   has("p2Dry", "skipped: already sent by an earlier run (marker): 12");
   has("p2Dry", "skipped: attempted by an earlier run, outcome unknown (marker): 0");
   has("p2Dry", "ELIGIBLE: 3");
+  has("p2Dry", "marker   second pass: the first sitting is settled (no row of unknown outcome, no lock)");
   has("p2Dry", "G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  (appointments checked: 12; handed to a provider: 0; not checkable: 0; expected 0)");
   like("p2Send", /^SENT: 3 of 3 {2}/);
   has("p2Closing", "ELIGIBLE: 0");

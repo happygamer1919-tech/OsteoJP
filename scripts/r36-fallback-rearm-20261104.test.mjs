@@ -125,11 +125,17 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /^## THE SECOND PASS: Thursday 2026-11-05 night \(Q-R36-F5, ruled 2026-11-01\)$/m);
   assert.match(doc, /^## Weekly sittings after a fallback \(Q-R36-F1, ruled 2026-11-01\)$/m);
   for (const q of ["Q-R36-F1", "Q-R36-F2", "Q-R36-F3", "Q-R36-F5", "Q-R36-F6"]) assert.match(doc, new RegExp(`^\\*\\*${q}\\. [^*]+\\*\\* ANSWERED 2026-11-01: "`, "m"), q);
-  assert.match(doc, /Functions, `sweep-due-reminders`, Runs, shows no run in the last hour/);
+  assert.match(doc, /Functions, `sweep-due-reminders`, Runs, shows no run with the status Completed since 07:00 Lisbon on the sitting's day/);
   assert.match(doc, /`STALE-HEARTBEAT PATH TAKEN \(Q-R36-F6\)`/);
   assert.match(doc, /SOLO sets `STALEPATH=yes` in a dispatch only on the ruling of Q-R36-F6/);
   assert.ok(new Date(Date.parse("2026-11-25T21:00:00Z") + 28 * 86_400_000).toISOString().startsWith("2026-12-23"));
-  assert.match(doc, /A sitting on Wednesday 11-25 reaches visits starting up to Wednesday 2026-12-23\./);
+  assert.match(doc, /the sitting of Wednesday 11-25 reaches visits starting up to Wednesday 2026-12-23\./);
+  assert.match(doc, /\*\*The pull request stays held, unmerged, and its branch is kept until the LAST sitting's GREEN report\*\*/);
+  assert.match(doc, /SOLO fills `WEDOK=yes` only when GREEN's Wednesday report shows that G2 passed AND/);
+  assert.match(doc, /\*\*QUESTION BACK TO STRATEGY \(R4 round 5\), the ruling's premise\.\*\*/);
+  assert.match(doc, /no run with the status Completed since 07:00 Lisbon on the sitting's day/);
+  assert.match(doc, /SOLO may re-issue the Wednesday dispatch with `STALEPATH=yes` that same night/);
+  assert.doesNotMatch(doc, /no-sweep-runs-in-the-last-hour|authored and reviewed only on strategy's ruling/);
   assert.ok(doc.indexOf("1. **The owner's three looks**") < doc.indexOf("2. **BEFORE YOU START**"), "the owner's looks come before BEFORE YOU START");
   assert.match(doc, /\*\*THE MERGE FREEZE, mandatory: no merge to `main` from before step 1 until GREEN reports\.\*\*/);
   assert.match(doc, /SOLO's written statement of THE MERGE FREEZE/);
@@ -240,9 +246,10 @@ test("every pin is the real file's sha256 on this tree, and FIXSHA is the remind
   for (const [k, v] of Object.entries(want)) if (k !== "SHAWRAP") assert.ok(doc.includes(v), `${k} not in the document`);
 });
 
-test("PENDING lines: only the two BEFORE YOU START blocks carry them, exactly HELD, DOCSHA, RUNDAY and STALEPATH", () => {
+test("PENDING lines: only the two BEFORE YOU START blocks carry them: HELD, DOCSHA, RUNDAY and STALEPATH, and WEDOK on the second pass", () => {
   const pend = (b) => b.split("\n").filter((l) => l.includes("PENDING")).map((l) => l.split("=")[0]);
-  for (const name of ["bys", "p2bys"]) assert.deepEqual(pend(blockOf(name)).filter((x) => /^[A-Z]+$/.test(x)), ["HELD", "DOCSHA", "RUNDAY", "STALEPATH"], name);
+  assert.deepEqual(pend(blockOf("bys")).filter((x) => /^[A-Z]+$/.test(x)), ["HELD", "DOCSHA", "RUNDAY", "STALEPATH"]);
+  assert.deepEqual(pend(blockOf("p2bys")).filter((x) => /^[A-Z]+$/.test(x)), ["HELD", "DOCSHA", "RUNDAY", "STALEPATH", "WEDOK"]);
   for (const name of ["canary", "rest", "closing", "p2send", "p2closing"]) assert.deepEqual(pend(blockOf(name)), [], name);
 });
 
@@ -261,7 +268,7 @@ test("the program runs with exactly the reviewed arguments, and sends only in TH
   const ownerA = `${OWNER_FLAG} ${STALE_FLAG} "\${STALEPATH}"`;
   const confirm = '--confirm --expect "${N}" --fix-deployed-sha "${FIXSHA}" --i-checked-inngest-settings';
   assert.deepEqual(wrapCalls(blockOf("bys")), [{ caffeinate: false, args: `${base} --max 200 ${ownerA}` }]);
-  assert.deepEqual(wrapCalls(blockOf("p2bys")), [{ caffeinate: false, args: `${base27} --max 200 ${ownerA}` }]);
+  assert.deepEqual(wrapCalls(blockOf("p2bys")), [{ caffeinate: false, args: `${base27} --max 200 ${ownerA} --second-pass` }]);
   assert.deepEqual(wrapCalls(blockOf("p2send")), [
     { caffeinate: false, args: `${base27} --max 200 ${owner}` },
     { caffeinate: true, args: `${base27} --max 200 ${owner} ${confirm}` },
@@ -483,6 +490,7 @@ async function fixtures() {
   f["g1no.out"] = swap(f["dryA.out"], "G1 UNDER THE LIMIT OF 20000: yes", "G1 UNDER THE LIMIT OF 20000: NO");
   f["canaryFew.out"] = swap(swap(f["canaryDry.out"], "ELIGIBLE: 12", "ELIGIBLE: 3"), "THIS RUN: 5 of 12", "THIS RUN: 3 of 3");
   f["canarySend4.out"] = swap(f["canarySend.out"], "SENT: 5 of 5", "SENT: 4 of 5");
+  f["p2Unsettled.out"] = swap(f["p2Dry.out"], "marker   second pass: the first sitting is settled (no row of unknown outcome, no lock)\n", "");
   f["p2Empty.out"] = swap(f["p2Dry.out"], "appointments checked: 12; handed", "appointments checked: 0; handed");
   f["restDryZero.out"] = swap(f["restDry.out"], "ELIGIBLE: 7", "ELIGIBLE: 0");
   f["refused.out"] = "sweep    production's heartbeats: newest send, 3 minutes ago; shadow in the last 3 hours: 9; anything but shadow in the last 7 days: 1\nFAILED: the sweep's newest heartbeat is not shadow (it reads send): the sweep may be sending. This operation must not run while it is. Refusing. Nothing was sent.\n";
@@ -746,13 +754,14 @@ export const fillDispatch = (block, v) =>
     .replace("HELD='PENDING: set at the READY line'", `HELD=${v.HELD}`)
     .replace("DOCSHA='PENDING: set at the READY line'", `DOCSHA=${v.DOCSHA}`)
     .replace("RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'", `RUNDAY=${v.RUNDAY}`)
-    .replace("STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'", `STALEPATH=${v.STALEPATH ?? "no"}`);
+    .replace("STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'", `STALEPATH=${v.STALEPATH ?? "no"}`)
+    .replace("WEDOK='PENDING: yes only when GREEN reported Wednesday settled, as THE SECOND PASS names it'", `WEDOK=${v.WEDOK ?? "yes"}`);
 
 function harnessConfig(name, shell, base, docSha, opts = {}) {
   const raw = blockOf(name);
   const p2 = name.startsWith("p2");
   const filled = (name === "bys" || name === "p2bys") && !opts.raw;
-  const block = filled ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: p2 ? "20261105" : "20261104", STALEPATH: opts.stalepath }) : raw;
+  const block = filled ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: opts.runday ?? (p2 ? "20261105" : "20261104"), STALEPATH: opts.stalepath, WEDOK: opts.wedok }) : raw;
   return {
     id: `${shell}-${name}${opts.tag ? `-${opts.tag}` : ""}`, name, shell, base, block, dry: DRY_OF[name], send: p2 ? "p2Send" : "restSend", records: RECORDS_OF[name],
     initialHead: opts.initialHead ?? (name === "bys" || name === "p2bys" ? FAKE_SHA.BEFORE : FAKE_SHA.MAIN), setup: opts.setup ?? SETUPS[name], scenario: opts.scenario, applyDir: opts.applyDir,
@@ -838,7 +847,7 @@ test("the program's calls in the positive controls carry exactly the arguments t
         [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", ...W, "--confirm", "--expect", "7", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
       ],
       closing: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", ...W]],
-      p2bys: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W]],
+      p2bys: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W, "--second-pass"]],
       p2send: [
         [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W],
         [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "27", "--max", "200", ...W, "--confirm", "--expect", "3", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
@@ -889,6 +898,12 @@ const SCENARIOS = [
   { name: "bys", tag: "stalepath-bad", stalepath: "maybe", stop: /^STOP: STALEPATH is still PENDING, or is not no or yes/m },
   { name: "canary", tag: "no-stale-record", setup: (tmp) => { SETUPS.canary(tmp); rmSync(join(tmp, "r36-stale.ok")); }, stop: /^STOP: BEFORE YOU START recorded no STALEPATH in this sitting/m },
   { name: "rest", tag: "stale-record-bad", setup: (tmp) => { SETUPS.rest(tmp); putRecord(tmp, "r36-stale.ok", "perhaps\n", 30); }, stop: /^STOP: the recorded STALEPATH is not no or yes/m },
+  { name: "canary", tag: "tuesday-record", scenario: { stamp: "202611032230", dow: "2", rdow: "2" }, setup: (tmp) => { SETUPS.canary(tmp); putRecord(tmp, "r36-night.ok", "20261103 20261104\n", 5); }, stop: /^STOP: the recorded night 20261103 is not a Wednesday \(weekday 2\)/m },
+  { name: "rest", tag: "tuesday-record", scenario: { stamp: "202611032230", dow: "2", rdow: "2" }, setup: (tmp) => { SETUPS.rest(tmp); putRecord(tmp, "r36-night.ok", "20261103 20261104\n", 5); }, stop: /^STOP: the recorded night 20261103 is not a Wednesday \(weekday 2\)/m },
+  { name: "p2bys", tag: "wedok-missing", wedok: "no", stop: /^STOP: WEDOK is not yes/m },
+  { name: "p2bys", tag: "not-thursday", scenario: { rdow: "5" }, stop: /^STOP: RUNDAY 20261105 is not a Thursday/m },
+  { name: "p2bys", tag: "unsettled", scenario: { swapKind: "p2Dry", swapFile: "p2Unsettled.out" }, stop: /^STOP: the dry run does not show that the first sitting is settled/m },
+  { name: "p2send", tag: "not-thursday", scenario: { rdow: "3" }, stop: /^STOP: the recorded night 20261105 is not a Thursday/m },
   { name: "p2bys", tag: "unfilled", raw: true, stop: /^STOP: HELD is not a filled-in sha, so this block is NOT READY/m },
   { name: "p2bys", tag: "wednesday-night", scenario: { stamp: "202611042130", dow: "3" }, stop: /^STOP: Lisbon 202611042130 is outside the window of the night/m },
   { name: "p2bys", tag: "marker-empty", scenario: { swapKind: "p2Dry", swapFile: "p2Empty.out" }, stop: /^STOP: the number of appointments checked did not read as a whole number above 0 \[0\]: this operation's marker is empty/m },
@@ -989,6 +1004,24 @@ test("main moved before the canary sent: THE CANARY stops with no program call, 
       assert.equal(canary.code, 0, canary.out.slice(-1500));
       assert.ok(canary.out.includes(SUCCESS.canary), shell);
       assert.equal(canary.calls.filter((c) => c.id.startsWith("caffeinate#")).length, 1);
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("the Tuesday dry run: BEFORE YOU START on RUNDAY 20261103 ends DRY RUN ONLY and sends nothing; Wednesday's ends THE CANARY next", async () => {
+  const base = mkdtempSync(join(tmpdir(), "fault-r36-tuesday-"));
+  try {
+    const docSha = await prepareHarness(base, readyDoc());
+    for (const shell of shellsHere()) {
+      const tue = await runOnce(harnessConfig("bys", shell, base, docSha, { tag: "tue", runday: "20261103", scenario: { stamp: "202611032130", dow: "2", rdow: "2", next: "20261104" } }), `${shell}-tue`, null);
+      assert.equal(tue.code, 0, tue.out.slice(-1500));
+      assert.match(tue.out, /^BEFORE YOU START: every check passed\. ELIGIBLE 12 at this read\. DRY RUN ONLY: nothing else is pasted tonight\.$/m);
+      assert.deepEqual(tue.calls.filter((c) => c.id.startsWith("caffeinate#")), []);
+      assert.equal(tue.recordText["r36-night.ok"], "20261103 20261104\n");
+      const wed = await runOnce(harnessConfig("bys", shell, base, docSha, { tag: "wed" }), `${shell}-wed`, null);
+      assert.match(wed.out, /^BEFORE YOU START: every check passed\. ELIGIBLE 12 at this read\. THE CANARY next\.$/m);
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
