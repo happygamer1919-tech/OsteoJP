@@ -22,9 +22,10 @@
 //   1. THE SWEEP REFUSAL. Before that run reads anything, three checks, and a
 //      refusal on any one of them:
 //        a. the sweep's send switch in THIS shell's environment, read exactly
-//           as apps/web/lib/reminders/sweep-mode.ts reads it (the value is
-//           compared, never printed: the line says SET or UNSET and the word
-//           it reads as, `shadow` or `send`);
+//           as apps/web/lib/reminders/sweep-mode.ts reads it. The value is
+//           compared, never printed: the line says SET or UNSET and nothing
+//           more (R42), and a refusal says only that the switch is set so
+//           that the sweep would send;
 //        b. the owner's word, given in the sitting, that the switch is not
 //           `send` in production (OWNER_FLAG below). This shell is not
 //           production: the switch the deployed app reads lives in Vercel;
@@ -323,9 +324,12 @@ export async function runFallback(argv, deps = {}) {
 
   // a. This shell's switch. Compared, never printed.
   const word = sweepSwitchWord(env);
-  out(`sweep    the send switch in this shell's environment: ${word.set ? "SET" : "UNSET"}, it reads as ${word.mode}`);
+  out(`sweep    the send switch in this shell's environment: ${word.set ? "SET" : "UNSET"}`);
   if (word.mode === SEND) {
-    fail("the sweep's send switch reads send in this shell's environment. This operation must not run while the sweep is the sender. Refusing; nothing was read and nothing was sent.");
+    fail(
+      "refused: the sweep's send switch is set in this shell's environment, and set so that the sweep would send. " +
+        "This operation must not run while the sweep is the sender. Nothing was read and nothing was sent.",
+    );
   }
   // b. The owner's word.
   out(`sweep    the owner's word that the switch is not send in production: ${a.ownerSays ? "given" : "NOT GIVEN"}`);

@@ -52,6 +52,9 @@ const PTM = "scripts/production-target.mjs";
 const BRANCH = "origin/data/R36-fallback-rearm-20261104";
 const FIXSHA = "20a6d73151468d36c080bcfd6cfad528d3a69d2d";
 const doc = read(DOC);
+const NOT_READY = "NOT READY: awaiting R4 review";
+/** The document with its first line forced, whatever the READY line has made of it. */
+const withFirstLine = (line) => doc.replace(/^[^\n]*\n/, `${line}\n`);
 
 /** The fenced blocks GREEN pastes: fences whose opening line is exactly three backticks. A fence naming a language is prose. */
 export function blocksOf(md) {
@@ -89,8 +92,9 @@ export const blockOf = (name) => {
 
 /* ---- the document, statically ----------------------------------------------------------------- */
 
-test("the first line is NOT READY until the READY line, and the sidecar pins the document", () => {
-  assert.equal(doc.split("\n")[0], "NOT READY: awaiting R4 review");
+test("the first line is NOT READY until the READY line, or a READY line after it, and the sidecar pins the document", () => {
+  const first = doc.split("\n")[0];
+  assert.ok(first === NOT_READY || /^READY\b/.test(first), first);
   assert.equal(read(SIDECAR), `${sha256(doc)}  ${DOC}\n`);
 });
 
@@ -109,6 +113,11 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /^## This op must NOT run if the sweep is in send mode$/m);
   assert.ok(doc.indexOf("### In plain words") < doc.indexOf("### The predicate"), "plain words come first");
   assert.match(doc, /^## The horizon: 28 days, and why$/m);
+  assert.match(doc, /^\*\*Nothing provably breaks on Friday 11-06, except a residual\.\*\*|^- \*\*Nothing provably breaks on Friday 11-06, except a residual\.\*\*/m);
+  for (const q of ["Q-R36-F1", "Q-R36-F2", "Q-R36-F3", "Q-R36-F4", "Q-R36-F5", "Q-R36-F6"]) assert.match(doc, new RegExp(`^\\*\\*${q}\\. `, "m"), q);
+  assert.match(doc, /\*\*No merge to `main` during the sitting\.\*\*/);
+  assert.match(doc, /^### After the closing dry run: the owner's look at the re-plan$/m);
+  assert.ok(doc.indexOf("1. **The owner's two looks**") < doc.indexOf("2. **BEFORE YOU START**"), "the owner's looks come before BEFORE YOU START");
   assert.match(doc, /\*\*NOT REHEARSED\. Nothing in this document has run against any database\.\*\*/);
   assert.match(doc, /A script's own REFUSE or STOP line is a halt, the same as a harness refusal\. Never edit an env file, a URL, a flag, a label or a script to get past a guard\. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so\./);
 });
@@ -152,7 +161,7 @@ const STRAY_HALT = /\|\| \{ echo "STOP: [^"]+"; echo "\$\{STRAY\}"; exit 1; \}$/
 /** A command a later step relies on: its failure must halt the block by an explicit guard. */
 const MUST_HALT = [
   /^cd /, /\bgit /, /^rm /, /^touch /, /\| tee /, /\bnode /, /^set -o allexport/, /^shasum /,
-  /^(REC|HD|STRAY|TIP|DOC|TOP|SIDE|SW|SE|SG|SM|NOW|RDOW|NIGHT|EC|N|K|G3L|G4L|SL|RECENT|BEGAN|BEGANT)=\$\(/, /^NEXTDAY=\$\(TZ=/,
+  /^(REC|HD|STRAY|TIP|DOC|TOP|SIDE|SW|SE|SG|SM|NOW|RDOW|NIGHT|EC|N|K|G3L|G4L|SL|RECENT|BEGAN|BEGANT|MAINSHA|MREC|MNOW|HB|TCH)=\$\(/, /^NEXTDAY=\$\(TZ=/,
   /^test /, /^\[ /, /^grep /, /^echo "[^"]*" \| grep /, /^echo .* > \/tmp\//,
 ];
 export function unguardedLines(block) {
@@ -307,7 +316,8 @@ const FAKE_DB_URL = "postgresql://postgres.harness:x@harness.invalid:5432/postgr
 const FAKE_SHA = { MAIN: "1".repeat(40), OTHER: "2".repeat(40), BEFORE: "3".repeat(40) };
 const HARNESS_EPOCH = 1793827800;
 const HARNESS_HTTPDATE = new Date(HARNESS_EPOCH * 1000).toUTCString();
-const RECORDS = ["r36-head.sha", "r36-night.ok", "r36-canary.ok", "r36-last-send.ok"];
+const RECORDS = ["r36-head.sha", "r36-night.ok", "r36-canary.ok", "r36-last-send.ok", "r36-main.sha"];
+const MAINLINE = "4".repeat(40);
 
 function realPath(name) {
   const r = spawnSync("/bin/sh", ["-c", `command -v ${name}`], { encoding: "utf8", env: { PATH: SYSTEM_PATH } });
@@ -359,6 +369,7 @@ case "$n" in
       status) if [ -n "$HARNESS_STRAY" ]; then echo "$HARNESS_STRAY"; fi; exit 0;;
       fetch) exit 0;;
       rev-parse) if [ "$2" = ${BRANCH} ]; then echo "$HARNESS_MAIN"; exit 0; fi
+        if [ "$2" = origin/main ]; then echo "$HARNESS_MAINLINE"; exit 0; fi
         if [ "$2" = HEAD ]; then read -r h < "$d/head"; echo "$h"; exit 0; fi;;
       checkout) for a in "$@"; do last="$a"; done; echo "$last" > "$d/head"; exit 0;;
       merge-base) [ "$2" = --is-ancestor ] && [ "$3" = ${FIXSHA} ] || unexpected "$@"; exit "\${HARNESS_ANCESTOR:-0}";;
@@ -452,7 +463,7 @@ export async function prepareHarness(base, docText) {
 }
 
 /** The document as SOLO's READY line will leave it: only the first line changes. */
-const readyDoc = () => doc.replace(/^NOT READY: awaiting R4 review\n/, "READY: the harness's copy\n");
+const readyDoc = () => withFirstLine("READY: the harness's copy");
 
 /** The block with its real paths moved into the run folder. A block that still names one is refused unrun. */
 export function localize(block, run, envFile) {
@@ -509,7 +520,7 @@ export async function runOnce(cfg, runId, fault) {
   const s = cfg.scenario ?? {};
   const env = {
     PATH: `${join(cfg.base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
-    HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL, HARNESS_MAIN: s.main ?? FAKE_SHA.MAIN,
+    HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL, HARNESS_MAIN: s.main ?? FAKE_SHA.MAIN, HARNESS_MAINLINE: s.mainline ?? MAINLINE,
     HARNESS_STAMP: s.stamp ?? "202611042130", HARNESS_DOW: s.dow ?? "3", HARNESS_ZONE: s.zone ?? "WET",
     HARNESS_RDOW: s.rdow ?? "3", HARNESS_NEXT: "20261105", HARNESS_EPOCH: String(HARNESS_EPOCH), HARNESS_HTTPDATE,
     HARNESS_SNTP: s.sntp ?? "", HARNESS_STRAY: s.stray ?? "", HARNESS_ANCESTOR: s.ancestor ?? "0",
@@ -636,22 +647,25 @@ const SETUPS = {
   canary: (tmp) => {
     putRecord(tmp, "r36-head.sha", `${FAKE_SHA.MAIN}\n`, 5);
     putRecord(tmp, "r36-night.ok", "20261104 20261105\n", 5);
+    putRecord(tmp, "r36-main.sha", `${MAINLINE}\n`, 5);
   },
   rest: (tmp) => {
     putRecord(tmp, "r36-head.sha", `${FAKE_SHA.MAIN}\n`, 30);
     putRecord(tmp, "r36-night.ok", "20261104 20261105\n", 30);
+    putRecord(tmp, "r36-main.sha", `${MAINLINE}\n`, 30);
     putRecord(tmp, "r36-canary.ok", "", 20);
     putRecord(tmp, "r36-last-send.ok", "", 20);
   },
   closing: (tmp) => {
     putRecord(tmp, "r36-head.sha", `${FAKE_SHA.MAIN}\n`, 60);
     putRecord(tmp, "r36-night.ok", "20261104 20261105\n", 60);
+    putRecord(tmp, "r36-main.sha", `${MAINLINE}\n`, 60);
     putRecord(tmp, "r36-canary.ok", "", 50);
     putRecord(tmp, "r36-last-send.ok", "", 20);
   },
 };
 const DRY_OF = { bys: "dryA", canary: "", rest: "restDry", closing: "closing" };
-const RECORDS_OF = { bys: ["r36-head.sha", "r36-night.ok"], canary: ["r36-last-send.ok", "r36-canary.ok"], rest: ["r36-last-send.ok"], closing: [] };
+const RECORDS_OF = { bys: ["r36-head.sha", "r36-night.ok", "r36-main.sha"], canary: ["r36-last-send.ok", "r36-canary.ok"], rest: ["r36-last-send.ok"], closing: [] };
 
 /** BEFORE YOU START as GREEN's dispatch fills it. */
 export const fillDispatch = (block, v) =>
@@ -781,6 +795,9 @@ const SCENARIOS = [
   { name: "canary", tag: "few", scenario: { swapKind: "canaryDry", swapFile: "canaryFew.out" }, stop: /^STOP: the canary's dry run found 3 eligible appointments/m },
   { name: "canary", tag: "sent-4", scenario: { swapKind: "canarySend", swapFile: "canarySend4.out" }, stop: /^STOP: the canary does not show SENT: 5 of 5/m, wrote: ["r36-last-send.ok"] },
   { name: "canary", tag: "send-refused", scenario: { swapKind: "canarySend", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the canary failed or was refused/m, wrote: ["r36-last-send.ok"] },
+  { name: "canary", tag: "main-moved", scenario: { mainline: "5".repeat(40) }, stop: /^STOP: main moved during the sitting/m },
+  { name: "rest", tag: "main-moved", scenario: { mainline: "5".repeat(40) }, stop: /^STOP: main moved during the sitting/m },
+  { name: "rest", tag: "no-main-record", setup: (tmp) => { SETUPS.rest(tmp); rmSync(join(tmp, "r36-main.sha")); }, stop: /^STOP: BEFORE YOU START recorded no main in this sitting/m },
   { name: "rest", tag: "no-canary", setup: (tmp) => { SETUPS.canary(tmp); }, stop: /^STOP: the canary has not run in this sitting, so THE REST does not run/m },
   { name: "rest", tag: "marker-empty", scenario: { swapKind: "restDry", swapFile: "dryA.out" }, stop: /^STOP: the number of appointments checked did not read as a whole number above 0 \[0\]/m },
   { name: "rest", tag: "send-refused", scenario: { swapKind: "restSend", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the run failed or was refused/m, wrote: ["r36-last-send.ok"] },
@@ -801,9 +818,10 @@ test("every scenario stops its block with its own sentence, or ends clean on the
       mkdirSync(dirname(join(notReady, f)), { recursive: true });
       copyFileSync(join(ROOT, f), join(notReady, f));
     }
-    writeFileSync(join(notReady, DOC), doc);
-    writeFileSync(join(notReady, SIDECAR), `${sha256(doc)}  ${DOC}\n`);
-    const all = [...SCENARIOS, { name: "bys", tag: "doc-not-ready", applyDir: "apply-not-ready", docSha: sha256(doc), stop: /^STOP: the document's first line at the held head still reads NOT READY/m }];
+    const notReadyDoc = withFirstLine(NOT_READY);
+    writeFileSync(join(notReady, DOC), notReadyDoc);
+    writeFileSync(join(notReady, SIDECAR), `${sha256(notReadyDoc)}  ${DOC}\n`);
+    const all = [...SCENARIOS, { name: "bys", tag: "doc-not-ready", applyDir: "apply-not-ready", docSha: sha256(notReadyDoc), stop: /^STOP: the document's first line at the held head still reads NOT READY/m }];
     for (const shell of shellsHere()) {
       for (const sc of all) {
         const cfg = harnessConfig(sc.name, shell, base, sc.docSha ?? docSha, sc);

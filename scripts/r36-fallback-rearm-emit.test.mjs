@@ -191,8 +191,9 @@ test("this shell's switch is compared EXACTLY as sweep-mode.ts compares it, and 
 test("a switch that reads send refuses first: nothing is read and the 2026-10-12 program is not called", async () => {
   const r = await fallback([...SLUG, ...SCOPE, OWNER_FLAG], { env: { DATABASE_URL_DIRECT: LANE_URL, REMINDERS_SWEEP_MODE: "send" } });
   assert.equal(r.halt?.code, 1);
-  assert.match(r.halt.message, /reads send in this shell's environment.*nothing was read and nothing was sent/);
-  assert.match(r.text, /^sweep {4}the send switch in this shell's environment: SET, it reads as send$/m);
+  assert.match(r.halt.message, /^refused: the sweep's send switch is set in this shell's environment.*Nothing was read and nothing was sent\.$/);
+  assert.match(r.text, /^sweep {4}the send switch in this shell's environment: SET$/m);
+  assert.doesNotMatch(r.text + r.halt.message, /reads as|: send\b|"send"/, "the switch's word was printed");
   assert.deepEqual(r.log, []);
   assert.doesNotMatch(r.text, /owner's word/, "it went on past the switch");
 });
@@ -430,11 +431,11 @@ test("the command line: exit 2 on a bad invocation, exit 1 on a refusal, and no 
   const marker = "XYZZY-value-of-the-switch";
   const r1 = cli([...SLUG, ...SCOPE], { REMINDERS_SWEEP_MODE: marker, DATABASE_URL_DIRECT: LANE_URL });
   assert.equal(r1.status, 1);
-  assert.match(r1.all, /SET, it reads as shadow/);
+  assert.match(r1.all, /^sweep {4}the send switch in this shell's environment: SET$/m);
   assert.match(r1.all, /^FAILED: the owner has not said/m);
   const r2 = cli([...SLUG, ...SCOPE, OWNER_FLAG], { REMINDERS_SWEEP_MODE: "send", DATABASE_URL_DIRECT: LANE_URL });
   assert.equal(r2.status, 1);
-  assert.match(r2.all, /^FAILED: the sweep's send switch reads send/m);
+  assert.match(r2.all, /^FAILED: refused: the sweep's send switch is set in this shell's environment/m);
   const r3 = cli([...SLUG, ...SCOPE, OWNER_FLAG], { DATABASE_URL_DIRECT: OTHER_URL });
   assert.equal(r3.status, 1);
   for (const r of [r1, r2, r3]) {
