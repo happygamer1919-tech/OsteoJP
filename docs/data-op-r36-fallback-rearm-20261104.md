@@ -62,7 +62,7 @@ A reminder, of visit `v` at offset `o` (48 hours, the email; 24 hours, the SMS),
 2. `R` is the reach of the re-arm of 2026-10-12. `R` is at least **2026-11-09 20:48 WET**: the sitting's first read was at 21:48 WEST on 2026-10-12 (20:48 UTC) and every run of it had `--max-days-ahead 28`. Its closing dry run, before 23:24 WEST, printed `ELIGIBLE: 0`, so `R` is that read plus 28 days, at most 2026-11-09 22:24 WET. The exact instant of that read is in GREEN's report of 2026-10-12 and in that sitting's marker, not in the repository.
 3. Its time, `mark = v.starts_at - o`, falls on that day.
 4. `E` is the newest event that planned the reminders of `v` at the start it has now, of two kinds:
-   - **a save that sent an event**: an `audit_log` row of the visit written by one of the doors that send, as main's live code has them (`apps/web/lib/scheduling/actions.ts`, `apps/web/lib/reminders/inbound-store.ts`, `apps/web/lib/reminders/inbound-reply.ts`: what production runs). They match `RE_ARMING_SAVES` in `apps/web/lib/reminders/reminder-population.ts` on PR #1678 at commit `1bd32c069478a4d531ac3d6ff466c2d1bc2d6f8c`; #1678 is open and not merged, and its gate is not live: `appointment.create` (booked, copied, batch); `appointment.reschedule` (moved, alone or in bulk; a move of an unaccepted request sends nothing and its row does not show it, #1678's open question, counted here as sent); `appointment.update` with `via` `portal_request_confirm` (accepted in Pedidos); `appointment.update` with `fromStatus` `scheduled` and `toStatus` `confirmed` on a visit whose `origin` is `patient_portal` (an online request accepted with the Estado control); `appointment.update` with `fromStatus` `cancelled` and either `toStatus` `confirmed`, or `toStatus` `scheduled` on a visit whose `origin` is not `patient_portal` (brought back from Cancelada, a future visit only); `appointment.sms_reply_reviewed` with `resolution` `confirmed` and `applied` `true`, and `appointment.patient_sms_reply` with `outcome` `confirmed`, each on a visit whose `origin` is `patient_portal`;
+   - **a save that sent an event**: an `audit_log` row of the visit written by one of the doors that send, as main's live code has them (`apps/web/lib/scheduling/actions.ts`, `apps/web/lib/reminders/inbound-store.ts`, `apps/web/lib/reminders/inbound-reply.ts`: what production runs). They match `RE_ARMING_SAVES` in `apps/web/lib/reminders/reminder-population.ts` on PR #1678 at commit `1bd32c069478a4d531ac3d6ff466c2d1bc2d6f8c`, except one case (below); #1678 is open and not merged, and its gate is not live: `appointment.create` (booked, copied, batch); `appointment.reschedule` (moved, alone or in bulk; a move of an unaccepted request sends nothing and its row does not show it, #1678's open question, counted here as sent); `appointment.update` with `via` `portal_request_confirm` (accepted in Pedidos); `appointment.update` with `fromStatus` `scheduled` and `toStatus` `confirmed` on a visit whose `origin` is `patient_portal` (an online request accepted with the Estado control); `appointment.update` with `fromStatus` `cancelled` and either `toStatus` `confirmed`, or `toStatus` `scheduled` on a visit whose `origin` is not `patient_portal` (brought back from Cancelada, a future visit only; THE ONE CASE: main's `updateAppointment` sends nothing for a visit brought back to Agendada while `public.is_unconfirmed_pedido` is true, which reads `origin` `patient_portal` OR an `appointment_request` row in `staff_notifications` (0067), whereas #1678's `brought_back` clause tests `origin` only; so a visit not from the portal that carries such a notification row, brought back to Agendada, sent nothing on main and still counts here as `E`); `appointment.sms_reply_reviewed` with `resolution` `confirmed` and `applied` `true`, and `appointment.patient_sms_reply` with `outcome` `confirmed`, each on a visit whose `origin` is `patient_portal`;
    - **the event of 2026-10-12**, when that sitting sent one for `v` at its present start: every such `v` starts no later than `R`, and the sitting's marker names them.
 5. Either `mark - E > 30 days`, or `E` is before **2026-10-07 20:45 WEST** (the owner's Resync that made the fix live: such a job may have been destroyed by the incident).
 
@@ -212,7 +212,7 @@ The 2026-10-12 sitting's marker, `~/.osteojp-inc1007-rearm.json`, is that sittin
 1. **The owner's three looks**, in the sitting, BEFORE anything is pasted (every block carries `--owner-says-sweep-is-not-sending`, BEFORE YOU START included):
    - **Vercel**, Production environment variables of the project: the sweep's send switch is absent or is not `send`, and he will not change it during the sitting. With it `send`: this document is not used.
    - **Inngest**, as step 2 of 2026-10-12: `schedule-appointment-reminders` shows Debounce; `send-appointment-reminder` shows Singleton; the trigger of `send-appointment-confirmation` shows `event.data.confirmationEligible == true`. Every production deploy syncs the app since #1660, and the look is still made. With any of the three missing: stop.
-   - **GitHub and Vercel, nothing deploys during the sitting:** no open pull request is armed for auto-merge (the owner checks GitHub's list of pull requests, or SOLO confirms in writing that it disarmed every one and will arm or merge nothing until GREEN reports), and the latest Production deployment in Vercel reads Ready, not Building or Queued. Why: every production deploy syncs the scheduler (#1660) and restarts the functions, and a deploy while events arrive can fail the run that plans their reminders. The blocks DETECT a move of `main` and stop; only this look PREVENTS one.
+   - **Vercel and GitHub Actions, the deploy has settled:** the latest Production deployment in Vercel reads Ready (not Building or Queued), and the GitHub Actions run "Inngest auto-sync (osteojp-reminders, osteojp-consultation)" for that deployment finished green. Why: every production deploy syncs the scheduler (#1660) and restarts the functions, and a deploy or a sync while events arrive can fail the run that plans their reminders. What keeps a deploy from starting during the sitting is the MERGE FREEZE below, a precondition of the dispatch; this look checks that the last deploy before it has settled.
    GREEN pastes the blocks, which carry `--owner-says-sweep-is-not-sending` and `--i-checked-inngest-settings`, only on those three words.
 2. **BEFORE YOU START**, from the dispatch's filled copy. Network time, the night, the held head, every pin, the target guard, the sweep refusal, and the first dry run (counts only). It records the head, the night and `main`, and prints production's heartbeat line and the touched count for the owner.
 3. **THE CANARY**: five appointments three or more days ahead.
@@ -221,7 +221,7 @@ The 2026-10-12 sitting's marker, `~/.osteojp-inc1007-rearm.json`, is that sittin
 6. **THE CLOSING DRY RUN**, 12 minutes or more after the last send returned. It prints the touched count for the owner.
 7. **The owner's look at the re-plan** (below, "After the closing dry run").
 
-**No merge to `main` during the sitting.** Every production deploy syncs the scheduler (#1660) and restarts the functions; a deploy while events arrive can fail the step that plans their reminders. THE CANARY and THE REST STOP when `origin/main` is not the commit BEFORE YOU START recorded. After such a STOP the sitting halts ("If a block stops"), and THE REST can run again only through RESUME AFTER A MAIN MOVE, on the lead's ruling.
+**THE MERGE FREEZE, mandatory: no merge to `main` from before step 1 until GREEN reports.** Every production deploy syncs the scheduler (#1660) and restarts the functions; a deploy while events arrive can fail the step that plans their reminders. SOLO is the only lane that merges. From before step 1 until GREEN reports, SOLO disarms every armed pull request, opens no pull request, arms nothing and merges nothing (R2 is suspended for the sitting), and says so in writing in GREEN's dispatch; a dispatch without that sentence is not issued. The blocks are the fail-safe behind it: THE CANARY and THE REST STOP when `origin/main` is not the commit BEFORE YOU START recorded (see "If a block stops").
 
 THE HALT RULE. Any refusal (a REFUSE line, a FAILED line, a BAD INVOCATION line,
 or a harness or classifier refusal), any STOP line and any non-zero exit stops the
@@ -368,7 +368,7 @@ echo "BEFORE YOU START: every check passed. ELIGIBLE ${N} at this read. THE CANA
 
 ### THE CANARY: five appointments, three or more days ahead
 
-Pasted only after the owner's two looks, in the sitting. Three days, so both reminders are still ahead.
+Pasted only after the owner's three looks, in the sitting. Three days, so both reminders are still ahead.
 
 ```
 (
@@ -557,89 +557,6 @@ echo "THE REST: this run ended clean. Paste THE REST again; when its dry run rea
 
 **Why 200, and the margin:** as on 2026-10-12 ("Why 200"). With `--max 200` the margin around a reminder time is 690 seconds; at night no reminder time falls in it. If a dry run counts rows on the line `of those, the 48 hour mark`, they are for the lead: on a weekday night it should read 0.
 
-### RESUME AFTER A MAIN MOVE: only on the lead's ruling, after a `main moved` STOP
-
-Never pasted by default. After THE CANARY or THE REST stopped with `main moved during the sitting`, and only if the lead rules it, this block records the new `origin/main` so that THE REST can run again. GREEN fills its one `PENDING` line with the sentence the block names, and only when the owner has said both halves of it in the sitting: the new Production deployment reads Ready in Vercel, and the Inngest dashboard shows no Failed `schedule-appointment-reminders` run since the minute `canary began` printed. It checks that the canary ran and that the marker shows it sent (G3 counts five or more appointments), that the held head has not moved, and that `main` really moved; it sends nothing and writes only `/tmp/r36-main.sha`.
-
-```
-(
-set -o pipefail
-OWNERWORD='PENDING: the sentence of the resume rule, typed by GREEN on the owner word only'
-BR=origin/data/R36-fallback-rearm-20261104
-FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
-SHAWRAP=65a48f488fd1f78fe3821f171c76e0588cb015e91b37ad07c55e3fc8a52b74e0
-SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
-SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
-SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
-DOCPIN=docs/data-op-r36-fallback-rearm-20261104.sha256
-WRAP=packages/db/scripts/r36-fallback-rearm-emit.mjs
-EMIT=packages/db/scripts/inc-1007-rearm-reminders-emit.mjs
-GUARD=scripts/assert-production-target.mjs
-PTM=scripts/production-target.mjs
-SWEEPOK="SWEEP GUARD: the sweep is in shadow by all three checks (this shell's switch, the owner's word, production's heartbeats)"
-
-[ "${OWNERWORD}" = "the new production deployment is Ready, and Inngest shows no Failed schedule-appointment-reminders run since canary began" ] || { echo "STOP: OWNERWORD is not the owner's sentence of the resume rule, so this block is NOT READY: GREEN types it only on the owner's word, after the lead's ruling. Nothing was recorded"; exit 1; }
-cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was recorded"; exit 1; }
-test -f /tmp/r36-head.sha || { echo "STOP: BEFORE YOU START recorded no head in this sitting. Nothing was recorded"; exit 1; }
-REC=$(cat /tmp/r36-head.sha) || { echo "STOP: the recorded head could not be read. Nothing was recorded"; exit 1; }
-echo "${REC}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the recorded head did not read as a full 40-character sha [${REC}]. Nothing was recorded"; exit 1; }
-HD=$(git rev-parse HEAD) || { echo "STOP: the worktree's HEAD could not be read. Nothing was recorded"; exit 1; }
-echo "${HD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the worktree's HEAD did not read as a full 40-character sha [${HD}]. Nothing was recorded"; exit 1; }
-[ "${HD}" = "${REC}" ] || { echo "STOP: the apply worktree is not on the head BEFORE YOU START recorded. Nothing was recorded"; exit 1; }
-STRAY=$(git status --short) || { echo "STOP: git status failed in the apply worktree. Nothing was recorded"; exit 1; }
-[ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean. Do not clean it. Nothing was recorded"; echo "${STRAY}"; exit 1; }
-echo "running from:  ${REC}, the head BEFORE YOU START recorded"
-shasum -a 256 -c ${DOCPIN} || { echo "STOP: this document is not the approved one. Nothing was recorded"; exit 1; }
-[ "$(shasum -a 256 ${WRAP} | cut -d' ' -f1)" = "${SHAWRAP}" ] || { echo "STOP: the program on disk is not the approved file. Nothing was recorded"; exit 1; }
-[ "$(shasum -a 256 ${EMIT} | cut -d' ' -f1)" = "${SHAEMIT}" ] || { echo "STOP: the program of 2026-10-12 on disk is not the pinned file. Nothing was recorded"; exit 1; }
-[ "$(shasum -a 256 ${GUARD} | cut -d' ' -f1)" = "${SHAGUARD}" ] || { echo "STOP: the target guard on disk is not the pinned file. Nothing was recorded"; exit 1; }
-[ "$(shasum -a 256 ${PTM} | cut -d' ' -f1)" = "${SHAPTM}" ] || { echo "STOP: the guard's module on disk is not the pinned file. Nothing was recorded"; exit 1; }
-echo "pins:          the program, the program of 2026-10-12, the target guard and its module are the pinned files"
-test -f /tmp/r36-night.ok || { echo "STOP: BEFORE YOU START recorded no night in this sitting. Nothing was recorded"; exit 1; }
-NIGHT=$(cat /tmp/r36-night.ok) || { echo "STOP: the recorded night could not be read. Nothing was recorded"; exit 1; }
-RUNDAY=$(echo "${NIGHT}" | cut -d' ' -f1)
-NEXTDAY=$(echo "${NIGHT}" | cut -d' ' -f2)
-NOW=$(TZ=Europe/Lisbon date '+%Y%m%d%H%M %u %Z') || { echo "STOP: the Lisbon clock could not be read. Nothing was recorded"; exit 1; }
-echo "${NOW}" | grep -qxE '[0-9]{12} [1-7] (WET|WEST)' || { echo "STOP: the Lisbon clock did not read as YYYYMMDDHHMM, a weekday and the zone WET or WEST [${NOW}]. Nothing was recorded"; exit 1; }
-NOWL=$(echo "${NOW}" | cut -c1-12)
-LT=$(echo "${NOWL}" | cut -c9-12)
-DAY=$(echo "${NOWL}" | cut -c1-8)
-echo "${NOWL} ${LT} ${DAY} ${RUNDAY} ${NEXTDAY}" | grep -qxE '[0-9]{12} [0-2][0-9][0-5][0-9] [0-9]{8} [0-9]{8} [0-9]{8}' || { echo "STOP: the Lisbon time or the recorded night did not read as dates and times. Nothing was recorded"; exit 1; }
-WIN=no
-if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) exit 0; exit 1 }'; then WIN=yes; fi
-if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
-echo "Lisbon now:    ${NOWL}; the night recorded: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
-[ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the night BEFORE YOU START recorded (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). Nothing was recorded"; exit 1; }
-test -f /tmp/r36-canary.ok || { echo "STOP: the canary has not run in this sitting, so there is nothing to resume. Nothing was recorded"; exit 1; }
-test -f /tmp/r36-main.sha || { echo "STOP: BEFORE YOU START recorded no main in this sitting. Nothing was recorded"; exit 1; }
-MREC=$(cat /tmp/r36-main.sha) || { echo "STOP: the recorded main could not be read. Nothing was recorded"; exit 1; }
-git fetch origin --prune || { echo "STOP: the fetch failed. Nothing was recorded"; exit 1; }
-MNOW=$(git rev-parse origin/main) || { echo "STOP: origin/main could not be read. Nothing was recorded"; exit 1; }
-echo "${MNOW} ${MREC}" | grep -qxE '[0-9a-f]{40} [0-9a-f]{40}' || { echo "STOP: origin/main or the recorded main did not read as a full 40-character sha. Nothing was recorded"; exit 1; }
-if [ "${MNOW}" = "${MREC}" ]; then echo "STOP: main has not moved since it was recorded, so there is nothing to resume: paste THE REST. Nothing was recorded"; exit 1; fi
-TIP=$(git rev-parse ${BR}) || { echo "STOP: the held head, ${BR}, could not be read. Nothing was recorded"; exit 1; }
-echo "${TIP}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the held head did not read as a full 40-character sha [${TIP}]. Nothing was recorded"; exit 1; }
-[ "${TIP}" = "${REC}" ] || { echo "STOP: the held head moved since BEFORE YOU START (${REC} to ${TIP}). Nothing was recorded"; exit 1; }
-echo "held head:     ${TIP}, unchanged since BEFORE YOU START"
-echo "main:          moved from ${MREC} to ${MNOW}; the owner says the new deployment is Ready and no planning run Failed since the canary began"
-set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was recorded"; exit 1; }
-node ${GUARD} 2>&1 | tee /tmp/r36-target-r.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was recorded"; exit 1; }
-grep -qxF 'target verified: production, session pooler.' /tmp/r36-target-r.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was recorded"; exit 1; }
-node ${WRAP} --tenant-slug osteojp --max-days-ahead 28 --max 200 --owner-says-sweep-is-not-sending 2>&1 | tee /tmp/r36-resume-dry.out || { echo "STOP: the dry run failed or was refused; its lines are above. A dry run is READ ONLY. Nothing was recorded"; exit 1; }
-grep -qxF "${SWEEPOK}" /tmp/r36-resume-dry.out || { echo "STOP: the dry run does not show the sweep guard's line. Nothing was recorded"; exit 1; }
-grep -qxF 'target   PRODUCTION' /tmp/r36-resume-dry.out || { echo "STOP: the dry run does not show the line target PRODUCTION. Nothing was recorded"; exit 1; }
-grep -qxF 'mode     DRY RUN - nothing is sent' /tmp/r36-resume-dry.out || { echo "STOP: the dry run does not show the line mode DRY RUN. Nothing was recorded"; exit 1; }
-G3L=$(grep -xE 'G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  [(]appointments checked: [0-9]+; handed to a provider: 0; not checkable: 0; expected 0[)]' /tmp/r36-resume-dry.out) || { echo "STOP: the dry run does not show the G3 line reading 0 with not checkable 0. Nothing was recorded"; exit 1; }
-K=$(echo "${G3L}" | sed -E 's/.*appointments checked: ([0-9]+);.*/\1/') || { echo "STOP: the number of appointments checked could not be read from the G3 line. Nothing was recorded"; exit 1; }
-echo "${K}" | grep -qxE '[1-9][0-9]{0,5}' || { echo "STOP: the number of appointments checked did not read as a whole number above 0 [${K}]. Nothing was recorded"; exit 1; }
-[ "${K}" -ge 5 ] || { echo "STOP: G3 checked ${K} appointments, fewer than the canary's five, so the marker does not show the canary sent. Nothing was recorded"; exit 1; }
-echo "${MNOW}" > /tmp/r36-main.sha || { echo "STOP: the new main could not be recorded. Nothing was recorded"; exit 1; }
-echo "RESUME AFTER A MAIN MOVE: main re-recorded as ${MNOW}, with the marker holding ${K} appointments. Paste THE REST again."
-)
-```
-
-**EXPECT:** the opening lines of THE REST (`running from:`, the sidecar line, `pins:`, `Lisbon now: ... inside: yes`); `held head: ..., unchanged since BEFORE YOU START`; `main: moved from <old> to <new>; ...`; the target guard's lines; the dry run IN FULL, counts only, its G3 line reading 0 for the appointments sent so far; then `RESUME AFTER A MAIN MOVE: main re-recorded as <new>, with the marker holding <K> appointments. Paste THE REST again.` Exit 0. It sends nothing.
-
 ### THE CLOSING DRY RUN: 12 minutes or more after the last send
 
 ```
@@ -721,7 +638,8 @@ Each event cancels the appointment's sleeping jobs when it arrives, and their re
 ## If a block stops
 
 - **Before a send** (every STOP of BEFORE YOU START, and of the others before their `caffeinate` line): nothing was sent by that block. Report, and the lead rules.
-- **`main moved during the sitting`** (THE CANARY or THE REST): halt. The owner looks in the Inngest dashboard (Production) at `schedule-appointment-reminders`, Runs, from the minute `canary began` printed, and counts those with the status Failed; and in Vercel, whether the new Production deployment reads Ready. GREEN reports both with every line above. If the canary has run, THE REST can go on only through RESUME AFTER A MAIN MOVE, which the lead may rule; BEFORE YOU START cannot be pasted again (it stops on this operation's non-empty marker, by design).
+- **`main moved during the sitting`, in THE CANARY.** Its check of `main` runs before its dry run and its send, so nothing was sent and this operation's marker is empty. Halt and report. On the lead's ruling, after the owner's three looks again (the Vercel switch, the step-1 Inngest settings looked at again, and the new deployment Ready with its "Inngest auto-sync" run green), BEFORE YOU START may be pasted again: it clears the records and re-records `main`, and the sitting goes on from THE CANARY.
+- **`main moved during the sitting`, in THE REST** (the canary has sent): **halt for the night.** The owner looks in the Inngest dashboard (Production) at `schedule-appointment-reminders`, Runs, from the minute `canary began` printed: every one Completed, none Running or Failed; and at the "Inngest auto-sync" run of the new deployment. GREEN reports both with every line above. Nothing resumes this sitting: BEFORE YOU START stops on this operation's non-empty marker, by design, and no block re-records `main` after a send. **The appointments not yet re-armed that night are left to the second pass of Q-R36-F5 (Thursday 2026-11-05 night), whose block is authored and reviewed only on strategy's ruling.** Until it runs they stay as they were, at risk by the predicate.
 - **In or after a send:** what the lines show as sent stays sent and is in the marker. A row the run stopped on is held as attempted, and no later run sends it unless the lead rules `--resend-attempted`, as on 2026-10-12. A killed run leaves the lock: a halt, the lead rules. Never delete the marker or the lock by hand in a sitting.
 - **A refusal of the sweep guard** (the switch reads send, the owner's word is missing, a heartbeat is not shadow or is stale): nothing was read by the 2026-10-12 program and nothing was sent. If the sweep is sending, this document is not used that night.
 
@@ -756,7 +674,7 @@ The lead's words, character for character: "A script's own REFUSE or STOP line i
 3. **No GATE-CHANGE is needed to land the two new test files.** Both are under `scripts/**/*.test.mjs`, a gate glob, but the freeze allows an ADDED gate file (`scripts/assert-gates-unchanged.mjs`: "ADDING A FILE IS ALLOWED, MODIFYING AND DELETING ARE NOT"), and `scripts/gate-freeze.test.mjs` passes on this branch (run 2026-10-31). They become frozen at the next GATE-CHANGE that regenerates the manifest; from then on any edit to them is a GATE-CHANGE of its own.
 4. **SOLO's READY line**: the first line of this document changes, the sidecar is regenerated in the same commit. `scripts/r36-fallback-rearm-20261104.test.mjs` accepts either first line (`NOT READY: awaiting R4 review`, or one starting `READY`), and runs its NOT READY scenario on a copy forced back to NOT READY, so the READY commit needs no test edit.
 5. **The pull request, opened held** (`held-for-apply`, unarmed).
-6. **GREEN's dispatch**: HELD (the held head), DOCSHA (this document's sha256 at that head) and RUNDAY (`20261104` for the ruled night), naming `packages/db/scripts/r36-fallback-rearm-emit.mjs`, the rollback (none) and that Replay is never pressed. **Issued only if the compare of Wednesday morning is not clean.**
+6. **GREEN's dispatch**: HELD (the held head), DOCSHA (this document's sha256 at that head) and RUNDAY (`20261104` for the ruled night), naming `packages/db/scripts/r36-fallback-rearm-emit.mjs`, the rollback (none) and that Replay is never pressed, and **SOLO's written statement of THE MERGE FREEZE**: every armed pull request disarmed, and no pull request opened, armed or merged from before step 1 until GREEN reports. **Issued only if the compare of Wednesday morning is not clean.**
 
 ## Questions for strategy
 
@@ -782,6 +700,7 @@ The lead's words, character for character: "A script's own REFUSE or STOP line i
 **Q-R36-F5. The residual of rule 7: a second pass, or accept it.**
 - blocked_what: the visits this sitting skips as touched where the touch was a confirm that sent nothing (a hand-set Confirmada, a review-queue confirmation, an SMS "confirmo" on an ordinary visit). They keep their old job, which may be older than 30 days at their reminder or destroyed by the incident. The count is inside `skipped: touched in the last 25 hours`, which the blocks print; the program cannot tell them apart from saves that sent.
 - options: (a) a short second pass at least 25 hours later, on Thursday 2026-11-05 night, as step 7 of the 2026-10-12 document did: it reaches every one of them still more than 24 hours ahead, unless touched again; (b) accept the residual and record its count from the closing dry run.
+- It is also the only remedy after THE REST stops on `main moved during the sitting` ("If a block stops").
 - recommendation: (a). It needs one more block (BEFORE YOU START stops on this operation's non-empty marker, by design), authored and reviewed on the ruling: THE REST's checks plus the clock and pins of BEFORE YOU START, run on the same machine with the same marker.
 
 **Q-R36-F6. Stale heartbeats with the switch seen off.**

@@ -2,7 +2,7 @@
 //
 // WHAT THIS PROVES, statically and with every external program a stub, with no database:
 //   * the document's first line is NOT READY until SOLO's READY line, and its sidecar pins it;
-//   * it has exactly five blocks (BEFORE YOU START, THE CANARY, THE REST, RESUME AFTER A MAIN MOVE, THE CLOSING DRY RUN);
+//   * it has exactly four blocks (BEFORE YOU START, THE CANARY, THE REST, THE CLOSING DRY RUN);
 //     each parses under bash -n and zsh -n; no `#` line, no `!` but `test !`, no backslash
 //     continuation, no `set -e`: line 2 is `set -o pipefail`, and the only other `set` loads the
 //     environment file;
@@ -82,7 +82,6 @@ const SUCCESS = Object.freeze({
   canary: "CANARY SENT: 5 of 5, G4 yes, G3 0.",
   rest: "THE REST: this run ended clean.",
   closing: "CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0",
-  resume: "RESUME AFTER A MAIN MOVE: main re-recorded",
 });
 const NAMES = Object.keys(SUCCESS);
 export const blockOf = (name) => {
@@ -116,18 +115,21 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /^## The horizon: 28 days, and why$/m);
   assert.match(doc, /^\*\*Nothing provably breaks on Friday 11-06, except a residual\.\*\*|^- \*\*Nothing provably breaks on Friday 11-06, except a residual\.\*\*/m);
   for (const q of ["Q-R36-F1", "Q-R36-F2", "Q-R36-F3", "Q-R36-F4", "Q-R36-F5", "Q-R36-F6"]) assert.match(doc, new RegExp(`^\\*\\*${q}\\. `, "m"), q);
-  assert.match(doc, /\*\*No merge to `main` during the sitting\.\*\*/);
   assert.match(doc, /^### After the closing dry run: the owner's look at the re-plan$/m);
   assert.ok(doc.indexOf("1. **The owner's three looks**") < doc.indexOf("2. **BEFORE YOU START**"), "the owner's looks come before BEFORE YOU START");
-  assert.match(doc, /no open pull request is armed for auto-merge/);
+  assert.match(doc, /\*\*THE MERGE FREEZE, mandatory: no merge to `main` from before step 1 until GREEN reports\.\*\*/);
+  assert.match(doc, /SOLO's written statement of THE MERGE FREEZE/);
+  assert.match(doc, /"Inngest auto-sync \(osteojp-reminders, osteojp-consultation\)"/);
+  assert.match(read(".github/workflows/inngest-auto-sync.yml"), /^name: Inngest auto-sync \(osteojp-reminders, osteojp-consultation\)$/m);
+  assert.doesNotMatch(doc, /RESUME|OWNERWORD|GitHub's list of pull requests/);
   assert.match(doc, /1bd32c069478a4d531ac3d6ff466c2d1bc2d6f8c/);
   assert.match(doc, /`fromStatus` `cancelled` and either `toStatus` `confirmed`, or `toStatus` `scheduled` on a visit whose `origin` is not `patient_portal`/);
   assert.match(doc, /\*\*NOT REHEARSED\. Nothing in this document has run against any database\.\*\*/);
   assert.match(doc, /A script's own REFUSE or STOP line is a halt, the same as a harness refusal\. Never edit an env file, a URL, a flag, a label or a script to get past a guard\. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so\./);
 });
 
-test("exactly five blocks, each with its last line, each parsing under bash -n and zsh -n", (t) => {
-  assert.equal(blocksOf(doc).length, 5);
+test("exactly four blocks, each with its last line, each parsing under bash -n and zsh -n", (t) => {
+  assert.equal(blocksOf(doc).length, 4);
   for (const name of NAMES) blockOf(name);
   for (const b of blocksOf(doc)) {
     const r = spawnSync("bash", ["--noprofile", "--norc", "-n", "-c", b], { encoding: "utf8" });
@@ -208,10 +210,9 @@ test("every pin is the real file's sha256 on this tree, and FIXSHA is the remind
   for (const [k, v] of Object.entries(want)) if (k !== "SHAWRAP") assert.ok(doc.includes(v), `${k} not in the document`);
 });
 
-test("PENDING lines: BEFORE YOU START carries HELD, DOCSHA and RUNDAY, the resume block OWNERWORD, and no other block any", () => {
+test("PENDING lines: only BEFORE YOU START carries them, exactly HELD, DOCSHA and RUNDAY", () => {
   const pend = (b) => b.split("\n").filter((l) => l.includes("PENDING")).map((l) => l.split("=")[0]);
   assert.deepEqual(pend(blockOf("bys")).filter((x) => /^[A-Z]+$/.test(x)), ["HELD", "DOCSHA", "RUNDAY"]);
-  assert.deepEqual(pend(blockOf("resume")).filter((x) => /^[A-Z]+$/.test(x)), ["OWNERWORD"]);
   for (const name of ["canary", "rest", "closing"]) assert.deepEqual(pend(blockOf(name)), [], name);
 });
 
@@ -237,7 +238,6 @@ test("the program runs with exactly the reviewed arguments, and sends only in TH
     { caffeinate: true, args: `${base} --max 200 ${owner} ${confirm}` },
   ]);
   assert.deepEqual(wrapCalls(blockOf("closing")), [{ caffeinate: false, args: `${base} --max 200 ${owner}` }]);
-  assert.deepEqual(wrapCalls(blockOf("resume")), [{ caffeinate: false, args: `${base} --max 200 ${owner}` }]);
   for (const b of blocksOf(doc)) {
     assert.doesNotMatch(b, /--sink-file|--resend-attempted|inc-1007-rearm-reminders-emit\.mjs --|node \$\{EMIT\}/);
     assert.equal((b.match(/--confirm/g) ?? []).length, (b.match(/^caffeinate -i /gm) ?? []).length);
@@ -324,8 +324,6 @@ const HARNESS_EPOCH = 1793827800;
 const HARNESS_HTTPDATE = new Date(HARNESS_EPOCH * 1000).toUTCString();
 const RECORDS = ["r36-head.sha", "r36-night.ok", "r36-canary.ok", "r36-last-send.ok", "r36-main.sha"];
 const MAINLINE = "4".repeat(40);
-const OLDMAIN = "6".repeat(40);
-export const OWNER_SENTENCE = "the new production deployment is Ready, and Inngest shows no Failed schedule-appointment-reminders run since canary began";
 
 function realPath(name) {
   const r = spawnSync("/bin/sh", ["-c", `command -v ${name}`], { encoding: "utf8", env: { PATH: SYSTEM_PATH } });
@@ -673,13 +671,8 @@ const SETUPS = {
     putRecord(tmp, "r36-last-send.ok", "", 20);
   },
 };
-SETUPS.resume = (tmp) => {
-  SETUPS.rest(tmp);
-  putRecord(tmp, "r36-main.sha", `${OLDMAIN}\n`, 30);
-};
-const DRY_OF = { bys: "dryA", canary: "", rest: "restDry", closing: "closing", resume: "restDry" };
-const RECORDS_OF = { bys: ["r36-head.sha", "r36-night.ok", "r36-main.sha"], canary: ["r36-last-send.ok", "r36-canary.ok"], rest: ["r36-last-send.ok"], closing: [], resume: ["r36-main.sha"] };
-const fillResume = (block, word) => block.replace("OWNERWORD='PENDING: the sentence of the resume rule, typed by GREEN on the owner word only'", `OWNERWORD='${word}'`);
+const DRY_OF = { bys: "dryA", canary: "", rest: "restDry", closing: "closing" };
+const RECORDS_OF = { bys: ["r36-head.sha", "r36-night.ok", "r36-main.sha"], canary: ["r36-last-send.ok", "r36-canary.ok"], rest: ["r36-last-send.ok"], closing: [] };
 
 /** BEFORE YOU START as GREEN's dispatch fills it. */
 export const fillDispatch = (block, v) =>
@@ -690,10 +683,7 @@ export const fillDispatch = (block, v) =>
 
 function harnessConfig(name, shell, base, docSha, opts = {}) {
   const raw = blockOf(name);
-  const block =
-    name === "bys" && !opts.raw ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: "20261104" })
-    : name === "resume" && !opts.raw ? fillResume(raw, opts.word ?? OWNER_SENTENCE)
-    : raw;
+  const block = name === "bys" && !opts.raw ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: "20261104" }) : raw;
   return {
     id: `${shell}-${name}${opts.tag ? `-${opts.tag}` : ""}`, name, shell, base, block, dry: DRY_OF[name], records: RECORDS_OF[name],
     initialHead: name === "bys" ? FAKE_SHA.BEFORE : FAKE_SHA.MAIN, setup: opts.setup ?? SETUPS[name], scenario: opts.scenario, applyDir: opts.applyDir,
@@ -729,8 +719,8 @@ async function sweepAll(t, shell) {
       }
     }
     assert.deepEqual(bad, [], `fault rows that broke a rule:\n${bad.join("\n")}`);
-    t.diagnostic(`${shell}: ${faults} faults across the five blocks`);
-    assert.ok(faults >= 330, `only ${faults} faults across the five blocks (348 when this was written)`);
+    t.diagnostic(`${shell}: ${faults} faults across the four blocks`);
+    assert.ok(faults >= 275, `only ${faults} faults across the four blocks (292 when this was written)`);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
@@ -777,7 +767,6 @@ test("the program's calls in the positive controls carry exactly the arguments t
         [WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG, "--confirm", "--expect", "7", "--fix-deployed-sha", FIXSHA, "--i-checked-inngest-settings"],
       ],
       closing: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG]],
-      resume: [[WRAP, "--tenant-slug", "osteojp", "--max-days-ahead", "28", "--max", "200", OWNER_FLAG]],
     };
     for (const name of NAMES) {
       const r = await runOnce(harnessConfig(name, "bash", base, docSha), `args-${name}`, null);
@@ -786,7 +775,6 @@ test("the program's calls in the positive controls carry exactly the arguments t
       assert.deepEqual(calls, want[name], name);
       const caf = r.calls.filter((c) => c.id.startsWith("caffeinate#"));
       assert.equal(caf.length, name === "canary" || name === "rest" ? 1 : 0, name);
-      if (name === "resume") assert.equal(r.recordText["r36-main.sha"], `${MAINLINE}\n`, "the resume did not record the new main");
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
@@ -821,13 +809,6 @@ const SCENARIOS = [
   { name: "rest", tag: "marker-empty", scenario: { swapKind: "restDry", swapFile: "dryA.out" }, stop: /^STOP: the number of appointments checked did not read as a whole number above 0 \[0\]/m },
   { name: "rest", tag: "send-refused", scenario: { swapKind: "restSend", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the run failed or was refused/m, wrote: ["r36-last-send.ok"] },
   { name: "rest", tag: "nothing-left", scenario: { swapKind: "restDry", swapFile: "restDryZero.out" }, clean: /^THE REST: ELIGIBLE 0 at this read, so nothing is left to send/m },
-  { name: "resume", tag: "unfilled", raw: true, stop: /^STOP: OWNERWORD is not the owner's sentence of the resume rule/m },
-  { name: "resume", tag: "wrong-word", word: "yes", stop: /^STOP: OWNERWORD is not the owner's sentence of the resume rule/m },
-  { name: "resume", tag: "not-moved", setup: (tmp) => SETUPS.rest(tmp), stop: /^STOP: main has not moved since it was recorded/m },
-  { name: "resume", tag: "held-moved", scenario: { main: FAKE_SHA.OTHER }, stop: /^STOP: the held head moved since BEFORE YOU START/m },
-  { name: "resume", tag: "no-canary", setup: (tmp) => { SETUPS.resume(tmp); rmSync(join(tmp, "r36-canary.ok")); }, stop: /^STOP: the canary has not run in this sitting, so there is nothing to resume/m },
-  { name: "resume", tag: "marker-empty", scenario: { swapKind: "restDry", swapFile: "dryA.out" }, stop: /^STOP: the number of appointments checked did not read as a whole number above 0 \[0\]/m },
-  { name: "resume", tag: "refused", scenario: { swapKind: "restDry", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the dry run failed or was refused/m },
   { name: "closing", tag: "too-soon", setup: (tmp) => { SETUPS.closing(tmp); putRecord(tmp, "r36-last-send.ok", "", 5); }, stop: /^STOP: the last send returned less than 12 minutes ago/m },
   { name: "closing", tag: "not-done", scenario: { swapKind: "closing", swapFile: "restDry.out" }, stop: /^STOP: the closing dry run does not read ELIGIBLE: 0/m },
   { name: "closing", tag: "refused", scenario: { swapKind: "closing", swapFile: "refused.out", swapExit: 1 }, stop: /^STOP: the closing dry run failed or was refused/m },
@@ -868,48 +849,10 @@ test("every scenario stops its block with its own sentence, or ends clean on the
         assert.match(r.out, sc.stop, `${label}\n${r.out.slice(-1500)}`);
         assert.deepEqual(r.recordsAtEnd, sc.wrote ?? [], `${label}: records written`);
         if (sc.raw && sc.name === "bys") assert.deepEqual(r.calls.map((c) => c.id.split("#")[0]), ["grep"], `${label}: it ran more than the first check`);
-        if (sc.name === "resume" && sc.tag !== "not-moved") assert.deepEqual(r.calls.filter((c) => c.id.startsWith("caffeinate#")), [], label);
-        if (sc.name === "resume" && (sc.tag === "unfilled" || sc.tag === "wrong-word")) assert.deepEqual(r.calls, [], `${label}: it ran a command before its first check`);
+        if (sc.tag === "main-moved") {
+          assert.deepEqual(r.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`))), [], `${label}: the program ran after main moved`);
+        }
       }
-    }
-  } finally {
-    rmSync(base, { recursive: true, force: true });
-  }
-});
-
-test("main moved after the canary: THE REST stops, the resume re-records main, and THE REST then completes", async () => {
-  const base = mkdtempSync(join(tmpdir(), "fault-r36-resume-"));
-  try {
-    const docSha = await prepareHarness(base, readyDoc());
-    for (const shell of shellsHere()) {
-      const moved = "5".repeat(40);
-      const stopped = await runOnce(harnessConfig("rest", shell, base, docSha, { tag: "m1", scenario: { mainline: moved } }), `${shell}-chain-1`, null);
-      assert.notEqual(stopped.code, 0);
-      assert.match(stopped.out, /^STOP: main moved during the sitting \(4{40} to 5{40}\)/m, stopped.out.slice(-800));
-      assert.deepEqual(stopped.calls.filter((c) => c.id.startsWith("caffeinate#")), [], "THE REST sent after main moved");
-      const resumed = await runOnce(
-        harnessConfig("resume", shell, base, docSha, { tag: "m2", scenario: { mainline: moved }, setup: (tmp) => SETUPS.rest(tmp) }),
-        `${shell}-chain-2`,
-        null,
-      );
-      assert.equal(resumed.code, 0, resumed.out.slice(-1500));
-      assert.match(resumed.out, new RegExp(`^RESUME AFTER A MAIN MOVE: main re-recorded as ${moved}, with the marker holding 5 appointments\\. Paste THE REST again\\.$`, "m"));
-      assert.equal(resumed.recordText["r36-main.sha"], `${moved}\n`);
-      const again = await runOnce(
-        harnessConfig("rest", shell, base, docSha, {
-          tag: "m3",
-          scenario: { mainline: moved },
-          setup: (tmp) => {
-            SETUPS.rest(tmp);
-            putRecord(tmp, "r36-main.sha", resumed.recordText["r36-main.sha"], 1);
-          },
-        }),
-        `${shell}-chain-3`,
-        null,
-      );
-      assert.equal(again.code, 0, again.out.slice(-1500));
-      assert.ok(again.out.includes(SUCCESS.rest), shell);
-      assert.equal(again.calls.filter((c) => c.id.startsWith("caffeinate#")).length, 1);
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
