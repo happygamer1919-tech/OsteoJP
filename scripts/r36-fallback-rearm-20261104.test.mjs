@@ -120,7 +120,20 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /\*\*THE MERGE FREEZE, mandatory: no merge to `main` from before step 1 until GREEN reports\.\*\*/);
   assert.match(doc, /SOLO's written statement of THE MERGE FREEZE/);
   assert.match(doc, /"Inngest auto-sync \(osteojp-reminders, osteojp-consultation\)"/);
-  assert.match(read(".github/workflows/inngest-auto-sync.yml"), /^name: Inngest auto-sync \(osteojp-reminders, osteojp-consultation\)$/m);
+  const sync = read(".github/workflows/inngest-auto-sync.yml");
+  assert.match(sync, /^name: Inngest auto-sync \(osteojp-reminders, osteojp-consultation\)$/m);
+  // The owner's recipe names the job and the summary headings exactly as the workflow writes them.
+  assert.match(sync, /^ {4}name: Sync osteojp-reminders and osteojp-consultation after a production deploy$/m);
+  assert.ok(doc.includes('the job "Sync osteojp-reminders and osteojp-consultation after a production deploy" shows a green check, not Skipped'));
+  assert.equal((sync.match(/echo "### \$\{APP_ID\} synced"/g) ?? []).length, 2);
+  assert.match(sync, /APP_ID: osteojp-reminders\n/);
+  assert.match(sync, /APP_ID: osteojp-consultation\n/);
+  assert.ok(doc.includes('the two headings "osteojp-reminders synced" and "osteojp-consultation synced"'));
+  assert.match(sync, /^ {2}deployment_status:$/m);
+  assert.match(doc, /SOLO and the owner are the only ones who merge \(the owner merges GATE-CHANGEs and held pull requests\)/);
+  assert.match(doc, /SOLO re-confirms the freeze in writing and names what moved `main`/);
+  assert.equal((doc.match(/If strategy rules \(b\) of Q-R36-F5, they stay so until the sweep sends\.|If strategy rules \(b\), they stay so until the sweep sends\./g) ?? []).length, 2);
+  assert.match(doc, /^- \*\*R4 round 4\*\* \(narrow\) on `3636fda7`: SHIP AFTER FIXES.*\*\*not re-reviewed\*\*/m);
   assert.doesNotMatch(doc, /RESUME|OWNERWORD|GitHub's list of pull requests/);
   assert.match(doc, /1bd32c069478a4d531ac3d6ff466c2d1bc2d6f8c/);
   assert.match(doc, /`fromStatus` `cancelled` and either `toStatus` `confirmed`, or `toStatus` `scheduled` on a visit whose `origin` is not `patient_portal`/);
@@ -686,7 +699,7 @@ function harnessConfig(name, shell, base, docSha, opts = {}) {
   const block = name === "bys" && !opts.raw ? fillDispatch(raw, { HELD: opts.held ?? FAKE_SHA.MAIN, DOCSHA: docSha, RUNDAY: "20261104" }) : raw;
   return {
     id: `${shell}-${name}${opts.tag ? `-${opts.tag}` : ""}`, name, shell, base, block, dry: DRY_OF[name], records: RECORDS_OF[name],
-    initialHead: name === "bys" ? FAKE_SHA.BEFORE : FAKE_SHA.MAIN, setup: opts.setup ?? SETUPS[name], scenario: opts.scenario, applyDir: opts.applyDir,
+    initialHead: opts.initialHead ?? (name === "bys" ? FAKE_SHA.BEFORE : FAKE_SHA.MAIN), setup: opts.setup ?? SETUPS[name], scenario: opts.scenario, applyDir: opts.applyDir,
   };
 }
 
@@ -853,6 +866,52 @@ test("every scenario stops its block with its own sentence, or ends clean on the
           assert.deepEqual(r.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`))), [], `${label}: the program ran after main moved`);
         }
       }
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("main moved before the canary sent: THE CANARY stops with no program call, BEFORE YOU START re-records main, and THE CANARY then completes", async () => {
+  const base = mkdtempSync(join(tmpdir(), "fault-r36-rerecord-"));
+  try {
+    const docSha = await prepareHarness(base, readyDoc());
+    const moved = "5".repeat(40);
+    for (const shell of shellsHere()) {
+      const stopped = await runOnce(harnessConfig("canary", shell, base, docSha, { tag: "c1", scenario: { mainline: moved } }), `${shell}-rerecord-1`, null);
+      assert.notEqual(stopped.code, 0);
+      assert.match(stopped.out, /^STOP: main moved during the sitting \(4{40} to 5{40}\)/m, stopped.out.slice(-800));
+      assert.deepEqual(stopped.calls.filter((c) => c.id.startsWith("caffeinate#") || (c.id.startsWith("node#") && c.args.startsWith(`${WRAP}\n`))), [], "the program ran after main moved");
+      const carry = (tmp) => {
+        for (const m of ["r36-head.sha", "r36-night.ok", "r36-main.sha"]) putRecord(tmp, m, stopped.recordText[m], 10);
+      };
+      assert.equal(stopped.recordText["r36-main.sha"], `${MAINLINE}\n`);
+      const again = await runOnce(
+        harnessConfig("bys", shell, base, docSha, { tag: "c2", scenario: { mainline: moved }, initialHead: FAKE_SHA.MAIN, setup: carry }),
+        `${shell}-rerecord-2`,
+        null,
+      );
+      assert.equal(again.code, 0, again.out.slice(-1500));
+      assert.ok(again.out.includes(SUCCESS.bys), shell);
+      assert.equal(again.recordText["r36-main.sha"], `${moved}\n`);
+      assert.equal(again.recordText["r36-head.sha"], `${FAKE_SHA.MAIN}\n`);
+      assert.equal(again.recordText["r36-canary.ok"], "");
+      assert.equal(again.recordText["r36-last-send.ok"], "");
+      for (const m of ["r36-canary.ok", "r36-last-send.ok"]) assert.ok(!again.recordsAtEnd.includes(m), m);
+      const canary = await runOnce(
+        harnessConfig("canary", shell, base, docSha, {
+          tag: "c3",
+          scenario: { mainline: moved },
+          setup: (tmp) => {
+            for (const m of ["r36-head.sha", "r36-night.ok", "r36-main.sha"]) putRecord(tmp, m, again.recordText[m], 1);
+          },
+        }),
+        `${shell}-rerecord-3`,
+        null,
+      );
+      assert.equal(canary.code, 0, canary.out.slice(-1500));
+      assert.ok(canary.out.includes(SUCCESS.canary), shell);
+      assert.equal(canary.calls.filter((c) => c.id.startsWith("caffeinate#")).length, 1);
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
