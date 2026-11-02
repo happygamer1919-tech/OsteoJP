@@ -5411,6 +5411,25 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   gate test `scripts/staff-11-jp-one-clinic-check.test.mjs` (not edited; it
   passes 18 of 18).
 
+## 2026-11-02 - R52: patient ages in Indicadores count on the Lisbon date
+
+- **Ruling (strategy R52).** The age distribution in Indicadores
+  (`apps/web/lib/statistics/kpi-transform.ts`, `ageInYears`) worked out
+  "today" from the UTC date. In summer time (UTC+1) a patient whose birthday
+  it was between 00:00 and 01:00 Lisbon still counted the age before it, and
+  could sit one age bucket too young for that hour. "Today" is now the Lisbon
+  calendar date, through the existing `todayInLisbon`
+  (`apps/web/lib/scheduling/time.ts`), the same helper R29's day bounds use.
+- **Unchanged:** the birth date, a plain `YYYY-MM-DD` read as text with no
+  zone; a 29 February birthday in a non-leap year still turns on 1 March;
+  winter dates, where Lisbon is UTC+0. `ageDistribution` works out the Lisbon
+  date once per call rather than once per patient.
+- **Out of scope:** `ageFrom` in `apps/web/app/patients/[id]/page.tsx` has the
+  same UTC fault and is carded separately; it is not touched here.
+- **Proof.** `kpi-transform.test.ts`: the summer birthday at 00:30 Lisbon,
+  both 2026 clock-change days on each side of Lisbon midnight, 29 February,
+  New Year's Eve, and `ageDistribution` against per-patient `ageInYears`.
+
 ## 2026-11-02 - RODICA: edit the date, the hour and the heading before a ficha export (owner ruling)
 
 - **Owner ruling, 2026-11-02, verbatim:** "do it exactly as requested ... it's
