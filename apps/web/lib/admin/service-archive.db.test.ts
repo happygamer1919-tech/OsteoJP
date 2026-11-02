@@ -4,8 +4,11 @@
  * ==========================================================================
  * WHY THE PURE TEST IS NOT ENOUGH
  * ==========================================================================
- * ./service-archive.test.ts proves the DECISION. It cannot prove that
- * `setServiceActive` ASKS. A guard that is correct and never called is exactly
+ * ./service-archive.test.ts proves the DECISION. It cannot prove that the
+ * archive path ASKS. Since the Tipos de Marcacao table (2026-11-02) that path is
+ * the table's active switch, saved by `saveServiceTypesTable`; the old
+ * `setServiceActive` button was removed with it, so this suite drives the table
+ * save with one row whose switch changes. A guard that is correct and never called is exactly
  * the defect PACK-04 is about - `service_packs.base_service_id` was already a
  * hard-delete blocker, correctly, and the archive path simply never consulted
  * it. So this suite runs the real server function against a real row and
@@ -16,10 +19,16 @@
  * (production has three services stuck in the archived state right now and they
  * have to be able to come back), and the refusal names the pacote.
  *
- * REMOVE THE GUARD IN services.ts AND THIS FILE GOES RED - measured, not
- * assumed: with the `if (!active)` block deleted, "refuses" fails on the
- * rejection and "does not move the row" fails on is_active. That is the control
- * the owner's ruling asked for.
+ * REMOVE THE GUARD IN services.ts AND THIS FILE GOES RED: measured on the old
+ * `setServiceActive`; for `saveServiceTypesTable` the same mutant (the
+ * `has_packs` throw dropped) was measured KILLED by service-types-table.db.test.ts
+ * on 2026-11-02, and this file asserts the same refusal.
+ *
+ * THE TABLE SAVE READS THE PENDING TIPOS DE MARCACAO COLUMNS (migrations-pending/
+ * NEXT-AFTER-0109_services_booking_type_fields.sql), so this suite asks the
+ * database which side it is on, as service-types-table.db.test.ts does: it runs
+ * where the five columns exist, is skipped where none does, and THROWS once the
+ * migration is promoted on a database without them.
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -27,11 +36,37 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 const live = Boolean(process.env.DATABASE_URL);
-const d = live ? describe : describe.skip;
+const MARKER = "ADD CONSTRAINT services_vat_exemption_code_allowed";
+
+async function typeColumnsApplied(): Promise<boolean> {
+  if (!live) return false;
+  const { readdirSync, readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { getDbAdmin } = await import("@osteojp/db");
+  const { sql } = await import("drizzle-orm");
+  const res = await getDbAdmin().execute(
+    sql`select count(*)::int as n from information_schema.columns
+         where table_schema = 'public' and table_name = 'services'
+           and column_name in ('color', 'follow_up_days', 'sms_reminders', 'vat_exemption_code', 'vat_rate')`,
+  );
+  const list = (Array.isArray(res) ? res : ((res as { rows?: unknown[] }).rows ?? [])) as { n: number }[];
+  const n = list[0]?.n ?? -1;
+  if (n !== 0 && n !== 5) throw new Error(`HALF APPLIED: ${n} of 5 columns on services. Nothing here was measured.`);
+  const dir = join(__dirname, "..", "..", "..", "..", "packages", "db", "migrations");
+  const promoted = readdirSync(dir).some(
+    (f) => f.endsWith(".sql") && readFileSync(join(dir, f), "utf8").includes(MARKER),
+  );
+  if (promoted && n === 0) {
+    throw new Error("THE MIGRATION IS PROMOTED BUT THIS DATABASE DOES NOT HAVE ITS COLUMNS. A skip is no longer acceptable.");
+  }
+  return n === 5;
+}
+
+const d = (await typeColumnsApplied()) ? describe : describe.skip;
 
 d("PACK-04: archiving a service that carries a pacote", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
-  let setServiceActive: typeof import("./services").setServiceActive;
+  let saveServiceTypesTable: typeof import("./services").saveServiceTypesTable;
   let schema: typeof import("@osteojp/db");
 
   const tenant = randomUUID();
@@ -50,6 +85,46 @@ d("PACK-04: archiving a service that carries a pacote", () => {
     userId: admin,
   });
 
+  /** The table save with ONE row, posted as the page draws it, its switch set to `active`. */
+  const setActive = async (id: string, active: boolean): Promise<void> => {
+    const { sql } = await import("drizzle-orm");
+    const res = await db.execute(
+      sql`select name, price_cents, duration_min, follow_up_days, vat_rate, vat_exemption_code,
+                 color, sms_reminders, patient_bookable,
+                 floor(extract(epoch from updated_at) * 1000)::bigint::text as seen_ms
+            from public.services where id = ${id}`,
+    );
+    const [r] = (Array.isArray(res) ? res : ((res as { rows?: unknown[] }).rows ?? [])) as {
+      name: string;
+      price_cents: number | null;
+      duration_min: number;
+      follow_up_days: 2 | null;
+      vat_rate: 0 | 6 | 13 | 23 | null;
+      vat_exemption_code: "M07" | null;
+      color: string | null;
+      sms_reminders: boolean;
+      patient_bookable: boolean;
+      seen_ms: string;
+    }[];
+    if (!r) throw new Error("row missing");
+    await saveServiceTypesTable(actor(), [
+      {
+        id,
+        name: r.name,
+        priceCents: r.price_cents,
+        durationMin: r.duration_min,
+        followUpDays: r.follow_up_days,
+        vatRate: r.vat_rate,
+        vatExemptionCode: r.vat_exemption_code,
+        color: r.color,
+        smsReminders: r.sms_reminders,
+        patientBookable: r.patient_bookable,
+        isActive: active,
+        seenUpdatedAtMs: Number(r.seen_ms),
+      },
+    ]);
+  };
+
   const isActive = async (id: string): Promise<boolean> => {
     const { sql } = await import("drizzle-orm");
     const rows = await db.execute<{ is_active: boolean }>(
@@ -64,7 +139,7 @@ d("PACK-04: archiving a service that carries a pacote", () => {
   beforeAll(async () => {
     schema = await import("@osteojp/db");
     db = schema.getDbAdmin();
-    ({ setServiceActive } = await import("./services"));
+    ({ saveServiceTypesTable } = await import("./services"));
     const { sql } = await import("drizzle-orm");
     // One statement per execute: postgres.js prepares each, and a prepared
     // statement cannot carry multiple commands.
@@ -114,7 +189,7 @@ d("PACK-04: archiving a service that carries a pacote", () => {
 
   it("REFUSES, and the refusal names the pacote", async () => {
     await expect(
-      setServiceActive(actor(), packedService, false),
+      setActive(packedService, false),
     ).rejects.toMatchObject({
       code: "has_packs",
       // The NAME, not a count. An admin who reads this knows which row to repoint.
@@ -129,13 +204,13 @@ d("PACK-04: archiving a service that carries a pacote", () => {
    */
   it("leaves the service ACTIVE - it refused before it wrote", async () => {
     await expect(
-      setServiceActive(actor(), packedService, false),
+      setActive(packedService, false),
     ).rejects.toThrow();
     expect(await isActive(packedService)).toBe(true);
   });
 
   it("still archives a service no pacote is bound to", async () => {
-    await setServiceActive(actor(), looseService, false);
+    await setActive(looseService, false);
     expect(await isActive(looseService)).toBe(false);
   });
 
@@ -150,7 +225,7 @@ d("PACK-04: archiving a service that carries a pacote", () => {
     await db.execute(
       sql`update public.services set is_active = false where id = ${packedService}`,
     );
-    await setServiceActive(actor(), packedService, true);
+    await setActive(packedService, true);
     expect(await isActive(packedService)).toBe(true);
   });
 });

@@ -24,10 +24,10 @@ test("Serviços: per-location price toggles the offered-here affordance (W8-01b)
   const addForm = page.getByTestId("service-types-new-row");
   await addForm.locator('input[name="name"]').fill(name);
   await addForm.locator('input[name="durationMin"]').fill("30");
-  // Wait for the actual ?m=ok redirect to complete (a bare /admin/services wait
+  // Wait for the actual ?mn=ok redirect to complete (a bare /admin/services wait
   // returns immediately and races the summary click against the redirect).
   await Promise.all([
-    page.waitForURL(/m=ok/),
+    page.waitForURL(/mn=ok/),
     addForm.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
   ]);
 

@@ -13,7 +13,7 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { effectivePriceCents } from "./pricing";
-import type { ServiceTypeRow } from "./service-types-form";
+import { staleRowIds, type ServiceTypeRow } from "./service-types-form";
 import type { ServiceFollowUpDays, ServiceVatRate, VatExemptionCode } from "@osteojp/db";
 import { archiveBlockedReason, packsBoundToService } from "./service-archive";
 import {
@@ -64,6 +64,9 @@ export type ServiceView = {
   vatExemptionCode: string | null;
   followUpDays: number | null;
   smsReminders: boolean;
+  /** Posted back by the Tipos de Marcacao table, so a save over a row somebody
+   *  else changed since the page was drawn is refused (`stale`). */
+  updatedAt: Date;
 };
 
 export type ServiceInput = {
@@ -100,6 +103,7 @@ export async function listServices(actor: RequestContext): Promise<ServiceView[]
         vatExemptionCode: services.vatExemptionCode,
         followUpDays: services.followUpDays,
         smsReminders: services.smsReminders,
+        updatedAt: services.updatedAt,
       })
       .from(services)
       .orderBy(asc(services.name)),
@@ -175,20 +179,40 @@ export async function setServiceContraindicationSensitive(
 
 /**
  * TIPOS DE MARCACAO: the table's one save button ("Guardar alteracoes - Tipos
- * de Marcacao / Precos / IVA"), every row in ONE transaction.
+ * de Marcacao / Precos / IVA"), every row in ONE transaction. It replaces the
+ * old per-row buttons (Arquivar / Restaurar, Abrir / Fechar a marcacao por
+ * pacientes) and keeps their guards and their audit actions.
  *
- * ALL OR NOTHING. A row of another tenant (RLS hides it, so it reads as
- * missing) is `not_found`; switching off a type a pacote is bound to is
- * `has_packs`, naming the pacote (PACK-04, the guard `setServiceActive`
- * applies). Either refuses the whole save before anything is written, so a
- * table is never half saved.
+ * ALL OR NOTHING, and every refusal comes before the first write:
+ *   - `not_found`: a row of another tenant (RLS hides it, so it reads as
+ *     missing) or a row deleted since the page was drawn;
+ *   - `stale`: a row CHANGED since the page was drawn. The page posts each
+ *     row's `updated_at` as it rendered it; if any row's stored value differs,
+ *     somebody else saved in between, and writing this page's copy over theirs
+ *     would silently revert their change and audit it in this admin's name.
+ *     The rows are read `FOR UPDATE`, so two saves of the same rows queue and
+ *     the second one sees the first one's `updated_at`;
+ *   - `has_packs`, naming the pacote: switching OFF a type a pacote is bound to
+ *     (PACK-04). See ./service-archive for why refuse rather than repoint: three
+ *     services were once archived by renaming them to `-`, all three carrying a
+ *     pacote, one holding a patient's 7 remaining NESA sessions out of reach.
+ *     Switching a type back ON is never guarded: it can only repair a binding.
+ *     Server-enforced: the disabled switch on the page is only an affordance.
  *
  * THE AUDIT TRAIL KEEPS ITS SHAPE. A changed type gets one `service.update`
  * row naming the changed FIELDS (never the values, CLAUDE.md rule 7). The
- * switch and the AGENDA tag write the actions their own buttons always wrote
- * (`service.archive` / `service.restore`, `service.patient_bookable_on` /
- * `_off`), so "who switched this off" reads the same as before the table.
- * An untouched row writes nothing.
+ * switch writes `service.archive` / `service.restore` and the AGENDA tag
+ * writes `service.patient_bookable_on` / `_off`, the actions their own buttons
+ * always wrote, so "who opened this to patients, and when" reads the same as
+ * before. Each touches ONLY its own column: AGENDA is one of three independent
+ * gates (active, patient_bookable, internal_only; see
+ * `isServiceBookableByPatient` in apps/api/lib/appointments/services.ts), and a
+ * control that also flipped another would make archiving the only way off the
+ * portal. An untouched row writes nothing.
+ *
+ * `updated_at` is moved by Drizzle's `$onUpdate` on every app write to a
+ * service (all of them go through Drizzle). A write that bypasses Drizzle and
+ * does not set `updated_at` is invisible to the stale check.
  */
 export async function saveServiceTypesTable(
   actor: RequestContext,
@@ -215,11 +239,14 @@ export async function saveServiceTypesTable(
         color: services.color,
         isActive: services.isActive,
         patientBookable: services.patientBookable,
+        updatedAt: services.updatedAt,
       })
       .from(services)
-      .where(inArray(services.id, ids));
+      .where(inArray(services.id, ids))
+      .for("update");
     const byId = new Map(current.map((c) => [c.id, c] as const));
     if (ids.some((id) => !byId.has(id))) throw new AdminError("not_found");
+    if (staleRowIds(rows, byId).length > 0) throw new AdminError("stale");
 
     const archiving = rows.filter((r) => !r.isActive && byId.get(r.id)?.isActive).map((r) => r.id);
     if (archiving.length > 0) {
@@ -244,7 +271,7 @@ export async function saveServiceTypesTable(
         vatRate: r.vatRate,
         vatExemptionCode: r.vatExemptionCode,
         smsReminders: r.smsReminders,
-        ...(r.color !== undefined ? { color: r.color } : {}),
+        color: r.color,
       };
       const fields = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== c[k]);
       if (fields.length > 0) {
@@ -276,98 +303,6 @@ export async function saveServiceTypesTable(
         });
       }
     }
-  });
-}
-
-/**
- * W13-04 step 7 — make `patient_bookable` staff-maintainable, the way
- * `is_bookable` is maintainable for therapists (0046, the Equipa checkbox).
- *
- * WHY IT NEEDS A SURFACE AT ALL. Migration 0057 added the column and backfilled
- * it to reproduce the old hard-coded allowlist; JP then ruled the real set (12
- * of 20 services) and that ruling was applied to production by hand. Without a
- * screen, every future change to what a patient may book is another hand-run
- * SQL statement against production — which is the shape of change this repo
- * spends its time removing.
- *
- * IT IS ONE OF THREE INDEPENDENT GATES, and turning it on grants nothing on its
- * own. `isServiceBookableByPatient` (apps/api/lib/appointments/services.ts)
- * requires active AND patient_bookable AND NOT internal_only, and each clause
- * has a test proving it is load-bearing. So an admin mis-click here cannot
- * expose an internal service: the row that is both internal_only and
- * patient_bookable is refused, and that exact combination is tested because it
- * is what a mis-click produces.
- *
- * Same capability, same audit shape and the same not_found as setServiceActive.
- */
-export async function setServicePatientBookable(
-  actor: RequestContext,
-  id: string,
-  bookable: boolean,
-): Promise<void> {
-  assertCan(actor.role, "services:write");
-  await runScoped(actor, async (tx) => {
-    const rows = await tx
-      .update(services)
-      .set({ patientBookable: bookable })
-      .where(eq(services.id, id))
-      .returning({ id: services.id });
-    if (!rows[0]) throw new AdminError("not_found");
-    await writeAudit(tx, actor, {
-      // Distinguished from service.update so "who opened this to patients, and
-      // when" is answerable from the trail without diffing rows.
-      action: bookable ? "service.patient_bookable_on" : "service.patient_bookable_off",
-      entityType: "service",
-      entityId: id,
-    });
-  });
-}
-
-/** Soft archive (is_active=false). Hard delete is avoided to preserve the FK
- *  references from appointments.service_id and clinical history.
- *
- *  PACK-04 GUARD: archiving a service that carries a pacote is REFUSED, and the
- *  refusal names the pacotes. See ./service-archive for why refuse rather than
- *  repoint, and for the production damage that made it necessary - three
- *  services archived by renaming them to `-`, all three carrying a pacote, one
- *  of them holding a patient's 7 remaining NESA sessions out of reach.
- *
- *  SERVER-ENFORCED; THE DISABLED UI CONTROL IS ONLY AN AFFORDANCE, the same
- *  split /admin/services already uses for the delete blocker. A disabled button
- *  is a suggestion and a POST is not.
- *
- *  RESTORING IS NEVER GUARDED. `active === true` can only repair a binding, and
- *  a guard on it would strand exactly the services already in this state. */
-export async function setServiceActive(
-  actor: RequestContext,
-  id: string,
-  active: boolean,
-): Promise<void> {
-  assertCan(actor.role, "services:write");
-  await runScoped(actor, async (tx) => {
-    if (!active) {
-      const bound = await tx
-        .select({
-          id: servicePacks.id,
-          name: servicePacks.name,
-          baseServiceId: servicePacks.baseServiceId,
-        })
-        .from(servicePacks)
-        .where(eq(servicePacks.baseServiceId, id));
-      const blocking = packsBoundToService(bound, id);
-      if (blocking.length > 0) throw new AdminError("has_packs", archiveBlockedReason(blocking));
-    }
-    const rows = await tx
-      .update(services)
-      .set({ isActive: active })
-      .where(eq(services.id, id))
-      .returning({ id: services.id });
-    if (!rows[0]) throw new AdminError("not_found");
-    await writeAudit(tx, actor, {
-      action: active ? "service.restore" : "service.archive",
-      entityType: "service",
-      entityId: id,
-    });
   });
 }
 

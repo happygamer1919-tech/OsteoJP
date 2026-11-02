@@ -19,6 +19,7 @@ import {
   setServiceContraindicationAction,
   setServiceLocationPricesAction,
 } from "./actions";
+import { ServiceTypeColorCell } from "./ServiceTypeColorCell";
 import { adminHelp, adminInputInline, adminLabel, adminTd, adminTh, adminTrBorder } from "../admin-ui";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -42,29 +43,54 @@ function euros(cents: number | null): string {
   return cents === null ? "" : (cents / 100).toFixed(2);
 }
 
+/** "Preço (Fisioterapia)": every control names its column AND its type, so a
+ *  screen reader moving through the table never hears ten bare "Preço". */
+function named(label: string, typeName: string | undefined): string {
+  return typeName ? `${label} (${typeName})` : label;
+}
+
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
 /** A Fisiozero tag ("SMS", "AGENDA"): a labelled checkbox, so the state is the box, never the colour. */
-function Tag({ name, label, title, checked }: { name: string; label: string; title: string; checked: boolean }) {
+function Tag({
+  name,
+  label,
+  title,
+  checked,
+  typeName,
+}: {
+  name: string;
+  label: string;
+  title: string;
+  checked: boolean;
+  typeName: string;
+}) {
   return (
     <label
       title={title}
       className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-v2-border bg-v2-surface px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-v2-text-primary has-[:checked]:bg-v2-surface-hover"
     >
-      <input type="checkbox" name={name} form={TABLE_FORM_ID} defaultChecked={checked} className={focusRing} />
+      <input
+        type="checkbox"
+        name={name}
+        form={TABLE_FORM_ID}
+        defaultChecked={checked}
+        aria-label={named(label, typeName)}
+        className={focusRing}
+      />
       {label}
     </label>
   );
 }
 
-function FollowUpSelect({ name, value, form }: { name: string; value: number | null; form?: string }) {
+function FollowUpSelect({ name, value, form, typeName }: { name: string; value: number | null; form?: string; typeName?: string }) {
   return (
     <select
       name={name}
       form={form}
       defaultValue={value === null ? "" : String(value)}
-      aria-label={s["admin.serviceTypes.colFollowUp"]}
+      aria-label={named(s["admin.serviceTypes.colFollowUp"], typeName)}
       className={`w-40 ${adminInputInline}`}
     >
       <option value="">{s["admin.serviceTypes.followUpNone"]}</option>
@@ -73,13 +99,13 @@ function FollowUpSelect({ name, value, form }: { name: string; value: number | n
   );
 }
 
-function VatSelect({ name, value, form }: { name: string; value: number | null; form?: string }) {
+function VatSelect({ name, value, form, typeName }: { name: string; value: number | null; form?: string; typeName?: string }) {
   return (
     <select
       name={name}
       form={form}
       defaultValue={value === null ? "" : String(value)}
-      aria-label={s["admin.serviceTypes.colVat"]}
+      aria-label={named(s["admin.serviceTypes.colVat"], typeName)}
       className={`w-20 ${adminInputInline}`}
     >
       {/* Not one of Fisiozero's four: OsteoJP's types start with no rate, and a
@@ -93,13 +119,13 @@ function VatSelect({ name, value, form }: { name: string; value: number | null; 
   );
 }
 
-function VatReasonSelect({ name, value, form }: { name: string; value: string | null; form?: string }) {
+function VatReasonSelect({ name, value, form, typeName }: { name: string; value: string | null; form?: string; typeName?: string }) {
   return (
     <select
       name={name}
       form={form}
       defaultValue={value ?? ""}
-      aria-label={s["admin.serviceTypes.colVatReason"]}
+      aria-label={named(s["admin.serviceTypes.colVatReason"], typeName)}
       className={`w-44 ${adminInputInline}`}
     >
       <option value="">{s["admin.serviceTypes.vatReasonPlaceholder"]}</option>
@@ -135,27 +161,27 @@ export function ServiceTypesTable({
           <table className="w-full border-collapse text-sm" data-testid="service-types-table">
             <thead>
               <tr className={adminTrBorder}>
-                <th className={adminTh}>{s["admin.serviceTypes.colName"]}</th>
-                <th className={adminTh}>{s["admin.serviceTypes.colFollowUp"]}</th>
-                <th className={adminTh}>{s["admin.serviceTypes.colPrice"]}</th>
-                <th className={adminTh}>{s["admin.serviceTypes.colVat"]}</th>
-                <th className={adminTh}>{s["admin.serviceTypes.colVatReason"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.serviceTypes.colName"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.serviceTypes.colFollowUp"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.serviceTypes.colPrice"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.serviceTypes.colVat"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.serviceTypes.colVatReason"]}</th>
                 {/* Fisiozero's four controls carry no header; screen readers get one. */}
-                <th className={adminTh}>
-                  <span className="sr-only">{s["admin.serviceTypes.activeSwitch"]}</span>
+                <th scope="col" className={adminTh}>
+                  <span className="sr-only">{s["admin.services.status"]}</span>
                 </th>
-                <th className={adminTh}>
+                <th scope="col" className={adminTh}>
                   <span className="sr-only">{s["admin.serviceTypes.color"]}</span>
                 </th>
-                <th className={adminTh}>
+                <th scope="col" className={adminTh}>
                   <span className="sr-only">{s["admin.serviceTypes.sms"]}</span>
                 </th>
-                <th className={adminTh}>
+                <th scope="col" className={adminTh}>
                   <span className="sr-only">{s["admin.serviceTypes.agenda"]}</span>
                 </th>
                 {/* OsteoJP's own columns, after Fisiozero's: booking needs the duration. */}
-                <th className={adminTh}>{s["admin.services.duration"]}</th>
-                <th className={adminTh}>{s["admin.staff.colActions"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.services.duration"]}</th>
+                <th scope="col" className={adminTh}>{s["admin.staff.colActions"]}</th>
               </tr>
             </thead>
             <tbody>
@@ -166,11 +192,25 @@ export function ServiceTypesTable({
                 // server refuses regardless; this is the affordance. A disabled
                 // checkbox posts nothing, so a hidden input carries "on".
                 const switchLocked = svc.isActive && archiveBlocking.length > 0;
+                const switchHelpId = `service-type-switch-help-${svc.id}`;
+                const switchHelp = switchLocked
+                  ? `${s["admin.services.archiveBlockedBy"]} ${archiveBlockedReason(archiveBlocking)}`
+                  : s["admin.serviceTypes.deactivate"];
                 return (
                   <Fragment key={svc.id}>
                     <tr className={adminTrBorder} data-service-id={svc.id}>
-                      <td className={adminTd}>
+                      {/* The row header: a screen reader announces the type's
+                          name with every cell of the row. */}
+                      <th scope="row" className={`${adminTd} text-left font-normal`}>
                         <input type="hidden" name="row" value={svc.id} form={TABLE_FORM_ID} />
+                        {/* What the page saw: a save over a row somebody else
+                            changed in between is refused (`stale`). */}
+                        <input
+                          type="hidden"
+                          name={`seen__${svc.id}`}
+                          value={String(svc.updatedAt.getTime())}
+                          form={TABLE_FORM_ID}
+                        />
                         <input
                           name={`name__${svc.id}`}
                           form={TABLE_FORM_ID}
@@ -179,9 +219,14 @@ export function ServiceTypesTable({
                           aria-label={s["admin.serviceTypes.colName"]}
                           className={`w-56 ${adminInputInline}`}
                         />
-                      </td>
+                      </th>
                       <td className={adminTd}>
-                        <FollowUpSelect name={`followUp__${svc.id}`} value={svc.followUpDays} form={TABLE_FORM_ID} />
+                        <FollowUpSelect
+                          name={`followUp__${svc.id}`}
+                          value={svc.followUpDays}
+                          form={TABLE_FORM_ID}
+                          typeName={svc.name}
+                        />
                       </td>
                       <td className={adminTd}>
                         <span className="inline-flex items-center gap-1">
@@ -192,27 +237,25 @@ export function ServiceTypesTable({
                             inputMode="decimal"
                             defaultValue={centsToInput(svc.priceCents)}
                             placeholder="0.00"
-                            aria-label={s["admin.serviceTypes.colPrice"]}
+                            aria-label={named(s["admin.serviceTypes.colPrice"], svc.name)}
                             className={`w-20 text-right ${adminInputInline}`}
                           />
                           <span aria-hidden="true">€</span>
                         </span>
                       </td>
                       <td className={adminTd}>
-                        <VatSelect name={`vat__${svc.id}`} value={svc.vatRate} form={TABLE_FORM_ID} />
+                        <VatSelect name={`vat__${svc.id}`} value={svc.vatRate} form={TABLE_FORM_ID} typeName={svc.name} />
                       </td>
                       <td className={adminTd}>
-                        <VatReasonSelect name={`vatReason__${svc.id}`} value={svc.vatExemptionCode} form={TABLE_FORM_ID} />
+                        <VatReasonSelect
+                          name={`vatReason__${svc.id}`}
+                          value={svc.vatExemptionCode}
+                          form={TABLE_FORM_ID}
+                          typeName={svc.name}
+                        />
                       </td>
                       <td className={adminTd}>
-                        <span
-                          className="inline-flex"
-                          title={
-                            switchLocked
-                              ? `${s["admin.services.archiveBlockedBy"]} ${archiveBlockedReason(archiveBlocking)}`
-                              : s["admin.serviceTypes.deactivate"]
-                          }
-                        >
+                        <span className="inline-flex items-center gap-2" title={switchHelp}>
                           <input
                             type="checkbox"
                             role="switch"
@@ -220,24 +263,34 @@ export function ServiceTypesTable({
                             form={TABLE_FORM_ID}
                             defaultChecked={svc.isActive}
                             disabled={switchLocked}
-                            aria-label={s["admin.serviceTypes.activeSwitch"]}
+                            aria-label={named(s["admin.serviceTypes.activeSwitch"], svc.name)}
+                            aria-describedby={switchHelpId}
                             className={`h-4 w-4 ${focusRing}`}
                           />
                           {switchLocked && (
                             <input type="hidden" name={`active__${svc.id}`} value="on" form={TABLE_FORM_ID} />
                           )}
+                          {/* Estado is always a badge (UI-STYLE). It shows the
+                              STORED state; the switch beside it is the edit. */}
+                          <StatusBadge tone={svc.isActive ? "confirmed" : "cancelled"}>
+                            {svc.isActive ? s["admin.staff.active"] : s["admin.staff.inactive"]}
+                          </StatusBadge>
+                          {/* The tooltip as text a screen reader reaches: the
+                              lock reason naming the pacotes, or what the switch does. */}
+                          <span id={switchHelpId} className="sr-only">
+                            {switchHelp}
+                          </span>
                         </span>
                       </td>
                       <td className={adminTd}>
-                        <input type="hidden" name={`colorWas__${svc.id}`} value={svc.color ?? ""} form={TABLE_FORM_ID} />
-                        <input
-                          type="color"
-                          name={`color__${svc.id}`}
+                        <ServiceTypeColorCell
+                          id={svc.id}
                           form={TABLE_FORM_ID}
-                          defaultValue={(svc.color ?? UNSET_COLOR_SHOWN).toLowerCase()}
-                          aria-label={s["admin.serviceTypes.color"]}
-                          title={svc.color ?? s["admin.serviceTypes.colorUnset"]}
-                          className={`h-6 w-6 cursor-pointer rounded-full border border-v2-border bg-transparent p-0 ${focusRing}`}
+                          color={svc.color}
+                          shownWhenUnset={UNSET_COLOR_SHOWN}
+                          colorLabel={s["admin.serviceTypes.color"]}
+                          noColorLabel={s["admin.serviceTypes.noColor"]}
+                          typeName={svc.name}
                         />
                       </td>
                       <td className={adminTd}>
@@ -246,6 +299,7 @@ export function ServiceTypesTable({
                           label={s["admin.serviceTypes.sms"]}
                           title={s["admin.serviceTypes.smsHelp"]}
                           checked={svc.smsReminders}
+                          typeName={svc.name}
                         />
                       </td>
                       <td className={adminTd}>
@@ -254,6 +308,7 @@ export function ServiceTypesTable({
                           label={s["admin.serviceTypes.agenda"]}
                           title={s["admin.serviceTypes.agendaHelp"]}
                           checked={svc.patientBookable}
+                          typeName={svc.name}
                         />
                       </td>
                       <td className={adminTd}>
@@ -264,7 +319,7 @@ export function ServiceTypesTable({
                           min={1}
                           defaultValue={svc.durationMin}
                           required
-                          aria-label={s["admin.services.duration"]}
+                          aria-label={named(s["admin.services.duration"], svc.name)}
                           className={`w-20 ${adminInputInline}`}
                         />
                       </td>
@@ -408,27 +463,22 @@ export function ServiceTypesTable({
           <VatSelect name="vat" value={0} />
           <VatReasonSelect name="vatReason" value={null} />
           {/* Not in Fisiozero's row: OsteoJP books by duration, so a new type
-              states it rather than inheriting a silent 60. */}
+              states it. No prefilled value: a silent 60 is how a 30-minute
+              type would book an hour. */}
           <label className="inline-flex items-center gap-1 text-sm text-v2-text-primary">
             {s["admin.services.duration"]}
-            <input
-              name="durationMin"
-              type="number"
-              min={1}
-              defaultValue={60}
-              required
-              className={`w-20 ${adminInputInline}`}
-            />
+            <input name="durationMin" type="number" min={1} required className={`w-20 ${adminInputInline}`} />
           </label>
           <Button type="submit" variant="primary">
             {s["admin.serviceTypes.insert"]}
           </Button>
         </form>
 
-        <div className="flex flex-col gap-1">
-          <p className={adminHelp}>{s["admin.serviceTypes.note1"]}</p>
-          <p className={adminHelp}>{s["admin.serviceTypes.note2"]}</p>
-        </div>
+        {/* Fisiozero's "Nota 1" and "Nota 2" (admin.serviceTypes.note1 / note2)
+            are NOT rendered until the owner rules on them: in OsteoJP,
+            appointments store no price, so Nota 1 is false, and statistics count
+            invoices that are issued OR paid (lib/statistics/kpi-queries.ts), so
+            Nota 2 is very likely false. The keys stay for the day he rules. */}
       </div>
     </GlassPanel>
   );

@@ -82,8 +82,13 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
  * price that is not euros) reads as `err:invalid`, and nothing is saved. The
  * agenda's cached reference data is invalidated at once (as the pack actions
  * do): a type's name, duration and active switch feed the booking drawer.
+ *
+ * Each action reports on its OWN query parameter (`mt` the table save, `mn` the
+ * new-type row), so the banner can say which of the two failed and why: "a value
+ * in the table is invalid" and "the new type has an invalid value" point at
+ * different boxes on the page.
  */
-async function runTypes(fn: () => Promise<void>): Promise<never> {
+async function runTypes(param: "mt" | "mn", fn: () => Promise<void>): Promise<never> {
   let code = "ok";
   try {
     await fn();
@@ -93,17 +98,17 @@ async function runTypes(fn: () => Promise<void>): Promise<never> {
   }
   revalidatePath("/admin/services");
   updateTag("agenda-reference-data");
-  redirect(`/admin/services?m=${code}`);
+  redirect(`/admin/services?${param}=${code}`);
 }
 
 export async function saveServiceTypesTableAction(formData: FormData): Promise<void> {
   const actor = await requireRequestContext();
-  await runTypes(() => saveServiceTypesTable(actor, parseServiceTypesTable(formData.entries())));
+  await runTypes("mt", () => saveServiceTypesTable(actor, parseServiceTypesTable(formData.entries())));
 }
 
 export async function createServiceTypeAction(formData: FormData): Promise<void> {
   const actor = await requireRequestContext();
-  await runTypes(() => createService(actor, parseNewServiceType(formData.entries())));
+  await runTypes("mn", () => createService(actor, parseNewServiceType(formData.entries())));
 }
 
 /** The NESA contraindication flag, from the row's Gerir drawer. */

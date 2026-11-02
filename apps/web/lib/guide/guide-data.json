@@ -10052,22 +10052,52 @@
               "strong": "Serviços"
             },
             {
-              "text": " tem a lista dos serviços da clínica, com "
+              "text": ", a tabela "
             },
             {
-              "strong": "Duração (min)"
+              "strong": "Tipo de Marcações / Tabelas de Preços"
+            },
+            {
+              "text": " tem uma linha por tipo de marcação, com "
+            },
+            {
+              "strong": "FollowUP"
             },
             {
               "text": ", "
             },
             {
-              "strong": "Preço (€)"
+              "strong": "Preço"
+            },
+            {
+              "text": ", "
+            },
+            {
+              "strong": "IVA"
+            },
+            {
+              "text": ", "
+            },
+            {
+              "strong": "Motivo IVA"
+            },
+            {
+              "text": ", o interruptor de ativo, a cor, as etiquetas "
+            },
+            {
+              "strong": "SMS"
             },
             {
               "text": " e "
             },
             {
-              "strong": "Estado"
+              "strong": "AGENDA"
+            },
+            {
+              "text": ", e a "
+            },
+            {
+              "strong": "Duração (min)"
             },
             {
               "text": "."
@@ -10078,68 +10108,33 @@
         {
           "spans": [
             {
-              "text": "Para criar um serviço:"
+              "text": "Para criar um tipo: na linha por baixo da tabela, preencha "
+            },
+            {
+              "strong": "Novo Tipo de Marcação"
+            },
+            {
+              "text": ", o preço, o IVA, o motivo e a "
+            },
+            {
+              "strong": "Duração (min)"
+            },
+            {
+              "text": ", e clique em "
+            },
+            {
+              "strong": "Inserir Novo Tipo de Marcação"
+            },
+            {
+              "text": "."
             }
           ],
           "type": "para"
-        },
-        {
-          "items": [
-            [
-              {
-                "text": "Em "
-              },
-              {
-                "strong": "Adicionar serviço"
-              },
-              {
-                "text": ", preencha "
-              },
-              {
-                "strong": "Nome"
-              },
-              {
-                "text": ", "
-              },
-              {
-                "strong": "Duração (min)"
-              },
-              {
-                "text": " e "
-              },
-              {
-                "strong": "Preço (€)"
-              },
-              {
-                "text": ". Marque "
-              },
-              {
-                "strong": "Sensível a contraindicações NESA"
-              },
-              {
-                "text": " se for o caso."
-              }
-            ],
-            [
-              {
-                "text": "Clique em "
-              },
-              {
-                "strong": "Adicionar serviço"
-              },
-              {
-                "text": "."
-              }
-            ]
-          ],
-          "kind": "ol",
-          "start": 1,
-          "type": "list"
         },
         {
           "spans": [
             {
-              "text": "Para alterar um serviço ou o preço num local:"
+              "text": "Para alterar tipos:"
             }
           ],
           "type": "para"
@@ -10148,19 +10143,12 @@
           "items": [
             [
               {
-                "text": "Clique em "
-              },
+                "text": "Altere na tabela o que for preciso, em quantas linhas quiser, e clique uma vez no botão de guardar alterações, por baixo da tabela. Se outra pessoa guardou entretanto, nada é guardado: recarregue a página."
+              }
+            ],
+            [
               {
-                "strong": "Gerir"
-              },
-              {
-                "text": " na linha do serviço, altere o que for preciso e clique em "
-              },
-              {
-                "strong": "Guardar"
-              },
-              {
-                "text": "."
+                "text": "Para deixar de oferecer um tipo, desligue o interruptor da linha e guarde. Um tipo usado por um pacote não pode ser desligado."
               }
             ],
             [
@@ -10171,24 +10159,27 @@
                 "strong": "Preços por local"
               },
               {
-                "text": ", escreva o preço desse local e clique em "
+                "text": ", escreva o preço e clique em "
               },
               {
                 "strong": "Guardar preços"
               },
               {
-                "text": ". Um local com o campo em branco usa o preço base."
+                "text": "."
               }
             ],
             [
               {
-                "text": "Para deixar de oferecer o serviço, clique em "
+                "strong": "Sensível a contraindicações NESA"
               },
               {
-                "strong": "Arquivar"
+                "text": " está em "
               },
               {
-                "text": " no mesmo painel."
+                "strong": "Gerir"
+              },
+              {
+                "text": ", na linha do tipo."
               }
             ]
           ],
@@ -10199,7 +10190,7 @@
         {
           "spans": [
             {
-              "text": "Nota: um serviço com marcações não pode ser eliminado; arquive-o. Abrir o serviço à marcação no portal está explicado na secção Portal do paciente."
+              "text": "Nota: um tipo com marcações não pode ser eliminado; desligue-o. O portal está explicado na secção Portal do paciente."
             }
           ],
           "type": "para"
@@ -10209,7 +10200,7 @@
       "faq": [],
       "feature": null,
       "file": "07-equipa-e-horarios/10-servicos-e-precos.md",
-      "goal": "Criar um serviço, mudar o preço num local ou arquivá-lo.",
+      "goal": "Criar um tipo de marcação, mudar o preço num local ou desativá-lo.",
       "id": "equipa-e-horarios.servicos-e-precos",
       "images": null,
       "order": {
@@ -10227,7 +10218,7 @@
       "see": [],
       "shots": null,
       "title": "Serviços e preços",
-      "words": 137
+      "words": 184
     },
     {
       "answers": [],
@@ -10918,10 +10909,10 @@
               "text": ", a etiqueta "
             },
             {
-              "strong": "Portal"
+              "strong": "AGENDA"
             },
             {
-              "text": " numa linha indica que o serviço está aberto à marcação pelos pacientes, no portal. Um serviço sem a etiqueta só pode ser marcado pela equipa. O serviço só aparece no portal numa clínica se também estiver assinalado, em "
+              "text": " assinalada numa linha indica que o tipo de marcação está aberto à marcação pelos pacientes, no portal. Um tipo sem a etiqueta assinalada só pode ser marcado pela equipa. O tipo só aparece no portal numa clínica se também estiver assinalado, em "
             },
             {
               "strong": "Administração"
@@ -10960,41 +10951,29 @@
           "items": [
             [
               {
-                "text": "Clique em "
+                "text": "Na linha do tipo, assinale a etiqueta "
               },
               {
-                "strong": "Gerir"
+                "strong": "AGENDA"
               },
               {
-                "text": " na linha do serviço."
+                "text": " para o abrir à marcação no portal, ou tire o visto para o fechar."
               }
             ],
             [
               {
-                "text": "Clique em "
-              },
-              {
-                "strong": "Abrir a marcação por pacientes"
-              },
-              {
-                "text": " para abrir o serviço à marcação no portal, ou em "
-              },
-              {
-                "strong": "Fechar a marcação por pacientes"
-              },
-              {
-                "text": " para o fechar."
+                "text": "Clique no botão de guardar alterações, por baixo da tabela."
               }
             ],
             [
               {
-                "text": "Confirme na lista que a etiqueta "
+                "text": "Confirme na tabela que a etiqueta "
               },
               {
-                "strong": "Portal"
+                "strong": "AGENDA"
               },
               {
-                "text": " aparece ou desaparece."
+                "text": " ficou como queria."
               }
             ]
           ],
@@ -11025,7 +11004,7 @@
       "see": [],
       "shots": null,
       "title": "Que serviços os pacientes podem marcar",
-      "words": 109
+      "words": 113
     },
     {
       "answers": [],

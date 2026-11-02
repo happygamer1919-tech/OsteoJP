@@ -44,7 +44,7 @@ function euros(cents: number | null): string {
 export default async function ServicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; mp?: string; pf?: string }>;
+  searchParams: Promise<{ m?: string; mp?: string; mt?: string; mn?: string; pf?: string }>;
 }) {
   const actor = await requireRequestContext();
   const [
@@ -68,7 +68,7 @@ export default async function ServicesPage({
     listPackLocationPrices(actor),
     listPackOfferings(actor),
   ]);
-  const { m, mp, pf } = await searchParams;
+  const { m, mp, mt, mn, pf } = await searchParams;
 
   // Active locations only; overrides keyed by `${serviceId}:${locationId}`.
   const activeLocations = locations.filter((l) => l.isActive);
@@ -99,8 +99,18 @@ export default async function ServicesPage({
   const locationNameById = new Map(locations.map((l) => [l.id, l.name] as const));
 
   const banner =
-    m === "ok" ? { ok: true, text: s["admin.services.saved"] }
-    : m === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.invalid"] }
+    // Tipos de Marcacao: the table save (`mt`) and the new-type row (`mn`) each
+    // have their own messages, one per refusal.
+    mt === "ok" ? { ok: true, text: s["admin.serviceTypes.saved"] }
+    : mt === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.invalid"] }
+    : mt === "err:stale" ? { ok: false, text: s["admin.serviceTypes.stale"] }
+    : mt === "err:has_packs" ? { ok: false, text: s["admin.services.archiveHasPacks"] }
+    : mt === "err:not_found" ? { ok: false, text: s["admin.serviceTypes.notFound"] }
+    : mt && mt.startsWith("err") ? { ok: false, text: s["admin.serviceTypes.tableError"] }
+    : mn === "ok" ? { ok: true, text: s["admin.serviceTypes.inserted"] }
+    : mn === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.newInvalid"] }
+    : mn && mn.startsWith("err") ? { ok: false, text: s["admin.serviceTypes.newError"] }
+    : m === "ok" ? { ok: true, text: s["admin.services.saved"] }
     : m === "err:has_references" ? { ok: false, text: s["admin.services.deleteHasReferences"] }
     // PACK-04. Its own message: it points at a different repair than the delete
     // one, namely changing the pacote's base service.

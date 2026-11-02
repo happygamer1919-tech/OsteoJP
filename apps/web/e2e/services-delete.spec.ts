@@ -22,7 +22,7 @@ test("Serviços: zero-reference service deletes; referenced service is archive-o
   await addForm.locator('input[name="name"]').fill(name);
   await addForm.locator('input[name="durationMin"]').fill("30");
   await Promise.all([
-    page.waitForURL(/m=ok/),
+    page.waitForURL(/mn=ok/),
     addForm.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
   ]);
 

@@ -54,6 +54,10 @@ export type AdminErrorCode =
   // dialog has had its own distinct `note_required` since SCHED-18 for exactly
   // this reason; this is the same refusal reaching the Equipa modal.
   | "note_required"
+  // Tipos de Marcacao: the table was saved over a row somebody else changed
+  // since the page was drawn. Not `invalid` (nothing on the page is wrong) and
+  // not `not_found` (the row is there): the repair is to reload and redo.
+  | "stale"
   | "invalid";
 
 export class AdminError extends Error {

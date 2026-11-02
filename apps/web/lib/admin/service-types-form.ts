@@ -15,6 +15,12 @@
  * WHAT A BAD VALUE DOES. One invalid cell refuses the whole save (FormError),
  * the same all-or-nothing the one button promises: a table half saved is a
  * table nobody can trust.
+ *
+ * WHAT THE PAGE SAW. Each row also posts `seen__<id>`, the row's `updated_at`
+ * in milliseconds as the page rendered it. `staleRowIds` compares it with the
+ * stored value, so a save over a row somebody else changed in between is
+ * refused rather than silently reverting their change (see
+ * `saveServiceTypesTable`).
  */
 import {
   SERVICE_COLOR_PATTERN,
@@ -47,11 +53,13 @@ export type ServiceTypeFields = {
 export type ServiceTypeRow = ServiceTypeFields & {
   id: string;
   isActive: boolean;
-  /** undefined = leave the stored colour as it is. */
-  color: string | null | undefined;
+  /** null = "sem cor" (no colour). */
+  color: string | null;
   smsReminders: boolean;
   patientBookable: boolean;
   durationMin: number;
+  /** The row's `updated_at`, in milliseconds, as the page rendered it. */
+  seenUpdatedAtMs: number;
 };
 
 export type NewServiceType = ServiceTypeFields & { durationMin: number };
@@ -115,17 +123,40 @@ export function parseFollowUpDays(raw: string | undefined): ServiceFollowUpDays 
 }
 
 /**
- * The colour cell. A colour input always holds a colour, so a type with none
- * chosen is SHOWN as white and posts white back. `was` is the stored value the
- * page rendered ("" for none): white posted over "none" means untouched and
- * keeps NULL; anything else is stored in capitals.
+ * The colour cell: a colour picker and an explicit "sem cor" box. "Sem cor"
+ * ticked stores no colour, whatever the picker shows (a picker always shows a
+ * colour, white for a type with none). Unticked, the picker's colour is stored
+ * in capitals, white included.
  */
-export function parseColor(raw: string | undefined, was: string | undefined): string | null | undefined {
+export function parseColor(raw: string | undefined, noColor: boolean): string | null {
+  if (noColor) return null;
   const t = (raw ?? "").trim().toUpperCase();
-  if (!t) return undefined;
   if (!SERVICE_COLOR_PATTERN.test(t)) throw new ServiceTypesFormError("color");
-  if ((was ?? "") === "" && t === UNSET_COLOR_SHOWN) return undefined;
   return t;
+}
+
+/** `seen__<id>`: a non-negative whole number of milliseconds. */
+export function parseSeenUpdatedAt(raw: string | undefined): number {
+  const t = (raw ?? "").trim();
+  if (!/^\d{1,15}$/.test(t)) throw new ServiceTypesFormError("rows");
+  return Number(t);
+}
+
+/**
+ * The rows somebody else changed since the page was drawn: the stored
+ * `updated_at` differs from the one the page posted back. Pure, so the rule is
+ * unit-tested apart from the database.
+ */
+export function staleRowIds(
+  rows: readonly Pick<ServiceTypeRow, "id" | "seenUpdatedAtMs">[],
+  current: ReadonlyMap<string, { updatedAt: Date }>,
+): string[] {
+  return rows
+    .filter((r) => {
+      const c = current.get(r.id);
+      return c !== undefined && c.updatedAt.getTime() !== r.seenUpdatedAtMs;
+    })
+    .map((r) => r.id);
 }
 
 const first = (m: Map<string, string[]>, k: string): string | undefined => m.get(k)?.[0];
@@ -146,10 +177,11 @@ export function parseServiceTypesTable(entries: Entries): ServiceTypeRow[] {
       vatRate: parseVatRate(first(m, `vat__${id}`)),
       vatExemptionCode: parseVatExemptionCode(first(m, `vatReason__${id}`)),
       isActive: m.has(`active__${id}`),
-      color: parseColor(first(m, `color__${id}`), first(m, `colorWas__${id}`)),
+      color: parseColor(first(m, `color__${id}`), m.has(`noColor__${id}`)),
       smsReminders: m.has(`sms__${id}`),
       patientBookable: m.has(`agenda__${id}`),
       durationMin: parseDuration(first(m, `duration__${id}`)),
+      seenUpdatedAtMs: parseSeenUpdatedAt(first(m, `seen__${id}`)),
     };
   });
 }

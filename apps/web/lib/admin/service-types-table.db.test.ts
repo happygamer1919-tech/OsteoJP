@@ -19,7 +19,9 @@
  *     (service.archive / service.restore, service.patient_bookable_on/off);
  *   - the switch off on a type a pacote is bound to refuses the WHOLE save
  *     (PACK-04), naming the pacote, and nothing of the table moved;
- *   - a colour left as "none" stays NULL;
+ *   - a page drawn BEFORE somebody else's save is refused (`stale`) and does
+ *     not revert their change, nor audit anything in this admin's name;
+ *   - "Sem cor" clears a colour, and white can be set on a type that had none;
  *   - a row of another tenant is not_found, and nothing moved;
  *   - the new-type row creates a type with Fisiozero's five fields.
  */
@@ -114,8 +116,18 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
     return r;
   };
 
-  /** The row as the page posts it back untouched. */
-  const unchanged = (id: string, r: Row) => ({
+  /** The row's updated_at in milliseconds, as the page renders it (a JS Date). */
+  const seenMs = async (id: string): Promise<number> => {
+    const [r] = await rowsOf<{ ms: string }>(
+      db,
+      sql`select floor(extract(epoch from updated_at) * 1000)::bigint::text as ms from public.services where id = ${id}`,
+    );
+    if (!r) throw new Error("row missing");
+    return Number(r.ms);
+  };
+
+  /** The row as the page posts it back untouched, with what the page saw. */
+  const unchanged = async (id: string, r: Row) => ({
     id,
     name: r.name,
     followUpDays: r.follow_up_days as 2 | null,
@@ -123,10 +135,11 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
     vatRate: r.vat_rate as 0 | 6 | 13 | 23 | null,
     vatExemptionCode: r.vat_exemption_code as "M07" | null,
     isActive: r.is_active,
-    color: undefined,
+    color: r.color,
     smsReminders: r.sms_reminders,
     patientBookable: r.patient_bookable,
     durationMin: r.duration_min,
+    seenUpdatedAtMs: await seenMs(id),
   });
 
   beforeAll(async () => {
@@ -174,7 +187,7 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
     const b0 = await read(svcB);
     await saveServiceTypesTable(actor(), [
       {
-        ...unchanged(svcA, a0),
+        ...(await unchanged(svcA, a0)),
         name: "Fisioterapia geral",
         priceCents: 5500,
         vatRate: 0,
@@ -184,7 +197,7 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
         followUpDays: 2,
         durationMin: 50,
       },
-      unchanged(svcB, b0),
+      await unchanged(svcB, b0),
     ]);
     expect(await read(svcA)).toEqual({
       name: "Fisioterapia geral",
@@ -225,11 +238,11 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
         .map((r) => r.action)
         .sort();
     const b0 = await read(svcB);
-    await saveServiceTypesTable(actor(), [{ ...unchanged(svcB, b0), isActive: false, patientBookable: true }]);
+    await saveServiceTypesTable(actor(), [{ ...(await unchanged(svcB, b0)), isActive: false, patientBookable: true }]);
     const b1 = await read(svcB);
     expect([b1.is_active, b1.patient_bookable]).toEqual([false, true]);
     expect(await actionsOfB()).toEqual(["service.archive", "service.patient_bookable_on"]);
-    await saveServiceTypesTable(actor(), [{ ...unchanged(svcB, b1), isActive: true, patientBookable: false }]);
+    await saveServiceTypesTable(actor(), [{ ...(await unchanged(svcB, b1)), isActive: true, patientBookable: false }]);
     expect(await actionsOfB()).toEqual([
       "service.archive",
       "service.patient_bookable_off",
@@ -243,25 +256,47 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
     const p0 = await read(packed);
     await expect(
       saveServiceTypesTable(actor(), [
-        { ...unchanged(svcA, a0), name: "Mudou" },
-        { ...unchanged(packed, p0), isActive: false },
+        { ...(await unchanged(svcA, a0)), name: "Mudou" },
+        { ...(await unchanged(packed, p0)), isActive: false },
       ]),
     ).rejects.toMatchObject({ code: "has_packs", message: "Nesa pack 10" });
     expect(await read(svcA)).toEqual(a0);
     expect(await read(packed)).toEqual(p0);
   });
 
-  it("a colour not posted as a change keeps what is stored: NULL stays NULL, a colour stays that colour", async () => {
+  it("'Sem cor' clears a colour, and white can be set on a type that had none", async () => {
     const a0 = await read(svcA);
     const b0 = await read(svcB);
     expect([a0.color, b0.color]).toEqual(["#C27E3A", null]);
     await saveServiceTypesTable(actor(), [
-      { ...unchanged(svcA, a0), color: undefined, durationMin: 40 },
-      { ...unchanged(svcB, b0), color: undefined, durationMin: 65 },
+      { ...(await unchanged(svcA, a0)), color: null },
+      { ...(await unchanged(svcB, b0)), color: "#FFFFFF" },
     ]);
-    const a1 = await read(svcA);
-    const b1 = await read(svcB);
-    expect([a1.color, a1.duration_min, b1.color, b1.duration_min]).toEqual(["#C27E3A", 40, null, 65]);
+    expect([(await read(svcA)).color, (await read(svcB)).color]).toEqual([null, "#FFFFFF"]);
+  });
+
+  it("a page drawn before somebody else's save is refused (stale): their change stays, nothing is audited in this name", async () => {
+    // Both admins open the page: each posts the same updated_at back.
+    const b0 = await read(svcB);
+    const stalePage = await unchanged(svcB, b0);
+    // The other admin saves first.
+    await saveServiceTypesTable(actor(), [{ ...stalePage, priceCents: 9900 }]);
+    const afterOther = await read(svcB);
+    expect(afterOther.price_cents).toBe(9900);
+    const auditsBefore = await rowsOf<{ n: number }>(
+      db,
+      sql`select count(*)::int as n from public.audit_log where tenant_id = ${tenant}`,
+    );
+    // This admin's page still shows the old row and saves a different field.
+    await expect(
+      saveServiceTypesTable(actor(), [{ ...stalePage, smsReminders: !stalePage.smsReminders }]),
+    ).rejects.toMatchObject({ code: "stale" });
+    expect(await read(svcB)).toEqual(afterOther);
+    const auditsAfter = await rowsOf<{ n: number }>(
+      db,
+      sql`select count(*)::int as n from public.audit_log where tenant_id = ${tenant}`,
+    );
+    expect(auditsAfter).toEqual(auditsBefore);
   });
 
   it("a row of another tenant is not_found, and nothing moved", async () => {
@@ -269,8 +304,8 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
     const f0 = await read(foreign);
     await expect(
       saveServiceTypesTable(actor(), [
-        { ...unchanged(svcA, a0), name: "Outra vez" },
-        { ...unchanged(foreign, f0), name: "Alheio" },
+        { ...(await unchanged(svcA, a0)), name: "Outra vez" },
+        { ...(await unchanged(foreign, f0)), name: "Alheio" },
       ]),
     ).rejects.toMatchObject({ code: "not_found" });
     expect(await read(svcA)).toEqual(a0);

@@ -42,6 +42,7 @@ const service = (id: string, isActive: boolean): ServiceView => ({
   vatExemptionCode: null,
   followUpDays: null,
   smsReminders: true,
+  updatedAt: new Date(0),
 });
 
 describe("parsePackStatusFilter", () => {

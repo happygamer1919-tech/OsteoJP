@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ServiceTypesFormError,
   UNSET_COLOR_SHOWN,
+  parseSeenUpdatedAt,
+  staleRowIds,
   centsToInput,
   parseColor,
   parseNewServiceType,
@@ -24,7 +26,8 @@ function row(id: string, over: Record<string, string | null> = {}): [string, str
     [`vat__${id}`]: "0",
     [`vatReason__${id}`]: "M07",
     [`active__${id}`]: "on",
-    [`colorWas__${id}`]: "#C27E3A",
+    [`noColor__${id}`]: null,
+    [`seen__${id}`]: "1793600000000",
     [`color__${id}`]: "#c27e3a",
     [`sms__${id}`]: "on",
     [`agenda__${id}`]: null,
@@ -55,7 +58,7 @@ describe("the Tipos de Marcacao table form", () => {
         [`vat__${B}`]: "23",
         [`vatReason__${B}`]: "",
         [`active__${B}`]: null,
-        [`colorWas__${B}`]: "",
+        [`seen__${B}`]: "1793600000123",
         [`color__${B}`]: "#ff6565",
         [`sms__${B}`]: null,
         [`agenda__${B}`]: "on",
@@ -74,6 +77,7 @@ describe("the Tipos de Marcacao table form", () => {
         smsReminders: true,
         patientBookable: false,
         durationMin: 45,
+        seenUpdatedAtMs: 1793600000000,
       },
       {
         id: B,
@@ -87,6 +91,7 @@ describe("the Tipos de Marcacao table form", () => {
         smsReminders: false,
         patientBookable: true,
         durationMin: 45,
+        seenUpdatedAtMs: 1793600000123,
       },
     ]);
   });
@@ -110,13 +115,46 @@ describe("the Tipos de Marcacao table form", () => {
     expect(refused(() => parseServiceTypesTable(row(A, { [`duration__${A}`]: "" })))).toBe("duration");
   });
 
-  it("the colour: white over 'none' keeps none; any other colour is stored in capitals", () => {
-    expect(parseColor(UNSET_COLOR_SHOWN.toLowerCase(), "")).toBeUndefined();
-    expect(parseColor("#ffffff", "#FFFFFF")).toBe("#FFFFFF");
-    expect(parseColor("#fee93d", "")).toBe("#FEE93D");
-    expect(parseColor("", "#FEE93D")).toBeUndefined();
-    expect(refused(() => parseColor("red", ""))).toBe("color");
-    expect(refused(() => parseColor("#FFF", ""))).toBe("color");
+  it("the colour: 'Sem cor' ticked stores none, whatever the picker shows; unticked, any colour is stored in capitals, white included", () => {
+    expect(parseColor(UNSET_COLOR_SHOWN.toLowerCase(), true)).toBeNull();
+    expect(parseColor("#fee93d", true)).toBeNull();
+    expect(parseColor("#ffffff", false)).toBe("#FFFFFF");
+    expect(parseColor("#fee93d", false)).toBe("#FEE93D");
+    expect(refused(() => parseColor("", false))).toBe("color");
+    expect(refused(() => parseColor("red", false))).toBe("color");
+    expect(refused(() => parseColor("#FFF", false))).toBe("color");
+  });
+
+  it("the table reads 'Sem cor' per row", () => {
+    const [r] = parseServiceTypesTable(row(A, { [`noColor__${A}`]: "on" }));
+    expect(r?.color).toBeNull();
+  });
+
+  it("what the page saw: seen__ is required and must be whole milliseconds", () => {
+    expect(parseSeenUpdatedAt("1793600000000")).toBe(1793600000000);
+    for (const bad of [undefined, "", "-1", "1.5", "abc", "2026-11-02T10:00:00Z"]) {
+      expect(refused(() => parseSeenUpdatedAt(bad))).toBe("rows");
+    }
+    expect(refused(() => parseServiceTypesTable(row(A, { [`seen__${A}`]: null })))).toBe("rows");
+  });
+
+  it("stale rows: exactly those whose stored updated_at differs from what the page saw", () => {
+    const current = new Map([
+      [A, { updatedAt: new Date(1793600000000) }],
+      [B, { updatedAt: new Date(1793600000124) }],
+    ]);
+    expect(
+      staleRowIds(
+        [
+          { id: A, seenUpdatedAtMs: 1793600000000 },
+          { id: B, seenUpdatedAtMs: 1793600000123 },
+        ],
+        current,
+      ),
+    ).toEqual([B]);
+    expect(staleRowIds([{ id: A, seenUpdatedAtMs: 1793600000000 }], current)).toEqual([]);
+    // A row the database no longer has is not "stale": it is not_found, decided by the caller.
+    expect(staleRowIds([{ id: "gone", seenUpdatedAtMs: 1 }], current)).toEqual([]);
   });
 
   it("the price: euros with a point or a comma to cents; empty is no price; anything else refused", () => {
