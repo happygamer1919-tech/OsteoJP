@@ -829,6 +829,7 @@ const CASES = [
     want: only({ 2: "FAIL", [`3 ${MON}`]: "FAIL" }),
   },
   { name: "the deploy at Monday 06:50: t0 is the 07:00 pass, in the first slot, OK", seed: "", deployed: "2026-11-02T06:50:00Z", want: only({}), info: [[2, /Lisbon 2026-11-02 07:00:03; Monday marks due before it 0/]] },
+  { name: "the production deploy, Sunday 23:07, after Sunday's last pass: t0 is Monday's 07:00 pass, OK", seed: "", deployed: "2026-11-01T23:07:00Z", want: only({}), info: [[2, /Lisbon 2026-11-02 07:00:03; Monday marks due before it 0/], [20, /\| 2026-11-01 23:07:00 \| 2026-11-02 07:00:03 \|/]] },
   {
     name: "the deploy at Monday 06:50 and a Monday mark due at 03:00: Monday is not wholly under the new code, verdict 2 FAILs",
     seed: [visit(appt(0x90), "2026-11-03 03:00"), runClaim(appt(0x90), "24h", "2026-11-03 03:00"), shadowRow(appt(0x90), "24h", "2026-11-03 03:00", "2026-11-02 07:00")].join("\n"),

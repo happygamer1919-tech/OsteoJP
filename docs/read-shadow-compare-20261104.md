@@ -1,7 +1,7 @@
 # SHADOW-COMPARE, 2026-11-04 (R47): the reminder sweep's shadow against the sleeping job over Monday 11-02 and Tuesday 11-03, under #1678's code
 
 **READ ONLY. One block. No apply, no write.**
-**Status: AUTHORED 2026-11-01 by SOLO's builder; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-shadow-compare-20261104.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). NOT YET REVIEWED (R4).** The block's four value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit, `PRNUM` its number, and `DEPLOYED_AT` the instant #1678 went live in production, all named by SOLO.
+**Status: AUTHORED 2026-11-01 by SOLO's builder; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below, on these same SQL bytes; ONE CASE ADDED AFTER THAT RUN IS NOT RUN, see the rehearsal); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-shadow-compare-20261104.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED"). NOT YET REVIEWED (R4).** The block's four value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit, `PRNUM` its number, and `DEPLOYED_AT` the instant #1678 went live in production, all named by SOLO.
 
 ## Why this read exists
 
@@ -68,7 +68,7 @@ Two sharpenings of the #1678 builder's R34 note (`r34-compare-label-predicate-20
 
 ## The window and the days
 
-- **t0** is the first `shadow` heartbeat at or after DEPLOYED_AT. The production deploy was Sunday 11-01 23:07 Lisbon, after Sunday's last pass (21:45), so t0 is expected to be **Monday 11-02's 07:00 pass**.
+- **t0** is the first `shadow` heartbeat at or after DEPLOYED_AT. The production deploy was Sunday 11-01 23:07 Lisbon, after Sunday's last pass (21:45), so t0 is expected to be **Monday 11-02's 07:00 pass**. The dispatch's `DEPLOYED_AT` is `2026-11-01T23:07:00Z` (Lisbon is UTC in November; the Inngest sync finished at 23:07:13). No pass runs between 21:45 and 07:00, so the seconds cannot move t0.
 - **Verdict 2 enforces that Monday is a full day under the new code**: VACUOUS when no heartbeat follows the deploy; FAIL when t0 is at or after Monday 07:15 (Monday's first slot missed), when any mark of Monday is due before t0 (the 07:00 pass would have taken it, but the read's window would drop it), or when any move written since t0 lacks `fromStartsAt`.
 - **The window of marks** runs from t0 to the read's clock (R20's `c_all`). **Full days**: Monday 11-02 and Tuesday 11-03, each with its heartbeat verdict (3: 60 shadow heartbeats in the 60 slots 07:00 to 21:45 for every tenant) and its two agreement verdicts (11, 12). The read's clock must be at or after Wednesday 07:15 (verdict 1, and the block's own clock check), when Tuesday's last marks have been taken by Wednesday's 07:00 pass.
 - **Partial days**: Wednesday 11-04 up to the read's clock (and any day before Monday after t0, none expected). INFO, except verdicts 13, 15 and 16, which read the whole window.
@@ -307,6 +307,8 @@ The `public` schema copied from lane blue's database (the local stack `OsteoJP-b
 | MUTANT: verdict 15's control dead, on "R24 held" | 15=VACUOUS |
 | MUTANT: R34's cap at 5 hours, on "R34's predicate" | 6=FAIL |
 | MUTANT: R34 without the claim before the first save, on "R34's predicate" | 6=FAIL |
+
+**Not run: one case added after that run,** "the production deploy, Sunday 23:07, after Sunday's last pass" (`DEPLOYED_AT` `2026-11-01T23:07:00Z`, expected: t0 Monday 07:00:03 and the base's verdicts). It changes no byte of the read; the run above was on the same sha256, and the 06:50 case proves the same arm. The database stacks were down when it was added (the owner's machine, 2026-11-02), so this case and the test's database part need one later run on a throwaway: `SHADOW_COMPARE_1104_TEST_PGURL` on lane blue.
 
 The deploy time unset: the read stops with `unrecognized configuration parameter "osteojp.r47_deployed_at"` and prints no table.
 
