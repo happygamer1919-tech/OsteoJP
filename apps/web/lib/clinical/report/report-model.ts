@@ -12,6 +12,7 @@
 import type { Locale } from "@osteojp/i18n";
 import type { RecordView } from "../record-view";
 import { storedContentEntries, storedValueText } from "../stored-content";
+import { lisbonTimeKey, type ExportOverride } from "./export-overrides";
 import { resolveLocationContact, type LocationContact, type SourceLocation } from "./location-contacts";
 
 export type RecordStatus = "draft" | "locked" | "signed";
@@ -71,6 +72,14 @@ export type ReportRecordInput = {
   annulledAt: Date | null;
   /** Consultation date — appointment start, else the record's creation date. */
   consultationDate: Date | null;
+  /**
+   * RODICA-export-edit-before-download: the appointment's start, when the
+   * record has an appointment. Its Lisbon hour prints next to the date. A
+   * record with no appointment prints no hour: its creation time is not a
+   * consultation hour. Optional so a caller that has no appointment to give
+   * (a test fixture) prints the date alone, as before.
+   */
+  appointmentStartsAt?: Date | null;
   signedAt: Date | null;
 };
 
@@ -140,6 +149,8 @@ export type ClinicalReportModel = {
     version: number;
     status: RecordStatus;
     consultationDate: string | null;
+    /** RODICA-export-edit-before-download: "HH:MM" (Lisbon), printed next to the date; null prints none. */
+    consultationTime: string | null;
     episodeId: string | null;
   };
   /** Only the fields actually present in the record data, in template order. */
@@ -154,6 +165,14 @@ export type ClinicalReportModel = {
    * a record with a template, which prints `body`.
    */
   stored: { origin: StoredOrigin; entries: StoredEntry[] } | null;
+  /**
+   * RODICA-export-edit-before-download: the heading text of THIS FILE, set
+   * only when an export changed it (`withExportOverride`). Absent, the
+   * renderer draws the heading it always drew (the stored view's title; none
+   * for a form). An empty string draws no heading; any other text is drawn
+   * in its place, also above a form's body.
+   */
+  contentHeading?: string;
   /** EXPORT-01: set for an annulled record; the date the mark carries. */
   annulment: { annulledAt: string | null } | null;
   signature: {
@@ -289,6 +308,7 @@ export function buildClinicalReportModel(
       version: inputs.record.version,
       status: inputs.record.status,
       consultationDate: formatDate(inputs.record.consultationDate, locale),
+      consultationTime: inputs.record.appointmentStartsAt ? lisbonTimeKey(inputs.record.appointmentStartsAt) : null,
       episodeId: inputs.record.episodeId,
     },
     body,
@@ -301,5 +321,28 @@ export function buildClinicalReportModel(
       practitionerTitle: inputs.practitioner.title,
       signedAt: formatDate(inputs.record.signedAt, locale),
     },
+  };
+}
+
+/**
+ * RODICA-export-edit-before-download (owner ruling 2026-11-02): THE MODEL OF
+ * ONE FILE, with the date, the hour and the heading the export's dialog gave
+ * for this registo. A new model; the one given is not changed, and nothing is
+ * written anywhere: the registo keeps its stored values. Everything else the
+ * model holds is untouched.
+ */
+export function withExportOverride(
+  model: ClinicalReportModel,
+  override: Pick<ExportOverride, "date" | "time" | "text">,
+  locale: Locale,
+): ClinicalReportModel {
+  return {
+    ...model,
+    record: {
+      ...model.record,
+      consultationDate: formatDateOnly(override.date, locale),
+      consultationTime: override.time === "" ? null : override.time,
+    },
+    contentHeading: override.text,
   };
 }

@@ -5,8 +5,14 @@ import { clinicalRecords, type TenantClaims } from "@osteojp/db";
 import type { Locale } from "@osteojp/i18n";
 import { therapistPatientReadScope } from "@/lib/patients/scope";
 import { ClinicalError } from "../errors";
+import {
+  exportDefaults,
+  overrideAuditEntry,
+  type ExportOverride,
+  type OverrideAuditEntry,
+} from "./export-overrides";
 import { loadClinicalReportInputs } from "./load";
-import { buildClinicalReportModel, RecordNotPrintableError } from "./report-model";
+import { buildClinicalReportModel, RecordNotPrintableError, withExportOverride } from "./report-model";
 import { renderClinicalReportPdf } from "./pdf";
 
 // Orchestrator: load (tenant-scoped, read-only) → gate (finalized-only) →
@@ -18,6 +24,12 @@ export type ClinicalReportPdf = {
   bytes: Uint8Array;
   /** Suggested download filename — record id only, never patient PII. */
   filename: string;
+  /**
+   * RODICA-export-edit-before-download: set only when an override changed
+   * what this registo prints, and then what changed, for the audit row. The
+   * originals in it are the stored record's, read here, never the dialog's.
+   */
+  overridden?: OverrideAuditEntry;
 };
 
 /**
@@ -35,6 +47,7 @@ export async function generateClinicalReportPdf(
   recordId: string,
   locale: Locale,
   scope?: SQL,
+  override?: ExportOverride,
 ): Promise<ClinicalReportPdf> {
   const inputs = await loadClinicalReportInputs(claims, recordId, scope);
   if (!inputs) throw new ClinicalError("not_found");
@@ -47,11 +60,20 @@ export async function generateClinicalReportPdf(
     if (e instanceof RecordNotPrintableError) throw new ClinicalError("not_printable");
     throw e;
   }
-  const bytes = await renderClinicalReportPdf(model, locale);
+
+  // RODICA-export-edit-before-download: an export may print another date,
+  // hour or heading for THIS FILE. Applied only when it changes something,
+  // so an override equal to the defaults prints exactly what none would. The
+  // record itself is never written: this is a read, a model and a render.
+  const defaults = override ? exportDefaults(inputs.record, locale) : null;
+  const overridden = defaults ? overrideAuditEntry(inputs.record.id, defaults, override) : null;
+  const printed = overridden && override ? withExportOverride(model, override, locale) : model;
+  const bytes = await renderClinicalReportPdf(printed, locale);
 
   return {
     bytes,
     filename: `relatorio-clinico-${recordId.slice(0, 8)}.pdf`,
+    ...(overridden ? { overridden } : {}),
   };
 }
 
@@ -80,10 +102,13 @@ export async function generateRegistoReportPdf(
   recordId: string,
   locale: Locale,
   scope?: { value: SQL | undefined },
+  override?: ExportOverride,
 ): Promise<ClinicalReportPdf> {
   assertCan(ctx.role, "clinical_records:read");
   const narrowed = scope ? scope.value : (await registoReadScope(ctx)).value;
-  return generateClinicalReportPdf(toClaims(ctx), recordId, locale, narrowed);
+  return override
+    ? generateClinicalReportPdf(toClaims(ctx), recordId, locale, narrowed, override)
+    : generateClinicalReportPdf(toClaims(ctx), recordId, locale, narrowed);
 }
 
 /**

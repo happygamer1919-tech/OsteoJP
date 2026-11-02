@@ -5,7 +5,17 @@ import { locale } from "@/lib/i18n";
 import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import { recordPatientFichaExport } from "@/lib/clinical/export-audit";
-import { readPatientFichaExportSelection, renderPatientFichaReport } from "@/lib/clinical/report/ficha-export";
+import {
+  overridesByRecord,
+  overridesWithin,
+  parseExportOverrides,
+  type ExportRow,
+} from "@/lib/clinical/report/export-overrides";
+import {
+  readPatientFichaExportRows,
+  readPatientFichaExportSelection,
+  renderPatientFichaReport,
+} from "@/lib/clinical/report/ficha-export";
 import { fichaReportPath } from "@/lib/clinical/report/ficha-export-core";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -39,8 +49,22 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *      best effort, since nothing will ever link to it. The row names the
  *      patient and the registos in the file and counts the rest; no section
  *      is named.
+ *
+ * RODICA-export-edit-before-download (owner ruling 2026-11-02): `overrides`
+ * is what the export dialog sent when the user chose "Alterar": per registo,
+ * the date, the hour and the heading text THIS FILE prints. It is checked
+ * value by value before any read (`parseExportOverrides`), and every registo
+ * it names must be one the selection of step 2 holds (`overridesWithin`):
+ * anything else is a refusal, with nothing rendered or spent. The registos
+ * exported are always the server's own selection; the dialog only changes
+ * what the selected ones print. Nothing is written to any registo. Which
+ * registos printed changed values, and the values before and after, go in
+ * the audit row.
  */
-export async function downloadPatientFichaUrlAction(patientId: string): Promise<{ url: string | null }> {
+export async function downloadPatientFichaUrlAction(
+  patientId: string,
+  overrides?: unknown,
+): Promise<{ url: string | null }> {
   // The export's own time, written into its audit row (batch item 11): from
   // the action's start, before the session is read, to the signed URL, the
   // audit write itself not included. performance.now() is monotonic: a clock
@@ -49,18 +73,26 @@ export async function downloadPatientFichaUrlAction(patientId: string): Promise<
   const ctx = await requireRequestContext();
   if (!can(ctx.role, "clinical_records:read")) return { url: null };
   if (typeof patientId !== "string" || !UUID_RE.test(patientId)) return { url: null };
+  const asked = parseExportOverrides(overrides);
+  if (!asked) return { url: null };
 
   // The step under way, so a fault thrown from it is logged under its name.
   let step: ExportStep = "read";
   try {
     const selection = await readPatientFichaExportSelection(ctx, { patientId });
     if (!selection) return { url: null };
+    if (!overridesWithin(asked, selection.sections.flatMap((s) => s.recordIds))) return { url: null };
 
     step = "limit";
     if (!(await documentGenerationAllowed(ctx.userId))) return { url: null };
 
     step = "render";
-    const pdf = await renderPatientFichaReport(ctx, selection, locale);
+    // With no override the render is called exactly as it always was.
+    const byRecord = overridesByRecord(asked);
+    const pdf =
+      byRecord.size > 0
+        ? await renderPatientFichaReport(ctx, selection, locale, byRecord)
+        : await renderPatientFichaReport(ctx, selection, locale);
     if (!pdf) return { url: null };
 
     step = "upload";
@@ -85,6 +117,7 @@ export async function downloadPatientFichaUrlAction(patientId: string): Promise<
         sections: pdf.sections,
         leftOut: pdf.leftOut,
         durationMs: performance.now() - started,
+        ...(pdf.overridden ? { overridden: pdf.overridden } : {}),
       });
     } catch {
       // No row, so no URL, and the file just stored will never be linked to:
@@ -102,6 +135,30 @@ export async function downloadPatientFichaUrlAction(patientId: string): Promise<
     // A read, the ceiling, the render or a Storage call threw: never surface
     // internals or PII.
     return failedAt(step);
+  }
+}
+
+/**
+ * RODICA-export-edit-before-download: THE EXPORT DIALOG'S ROWS for "Exportar
+ * ficha", asked when the user chooses "Alterar": every registo the file would
+ * print, with the appointment's date and hour and the heading it prints when
+ * nothing is changed. The same capability, the same patient id check and the
+ * same selection as the export itself; reads only, so no ceiling is spent and
+ * no audit row is written. `{ rows: null }` for every refusal and every
+ * failure, as the export answers `{ url: null }`.
+ */
+export async function readPatientFichaExportRowsAction(patientId: string): Promise<{ rows: ExportRow[] | null }> {
+  const ctx = await requireRequestContext();
+  if (!can(ctx.role, "clinical_records:read")) return { rows: null };
+  if (typeof patientId !== "string" || !UUID_RE.test(patientId)) return { rows: null };
+  try {
+    const selection = await readPatientFichaExportSelection(ctx, { patientId });
+    if (!selection) return { rows: null };
+    const rows = await readPatientFichaExportRows(ctx, selection, locale);
+    return { rows: rows.length > 0 ? rows : null };
+  } catch {
+    console.error("[ficha-pdf] the ficha export's dialog rows failed to load");
+    return { rows: null };
   }
 }
 
