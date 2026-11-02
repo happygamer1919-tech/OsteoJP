@@ -160,17 +160,17 @@ const NEW_END = new Date(NEW_START.getTime() + 45 * 60_000);
 /** The two reads a successful move makes: the owner check, then the locked read of the start it leaves. */
 const OWNED_AND_BEFORE = [
   [{ practitionerId: PRAC }],
-  [{ startsAt: OLD_START, locationId: LOC, status: "confirmed", origin: "patient_portal" }],
+  [{ startsAt: OLD_START, locationId: LOC, practitionerId: PRAC, status: "confirmed", origin: "patient_portal" }],
 ];
 /** The same move, of a request the clinic has not accepted yet. */
 const OWNED_AND_BEFORE_UNACCEPTED = [
   [{ practitionerId: PRAC }],
-  [{ startsAt: OLD_START, locationId: LOC, status: "scheduled", origin: "patient_portal" }],
+  [{ startsAt: OLD_START, locationId: LOC, practitionerId: PRAC, status: "scheduled", origin: "patient_portal" }],
 ];
 /** A visit reception booked, still Agendada: not a request, so it re-plans. */
 const OWNED_AND_BEFORE_STAFF_BOOKED = [
   [{ practitionerId: PRAC }],
-  [{ startsAt: OLD_START, locationId: LOC, status: "scheduled", origin: "staff" }],
+  [{ startsAt: OLD_START, locationId: LOC, practitionerId: PRAC, status: "scheduled", origin: "staff" }],
 ];
 
 beforeEach(() => {
@@ -278,12 +278,36 @@ describe("R44: rescheduleOwn re-plans the visit's reminders after the commit", (
     expect(fake.timeline).toEqual(["commit", "send"]);
   });
 
-  it("an unaccepted request: the move and its row commit, and nothing is sent (as on the staff move)", async () => {
+  it("an unaccepted request: the move and its row commit, the row has its own action, and nothing is sent", async () => {
     const fake = installFakeDb({ selects: OWNED_AND_BEFORE_UNACCEPTED });
     await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
     expect(fake.committed.map((o) => o.op)).toEqual(["select", "lock", "select", "update", "insert"]);
+    const insert = fake.committed.find((o) => o.op === "insert") as Extract<Op, { op: "insert" }>;
+    expect(insert.values.action).toBe("appointment.pedido_reschedule.portal");
+    expect(insert.values.metadata).toMatchObject({ fromStartsAt: OLD_START.toISOString(), startsAt: NEW_START.toISOString() });
     expect(fake.timeline).toEqual(["commit"]);
     expect(bus.sent).toEqual([]);
+  });
+
+  it("a visit reception booked, still Agendada, writes appointment.reschedule (it is not a request)", async () => {
+    const fake = installFakeDb({ selects: OWNED_AND_BEFORE_STAFF_BOOKED });
+    await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
+    const insert = fake.committed.find((o) => o.op === "insert") as Extract<Op, { op: "insert" }>;
+    expect(insert.values.action).toBe("appointment.reschedule");
+  });
+
+  it("the Terapeuta on the row and the event is the one the LOCKED read saw", async () => {
+    const LOCKED_PRAC = "66666666-6666-4666-8666-666666666666";
+    const fake = installFakeDb({
+      selects: [
+        [{ practitionerId: PRAC }],
+        [{ startsAt: OLD_START, locationId: LOC, practitionerId: LOCKED_PRAC, status: "confirmed", origin: "staff" }],
+      ],
+    });
+    await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
+    const insert = fake.committed.find((o) => o.op === "insert") as Extract<Op, { op: "insert" }>;
+    expect((insert.values.metadata as Record<string, unknown>).practitionerId).toBe(LOCKED_PRAC);
+    expect(bus.sent[0]!.data.practitionerId).toBe(LOCKED_PRAC);
   });
 
   it("a failing send: the call resolves, the move and its row stay committed, the failure is logged by name only", async () => {

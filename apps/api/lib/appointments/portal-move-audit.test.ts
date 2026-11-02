@@ -29,7 +29,15 @@ vi.mock("server-only", () => ({}));
 
 const REPO = join(__dirname, "..", "..", "..", "..");
 // The real gate, imported from the web app's source, not copied.
-const { RE_ARMING_SAVES, SCHEDULING_SAVE_ACTIONS, hasReArmingSaveAfter } = await import(
+const {
+  RE_ARMING_SAVES,
+  SCHEDULING_SAVE_ACTIONS,
+  SCHEDULING_UPDATE_ACTION,
+  SCHEDULING_SMS_REVIEW_ACTION,
+  SCHEDULING_SMS_REPLY_ACTION,
+  hasReArmingSaveAfter,
+  hasSchedulingEvent,
+} = await import(
   "../../../web/lib/reminders/reminder-population"
 );
 
@@ -45,6 +53,19 @@ const row = portalMoveAuditRow({
   fromStartsAt: BEFORE,
   startsAt: AFTER,
   endsAt: AFTER_END,
+  unacceptedRequest: false,
+});
+
+/** The same move, of a request the clinic has not accepted yet. */
+const pedidoRow = portalMoveAuditRow({
+  tenantId: "11111111-1111-4111-8111-111111111111",
+  appointmentId: "22222222-2222-4222-8222-222222222222",
+  practitionerId: "33333333-3333-4333-8333-333333333333",
+  locationId: "44444444-4444-4444-8444-444444444444",
+  fromStartsAt: BEFORE,
+  startsAt: AFTER,
+  endsAt: AFTER_END,
+  unacceptedRequest: true,
 });
 
 /** The text `startNowText()` in reminder-population.ts compares against: to_char 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'. */
@@ -128,6 +149,33 @@ describe("R44: the row matches the sweep's `moved` clause (the real exported gat
     // The move-after-the-mark read is on the row's own action.
     const nextAction = /"reminder_move_after_the_mark"\."action" = \$(\d+)/.exec(sql);
     expect(nextAction && params[Number(nextAction[1]) - 1]).toBe(row.action);
+  });
+});
+
+describe("R44: an unaccepted request's portal move writes an action the sweep does not read (SOLO, R4 of #1693)", () => {
+  it("the action is appointment.pedido_reschedule.portal; everything else is the same row", () => {
+    expect(pedidoRow.action).toBe("appointment.pedido_reschedule.portal");
+    expect({ ...pedidoRow, action: null }).toEqual({ ...row, action: null });
+    // ...and a visit that is not an unaccepted request still writes the move action.
+    expect(row.action).toBe("appointment.reschedule");
+  });
+
+  it("the sweep's real exported vocabulary does not contain it", () => {
+    expect([...SCHEDULING_SAVE_ACTIONS] as string[]).not.toContain(pedidoRow.action);
+    expect(RE_ARMING_SAVES.map((c) => c.action) as string[]).not.toContain(pedidoRow.action);
+    expect([SCHEDULING_UPDATE_ACTION, SCHEDULING_SMS_REVIEW_ACTION, SCHEDULING_SMS_REPLY_ACTION] as string[]).not.toContain(
+      pedidoRow.action,
+    );
+  });
+
+  it("neither rendered read binds it: not the re-arming gate, not hasSchedulingEvent", async () => {
+    const { appointments } = await import("@osteojp/db");
+    const qb = new QueryBuilder();
+    for (const where of [hasReArmingSaveAfter(qb as never, rawSql`now()`), hasSchedulingEvent(qb as never)]) {
+      const { params } = qb.select({ one: appointments.id }).from(appointments).where(where).toSQL();
+      expect(params).not.toContain(pedidoRow.action);
+      expect(params).toContain("appointment.reschedule");
+    }
   });
 });
 

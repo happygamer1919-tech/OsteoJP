@@ -445,7 +445,15 @@ describe("R44: the portal move writes the `moved` clause's row in its transactio
     const txClose = move.indexOf("\n    });\n");
     expect(move.indexOf("replanAfterPortalMove(")).toBeGreaterThan(txClose);
     expect(move).toContain('before[0].status === "scheduled" && before[0].origin === "patient_portal"');
-    expect(move).toContain("return unacceptedRequest ? null : { practitionerId: owned[0].practitionerId };");
+    expect(move).toContain("return unacceptedRequest ? null : { practitionerId: before[0].practitionerId };");
+  });
+
+  it("an unaccepted request's portal move writes an action no clause reads (SOLO's ruling on R4 of #1693)", () => {
+    const PEDIDO_MOVE = "appointment.pedido_reschedule.portal";
+    const builder = srcOf("apps/api/lib/appointments/portal-move-audit.ts");
+    expect(builder).toContain(`return args.unacceptedRequest ? { ...row, action: "${PEDIDO_MOVE}" } : row;`);
+    expect(move).toContain("unacceptedRequest,");
+    expect(RE_ARMING_SAVES.map((c) => c.action)).not.toContain(PEDIDO_MOVE);
   });
 
   it("the event is the one the live job re-plans on, with the new start", () => {

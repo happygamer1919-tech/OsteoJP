@@ -1121,11 +1121,13 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
       // R44: the start this move LEAVES, read AFTER the slot lock and under a
       // row lock (the same order every move takes them: slot, then row), so a
       // second move of the same row cannot commit between this read and the
-      // update and leave `fromStartsAt` one move behind.
+      // update and leave `fromStartsAt` one move behind. The Terapeuta the row
+      // and the re-plan carry is read here too, under the same lock.
       const before = await tx
         .select({
           startsAt: appointments.startsAt,
           locationId: appointments.locationId,
+          practitionerId: appointments.practitionerId,
           status: appointments.status,
           origin: appointments.origin,
         })
@@ -1156,30 +1158,33 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         .returning({ id: appointments.id });
       if (moved.length === 0) return null;
 
+      // An UNACCEPTED REQUEST is read the way the dispatcher reads it
+      // (apps/web/lib/reminders/dispatch.ts, `isUnacceptedPedido`): status
+      // `scheduled` and origin `patient_portal`, from the locked row.
+      const unacceptedRequest = before[0].status === "scheduled" && before[0].origin === "patient_portal";
+
       // R44: the move's audit row, IN THIS TRANSACTION, so a move without its
       // row (or a row without its move) cannot commit. A failed insert throws
-      // and rolls the move back with it.
+      // and rolls the move back with it. An unaccepted request's move writes
+      // its own action, which the reminder sweep does not read
+      // (./portal-move-audit.ts says why).
       await tx.insert(auditLog).values(
         portalMoveAuditRow({
           tenantId: principal.tenantId,
           appointmentId: id,
-          practitionerId: owned[0].practitionerId,
+          practitionerId: before[0].practitionerId,
           locationId: before[0].locationId,
           fromStartsAt: before[0].startsAt,
           startsAt,
           endsAt,
+          unacceptedRequest,
         }),
       );
 
       // MOVING AN UNACCEPTED REQUEST RE-PLANS NOTHING, as on the staff move
       // (apps/web/lib/scheduling/actions.ts, `moveAppointment`): it has no
-      // reminder run to supersede, and the dispatch refuses it anyway. An
-      // unaccepted request is read here the way the dispatcher reads it
-      // (apps/web/lib/reminders/dispatch.ts, `isUnacceptedPedido`): status
-      // `scheduled` and origin `patient_portal`. The audit row above is
-      // written either way, as the staff move writes it either way.
-      const unacceptedRequest = before[0].status === "scheduled" && before[0].origin === "patient_portal";
-      return unacceptedRequest ? null : { practitionerId: owned[0].practitionerId };
+      // reminder run to supersede, and the dispatch refuses it anyway.
+      return unacceptedRequest ? null : { practitionerId: before[0].practitionerId };
     });
 
     // R44: POST-COMMIT, ids and the new start only, never able to fail the

@@ -43,7 +43,10 @@ export const REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER = false;
  *
  *   appointment.create      booking: one visit, a series, a copy, a batch
  *                           (lib/scheduling/actions.ts, batch.ts)
- *   appointment.reschedule  moving it (actions.ts)
+ *   appointment.reschedule  moving it (actions.ts), and the patient's own move
+ *                           in the portal of a visit that is not an unaccepted
+ *                           request (apps/api/lib/appointments/store.ts,
+ *                           `rescheduleOwn`, through portal-move-audit.ts)
  *   appointment.update      only with `toStatus` scheduled or confirmed (brought
  *                           back from cancelled, or accepted with the Estado
  *                           control), or with `via` portal_request_confirm
@@ -54,12 +57,17 @@ export const REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER = false;
  *                           (lib/reminders/inbound-reply.ts)
  *
  * WHAT HAS NONE OF THEM: a visit the import wrote, and an online request
- * nobody at the clinic has accepted or moved.
+ * nobody at the clinic has accepted or moved. The patient moving such a
+ * request in the portal does not change that: the portal writes
+ * `appointment.pedido_reschedule.portal` for it, an action no clause here
+ * reads, so the request stays left out (SOLO's ruling on R4 of #1693,
+ * 2026-11-02).
  *
  * WIDER THAN THE EVENTS THEMSELVES IN TWO PLACES, both known. A status set to
  * confirmed by hand on a visit that is not a request writes the same
- * `appointment.update` and asks for no reminder; and moving a request that is
- * still unaccepted writes `appointment.reschedule` and asks for none. Either
+ * `appointment.update` and asks for no reminder; and a STAFF move of a request
+ * that is still unaccepted writes `appointment.reschedule` and asks for none
+ * (the portal's move of one writes its own action, above). Either
  * only matters for a visit with no booking row of its own. The audit trail
  * cannot tell these apart from the saves that do ask, so they count.
  *
@@ -240,8 +248,10 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * and `startsAt` in its own transaction (apps/api/lib/appointments/
  * portal-move-audit.ts), reading the start it leaves under a row lock, and
  * after the commit sends its own `appointment/scheduled`
- * (apps/api/lib/appointments/portal-move-replan.ts), except for an unaccepted
- * request, as on the staff move. So it is a door of the `moved` clause that the
+ * (apps/api/lib/appointments/portal-move-replan.ts). An unaccepted request's
+ * portal move sends nothing, as on the staff move, and writes
+ * `appointment.pedido_reschedule.portal` instead, which no clause reads. So it
+ * is a door of the `moved` clause that the
  * `doors` list in the table below does not name: it does not go through
  * `enqueueRemindersAfterCommit`, and this table's code was frozen when it
  * landed. re-arming-saves.test.ts holds it from the source. A portal move

@@ -29,12 +29,28 @@
 //                patient cannot override a conflict.
 //
 // IDS AND INSTANTS ONLY (rule 7): no name, no phone, no email, no service name.
+//
+// A REQUEST THE CLINIC HAS NOT ACCEPTED YET GETS ITS OWN ACTION (SOLO's ruling
+// on R4 of #1693, 2026-11-02, option (b)): `appointment.pedido_reschedule.portal`,
+// with the same keys. Its move re-plans nothing (store.ts), and the reminder
+// sweep reads `appointment.reschedule` both as "this visit was handed to the
+// reminder job" (`hasSchedulingEvent`) and as a re-arming move (`moved`). The
+// owner's ruled answer is that online requests nobody has handled are left out
+// of the reminders, so their portal move must not read as either. The name
+// follows the `appointment.<what>.<channel>` shape of
+// `appointment.reschedule_request.sms_code` and `appointment.confirm.sms_code`.
+// "Unaccepted" is read as the dispatcher reads it: status `scheduled` and origin
+// `patient_portal` (store.ts says where).
 
 export type PortalMoveAuditRow = {
   tenantId: string;
   actorUserId: null;
-  /** The action the sweep's `moved` clause reads, the same string the staff move writes. */
-  action: "appointment.reschedule";
+  /**
+   * `appointment.reschedule`: the action the sweep's `moved` clause reads, the
+   * same string the staff move writes. `appointment.pedido_reschedule.portal`:
+   * an unaccepted request's move, which the sweep reads as nothing.
+   */
+  action: "appointment.reschedule" | "appointment.pedido_reschedule.portal";
   entityType: "appointment";
   entityId: string;
   metadata: {
@@ -51,6 +67,7 @@ export type PortalMoveAuditRow = {
 /**
  * The `audit_log` values for one portal move. `fromStartsAt` is the start the
  * row held before the move, read in the move's own transaction.
+ * `unacceptedRequest` picks the action, and nothing else.
  */
 export function portalMoveAuditRow(args: {
   tenantId: string;
@@ -60,8 +77,9 @@ export function portalMoveAuditRow(args: {
   fromStartsAt: Date;
   startsAt: Date;
   endsAt: Date;
+  unacceptedRequest: boolean;
 }): PortalMoveAuditRow {
-  return {
+  const row: PortalMoveAuditRow = {
     tenantId: args.tenantId,
     actorUserId: null,
     action: "appointment.reschedule",
@@ -77,4 +95,5 @@ export function portalMoveAuditRow(args: {
     },
     ip: null,
   };
+  return args.unacceptedRequest ? { ...row, action: "appointment.pedido_reschedule.portal" } : row;
 }
