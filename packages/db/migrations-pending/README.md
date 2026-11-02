@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0109_services_booking_type_fields.sql` | `0109` (HOR-02, held on #1682) | 2026-11-02, branch `db/RODICA-services-vat-colour` | this branch's pull request, held; no number until strategy rules it and `0109` is applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
