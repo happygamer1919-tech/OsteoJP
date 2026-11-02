@@ -313,3 +313,82 @@ describe("every row: ids, counts and one closed word; never text", () => {
     },
   );
 });
+
+// RODICA-export-edit-before-download (owner ruling 2026-11-02): the
+// accountability trail. When an export printed changed values, the row it
+// always wrote also carries `overridesApplied: true` and, per changed registo,
+// its id, the original and the exported date and hour, and whether the
+// heading text changed. Structured values only: the text itself is never
+// written, and the row still passes the clinical audit helper's contract.
+describe("recordPatientFichaExport and recordImportedGroupExport: the overrides of the export dialog", () => {
+  const ENTRY = {
+    recordId: R1,
+    originalDate: "2026-11-01",
+    originalTime: "09:00",
+    exportedDate: "2026-11-02",
+    exportedTime: "15:45",
+    textChanged: true,
+  };
+  const NO_HOUR = { ...ENTRY, recordId: R2, originalTime: null, exportedTime: null, textChanged: false };
+
+  it("ficha: the flag and one entry per changed registo, on the same single row, beside its usual fields", async () => {
+    const t = fakeTx();
+    await recordPatientFichaExport(owner, {
+      patientId: PATIENT,
+      recordIds: [R1, R2],
+      sections: 1,
+      leftOut: 0,
+      overridden: [ENTRY, NO_HOUR],
+    });
+    expect(t.inserted).toEqual(
+      rowOf(owner, "patient.export_pdf", "patient", PATIENT, {
+        document: "ficha",
+        patientId: PATIENT,
+        recordIds: [R1, R2],
+        recordsIncluded: 2,
+        sectionsIncluded: 1,
+        recordsLeftOut: 0,
+        overridesApplied: true,
+        overrides: [ENTRY, NO_HOUR],
+      }),
+    );
+  });
+
+  it("imported group: the same two keys", async () => {
+    const t = fakeTx();
+    await recordImportedGroupExport(owner, { patientId: PATIENT, recordIds: [R1], leftOut: 0, overridden: [ENTRY] });
+    expect(t.inserted[0]!.v.metadata).toMatchObject({ overridesApplied: true, overrides: [ENTRY] });
+  });
+
+  it("no change (absent or empty): the row is the row it always was, with neither key", async () => {
+    for (const overridden of [undefined, []]) {
+      const t = fakeTx();
+      await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, overridden });
+      const metadata = t.inserted[0]!.v.metadata as Record<string, unknown>;
+      expect(metadata).not.toHaveProperty("overridesApplied");
+      expect(metadata).not.toHaveProperty("overrides");
+    }
+  });
+
+  it("the entries are copied: the row does not change when the caller's list does", async () => {
+    const t = fakeTx();
+    const list = [{ ...ENTRY }];
+    await recordPatientFichaExport(owner, { patientId: PATIENT, recordIds: [R1], sections: 1, leftOut: 0, overridden: list });
+    list[0]!.exportedDate = "1999-01-01";
+    expect((t.inserted[0]!.v.metadata as { overrides: { exportedDate: string }[] }).overrides[0]!.exportedDate).toBe("2026-11-02");
+  });
+
+  it("text where an entry's id goes is refused by the helper's contract, and no row is written", async () => {
+    const t = fakeTx();
+    await expect(
+      recordPatientFichaExport(owner, {
+        patientId: PATIENT,
+        recordIds: [R1],
+        sections: 1,
+        leftOut: 0,
+        overridden: [{ ...ENTRY, recordId: "Conteúdo importado inventado" }],
+      }),
+    ).rejects.toBeInstanceOf(AuditMetadataError);
+    expect(t.inserted).toEqual([]);
+  });
+});

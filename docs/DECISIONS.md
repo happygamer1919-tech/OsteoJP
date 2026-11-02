@@ -5410,3 +5410,64 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
 - **Unchanged:** read only, the output lines, the exit codes, and the frozen
   gate test `scripts/staff-11-jp-one-clinic-check.test.mjs` (not edited; it
   passes 18 of 18).
+
+## 2026-11-02 - R52: patient ages in Indicadores count on the Lisbon date
+
+- **Ruling (strategy R52).** The age distribution in Indicadores
+  (`apps/web/lib/statistics/kpi-transform.ts`, `ageInYears`) worked out
+  "today" from the UTC date. In summer time (UTC+1) a patient whose birthday
+  it was between 00:00 and 01:00 Lisbon still counted the age before it, and
+  could sit one age bucket too young for that hour. "Today" is now the Lisbon
+  calendar date, through the existing `todayInLisbon`
+  (`apps/web/lib/scheduling/time.ts`), the same helper R29's day bounds use.
+- **Unchanged:** the birth date, a plain `YYYY-MM-DD` read as text with no
+  zone; a 29 February birthday in a non-leap year still turns on 1 March;
+  winter dates, where Lisbon is UTC+0. `ageDistribution` works out the Lisbon
+  date once per call rather than once per patient.
+- **Out of scope:** `ageFrom` in `apps/web/app/patients/[id]/page.tsx` has the
+  same UTC fault and is carded separately; it is not touched here.
+- **Proof.** `kpi-transform.test.ts`: the summer birthday at 00:30 Lisbon,
+  both 2026 clock-change days on each side of Lisbon midnight, 29 February,
+  New Year's Eve, and `ageDistribution` against per-patient `ageInYears`.
+
+## 2026-11-02 - RODICA: edit the date, the hour and the heading before a ficha export (owner ruling)
+
+- **Owner ruling, 2026-11-02, verbatim:** "do it exactly as requested ... it's
+  a request from Rodica and I made her aware it will be her responsibility".
+- **The request (the owner's words, as relayed):** the ficha export downloads
+  the document right away; Rodica needs to edit some fields first, because the
+  export is not always needed with the data exactly as it was on the
+  appointment (example: the appointment was yesterday, she wants it exported
+  with today's date and an hour). After clicking export, ask whether the date,
+  the hour and the "Conteúdo importado" text should be changed or remain with
+  the appointment's details; she can change the date, the hour and the text
+  (add extra text, or remove the default "Conteúdo importado"); after
+  confirmation it exports.
+- **What was built.** "Exportar ficha" and both "PDF do episódio" buttons
+  (app episode, imported group) open a dialog before anything downloads:
+  "Manter os dados da consulta" (default, the export as before) or "Alterar"
+  (one row per registo in the file: Data, Hora, Texto, set to what the
+  registo prints; "Aplicar a todos" for one date and hour on every row when
+  there is more than one). The PDF now prints the appointment's hour next to
+  the date ("20/05/2026, 10:30").
+- **Export-only.** The values change the file, never the registo: no update is
+  issued (locked and signed registos are immutable by trigger anyway). The
+  server checks every value (real date 1900 to 2100, "HH:MM" 24h or none, one
+  line of at most 200 characters, each registo once) and that every registo
+  named is in the export's own selection; anything else refuses the export.
+- **Accountability trail.** The export's existing audit row gains
+  `overridesApplied: true` and `overrides` (per changed registo: id, original
+  date and hour from the stored record, exported date and hour, `textChanged`).
+  Structured values only; the text is never written. No new key in
+  `lib/audit/metadata-contract.ts` was needed: the contract is by value shape,
+  not by key, and these values pass it.
+- **Assumptions (flag to the owner if wrong).** (1) A registo with no
+  appointment has no default hour (its creation time is not a consultation
+  hour); the dialog shows "sem hora" and she may set one. (2) "Texto" replaces
+  the heading line only ("Conteúdo importado", or "Conteúdo do registo" for
+  other template-less registos); the read-only notice under it stays. For a
+  registo with a form there is no heading by default; a text she types is
+  printed above the body. (3) The per-registo "Transferir PDF" button was not
+  given the dialog (not one of the three named), but it prints the hour too,
+  being the same renderer.
+- **No migration.**
