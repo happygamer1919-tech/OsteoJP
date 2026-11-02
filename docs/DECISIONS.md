@@ -5446,27 +5446,50 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   clinics, else the tenant). No admin client, no service-role read. Registered
   in `scope-callers.test.ts` as a `read` and in `scope-call-sites.test.ts` as
   covered by `birthdays.db.test.ts`. The setting itself is read by every staff
-  role (`tenants_tenant_select`, 0094), selecting only the one boolean.
+  role (`tenants_tenant_select`, 0094), selecting only the one boolean, and it
+  rides on the shell's existing name read (`staffShellIdentity`: the viewer's
+  `users` row joined to their `tenants` row, one statement), so a tenant with
+  the switch OFF pays no extra transaction. The shell's identity read, the
+  bell's count and the birthday list run in parallel (`Promise.all`).
 - **The icon.** A cake glyph (lucide `Cake`, already a dependency) in the top
   bar beside the notification bell, the same 44px round target, focus ring and
   badge. It shows today's count; clicking opens a short list (name, "faz N
   anos"), each a link to `/patients/<id>`. A native `<details>`/`<summary>`, so
-  it is keyboard reachable without client JavaScript. At zero the icon shows
-  with no count and the list says "Sem aniversariantes hoje.".
+  it is keyboard reachable. One small client wrapper closes it: it is keyed on
+  the pathname (a navigation mounts it closed) and Escape closes it and returns
+  focus to the summary. At zero the icon shows with no count and the list says
+  "Sem aniversariantes hoje.".
 - **PROVISIONAL until the owner's screenshot.** Fisiozero's icon was not seen
   switched on, so its look, its zero state and what its click opens are
   OsteoJP's guess. A screenshot from the owner is owed.
-- **Hidden below the `sm` breakpoint.** The top bar's user area has about 18px
-  to spare at 360px (AGENDA-MOBILE-WEEK); a second 44px icon would make every
-  staff page scroll sideways on a phone. With the setting OFF nothing changes
-  at any width.
-- **Cost.** With the setting ON, every staff page render makes one extra
-  scoped read for the setting and one for today's birthdays (capped at 200
-  rows). With it OFF, only the setting read.
+- **Hidden below the `lg` breakpoint** (`max-lg:hidden`, R4 on #1701). It
+  shows only in the desktop top bar. Below `lg` the shell draws its mobile
+  header: at 360px its user area has about 18px to spare (AGENDA-MOBILE-WEEK),
+  and the 640 to 1023px header has never been seen with a second 44px icon in
+  it. With the setting OFF nothing changes at any width.
+- **Cost.** OFF (the default): no extra transaction, the switch is a column of
+  the shell's existing name read. ON: one more scoped read per staff page
+  render, today's birthdays (capped at 200 rows), in parallel with the bell's
+  count. **That read is not cheap and is not measured.** `to_char` is not
+  leakproof, so Postgres applies `patients_select` (RLS) to every patient row
+  of the tenant before the birthday test, on each render. Measuring it on a
+  lane is owed before the owner switches it ON.
+- **Follow-up, not built (Tier C, needs a ruling):** if that measurement is
+  slow, a migration adding a stored generated `smallint` column
+  `month * 100 + day` of `date_of_birth` and an index on (`tenant_id`, that
+  column), so the birthday test is an indexed equality instead of a function
+  over every row.
 - **Tests:** `apps/web/lib/patients/birthday-rule.test.ts` (Lisbon day incl.
   just after midnight in summer, 29 February), `birthdays.test.ts` (the read
   goes through `runScoped` with the viewer's context, each role's scope, the
   setting gates the read), `components/birthday-indicator.test.tsx`,
-  `lib/admin/settings.birthday.test.ts`, `settings-config.test.ts`.
-  `birthdays.db.test.ts` (real database, RLS, the four location classes) was
-  written and NOT run locally; the DB Tests workflow runs it.
+  `lib/admin/settings.birthday.test.ts`, `settings-config.test.ts`,
+  `lib/auth/staff-identity.test.ts` (the merged read),
+  `app/admin/settings/page-birthday-switch.test.tsx` (the switch as drawn),
+  `app/admin/settings/actions.birthday.test.ts` (only "true" or "false" is
+  saved). `birthdays.db.test.ts` (real database, RLS, the four location
+  classes) is not run locally; its first version ran in the DB Tests workflow
+  13 of 13 green (run 41486248377). It was then extended after R4 (an assigned
+  receptionist, the owner, fixtures registered by a third user so the therapist
+  arm is treatment alone, and a birthday patient the therapist has no link to)
+  and reruns in CI.

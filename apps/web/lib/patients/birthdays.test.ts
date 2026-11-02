@@ -18,7 +18,6 @@ import { runScoped } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import type { RequestContext } from "@osteojp/auth";
 import {
-  birthdayHeaderIconEnabled,
   listTodaysBirthdays,
   loadBirthdayIndication,
 } from "./birthdays";
@@ -52,8 +51,8 @@ const NOW = new Date("2026-07-15T23:30:00.000Z");
 const THERAPIST_SCOPE = /ap\.practitioner_id = \$\d+ OR ap\.practitioner_2_id = \$\d+/;
 const LOCATION_SCOPE = /ap\.location_id IN \(/;
 
-/** A fake tx: the patients read returns `rows`, the setting read returns `on`. */
-function fakeDb(opts: { rows?: unknown[]; on?: unknown } = {}) {
+/** A fake tx: the patients read returns `rows`. */
+function fakeDb(opts: { rows?: unknown[] } = {}) {
   const wheres: SQL[] = [];
   const contexts: RequestContext[] = [];
   mockRunScoped.mockImplementation(async (ctx, fn) => {
@@ -65,7 +64,7 @@ function fakeDb(opts: { rows?: unknown[]; on?: unknown } = {}) {
       return chain;
     };
     chain.orderBy = () => chain;
-    chain.limit = async () => (opts.on === undefined ? (opts.rows ?? []) : [{ on: opts.on }]);
+    chain.limit = async () => opts.rows ?? [];
     return fn({ select: () => chain } as never);
   });
   return { wheres, contexts };
@@ -150,25 +149,25 @@ describe("listTodaysBirthdays reads through the viewer's own scoped client", () 
 });
 
 describe("the setting gates the read", () => {
-  it("OFF: loadBirthdayIndication answers null and never reads a patient", async () => {
-    const { contexts } = fakeDb({ on: false });
-    expect(await loadBirthdayIndication(therapist, NOW)).toBeNull();
-    // One scoped read, the setting's; no patients read followed.
-    expect(contexts).toEqual([therapist]);
+  it("OFF: loadBirthdayIndication answers null and makes no read at all", async () => {
+    fakeDb({ rows: [] });
+    expect(await loadBirthdayIndication(therapist, false, NOW)).toBeNull();
+    // The switch is read by the shell's identity read; with it OFF nothing here
+    // opens a transaction.
+    expect(mockRunScoped).not.toHaveBeenCalled();
   });
 
-  it("only a literal true from the database is ON", async () => {
-    for (const on of [null, "true", 1]) {
-      fakeDb({ on });
-      expect(await birthdayHeaderIconEnabled(admin)).toBe(false);
+  it("only a literal true turns it on", async () => {
+    fakeDb({ rows: [] });
+    for (const on of [null, "true", 1, undefined]) {
+      expect(await loadBirthdayIndication(admin, on as unknown as boolean, NOW)).toBeNull();
     }
-    fakeDb({ on: true });
-    expect(await birthdayHeaderIconEnabled(admin)).toBe(true);
+    expect(mockRunScoped).not.toHaveBeenCalled();
   });
 
-  it("the setting is read under the viewer's claims too", async () => {
-    const { contexts } = fakeDb({ on: false });
-    await birthdayHeaderIconEnabled(reception);
+  it("ON: reads today's list under the viewer's claims", async () => {
+    const { contexts } = fakeDb({ rows: [] });
+    expect(await loadBirthdayIndication(reception, true, NOW)).toEqual([]);
     expect(contexts).toEqual([reception]);
   });
 });

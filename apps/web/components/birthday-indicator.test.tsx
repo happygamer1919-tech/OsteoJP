@@ -8,8 +8,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({ usePathname: () => "/agenda" }));
+
+import { closeOnEscape } from "./birthday-disclosure.client";
 import { BirthdayIndicator } from "./birthday-indicator";
 
 const SHELL = readFileSync(join(__dirname, "app-shell.tsx"), "utf8");
@@ -64,14 +67,72 @@ describe("the birthday icon", () => {
   });
 });
 
-describe("the shell draws it only when the setting is ON", () => {
+describe("it closes", () => {
+  const fakeEvent = (key: string) => {
+    const calls: string[] = [];
+    return {
+      e: { key, preventDefault: () => calls.push("prevent"), stopPropagation: () => calls.push("stop") },
+      calls,
+    };
+  };
+  const fakeDetails = (open: boolean) => {
+    const focused: string[] = [];
+    return {
+      d: { open, querySelector: () => ({ focus: () => focused.push("summary") }) } as unknown as HTMLDetailsElement,
+      focused,
+    };
+  };
+
+  it("Escape closes an open list and puts focus back on the summary", () => {
+    const { e, calls } = fakeEvent("Escape");
+    const { d, focused } = fakeDetails(true);
+    expect(closeOnEscape(e, d)).toBe(true);
+    expect(d.open).toBe(false);
+    expect(focused).toEqual(["summary"]);
+    expect(calls).toEqual(["prevent", "stop"]);
+  });
+
+  it("any other key, or a closed list, is left alone", () => {
+    const tab = fakeDetails(true);
+    expect(closeOnEscape(fakeEvent("Tab").e, tab.d)).toBe(false);
+    expect(tab.d.open).toBe(true);
+    const closed = fakeDetails(false);
+    const { e, calls } = fakeEvent("Escape");
+    expect(closeOnEscape(e, closed.d)).toBe(false);
+    expect(calls).toEqual([]);
+    expect(closeOnEscape(e, null)).toBe(false);
+  });
+
+  it("the disclosure is keyed on the pathname, so a navigation mounts it closed", () => {
+    const src = readFileSync(join(__dirname, "birthday-disclosure.client.tsx"), "utf8");
+    expect(src).toMatch(/const pathname = usePathname\(\);/);
+    expect(src).toMatch(/key=\{pathname \?\? ""\}/);
+    expect(src).toMatch(/onKeyDown=\{\(e\) => closeOnEscape\(e, ref\.current\)\}/);
+    // and the icon renders closed
+    expect(renderToStaticMarkup(<BirthdayIndicator rows={ROWS} />)).not.toMatch(/<details[^>]*\sopen/);
+  });
+});
+
+describe("the shell draws it only when the setting is ON, and only from lg up", () => {
   it("renders <BirthdayIndicator> only behind a non-null birthdays value", () => {
     // loadBirthdayIndication answers null while the switch is OFF (the default),
     // birthdays.test.ts pins that; here the shell must draw nothing for null.
     expect(SHELL).toMatch(/\{birthdays && \(\s*<BirthdayIndicator /);
     expect(SHELL.match(/<BirthdayIndicator /g)).toHaveLength(1);
-    expect(SHELL).toMatch(/let birthdays: BirthdayRow\[\] \| null = null;/);
-    expect(SHELL).toMatch(/birthdays = await loadBirthdayIndication\(ctx\);/);
+    expect(SHELL).toMatch(/loadBirthdayIndication\(ctx, id\.birthdayIconOn\)/);
+  });
+
+  it("is hidden below lg: the shell passes max-lg:hidden, and the icon carries it", () => {
+    expect(SHELL).toMatch(/<BirthdayIndicator className="max-lg:hidden" /);
+    const html = renderToStaticMarkup(<BirthdayIndicator className="max-lg:hidden" rows={[]} />);
+    expect(html).toMatch(/^<details class="relative max-lg:hidden"/);
+  });
+
+  it("reads the identity, the bell count and the birthdays in parallel", () => {
+    expect(SHELL).toMatch(/const \[identity, unread, birthdays\] = await Promise\.all\(\[/);
+    expect(SHELL).not.toMatch(/await loadBirthdayIndication/);
+    expect(SHELL).not.toMatch(/await unreadCount/);
+    expect(SHELL).not.toMatch(/await staffShellIdentity/);
   });
 
   it("sits outside the profile link, like the bell", () => {

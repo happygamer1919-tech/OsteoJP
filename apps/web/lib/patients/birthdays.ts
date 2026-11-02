@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { can } from "@osteojp/auth";
-import { patients, tenants } from "@osteojp/db";
+import { patients } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { activePatientsOnly } from "./filters";
@@ -28,6 +28,18 @@ import { ageTurning, birthdayMonthDays, lisbonDay, type LisbonDay } from "./birt
  * Id, name and date of birth of the patients whose birthday is today in Lisbon
  * (birthday-rule.ts), and nothing else. The date of birth stays on the server:
  * the shell receives the name and the age the patient turns.
+ *
+ * ==========================================================================
+ * WHAT IT COSTS WHILE THE SWITCH IS ON, NOT YET MEASURED
+ * ==========================================================================
+ * `to_char(date_of_birth, 'MM-DD')` is not leakproof, so Postgres must apply
+ * `patients_select` (RLS) BEFORE it: every patient row of the tenant passes the
+ * policy on each shell render, and only then is the birthday test applied. With
+ * the switch OFF (the default) this query does not run. Measuring it on a lane
+ * is owed before the owner switches it ON. If it is slow, the fix is a later
+ * Tier C migration (a stored generated smallint `month * 100 + day` column and
+ * an index on (tenant_id, that column)); it is recorded in docs/DECISIONS.md
+ * as a follow-up and not built.
  */
 
 /** One row of the list the icon opens. */
@@ -89,37 +101,16 @@ export async function listTodaysBirthdays(
 }
 
 /**
- * The setting's key, read in SQL with the rule `parseBirthdayIndication` reads
- * in TypeScript: ON only when `headerIcon` is the JSON boolean `true`. A string
- * "true", a number, a missing key or a missing blob are all OFF.
- * birthdays.db.test.ts drives both values through a real tenant row.
- */
-export const headerIconOnSql = sql<boolean>`coalesce((${tenants.settings} -> 'birthdayIndication' -> 'headerIcon') = 'true'::jsonb, false)`;
-
-/**
- * Whether the tenant has "Notificação de aniversariantes" switched on. Read
- * under the viewer's claims: `tenants_tenant_select` (0094) lets every staff
- * role read its own tenant row. Only the one boolean is selected, so the rest
- * of the settings blob (contacts, hashed secrets) never leaves the database on
- * this path, which runs on every staff page.
- */
-export async function birthdayHeaderIconEnabled(ctx: RequestContext): Promise<boolean> {
-  const rows = await runScoped(
-    ctx,
-    async (tx) => tx.select({ on: headerIconOnSql }).from(tenants).limit(1),
-    "db:tenant-birthday-setting",
-  );
-  return rows[0]?.on === true;
-}
-
-/**
- * What the shell draws: `null` when the setting is OFF (no icon at all), else
- * today's rows, possibly none.
+ * What the shell draws: `null` when the setting is OFF (no icon at all, and no
+ * patient read), else today's rows, possibly none. The setting itself is read
+ * by the shell's identity read (`staffShellIdentity`), so an OFF tenant pays no
+ * transaction here.
  */
 export async function loadBirthdayIndication(
   ctx: RequestContext,
+  iconOn: boolean,
   now: Date = new Date(),
 ): Promise<BirthdayRow[] | null> {
-  if (!(await birthdayHeaderIconEnabled(ctx))) return null;
+  if (iconOn !== true) return null;
   return listTodaysBirthdays(ctx, now);
 }

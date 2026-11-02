@@ -2,6 +2,7 @@ import { type ElementType } from "react";
 import { Cake } from "lucide-react";
 
 import { s } from "@/lib/i18n";
+import { BirthdayDisclosure } from "./birthday-disclosure.client";
 import type { BirthdayRow } from "@/lib/patients/birthdays";
 
 /**
@@ -16,9 +17,10 @@ import type { BirthdayRow } from "@/lib/patients/birthdays";
  * and what its click opens are OsteoJP's guess until the owner's screenshot
  * arrives. At zero this draws the icon with no count, and the list says so.
  *
- * NO CLIENT JAVASCRIPT. A native `<details>`: the `<summary>` is a real button
- * to the keyboard (Tab, then Enter or Space opens and closes it) and to a
- * screen reader, and the links inside are ordinary tab stops.
+ * A native `<details>`: the `<summary>` is a real button to the keyboard (Tab,
+ * then Enter or Space opens and closes it) and to a screen reader, and the
+ * links inside are ordinary tab stops. The one client piece is
+ * BirthdayDisclosure, which closes it on a route change and on Escape.
  *
  * Its look follows the notification bell beside it: a 44px round target, the
  * secondary text colour, the same focus ring and the same badge.
@@ -41,10 +43,7 @@ export function BirthdayIndicator({
   const shown = n > 99 ? "99+" : String(n);
 
   return (
-    <details
-      className={["relative", className].filter(Boolean).join(" ")}
-      data-testid="birthday-indicator"
-    >
+    <BirthdayDisclosure className={["relative", className].filter(Boolean).join(" ")}>
       <summary
         title={s["birthdays.title"]}
         className="relative inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-v2-text-secondary transition-colors hover:bg-surface-muted hover:text-v2-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden"
@@ -86,6 +85,6 @@ export function BirthdayIndicator({
           </ul>
         )}
       </div>
-    </details>
+    </BirthdayDisclosure>
   );
 }

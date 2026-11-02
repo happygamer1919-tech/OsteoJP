@@ -95,8 +95,8 @@ const EXPECTED: Record<string, { calls: number; covered: boolean; why: string }>
     calls: 1,
     covered: true,
     why:
-      "birthdays.db.test.ts - listTodaysBirthdays (the top-bar birthday icon) over the same four classes, as an " +
-      "assigned and an unassigned admin. Composed exactly as scopeConditions composes it, on patients.id.",
+      "birthdays.db.test.ts - listTodaysBirthdays (the top-bar birthday icon) over the same four classes, as an assigned admin, an assigned " +
+      "receptionist, an unassigned admin and the owner. Composed exactly as scopeConditions composes it, on patients.id.",
   },
   "lib/patients/queries.ts": {
     calls: 3,

@@ -2,19 +2,37 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-let rows: Array<{ fullName: string | null }> = [];
+let rows: Array<{ fullName: string | null; birthdayIconOn?: unknown }> = [];
 let throwOnRead = false;
+let reads = 0;
+const selected: Array<Record<string, unknown>> = [];
+const joins: unknown[] = [];
 
 vi.mock("@/lib/auth/context", () => ({
   runScoped: async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => {
     if (throwOnRead) throw new Error("db down");
+    reads += 1;
+    const chain: Record<string, unknown> = {};
+    chain.from = () => chain;
+    chain.leftJoin = (t: unknown) => {
+      joins.push(t);
+      return chain;
+    };
+    chain.where = () => chain;
+    chain.limit = async () => rows;
     return fn({
-      select: () => ({ from: () => ({ where: () => ({ limit: async () => rows }) }) }),
+      select: (cols: Record<string, unknown>) => {
+        selected.push(cols);
+        return chain;
+      },
     });
   },
 }));
 
-import { staffDisplayName, initialsFor } from "./staff-identity";
+import { tenants } from "@osteojp/db";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { staffDisplayName, staffShellIdentity, initialsFor } from "./staff-identity";
 import type { RequestContext } from "@/lib/auth/context";
 
 const ctx: RequestContext = { tenantId: "t", role: "therapist", userId: "u1" };
@@ -22,6 +40,48 @@ const ctx: RequestContext = { tenantId: "t", role: "therapist", userId: "u1" };
 beforeEach(() => {
   rows = [];
   throwOnRead = false;
+  reads = 0;
+  selected.length = 0;
+  joins.length = 0;
+});
+
+/**
+ * Indicação de Aniversários: the tenant's switch rides on the shell's identity
+ * read, so an OFF tenant pays no extra transaction for the feature.
+ */
+describe("staffShellIdentity - the name and the birthday switch, in one read", () => {
+  it("is ONE scoped read: the users row joined to the tenants row", async () => {
+    rows = [{ fullName: "Ana Morais", birthdayIconOn: false }];
+    expect(await staffShellIdentity(ctx)).toEqual({ name: "Ana Morais", birthdayIconOn: false });
+    expect(reads).toBe(1);
+    expect(joins).toEqual([tenants]);
+  });
+
+  it("selects the switch with the JSON-boolean rule, not the whole settings blob", () => {
+    return staffShellIdentity(ctx).then(() => {
+      const q = new PgDialect().sqlToQuery(selected[0]!.birthdayIconOn as SQL);
+      expect(q.sql).toBe(
+        `coalesce(("tenants"."settings" -> 'birthdayIndication' -> 'headerIcon') = 'true'::jsonb, false)`,
+      );
+      expect(Object.keys(selected[0]!).sort()).toEqual(["birthdayIconOn", "fullName"]);
+    });
+  });
+
+  it("only a literal true is ON; no row is no name and no icon", async () => {
+    for (const on of [null, "true", 1, undefined]) {
+      rows = [{ fullName: "Ana Morais", birthdayIconOn: on }];
+      expect((await staffShellIdentity(ctx)).birthdayIconOn).toBe(false);
+    }
+    rows = [{ fullName: "  ", birthdayIconOn: true }];
+    expect(await staffShellIdentity(ctx)).toEqual({ name: null, birthdayIconOn: true });
+    rows = [];
+    expect(await staffShellIdentity(ctx)).toEqual({ name: null, birthdayIconOn: false });
+  });
+
+  it("lets a read failure surface to the shell, which catches it", async () => {
+    throwOnRead = true;
+    await expect(staffShellIdentity(ctx)).rejects.toThrow();
+  });
 });
 
 /**
