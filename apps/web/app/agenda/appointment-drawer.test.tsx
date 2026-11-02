@@ -838,6 +838,17 @@ describe("ScheduleAgainDrawer - a forbidden refusal (R52)", () => {
     expect(src).toContain('if ("conflicts" in refusal) setConflicts(refusal.conflicts);');
     expect(src).toContain("else setError(refusal.message);");
     expect(src).toContain('confirmLabel={conflicts ? s["appointment.saveAnyway"] : s["patients.scheduleAgainConfirm"]}');
+    // The component itself never reads the refusal code: a branch added before
+    // the call (offering the override on `forbidden`, say) would read
+    // `result.error` and turn this red. Comments are stripped first, so text
+    // left in a comment cannot stand in for code.
+    const component = src
+      .slice(src.indexOf("export function ScheduleAgainDrawer"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(src.indexOf("export function ScheduleAgainDrawer")).toBeGreaterThan(0);
+    expect(component).not.toContain("result.error");
+    expect(component).toContain("const refusal = scheduleAgainRefusal(result);");
   });
 });
 
