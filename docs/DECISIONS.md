@@ -5391,6 +5391,26 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   in one save), `apps/web/lib/reminders/follow-up-start-orders.test.ts` (the
   canary set before and after this change, and a visit concluded under off).
 
+## 2026-11-02 - R52: the STAFF-11 check reads schedule hours against the slot horizon
+
+- **Ruling (strategy R52).** The follow-up R15 left open: the read-only STAFF-11
+  check (`packages/db/scripts/staff-11-jp-one-clinic-check.mjs`) now counts a
+  JP schedule row the way the portal's roster and catalogue do since R15, when
+  its [valid_from, valid_until] window overlaps [today, today +
+  `OPEN_SLOTS_HORIZON_DAYS`] in Lisbon. Before, it counted only rows valid
+  today, so a row starting within the horizon could put JP on the portal list
+  at a clinic while the check did not see it.
+- **The horizon is restated, not imported.** The script runs under plain node
+  and cannot import `apps/api/lib/appointments/booking.ts`. It exports its own
+  `OPEN_SLOTS_HORIZON_DAYS = 14`, and
+  `scripts/staff-11-horizon-parity.test.mjs` fails if the two values
+  drift, or if the check's two window conditions differ from the store's
+  (`listBookableTherapists` and `getCatalog`) in anything but whitespace, the
+  `av.` alias and the zone literal.
+- **Unchanged:** read only, the output lines, the exit codes, and the frozen
+  gate test `scripts/staff-11-jp-one-clinic-check.test.mjs` (not edited; it
+  passes 18 of 18).
+
 ## 2026-11-02 - R52: patient ages in Indicadores count on the Lisbon date
 
 - **Ruling (strategy R52).** The age distribution in Indicadores

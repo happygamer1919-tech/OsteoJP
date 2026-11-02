@@ -154,13 +154,24 @@ d("SAT-01: the patient's survey switch, set by staff, against a real database", 
               from patients p where p.id = ${patientId}::uuid`,
       )
     ).digest;
+  /**
+   * A patient's audit rows in a CANONICAL order: sorted on every column the
+   * suite reads, so two rows can only tie when they read the same. Sorting on
+   * `action` alone left a pair of same-action rows (the two
+   * `survey.switch_changed` rows of an off-then-on) in whatever order the
+   * plan returned them, and Postgres promises none for ties. Not by `id`
+   * (random) nor `created_at` (a wall clock, read at each transaction's
+   * start): the rows are compared as a set, not a history. The order of
+   * events is proven step by step instead: each write's read-back comes
+   * before the next write.
+   */
   const auditOf = async (patientId: string) =>
     rowsOf<{ action: string; entity_type: string; actor_user_id: string | null; metadata: Record<string, unknown> }>(
       await db.execute(
         raw`select action, entity_type, actor_user_id::text as actor_user_id, metadata
               from audit_log
              where tenant_id in (${tenant}::uuid, ${otherTenant}::uuid) and entity_id = ${patientId}::uuid
-             order by action`,
+             order by action, metadata, entity_type, actor_user_id`,
       ),
     );
   /** Every patients row and every audit row of this suite's two tenants, as digests and a count. */
@@ -300,6 +311,8 @@ d("SAT-01: the patient's survey switch, set by staff, against a real database", 
     expect(await set(ctx, p.id, true)).toBe("changed");
     expect(await switchesOf(p.id)).toEqual({ survey: true, sms: true, email: true });
     expect(await restOfPatient(p.id)).toBe(rest);
+    // The four rows as a set, canonically sorted (see auditOf). The off row
+    // was the only switch row above, so the on row is this write's.
     expect((await auditOf(p.id)).map((r) => [r.action, r.metadata])).toEqual([
       ["patient.update", { fields: ["surveyEnabled"] }],
       ["patient.update", { fields: ["surveyEnabled"] }],
