@@ -24,8 +24,9 @@ import { sql, type SQL } from "drizzle-orm";
  *
  * `to_regclass` IS THE QUESTION, ASKED EXACTLY. It returns NULL for an absent
  * relation instead of raising and needs no privilege on the table, so the
- * answer is the same for `authenticated` (staff, through runScoped) and for the
- * service role (apps/api's portal queries). information_schema.tables would
+ * answer is the same for `authenticated` (staff, through runScoped) and for
+ * apps/api's portal queries (getDbAdmin, the owning connection).
+ * information_schema.tables would
  * hide the table from a role holding no privilege on it, which would read as
  * "absent" for a reason that is not absence.
  */

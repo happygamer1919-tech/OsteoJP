@@ -14,14 +14,15 @@
  *   - THE TABLE: columns, the two CHECKs and the dedupe key, BY NAME, each with
  *     every other constraint satisfied so nothing else can refuse in its place;
  *   - THE GATES: has_table_privilege for every role that matters, so an UPDATE
- *     grant, an anon or patient grant, or a service_role write shows up here;
+ *     grant, or any grant to anon, patient or service_role, shows up here;
  *   - THE POLICIES, under real RLS (`set local role authenticated` and staff
  *     claims, always rolled back):
  *       an admin of the tenant reads its rows and not the other tenant's,
  *       beside the other tenant's admin reading its own (never a pass on an
  *       empty set);
  *       reception writes a rule for any therapist of the tenant, naming itself
- *       as creator; naming anybody else, or another tenant, is refused;
+ *       as creator; naming anybody else, another tenant, or another tenant's
+ *       staff member as the therapist is refused; reception deletes a rule;
  *       a therapist writes and deletes their OWN rules and not a colleague's;
  *       nobody updates; no claims read nothing; the patient role is denied at
  *       the table gate;
@@ -194,7 +195,7 @@ d(`therapist_weekly_blocks: table, gates and policies [${SIDE}]`, () => {
     expect(await insertAs(3, "15:00", "19:00")).toBe("ok");
   });
 
-  it("the table gates: authenticated SELECT/INSERT/DELETE only, service_role SELECT only, anon and patient nothing", async () => {
+  it("the table gates: authenticated SELECT/INSERT/DELETE only; service_role, anon and patient nothing", async () => {
     const privs = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"];
     const read = async (role: string) => {
       const out: string[] = [];
@@ -205,7 +206,7 @@ d(`therapist_weekly_blocks: table, gates and policies [${SIDE}]`, () => {
       return out;
     };
     expect(await read("authenticated")).toEqual(["SELECT", "INSERT", "DELETE"]);
-    expect(await read("service_role")).toEqual(["SELECT"]);
+    expect(await read("service_role")).toEqual([]);
     expect(await read("anon")).toEqual([]);
     expect(await read("patient")).toEqual([]);
   });
@@ -260,8 +261,45 @@ d(`therapist_weekly_blocks: table, gates and policies [${SIDE}]`, () => {
         sp`insert into therapist_weekly_blocks (tenant_id, user_id, weekday, start_time, end_time, created_by)
            values (${other}, ${otherAdmin}, 5, '12:00', '13:00', ${reception})`,
       ),
+      // The row is in reception's OWN tenant, but names another clinic's staff
+      // member: only the users-of-this-tenant clause refuses it (the foreign
+      // key alone would accept any users row).
+      crossTenantUser: await refusal(tx, (sp) =>
+        sp`insert into therapist_weekly_blocks (tenant_id, user_id, weekday, start_time, end_time, created_by)
+           values (${tenant}, ${otherAdmin}, 5, '15:00', '16:00', ${reception})`,
+      ),
     }));
-    expect(out).toEqual({ ok: null, otherCreator: "42501", noCreator: "42501", otherTenant: "42501" });
+    expect(out).toEqual({
+      ok: null,
+      otherCreator: "42501",
+      noCreator: "42501",
+      otherTenant: "42501",
+      crossTenantUser: "42501",
+    });
+  });
+
+  it("CONTROL for the cross-tenant arm: the owner connection (no RLS) does accept that row, so the refusal above is the policy's", async () => {
+    const code = await (async () => {
+      try {
+        await sql.begin(async (tx) => {
+          await tx`insert into therapist_weekly_blocks (tenant_id, user_id, weekday, start_time, end_time, created_by)
+                   values (${tenant}, ${otherAdmin}, 5, '15:00', '16:00', ${reception})`;
+          throw new Error("ROLLBACK-OK");
+        });
+        return "committed";
+      } catch (e) {
+        return (e as Error).message === "ROLLBACK-OK" ? "accepted" : ((e as { code?: string }).code ?? "error");
+      }
+    })();
+    expect(code).toBe("accepted");
+  });
+
+  it("reception deletes a rule of a therapist of its tenant, and cannot reach the other tenant's", async () => {
+    const out = await asRole(sql, "authenticated", claimsFor(tenant, "reception", reception), async (tx) => ({
+      mine: (await tx`delete from therapist_weekly_blocks where id = ${ruleTherapist} returning id`).length,
+      theirs: (await tx`delete from therapist_weekly_blocks where id = ${ruleOther} returning id`).length,
+    }));
+    expect(out).toEqual({ mine: 1, theirs: 0 });
   });
 
   it("a therapist writes and deletes their OWN rules, and not a colleague's", async () => {
