@@ -180,7 +180,7 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 
 The `public` schema copied from lane blue's database with `pg_dump --schema-only`, into a throwaway database per case, made from one seeded base: two synthetic tenants (the second with no visit, heartbeating); three visits with marks on Thursday at 08:00, 08:30 and 09:00, each taken by the pass of its slot (a sweep claim at the pass plus 2 seconds, a `sent` row a second later, the heartbeat written 10 seconds after its clock); shadow heartbeats on Wednesday before the switch (Wednesday 22:00) and send heartbeats every 15 minutes from Thursday 07:00 to 12:45. The read's clock is Thursday 13:00 unless the case says otherwise, with one substitution, its single clock line. Three appointment foreign keys are dropped in the throwaway so no synthetic person or clinic is made. The test runs these whenever `FIRST_SEND_1105_TEST_PGURL` names a local database and refuses any other host.
 
-**Run of 2026-11-02 02:50 Lisbon (lane blue, started from a clean checkout of `main`), on these SQL bytes: the switch time unset, then 87 cases, the test's database part 1 of 1 passing.** Every case met its expectation exactly (the test compares every verdict, and the named INFO rows); each MUTANT is also asserted not to meet its unmutated case's expectation (for the two that move only a row, not to print that row).
+**Run of 2026-11-02 02:53 Lisbon (lane blue, started from a clean checkout of `main`), on these SQL bytes: the switch time unset, then 121 cases, the test's database part 1 of 1 passing.** Every case met its expectation exactly (the test compares every verdict, and the named INFO rows); each MUTANT is also asserted not to meet its unmutated case's expectation (for the two that move only a row, not to print that row).
 
 | Case | Verdicts not OK |
 |---|---|
@@ -200,6 +200,7 @@ The `public` schema copied from lane blue's database with `pg_dump --schema-only
 | an early claim written since the switch, then the sweep's: not the pair: FAIL | 5=FAIL, 6=REVIEW |
 | an early claim of the sweep's before the switch: not the pair: FAIL | 5=FAIL |
 | DOUBLE SEND across the switch: the job's claim on Wednesday was not early, the sweep's on Thursday, one start | 5=FAIL |
+| the job's claim before the switch, not early and released, with a sent row, then the sweep's: not the pair: FAIL | 5=FAIL |
 | an early copy before the switch, and the send since the switch is on an early claim too: not the pair: FAIL | 5=FAIL, 6=REVIEW |
 | two sent rows of one start, both before the switch: not this read's | all OK |
 | DOUBLE SEND: two live claims of different takers, each followed by a send, the second row read against a moved start | 5=FAIL |
@@ -270,11 +271,44 @@ The `public` schema copied from lane blue's database with `pg_dump --schema-only
 | MUTANT: the pair has any number of rows, on "an early copy and another row before the switch" | 5=REVIEW |
 | MUTANT: the pair's copy may be since the switch, on "an early claim written since the switch" | 5=REVIEW, 6=REVIEW |
 | MUTANT: the pair's copy may be any taker's, on "an early claim of the sweep's" | 5=REVIEW |
-| MUTANT: the pair's copy need not be early, on "DOUBLE SEND across the switch" | 5=FAIL |
+| MUTANT: the pair's copy need not be early, on "the job's claim before the switch, not early and released" | 5=REVIEW |
+| MUTANT: the pair's send may be early, on "an early copy before the switch, and the send since the switch" | 5=REVIEW, 6=REVIEW |
+| MUTANT: a real double beside an early copy is not seen, on "an early copy AND a real double send" | 5=REVIEW |
+| MUTANT: a double before the switch counts, on "two sent rows of one start, both before the switch" | 5=FAIL |
+| MUTANT: the double send's FAIL dead, on "DOUBLE SEND: one start, two sent rows" | all OK |
+| MUTANT: two claims of one taker, on "DOUBLE SEND: two live claims" | all OK |
+| MUTANT: one send serves both claims, on "two live claims of different takers, ONE send" | 5=FAIL |
+| MUTANT: the job on any mark is the sweep's miss, on "the job sent a mark from before the floor" | 6=REVIEW |
+| MUTANT: the job's REVIEW dead, on "the job sent a mark from since the floor" | all OK |
+| MUTANT: marks before the floor are read, on "not a mark to take: due before the floor" | 7=REVIEW |
+| MUTANT: marks after the last pass are read, on "not a mark to take yet" | 7=REVIEW |
+| MUTANT: cancelled visits are read, on "not a mark to take: the visit is cancelled" | 7=REVIEW |
+| MUTANT: visits created after the mark are read, on "not a mark to take: the visit was created after its mark" | 7=REVIEW |
+| MUTANT: R24's keeping out is missed, on "R24 kept it out" | 7=REVIEW |
+| MUTANT: a recorded reason is missed, on "a recorded reason" | 7=REVIEW |
+| MUTANT: missed's REVIEW dead, on "a missed reminder" | all OK |
+| MUTANT: the late limit has no minute, on "the late limit: an SMS 3 hours 59 seconds" | 8=FAIL |
+| MUTANT: the SMS limit at 4 hours, on "the late limit: an SMS 3 hours 5 minutes" | all OK |
+| MUTANT: the email limit at 13 hours, on "the late limit: an email 12 hours 30 minutes" | all OK |
+| MUTANT: the email limit at 10 hours, on "the late limit: an email 10 hours 30 minutes" | 8=FAIL |
+| MUTANT: the second switch's FAIL dead, on "the second switch reads off" | all OK |
+| MUTANT: the S5 FAIL dead, on "SWEEP-SENT S5: a save after the mark" | all OK |
+| MUTANT: R34's cap at 5 hours, on "SWEEP-SENT S5: past R34's cap" | all OK |
+| MUTANT: R34's cap at 2 hours, on "R34: inside the cap" | 10=FAIL |
+| MUTANT: R34 needs no claim before the first save, on "SWEEP-SENT S5: the only earlier claim" | all OK |
+| MUTANT: R34 needs no earlier claim at all, on "SWEEP-SENT S5: a save after the mark" | all OK |
+| MUTANT: THE OLD ERROR: the selecting pass is the last heartbeat before the claim, on "SWEEP-SENT S5: a save between the previous pass" | all OK |
+| MUTANT: THE OLD ERROR: saves are read up to the claim, on "a save between the selection and the send" | 10=FAIL |
+| MUTANT: no REVIEW for a row with no selecting pass, on "a sweep-sent row whose pass has not written" | all OK |
+| MUTANT: every move counts, on "a move that keeps the start, after the mark, then taken" | 10=FAIL |
+| MUTANT: a confirmation by hand counts, on "a booked visit confirmed by hand" | 10=FAIL |
+| MUTANT: no REVIEW for a row with no claim, on "a sent row with no claim" | all OK |
+| MUTANT: the row belongs to the earliest claim, on "R34: handed over and held back" | all OK |
+| MUTANT: a claim with nothing after it reads missed, on "a claim with nothing after it" | 7=REVIEW |
 
 The switch time unset: the read stops with `unrecognized configuration parameter "osteojp.r47_switched_at"` and prints no table.
 
-**Mutation sweep: 20 mutants, 20 killed.** Survivors by design, not run: `booked` and `moved` have no condition beyond their action in `rearm_rows`; the tenant filters of the start-at-the-mark subqueries (the save's own is mutated); the rows that only inform (21, 30 to 36, 40) beyond what the cases read; the 75 minutes of a row with no claim; `early` on a claim.
+**Mutation sweep: 53 mutants, 53 killed.** Survivors by design, not run: `booked` and `moved` have no condition beyond their action in `rearm_rows`; the tenant filters of the start-at-the-mark subqueries (the save's own is mutated); the rows that only inform (21, 30 to 36, 40) beyond what the cases read; the 75 minutes of a row with no claim; `early` on a claim.
 
 ## Known limits
 

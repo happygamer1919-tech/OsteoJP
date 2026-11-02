@@ -630,6 +630,12 @@ const CASES = [
   { name: "an early claim of the sweep's before the switch: not the pair: FAIL", seed: EARLY("sweep"), want: only({ 5: "FAIL" }) },
   { name: "DOUBLE SEND across the switch: the job's claim on Wednesday was not early, the sweep's on Thursday, one start", seed: EARLY("run", false), want: only({ 5: "FAIL" }), info: [[5, /one start sent twice 1;/]] },
   {
+    name: "the job's claim before the switch, not early and released, with a sent row, then the sweep's: not the pair: FAIL",
+    seed: claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-04 20:00", { taker: "run", attempt: 2, n: 9 }) + ledger(appt(1), "24h", "2026-11-04 20:00:01") + release(9, appt(1), "24h", "2026-11-04 20:00:02"),
+    want: only({ 5: "FAIL" }),
+    info: [[5, /one start sent twice 1; two takers, each followed by a send 0;/]],
+  },
+  {
     name: "an early copy before the switch, and the send since the switch is on an early claim too: not the pair: FAIL",
     seed: [visit(V, "2026-11-06 08:50"), claim(V, "24h", "2026-11-06 08:50", "2026-11-04 20:00", { taker: "run", early: true }), ledger(V, "24h", "2026-11-04 20:00:01"), claim(V, "24h", "2026-11-06 08:50", "2026-11-05 07:30", { taker: "run", attempt: 2, early: true }), ledger(V, "24h", "2026-11-05 07:30:01")].join("\n"),
     want: only({ 5: "FAIL", 6: "REVIEW" }),
@@ -781,7 +787,7 @@ const MUTANTS = [
   ["the pair has any number of rows", "  having count(*) = 2\n", "  having count(*) >= 2\n", "an early copy and another row before the switch"],
   ["the pair's copy may be since the switch", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where s.taker = 'run' and s.early = true) = 1", "an early claim written since the switch"],
   ["the pair's copy may be any taker's", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where not s.since_switch and s.early = true) = 1", "an early claim of the sweep's"],
-  ["the pair's copy need not be early", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where not s.since_switch and s.taker = 'run') = 1", "DOUBLE SEND across the switch"],
+  ["the pair's copy need not be early", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where not s.since_switch and s.taker = 'run') = 1", "the job's claim before the switch, not early and released"],
   ["the pair's send may be early", "where s.since_switch and s.early is distinct from true) = 1", "where s.since_switch) = 1", "an early copy before the switch, and the send since the switch"],
   ["a real double beside an early copy is not seen", "when (select count(*) from same_start) > 0 or (select count(*) from two_takers where each_sent) > 0 then 'FAIL'", "when false then 'FAIL'", "an early copy AND a real double send"],
   ["a double before the switch counts", "having count(*) > 1 and bool_or(s.since_switch)", "having count(*) > 1", "two sent rows of one start, both before the switch"],
