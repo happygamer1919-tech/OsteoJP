@@ -18,7 +18,11 @@
 //     each call made to fail in turn. Under bash always; under zsh wherever zsh is installed;
 //   * a double send or a sweep-sent S5 closes on UNDO NOW whatever else the table holds; any other
 //     FAIL or VACUOUS STOPs with no undo; else CLEAN or REVIEW; the block overwrites no transcript,
-//     and refuses the first 5 minutes of a slot.
+//     and refuses the first 5 minutes of a slot;
+//   * every closing line, UNDO NOW included, carries verdict 10's count of sweep sends R24 should
+//     have blocked with "(EXPECT 0)" (strategy's condition on Q2, 2026-11-02), read from verdict
+//     10's observed column only; UNDO NOW and the other-FAIL STOP print `unreadable` when it cannot
+//     be read; CLEAN and REVIEW need it to read 0, else STOP.
 //
 // WITH A LOCAL DATABASE (FIRST_SEND_1105_TEST_PGURL names one on 127.0.0.1 or localhost whose
 // `public` schema is the repository's): the read runs on a seeded throwaway per case. Any other host
@@ -197,14 +201,23 @@ const LIST_ID = "00000000-0000-4000-8000-0000000000a9";
 const HARNESS_SWITCHED = "2026-11-04T22:10:05Z";
 const HARNESS_PRNUM = "4242";
 
-const vrow = (n, v = "OK") => ` ${String(n).padStart(2)} | ${n}. verdict ${n} | x | y | ${v}`;
+/**
+ * A verdict row as psql prints it. Verdict 10's observed column carries the read's own text with its
+ * sweep-sent S5 count (`s5`, or `null` for a row whose text has no count); its expected column says
+ * "sweep-sent S5 0" as the read's does, so a block reading the wrong column reads 0.
+ */
+const V10_OBSERVED = (s5) => (s5 === null ? "sweep-sent rows 8; after such a save 0, R34 0; with no selecting pass yet 0"
+  : `sweep-sent rows 8; after such a save ${s5}, R34 0, sweep-sent S5 ${s5}; with no selecting pass yet 0`);
+const vrow = (n, v = "OK", s5 = "0") => n === 10
+  ? ` 10 | 10. R34, no sweep-sent S5: a sweep-sent row after a re-arming save, read up to its selecting pass, carries R34's label | ${V10_OBSERVED(s5)} | sweep-sent > 0; sweep-sent S5 0; no selecting pass 0 | ${v}`
+  : ` ${String(n).padStart(2)} | ${n}. verdict ${n} | x | y | ${v}`;
 const NUMS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-const table = (over = {}, skip = [], extra = []) => [
+const table = (over = {}, skip = [], extra = [], s5 = "0") => [
   "BEGIN", "SET", "SET", "SET",
   " first_send_transaction ", "----------------------------", " read only: on", "(1 row)", "",
   " n  | check | observed | expected | verdict ",
   "----+-------+----------+----------+---------",
-  ...NUMS.filter((n) => !skip.includes(n)).map((n) => vrow(n, over[n] ?? "OK")),
+  ...NUMS.filter((n) => !skip.includes(n)).map((n) => vrow(n, over[n] ?? "OK", s5)),
   ...extra,
   " 20 | window | 2026-11-04 22:10:05 | 2026-11-05 07:00:03 | 2026-11-05 09:15:03 | 2026-11-05 09:20:00 | information | INFO",
   " 40 | FIRST_SEND_SUMMARY | since the switch: sent_by_sweep=8 sent_by_job=0 sent_no_claim=0 double_sends=0 sweep_sent_s5=0 missed=0 | double sends must be 0 | INFO",
@@ -218,7 +231,16 @@ const FIXTURES = {
   review10: table({ 10: "REVIEW" }),
   review11: table({ 11: "REVIEW" }),
   double: table({ 5: "FAIL" }),
-  s5: table({ 10: "FAIL" }),
+  s5: table({ 10: "FAIL" }, [], [], "3"),
+  s5one: table({ 10: "FAIL" }, [], [], "1"),
+  s5unread: table({ 10: "FAIL" }, [], [], null),
+  doubleno10: table({ 5: "FAIL" }, [10]),
+  s5andgap: table({ 10: "FAIL", 3: "FAIL" }, [], [], "2"),
+  s5quiet: table({}, [], [], "1"),
+  s5quietreview: table({ 7: "REVIEW" }, [], [], "2"),
+  s5garbled: table({}, [], [], null),
+  double10: table({}, [], [vrow(10)]),
+  gapunread: table({ 3: "FAIL" }, [], [], null),
   doubleandmore: table({ 5: "FAIL", 3: "FAIL", 7: "VACUOUS" }, [8]),
   gap: table({ 3: "FAIL" }),
   shadow: table({ 2: "FAIL" }),
@@ -358,14 +380,16 @@ function assertGood(r) {
   assert.doesNotMatch(r.out, /harness: unexpected/);
   assert.equal(r.stdout.split("\n").filter((l) => l.startsWith("FIRST-SEND-1105 ")).length, 1, "not exactly one closing line");
 }
+/** Strategy's condition on Q2 (2026-11-02): the count of sweep sends R24 should have blocked, with "(EXPECT 0)". */
+const S5_LINE = (n) => `Sweep sends R24 should have blocked \\(verdict 10, sweep-sent S5\\): ${n} \\(EXPECT 0\\)\\.`;
 function assertClean(r) {
   assertGood(r);
   assert.match(r.stdout, /^verdicts: 12 OK \/ 0 REVIEW \/ 0 VACUOUS \/ 0 FAIL$/m);
-  assert.match(r.stdout, /^FIRST-SEND-1105 CLEAN: 12 OK; no double send.*SOLO reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/m);
+  assert.match(r.stdout, new RegExp(`^FIRST-SEND-1105 CLEAN: 12 OK; no double send, no sweep-sent S5, every pass seen\\. ${S5_LINE(0)} The whole table is in .*SOLO reports to strategy\\. Owner: do nothing to the switch; give this line to SOLO\\.$`, "m"));
 }
 function assertReview(r) {
   assertGood(r);
-  assert.match(r.stdout, /^FIRST-SEND-1105 REVIEW: .*SOLO reads rows .* and reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/m);
+  assert.match(r.stdout, new RegExp(`^FIRST-SEND-1105 REVIEW: .*verdicts 4, 5, 6, 7, 10 or 11 read REVIEW\\. ${S5_LINE(0)} The table is in .*SOLO reads rows .* and reports to strategy\\. Owner: do nothing to the switch; give this line to SOLO\\.$`, "m"));
 }
 function assertStop(r, re, label) {
   assert.notEqual(r.status, 0, `${label}: the block went on\n${r.out}`);
@@ -378,6 +402,7 @@ function assertStop(r, re, label) {
   assert.doesNotMatch(r.out, /harness: unexpected/, `${label}: an unexpected call`);
 }
 const UNDO = /^STOP: UNDO NOW: the owner follows the undo section of \/\S*\/owner-switch-steps-1104\.md\..*Then SOLO reports to strategy$/;
+const UNDO_WITH = (n) => new RegExp(`^STOP: UNDO NOW: the owner follows the undo section of /\\S*/owner-switch-steps-1104\\.md\\. A double send or a sweep-sent S5 is in the table, in \\S+; GREEN does not open it\\. ${S5_LINE(n)} Then SOLO reports to strategy$`);
 
 const shells = ["bash"];
 if (spawnSync("/bin/sh", ["-c", "command -v zsh"], { env: { PATH: SYSTEM_PATH } }).status === 0) shells.push("zsh");
@@ -418,10 +443,19 @@ for (const shell of shells) {
     try {
       const text = filled(base);
       for (const t of ["double", "s5", "doubleandmore"]) assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), UNDO, t);
+      // The count of sweep sends R24 should have blocked, on UNDO NOW too (strategy's condition on Q2).
+      for (const [t, n] of [["double", "0"], ["doubleandmore", "0"], ["s5", "3"], ["s5one", "1"], ["s5andgap", "2"], ["s5unread", "unreadable"], ["doubleno10", "unreadable"]]) {
+        assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), UNDO_WITH(n), `${t}: UNDO NOW with ${n}`);
+      }
       const profile = /a FAIL, a VACUOUS verdict, a REVIEW outside verdicts 4, 5, 6, 7, 10 and 11, or a verdict missing, doubled or extra.*No undo by this line: SOLO reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/;
       for (const t of ["gap", "shadow", "late", "off", "vacuous4", "vacuous5", "vacuous10", "review3", "short", "no5", "extra", "double9"]) {
         assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), profile, t);
       }
+      for (const [t, n] of [["gap", "0"], ["vacuous10", "0"], ["gapunread", "unreadable"], ["double10", "unreadable"]]) {
+        assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), new RegExp(`and no double send and no sweep-sent S5\\. ${S5_LINE(n)} The table is in .*No undo by this line`), `${t}: the profile STOP with ${n}`);
+      }
+      const quiet = /verdict 10 did not read FAIL, yet its count of sweep sends R24 should have blocked reads \[(1|2|unreadable)\] \(EXPECT 0\), or could not be read.*No undo by this line: SOLO reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/;
+      for (const t of ["s5quiet", "s5quietreview", "s5garbled"]) assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), quiet, t);
       for (const t of ["review", "review4", "review5", "review10", "review11"]) assertReview(runOnce(shell, base, text, { HARNESS_TABLE: t }));
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nosummary" }), /no FIRST_SEND_SUMMARY row/, "no summary");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
