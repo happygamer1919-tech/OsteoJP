@@ -327,6 +327,8 @@ const table = (days) => [
   ROW37("0"),
   " 40 | SHADOW_SUMMARY | full days 2026-11-02 to 2026-11-03: both=8 shadow_only=0 run_only=0 matched_share=100.0% | unexplained 0 | INFO",
   ` 51 | run_only 2026-11-02 10:00 48h email | ${MISMATCH_ID} | ${R8_LABEL} | information | INFO`,
+  // A decoy whose number contains 37: a block matching row 37 as a substring reads it too and STOPs.
+  " 370 | a decoy row whose number contains 37 | 99 | information | INFO",
   "(25 rows)", "", "ROLLBACK",
 ].join("\n");
 const TABLE_OK = table(DAYS2);
@@ -496,10 +498,10 @@ function assertGood(r) {
   assert.equal(r.stdout.split("\n").filter((l) => l.startsWith("SHADOW-COMPARE-1104 ")).length, 1, "not exactly one closing line");
 }
 /** Row 37's sentence on the closing line (strategy's Q9(a)), as a regular expression's source. */
-const EARLY_LINE = (count) => `Early-copy pairs that would follow the switch \\(row 37, as of this read\\): ${count}, `
+const EARLY_LINE = (count) => `Early-copy pairs that would follow the switch \\(row 37, as of this read; moves later on Wednesday are not counted\\): ${count}, `
   + (Number(count) > 5 ? "ABOVE 5: strategy re-rules before the switch, no switch until then\\." : "not above 5\\.");
 const RERULE_NEXT = "SOLO confirms the file; strategy re-rules before the switch, no switch until then";
-const SWITCH_NEXT = "SOLO confirms the file, then R36's switch is the owner's, after 21:00";
+const SWITCH_NEXT = "SOLO confirms the file, then R36's switch is the owner's, after 21:50";
 /** Above 5 the line must never name the switch as the owner's next step. */
 function assertEarly(r, count) {
   const line = r.stdout.split("\n").find((l) => l.startsWith("SHADOW-COMPARE-1104 "));
