@@ -8,6 +8,7 @@ import {
   users,
   getDbAdmin,
   sharedResourceSchemaPresent,
+  weeklyBlocksSchemaPresent,
 } from "@osteojp/db";
 import type { PatientPrincipal } from "@osteojp/auth";
 import { runAsPatient } from "@/lib/auth/patient";
@@ -196,20 +197,86 @@ function apptOverlapExists(
   )`;
 }
 
-/** Therapist time_off overlap (therapist-wide). */
+/**
+ * Therapist time_off overlap (therapist-wide), and the therapist's WEEKLY
+ * blocks (Bloqueios de repeticao semanal) beside it.
+ *
+ * `weekly` IS REQUIRED, NOT DEFAULTED, and that is the guard against a missed
+ * reader. Every caller must say whether the weekly table exists (the answer of
+ * `weeklyBlocksOn()` below), so a fifth call site added later cannot compile
+ * without deciding, and none can silently read time_off alone. A slot a weekly
+ * rule covers is then refused by the grid AND by the confirm guard, from the
+ * same fragment, which is this file's standing contract.
+ */
 function timeOffOverlapExists(
   tenantId: string,
   practitioner: Practitioner,
   startsAt: Instant,
   endsAt: Instant,
+  weekly: boolean,
 ): SQL {
-  return sql`exists (
+  const timeOff = sql`exists (
     select 1 from time_off t
     where t.tenant_id = ${tenantId}
       and t.user_id = ${pref(practitioner)}
       and t.starts_at < ${iref(endsAt)}
       and t.ends_at   > ${iref(startsAt)}
   )`;
+  return weekly
+    ? sql`(${timeOff} or ${weeklyBlockOverlapExists(tenantId, practitioner, startsAt, endsAt)})`
+    : timeOff;
+}
+
+/**
+ * BLOQUEIOS DE REPETICAO SEMANAL - a weekly rule covers part of the window.
+ *
+ * A rule is "every <weekday>, <start_time> to <end_time>", Lisbon wall clock,
+ * with no end date (pending migration NEXT-AFTER-0109_weekly_blocks.sql). For
+ * every Lisbon calendar date the window touches, the rule's span ON THAT DATE
+ * is built from the date and the wall-clock times and converted AT TIME ZONE
+ * 'Europe/Lisbon' inside Postgres, exactly as availabilityCoversExists and
+ * closureOverlapExists do it: so a rule at 08:00 is 08:00 in Lisbon in winter
+ * and in summer, and on the two clock-change Sundays. Half-open overlap with
+ * the window, like every other predicate here.
+ *
+ * The staff app's twin is expandWeeklyRules
+ * (apps/web/lib/scheduling/weekly-blocks-core.ts); both anchor on the Lisbon
+ * date and the Lisbon wall clock.
+ *
+ * Weekday 0 = Sunday .. 6 = Saturday, which is what `extract(dow ...)` returns,
+ * the same comparison availabilityCoversExists makes against a template.
+ */
+function weeklyBlockOverlapExists(
+  tenantId: string,
+  practitioner: Practitioner,
+  startsAt: Instant,
+  endsAt: Instant,
+): SQL {
+  const s = iref(startsAt);
+  const e = iref(endsAt);
+  return sql`exists (
+    select 1 from therapist_weekly_blocks w
+    cross join lateral generate_series(
+      ((${s}) at time zone ${LISBON})::date,
+      ((${e}) at time zone ${LISBON})::date,
+      interval '1 day'
+    ) as wd(day)
+    where w.tenant_id = ${tenantId}
+      and w.user_id = ${pref(practitioner)}
+      and w.weekday = extract(dow from wd.day)::int
+      and ((wd.day::date + w.start_time) at time zone ${LISBON}) < (${e})
+      and ((wd.day::date + w.end_time)   at time zone ${LISBON}) > (${s})
+  )`;
+}
+
+/**
+ * Whether the weekly block table exists on this database. Until the pending
+ * migration is applied it does not, and naming it would fail every portal
+ * booking query with 42P01; the probe keeps the fragment out until it can be
+ * true, the way sharedResourceExclusion keeps `is_shared_resource` out.
+ */
+async function weeklyBlocksOn(): Promise<boolean> {
+  return weeklyBlocksSchemaPresent(getDbAdmin());
 }
 
 /**
@@ -620,6 +687,9 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     const endExpr = sql`(s.starts_at + make_interval(mins => ${durationMin}::int))`;
     const nowIso = now.toISOString();
     const notShared = await sharedResourceExclusion();
+    // Weekly blocks join time_off in the ONE overlap fragment (see
+    // timeOffOverlapExists): the grid and the confirm guard read the same rule.
+    const weekly = await weeklyBlocksOn();
     // Q-M (2026-10-20): when the sweep is for a SERVICE, only therapists mapped
     // to it count, in BOTH halves below for the same reason the A2 therapist
     // filter is in both. Null (the reschedule options, which keep the already
@@ -695,7 +765,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             ${mappedToService}
             and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startExpr, endExpr)}
             and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, [])}
-            and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr)}
+            and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startExpr, endExpr, weekly)}
             -- 0085: a slot inside the clinic's own closure is never advertised.
             -- It sits with the other two predicates BY DESIGN: this query's
             -- contract is that a slot it returns can only be rejected at
@@ -757,6 +827,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // the roster and the slot grid use. The staff agenda is unchanged: there,
     // PL-06a still holds and the mapping only preselects.
     const notShared = await sharedResourceExclusion();
+    const weekly = await weeklyBlocksOn();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
       from users u
@@ -767,7 +838,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         and ${deliversServiceExists(principal.tenantId, sql`u.id`, serviceId)}
         and ${availabilityCoversExists(principal.tenantId, sql`u.id`, locationId, startsAt, endsAt)}
         and not ${apptOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt, [])}
-        and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt)}
+        and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt, weekly)}
         -- 0085: nobody is available at a clinic that is shut, whatever their
         -- own hours say.
         and not ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
@@ -962,6 +1033,8 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
   },
 
   async createBooking(principal, args): Promise<string> {
+    // Asked BEFORE the transaction: the probe runs on its own connection.
+    const weekly = await weeklyBlocksOn();
     // Insert under an explicit tenant_id + patient_id from the principal (never
     // payload). Final in-tx conflict re-check on the chosen therapist closes the
     // check-then-write race; createdBy is null (patient is not a staff users row
@@ -987,7 +1060,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
       const guard = (await tx.execute(sql`
         select (
           ${apptOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt, [])}
-          or ${timeOffOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt)}
+          or ${timeOffOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt, weekly)}
           or ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)}
           or not ${availabilityCoversExists(principal.tenantId, args.practitionerId, args.locationId, args.startsAt, args.endsAt)}
           or not ${withinClinicHoursExists(principal.tenantId, args.locationId, args.startsAt)}
@@ -1129,10 +1202,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     principal,
     { practitionerId, locationId, startsAt, endsAt, excludeIds },
   ): Promise<WindowConflict> {
+    const weekly = await weeklyBlocksOn();
     const rows = (await getDbAdmin().execute(sql`
       select (
         ${apptOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt, excludeIds ?? [])}
-        or ${timeOffOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt)}
+        or ${timeOffOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt, weekly)}
         or ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
         or not ${availabilityCoversExists(principal.tenantId, practitionerId, locationId, startsAt, endsAt)}
         or not ${withinClinicHoursExists(principal.tenantId, locationId, startsAt)}

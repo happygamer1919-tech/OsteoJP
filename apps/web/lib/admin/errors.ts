@@ -54,6 +54,13 @@ export type AdminErrorCode =
   // dialog has had its own distinct `note_required` since SCHED-18 for exactly
   // this reason; this is the same refusal reaching the Equipa modal.
   | "note_required"
+  // BLOQUEIOS DE REPETICAO SEMANAL: the same therapist, weekday, start and end
+  // already exist as a rule (the table's unique key). Its own code so the page
+  // can say "that rule is already there" instead of "invalid".
+  | "duplicate"
+  // BLOQUEIOS DE REPETICAO SEMANAL: the weekly table is not on this database
+  // yet (its migration is pending). The write is refused rather than lost.
+  | "unavailable"
   | "invalid";
 
 export class AdminError extends Error {

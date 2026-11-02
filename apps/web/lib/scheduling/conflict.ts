@@ -8,6 +8,7 @@ import {
   type AbsenceBlock,
 } from "./availability";
 import { readEffectiveTemplates } from "./effective-availability";
+import { readWeeklyBlockRows } from "./weekly-blocks";
 import type { ConflictInfo } from "./types";
 
 /**
@@ -238,7 +239,7 @@ export async function findScheduleConflicts(
     endsAt: Date;
   },
 ): Promise<ConflictInfo[]> {
-  const [templates, absenceRows] = await Promise.all([
+  const [templates, absenceRows, weeklyRows] = await Promise.all([
     // HOR-01: the same effective rows `checkAvailability` enforces, through the
     // one staff-side resolver, so the advisory panel and the refusal cannot
     // disagree about a therapist on the clinic's default hours.
@@ -263,6 +264,16 @@ export async function findScheduleConflicts(
           gt(timeOff.endsAt, args.startsAt),
         ),
       ),
+    // BLOQUEIOS DE REPETICAO SEMANAL: the therapist's weekly rules, expanded
+    // over the candidate window, through the same reader the agenda band and
+    // the availability read use. They join the time_off blocks below and are
+    // reported as `time_off` conflicts, so they block by default and "Guardar
+    // mesmo assim" overrides them exactly as it overrides a time_off row.
+    readWeeklyBlockRows(tx, {
+      therapistId: args.practitionerId,
+      rangeStart: args.startsAt,
+      rangeEnd: args.endsAt,
+    }),
   ]);
 
   const out: ConflictInfo[] = [];
@@ -280,7 +291,7 @@ export async function findScheduleConflicts(
     });
   }
 
-  const blocks: AbsenceBlock[] = absenceRows.map((r) => ({
+  const blocks: AbsenceBlock[] = [...absenceRows, ...weeklyRows].map((r) => ({
     id: r.id,
     startsAt: r.startsAt,
     endsAt: r.endsAt,
