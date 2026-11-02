@@ -311,6 +311,7 @@
   "patients.healthSystemSelect": "Seleccione",
   "patients.healthSystemInactiveSuffix": "(desativado)",
   "patients.fieldHealthSystemNumber": "Nº da Entidade / Subsistema",
+  "patients.healthSystemUnavailable": "O Sistema/SubSistema escolhido já não está disponível. Escolha outro.",
   "patients.insuranceInsurer": "Seguradora",
   "patients.insuranceNumber": "Número",
   "patients.insuranceAdd": "Adicionar seguro",

@@ -108,6 +108,11 @@ export function HealthSystemsPanel({
                     <input type="hidden" name="active" value={h.active ? "false" : "true"} />
                     <button
                       type="submit"
+                      aria-label={`${
+                        h.active
+                          ? s["admin.settings.healthSystemDeactivate"]
+                          : s["admin.settings.healthSystemReactivate"]
+                      } ${h.name}`}
                       className={`rounded-v2 px-2 py-1 text-sm text-accent-2-700 hover:underline ${focusRing}`}
                     >
                       {h.active

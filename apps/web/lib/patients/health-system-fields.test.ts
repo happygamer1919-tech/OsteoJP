@@ -77,4 +77,18 @@ describe("Sistema/SubSistema on update", () => {
   it("refuses a non-uuid Sistema", () => {
     expect(refusalField(() => parseUpdatePatient({ healthSystemId: "not-a-uuid" }))).toBe("healthSystemId");
   });
+
+  it("the refusal the desk reads is the pt-PT sentence, never the field name", () => {
+    for (const bad of ["not-a-uuid", 42]) {
+      try {
+        parseUpdatePatient({ healthSystemId: bad as never });
+        throw new Error("accepted");
+      } catch (e) {
+        expect(e).toBeInstanceOf(ValidationError);
+        expect((e as Error).message).toBe(
+          "O Sistema/SubSistema escolhido já não está disponível. Escolha outro.",
+        );
+      }
+    }
+  });
 });

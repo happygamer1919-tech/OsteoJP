@@ -23,6 +23,8 @@
  *     tenant's no, switched-off only when it is the patient's current value.
  */
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { sql as raw } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -32,13 +34,38 @@ import type { RequestContext } from "@osteojp/auth";
 
 const live = Boolean(process.env.DATABASE_URL);
 
+/** The statement only the Sistemas migration holds. */
+const MARKER = "CREATE TABLE public.health_systems";
+
+/** Numbered migration files that carry the Sistemas migration (none while it is pending). */
+function promotedFiles(): string[] {
+  const dir = join(__dirname, "..", "..", "..", "..", "packages", "db", "migrations");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => readFileSync(join(dir, f), "utf8").includes(MARKER));
+}
+
+/**
+ * Whether the table is here. Skips are allowed only while the migration is
+ * PENDING: once a file in packages/db/migrations creates the table, a database
+ * without it THROWS, so a skip can never stand in for a run after promotion
+ * (the same branch as packages/db/tests/health-systems-rls.db.test.ts).
+ */
 async function tablePresent(): Promise<boolean> {
   if (!live) return false;
   const { getDbAdmin } = await import("@osteojp/db");
   const rows = (await getDbAdmin().execute(
     raw`select to_regclass('public.health_systems') is not null as present`,
   )) as unknown as { present: boolean }[];
-  return rows[0]?.present === true;
+  const present = rows[0]?.present === true;
+  const files = promotedFiles();
+  if (!present && files.length > 0) {
+    throw new Error(
+      `THE MIGRATION IS PROMOTED (${files.join(", ")}) BUT THIS DATABASE DOES NOT HAVE ITS TABLE. ` +
+        "From the promotion on, a skip is no longer acceptable. Nothing here was measured.",
+    );
+  }
+  return present;
 }
 
 const present = await tablePresent();

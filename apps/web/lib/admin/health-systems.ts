@@ -128,6 +128,15 @@ export async function setHealthSystemActive(
 ): Promise<void> {
   assertCan(actor.role, "settings:manage");
   await runScoped(actor, async (tx) => {
+    const [current] = await tx
+      .select({ active: healthSystems.active })
+      .from(healthSystems)
+      .where(eq(healthSystems.id, id))
+      .for("update");
+    if (!current) throw new AdminError("not_found");
+    // Already in the asked state (a double click, or two tabs): nothing changes,
+    // so nothing is written and nothing is audited.
+    if (current.active === active) return;
     const rows = await tx
       .update(healthSystems)
       .set({ active })

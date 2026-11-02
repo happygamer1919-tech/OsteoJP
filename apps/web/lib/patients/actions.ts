@@ -50,6 +50,7 @@ import {
   parseMergeInput,
   parseUpdatePatient,
   ValidationError,
+  healthSystemUnavailable,
   type CreatePatientInput,
   type MergePatientsInput,
   type PatientField,
@@ -220,7 +221,7 @@ async function createPatientImpl(
     // refuse another tenant's anyway, but with an error nobody at the desk can
     // act on; this names the field instead.
     if (input.healthSystemId && !(await healthSystemSelectable(tx, input.healthSystemId, null))) {
-      throw new ValidationError("Invalid healthSystemId", "healthSystemId");
+      throw healthSystemUnavailable();
     }
 
     // GUEST-06: tenant_id, created_by, the omitted patient_number and the audit
@@ -378,7 +379,7 @@ async function updatePatientImpl(
         .limit(1);
       if (!current) throw new PatientNotFoundError();
       if (!(await healthSystemSelectable(tx, input.healthSystemId, current.healthSystemId))) {
-        throw new ValidationError("Invalid healthSystemId", "healthSystemId");
+        throw healthSystemUnavailable();
       }
     }
 

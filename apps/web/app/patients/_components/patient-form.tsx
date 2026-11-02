@@ -390,7 +390,10 @@ export function PatientForm({
         />
         {/* Sistemas / SubSistemas, as on Fisiozero's ficha: the dropdown, with
             "Nº da Entidade / Subsistema" directly below it. Its own full-width
-            row so the two stay stacked in one column. */}
+            row so the two stay stacked in one column. THE RIGHT HALF OF THIS ROW
+            IS EMPTY ON PURPOSE: filling it (or letting the grid flow the next
+            field into it) would break the stacking Fisiozero has. NOT CHECKED
+            IN A BROWSER: verified by rendered markup only. */}
         <div className="col-span-2 grid grid-cols-2 gap-4" data-testid="patient-health-system">
           <div className="flex flex-col gap-4">
             <Field label={s["patients.fieldHealthSystem"]} errorFor="healthSystemId">

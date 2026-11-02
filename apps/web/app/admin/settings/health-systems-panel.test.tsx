@@ -67,6 +67,9 @@ describe("Sistemas / SubSistemas panel: Fisiozero's structure", () => {
     expect(html).toMatch(/name="id" value="a"\/><input type="hidden" name="active" value="false"/);
     expect(html).toMatch(/name="id" value="b"\/><input type="hidden" name="active" value="true"/);
     expect(html).not.toMatch(/Eliminar|Apagar/);
+    // A screen reader hears which entry each button acts on.
+    expect(html).toContain('aria-label="Desativar ADSE"');
+    expect(html).toContain('aria-label="Reativar SAMS"');
   });
 });
 

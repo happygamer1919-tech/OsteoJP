@@ -23,6 +23,11 @@ describe("Sistemas / SubSistemas: names", () => {
   });
 
   it("refuses a blank name and one over the database bound", () => {
+    // The literal is the database's (health_systems_name_length: <= 120), so a
+    // change to the constant alone cannot move both sides together.
+    expect(HEALTH_SYSTEM_NAME_MAX).toBe(120);
+    expect(healthSystemNameProblem("x".repeat(120))).toBeNull();
+    expect(healthSystemNameProblem("x".repeat(121))).toBe("too_long");
     expect(healthSystemNameProblem("")).toBe("blank");
     expect(healthSystemNameProblem(" \t ")).toBe("blank");
     expect(healthSystemNameProblem("x".repeat(HEALTH_SYSTEM_NAME_MAX))).toBeNull();
