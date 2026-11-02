@@ -5471,3 +5471,92 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   given the dialog (not one of the three named), but it prints the hour too,
   being the same renderer.
 - **No migration.**
+
+## 2026-11-02 - Indicação de Aniversários, part 1: the setting and the top-bar icon (Fisiozero parity)
+
+- **Owner request (via the clinic):** copy Fisiozero's "Indicação de
+  Aniversários" exactly in structure and behaviour, in OsteoJP's own design.
+  Source: section 1 of the Fisiozero browser report of 2026-11-02. Part 1 only:
+  the setting and the header icon. The birthday SMS ("Envio de SMS de
+  Aniversários") is NOT built: it is a send path and a marketing message that
+  needs consent, and it waits.
+- **The setting.** Administração > Definições: a panel "Indicação de
+  Aniversários", placed FIRST as in Fisiozero, with one row: label
+  "Notificação de aniversariantes", grey sub-text "Ícone no topo da página", an
+  on/off switch. Default OFF. Stored at `tenants.settings.birthdayIndication =
+  { headerIcon: boolean }` in the existing jsonb blob: no migration. It is kept
+  out of `TenantConfig` (which the main form saves and the reminder pipeline
+  reads) and has its own form and save, like the delete password. Only the
+  JSON boolean `true` is ON. Owner and admin only (`settings:manage`, and
+  `tenants_manager_update` of 0094 underneath); audited as `tenant.update` with
+  `fields: ["birthdayIndication"]`.
+- **The switch saves when pressed** (a submit button with `role="switch"`, the
+  ficha's survey switch pattern, no client JavaScript). Whether Fisiozero's
+  switch saves at once was not observed.
+- **The date rule (chosen, stated here as asked):** today is the calendar day
+  IN LISBON (`Europe/Lisbon`), never the UTC day; just after midnight in summer
+  Lisbon is already on the next day while UTC is not, and the Lisbon day wins.
+  A birthday matches on month and day of `patients.date_of_birth`. **A
+  29 February birthday shows on 28 February in a non-leap year**, and only on
+  29 February in a leap year. The age shown is the age the patient turns: the
+  Lisbon year minus the birth year. A date of birth in the current year or
+  later is left out (a typing error, not a birthday).
+- **Who sees whom.** The read runs under the viewer's own claims
+  (`runScoped`, RLS on) with the /patients list's own app scope
+  (`scopeConditions`: a therapist's read scope, else a located viewer's
+  clinics, else the tenant). No admin client, no service-role read. Registered
+  in `scope-callers.test.ts` as a `read` and in `scope-call-sites.test.ts` as
+  covered by `birthdays.db.test.ts`. The setting itself is read by every staff
+  role (`tenants_tenant_select`, 0094), selecting only the one boolean, and it
+  rides on the shell's existing name read (`staffShellIdentity`: the viewer's
+  `users` row joined to their `tenants` row, one statement), so a tenant with
+  the switch OFF pays no extra transaction. The shell's identity read, the
+  bell's count and the birthday list run in parallel (`Promise.all`).
+- **The icon.** A cake glyph (lucide `Cake`, already a dependency) in the top
+  bar beside the notification bell, the same 44px round target, focus ring and
+  badge. It shows today's count; clicking opens a short list (name, "faz N
+  anos"), each a link to `/patients/<id>`. A native `<details>`/`<summary>`, so
+  it is keyboard reachable. One small client wrapper closes it: it is keyed on
+  the pathname (a navigation mounts it closed), and while it is open (from its
+  `toggle` event) two document-level listeners close it on Escape (returning
+  focus to the summary; listening on the element was not enough, Safari does
+  not focus a summary on click) and on a pointer press outside it. A long name
+  wraps (`min-w-0`) instead of widening the row. At zero the icon shows with no count and the list says
+  "Sem aniversariantes hoje.".
+- **PROVISIONAL until the owner's screenshot.** Fisiozero's icon was not seen
+  switched on, so its look, its zero state and what its click opens are
+  OsteoJP's guess. A screenshot from the owner is owed.
+- **Hidden below the `lg` breakpoint** (`max-lg:hidden`, R4 on #1701). It
+  shows only in the desktop top bar. Below `lg` the shell draws its mobile
+  header: at 360px its user area has about 18px to spare (AGENDA-MOBILE-WEEK),
+  and the 640 to 1023px header has never been seen with a second 44px icon in
+  it. With the setting OFF nothing changes at any width.
+- **Cost.** OFF (the default): no extra transaction, the switch is a column of
+  the shell's existing name read. ON: one or more scoped reads per staff page
+  render (today's birthdays, capped at 200 rows, plus the viewer's clinic list
+  for a located viewer and, for a therapist, the care-team helper probe that
+  the /patients list's scope makes too), in parallel with the bell's count. **That read is not cheap and is not measured.** `to_char` is not
+  leakproof, so Postgres applies `patients_select` (RLS) to every patient row
+  of the tenant before the birthday test, on each render. Measuring it on a
+  lane is owed before the owner switches it ON.
+- **Follow-up, not built (Tier C, needs a ruling):** if that measurement is
+  slow, a migration adding a stored generated `smallint` column
+  `month * 100 + day` of `date_of_birth` and an index on (`tenant_id`, that
+  column), so the birthday test is an indexed equality instead of a function
+  over every row.
+- **Tests:** `apps/web/lib/patients/birthday-rule.test.ts` (Lisbon day incl.
+  just after midnight in summer, 29 February), `birthdays.test.ts` (the read
+  goes through `runScoped` with the viewer's context, each role's scope, the
+  setting gates the read), `components/birthday-indicator.test.tsx`,
+  `lib/admin/settings.birthday.test.ts`, `settings-config.test.ts`,
+  `lib/auth/staff-identity.test.ts` (the merged read),
+  `app/admin/settings/page-birthday-switch.test.tsx` (the switch as drawn),
+  `app/admin/settings/actions.birthday.test.ts` (only "true" or "false" is
+  saved). `birthdays.db.test.ts` (real database, RLS, the four location
+  classes) is not run locally; its first version ran in the DB Tests workflow
+  13 of 13 green (run 41486248377). It was then extended after R4 (an assigned
+  receptionist, the owner, fixtures registered by a third user so the therapist
+  arm is treatment alone, and a birthday patient the therapist has no link to)
+  to 16 tests. `app-shell.resilience.test.tsx` renders the real shell with
+  each best-effort read rejecting: the page still renders, and a failed
+  identity read is logged once.

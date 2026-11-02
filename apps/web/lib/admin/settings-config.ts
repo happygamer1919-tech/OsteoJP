@@ -142,6 +142,43 @@ export function parseTenantConfig(settings: unknown): TenantConfig {
 }
 
 /* ---------------------------------------------------------------- */
+/* Indicação de Aniversários (Fisiozero parity)                     */
+/* ---------------------------------------------------------------- */
+
+/**
+ * The "Indicação de Aniversários" panel, Fisiozero's first panel under
+ * Definições gerais: one row, "Notificação de aniversariantes", sub-text
+ * "Ícone no topo da página", an on/off switch. It lives at
+ * `settings.birthdayIndication` in the same jsonb blob, beside `reminders` and
+ * `billing`, so no migration is needed.
+ *
+ * KEPT OUT OF `TenantConfig` ON PURPOSE. TenantConfig is what the main settings
+ * form saves in one go, and it is read by the reminder pipeline. This switch is
+ * saved by its own form and read by the staff shell, so it has its own parser
+ * and the main form's save carries it over untouched (`...existing`).
+ */
+export type BirthdayIndicationConfig = {
+  /** The birthday icon in the staff top bar. Default OFF, as in Fisiozero. */
+  headerIcon: boolean;
+};
+
+export const DEFAULT_BIRTHDAY_INDICATION: BirthdayIndicationConfig = {
+  headerIcon: false,
+};
+
+/**
+ * TOLERANT read of `settings.birthdayIndication`. Anything but a literal `true`
+ * reads as OFF: a missing key (every tenant today), a malformed blob, or a
+ * string "true" all leave the icon hidden, which is the default.
+ */
+export function parseBirthdayIndication(settings: unknown): BirthdayIndicationConfig {
+  const raw = isObject(settings) ? settings.birthdayIndication : undefined;
+  return {
+    headerIcon: isObject(raw) && raw.headerIcon === true,
+  };
+}
+
+/* ---------------------------------------------------------------- */
 /* Strict write                                                     */
 /* ---------------------------------------------------------------- */
 

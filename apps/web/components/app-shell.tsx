@@ -6,12 +6,14 @@ import { type Role } from "@osteojp/auth";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { requiresPasswordRotation } from "@/lib/auth/password-rotation";
-import { staffDisplayName, initialsFor } from "@/lib/auth/staff-identity";
+import { staffShellIdentity, initialsFor } from "@/lib/auth/staff-identity";
 import { unreadCount } from "@/lib/notifications/centre";
+import { loadBirthdayIndication, type BirthdayRow } from "@/lib/patients/birthdays";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { s } from "@/lib/i18n";
 import { navItemsForRole } from "@/lib/nav/nav-items";
 
+import { BirthdayIndicator } from "./birthday-indicator";
 import { LogoutForm } from "./logout-form.client";
 import { StaffShellClient } from "./staff-shell.client";
 
@@ -117,6 +119,11 @@ export async function AppShell({
   const { data } = await supabase.auth.getClaims();
   const email =
     typeof data?.claims?.email === "string" ? data.claims.email : undefined;
+  // THE THREE SHELL READS RUN IN PARALLEL (Promise.all), each with its own
+  // catch, so none adds serial latency to every staff page and none can take
+  // the shell down. The birthday list waits only on the identity read, which
+  // carries the tenant's switch; it runs beside the bell's count.
+  //
   // LE-staff-display-name-is-email-local-part: the name the clinic actually
   // typed wins; the email guess is the fallback for a session with no row.
   //
@@ -124,33 +131,53 @@ export async function AppShell({
   // ACCESS and throws when it cannot answer; this decides a GREETING, and
   // refusing to render the platform because a name could not be read would be a
   // wildly disproportionate failure. A miss degrades to the previous behaviour.
-  let stored: string | null = null;
-  try {
-    stored = await staffDisplayName(ctx);
-  } catch (e) {
+  //
+  // Indicação de Aniversários: the switch rides on that same identity read
+  // (staffShellIdentity), so a tenant with it OFF (the default) pays no extra
+  // transaction, and `birthdays` stays null and nothing is drawn. When ON, the
+  // list is read under the viewer's own claims (lib/patients/birthdays.ts), so
+  // each role counts only patients it may already see.
+  //
+  // W13-02: the bell's badge. Read here rather than in a client component so it
+  // is derived from data on every render and cannot drift from the list it
+  // describes. Failure is non-fatal: it degrades to zero and says so in the log.
+  //
+  // A FAILED IDENTITY READ IS LOGGED ONCE. It resolves to null here, so the
+  // birthday arm below sees "no identity" and draws nothing without a second,
+  // misleading "[birthdays]" line. app-shell.resilience.test.tsx renders the
+  // shell with each read rejecting.
+  const identityRead = staffShellIdentity(ctx).catch((e: unknown) => {
     console.error(
       "[shell] display name unavailable, falling back to the email derivation",
       e instanceof Error ? e.name : "unknown",
     );
-  }
+    return null;
+  });
+  const [identity, unread, birthdays] = await Promise.all([
+    identityRead,
+    unreadCount(ctx).catch((err: unknown) => {
+      console.error(
+        "[notifications] unread count failed; rendering the bell without a badge",
+        err instanceof Error ? `${err.name}: ${err.message}` : "unknown",
+      );
+      return 0;
+    }),
+    identityRead
+      .then((id): Promise<BirthdayRow[] | null> | null =>
+        id ? loadBirthdayIndication(ctx, id.birthdayIconOn) : null,
+      )
+      .catch((err: unknown) => {
+        console.error(
+          "[birthdays] birthday indication failed; rendering the shell without it",
+          err instanceof Error ? err.name : "unknown",
+        );
+        return null;
+      }),
+  ]);
+  const stored = identity?.name ?? null;
   const fromEmail = displayFromEmail(email);
   const name = stored ?? fromEmail.name;
   const initials = stored ? initialsFor(stored) : fromEmail.initials;
-
-  // W13-02: the bell's badge. Read here rather than in a client component so it
-  // is derived from data on every render and cannot drift from the list it
-  // describes. Failure is non-fatal — a shell that will not render because the
-  // notification count could not be read would take down every staff page for a
-  // cosmetic badge, so it degrades to zero and says so in the log.
-  let unread = 0;
-  try {
-    unread = await unreadCount(ctx);
-  } catch (err) {
-    console.error(
-      "[notifications] unread count failed; rendering the bell without a badge",
-      err instanceof Error ? `${err.name}: ${err.message}` : "unknown",
-    );
-  }
 
   // W7-02: the profile was already routed and already linked — but ONLY as the
   // avatar/name chip, whose sole affordance was an aria-label. Sighted users had
@@ -160,6 +187,14 @@ export async function AppShell({
   // primitive and the same styling as the sign-out control — no new shell pattern.
   const userArea = (
     <div className="flex items-center gap-4 max-sm:gap-1">
+      {/* Indicação de Aniversários. HIDDEN BELOW `lg`: it shows only where the
+          desktop top bar has room. The user area has about 18px to spare at
+          360px (AGENDA-MOBILE-WEEK, below), and the 640 to 1023px header has
+          never been seen with a second 44px icon in it. With the switch OFF
+          (the default) nothing renders at any width. */}
+      {birthdays && (
+        <BirthdayIndicator className="max-lg:hidden" rows={birthdays} linkComponent={Link} />
+      )}
       {/* W13-02 (PG4): the bell is a REAL control with its own destination, and
           it sits OUTSIDE the profile link below. That placement is the whole
           fix. It was previously a decorative aria-hidden span INSIDE

@@ -1,7 +1,8 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { users } from "@osteojp/db";
+import { tenants, users } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
+import { headerIconOnSql } from "@/lib/patients/birthday-setting";
 
 /**
  * LE-staff-display-name-is-email-local-part — the name the staff header shows.
@@ -47,17 +48,35 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
  * render the shell because a name could not be read would take the whole
  * platform down over a cosmetic string. An empty result returns null and the
  * caller keeps the old behaviour.
+ *
+ * What the staff shell reads about the viewer, in ONE statement: the name
+ * (the rule above), and whether the tenant has "Notificação de
+ * aniversariantes" switched on (Indicação de Aniversários).
+ *
+ * WHY THE SETTING RIDES ON THIS READ. The shell renders on every staff page,
+ * and the switch is OFF by default. Reading it here, joined from the viewer's
+ * own `users` row to their own `tenants` row, means a tenant with the switch
+ * OFF pays no extra transaction at all for the feature. Both rows are read
+ * under the viewer's claims: `users` and `tenants_tenant_select` (0094) admit
+ * every staff role to their own row.
+ *
+ * It replaced `staffDisplayName` (the name alone), which had no other caller.
+ * Same failure contract: a missing `users` row is not a throw, it is no name
+ * and no icon; a read failure surfaces to the shell, which catches it.
  */
-export async function staffDisplayName(ctx: RequestContext): Promise<string | null> {
+export async function staffShellIdentity(
+  ctx: RequestContext,
+): Promise<{ name: string | null; birthdayIconOn: boolean }> {
   const rows = await runScoped(ctx, (tx) =>
     tx
-      .select({ fullName: users.fullName })
+      .select({ fullName: users.fullName, birthdayIconOn: headerIconOnSql })
       .from(users)
+      .leftJoin(tenants, eq(tenants.id, users.tenantId))
       .where(eq(users.id, ctx.userId))
       .limit(1),
   );
   const name = rows[0]?.fullName?.trim();
-  return name ? name : null;
+  return { name: name ? name : null, birthdayIconOn: rows[0]?.birthdayIconOn === true };
 }
 
 /**
