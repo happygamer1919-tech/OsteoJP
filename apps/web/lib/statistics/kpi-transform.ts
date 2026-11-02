@@ -17,9 +17,14 @@ export type AgeBucket = (typeof AGE_BUCKETS)[number];
  * birth date is a plain calendar date read as text, so it has no zone.
  */
 export function ageInYears(dateOfBirth: string | null, ref: Date): number | null {
+  return ageOnLisbonDate(dateOfBirth, todayInLisbon(ref));
+}
+
+/** ageInYears against an already-worked-out Lisbon "yyyy-mm-dd" today. */
+function ageOnLisbonDate(dateOfBirth: string | null, today: string): number | null {
   if (!dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) return null;
   const [y, m, d] = dateOfBirth.split("-").map(Number);
-  const [refY, refM, refD] = todayInLisbon(ref).split("-").map(Number);
+  const [refY, refM, refD] = today.split("-").map(Number);
   let age = refY - y;
   if (refM < m || (refM === m && refD < d)) age -= 1;
   return age < 0 ? null : age;
@@ -40,8 +45,10 @@ export function ageDistribution(
   ref: Date,
 ): { bucket: AgeBucket; count: number }[] {
   const counts = new Map<AgeBucket, number>(AGE_BUCKETS.map((b) => [b, 0]));
+  // The Lisbon date once, not once per patient: todayInLisbon builds a formatter.
+  const today = todayInLisbon(ref);
   for (const dob of birthDates) {
-    const b = ageBucket(ageInYears(dob, ref));
+    const b = ageBucket(ageOnLisbonDate(dob, today));
     counts.set(b, (counts.get(b) ?? 0) + 1);
   }
   return AGE_BUCKETS.map((bucket) => ({ bucket, count: counts.get(bucket) ?? 0 }));
