@@ -96,6 +96,8 @@ const THURSDAY_ALL_DAY = {
 
 /** 10:00 Lisbon on Thursday 2026-09-10 is 09:00Z. */
 const INSIDE = "2026-09-10T09:00:00.000Z";
+/** 10:00 Lisbon on Sunday 2026-09-13: no template covers a Sunday. */
+const OUTSIDE_SUNDAY = "2026-09-13T09:00:00.000Z";
 
 function sourceOf(practitionerId: string) {
   return {
@@ -182,6 +184,24 @@ describe("R52 - a therapist's Marcar novamente follows the create rule", () => {
     const r = await cloneAppointment("src-1", INSIDE, true);
     expect(r).toEqual({ ok: false, error: "forbidden" });
     expectNothingWritten();
+  });
+
+  it("REFUSES it BEFORE availability: a slot outside the colleague's hours still reads forbidden, with no windows", async () => {
+    // The guard's place in the order. Were it below the availability check, a
+    // therapist would get `outside_availability` and the colleague's working
+    // windows for that day, which is the colleague's schedule. Sunday is
+    // outside THURSDAY_ALL_DAY, so availability would refuse here if it ran.
+    arrange("therapist", COLLEAGUE);
+    const r = await cloneAppointment("src-1", OUTSIDE_SUNDAY);
+    expect(r).toEqual({ ok: false, error: "forbidden" });
+    expectNothingWritten();
+  });
+
+  it("the same Sunday slot IS refused by availability for reception, so the arm above is not vacuous", async () => {
+    arrange("reception", COLLEAGUE);
+    const r = await cloneAppointment("src-1", OUTSIDE_SUNDAY);
+    expect(r.ok === false && r.error).toBe("outside_availability");
+    expect(inserted).toBeNull();
   });
 
   it("ALLOWS a therapist cloning their own visit, in their own name", async () => {

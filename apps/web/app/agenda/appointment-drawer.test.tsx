@@ -1,4 +1,6 @@
 /* eslint-disable react/display-name -- lightweight inline @osteojp/ui stand-ins for a render test; display names add nothing here */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -81,6 +83,8 @@ vi.mock("@osteojp/ui", () => {
 });
 
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
+import { scheduleAgainRefusal } from "./schedule-again-drawer";
+import { s } from "@/lib/i18n";
 import { therapistChangeOptions } from "@/lib/scheduling/therapist-change";
 import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
 
@@ -806,6 +810,34 @@ describe("AppointmentDrawer — Marcar novamente (SCHED-15)", () => {
   it("does NOT offer it in CREATE mode — there is no source to copy", () => {
     const html = render({ mode: "create" });
     expect(html).not.toContain("Marcar novamente");
+  });
+});
+
+// R52: what the Marcar novamente drawer shows when the server refuses with
+// `forbidden` (for example a therapist copying a colleague's visit). The web
+// tests run in node with no DOM, so there is no click to drive: the decision
+// is the pure `scheduleAgainRefusal`, and the wiring that turns its answer into
+// the screen is read off the component's source.
+describe("ScheduleAgainDrawer - a forbidden refusal (R52)", () => {
+  it("shows the no-permission sentence, not the generic failure", () => {
+    const r = scheduleAgainRefusal({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ message: "Não tem permissão para esta ação." });
+    expect(r).not.toEqual({ message: s["patients.scheduleAgainError"] });
+  });
+
+  it("offers no override: it returns no conflicts, the only thing that turns the button into 'mesmo assim'", () => {
+    expect("conflicts" in scheduleAgainRefusal({ ok: false, error: "forbidden" })).toBe(false);
+    // The control: a real conflict DOES return them, so the line above is not
+    // true of every refusal by construction.
+    expect(scheduleAgainRefusal({ ok: false, error: "conflict", conflicts: [] })).toEqual({ conflicts: [] });
+  });
+
+  it("is wired: the drawer routes every refusal through it, and only `conflicts` changes the button", () => {
+    const src = readFileSync(join(__dirname, "schedule-again-drawer.tsx"), "utf8");
+    expect(src).toContain("const refusal = scheduleAgainRefusal(result);");
+    expect(src).toContain('if ("conflicts" in refusal) setConflicts(refusal.conflicts);');
+    expect(src).toContain("else setError(refusal.message);");
+    expect(src).toContain('confirmLabel={conflicts ? s["appointment.saveAnyway"] : s["patients.scheduleAgainConfirm"]}');
   });
 });
 
