@@ -71,6 +71,7 @@ import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { drawnLines, squash, words } from "../lib/clinical/report/drawn-lines-test-fixture";
 import { ADD_EVALUATION as F, ADD_EVALUATION_REUSE as R, E2E_PASSWORD, STORAGE, TENANT_A, USERS } from "./fixtures";
+import { dateField, fillDate } from "./helpers";
 import { serviceClient } from "./helpers/confirm-code";
 
 const TAB = `/patients/${F.patientId}?tab=registos`;
@@ -650,5 +651,67 @@ test.describe("EXPORT-01, gate G1: the owner exports an imported registo and an 
     expect(pageWith("Dor cervical ao acordar, inventada")).toBe(-1);
     // Nothing here is annulled: no mark.
     expect(pages.flat().filter((line) => line.includes("ANULADO"))).toEqual([]);
+  });
+
+  // RODICA-export-edit-before-download (owner ruling 2026-11-02), R4 round 1
+  // M3: "Alterar" on the imported group's export. The imported registo's
+  // heading is emptied and a date is set; the file then prints that date and
+  // no "Conteúdo importado", and the export's one audit row records the change
+  // (structured fields, no text). The registo itself is not changed.
+  test("'Alterar': an emptied heading and a new date reach the PDF, and the audit row records the change", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator('input[name="email"]').fill(USERS.owner);
+    await page.locator('input[name="password"]').fill(E2E_PASSWORD);
+    await page.getByRole("button", { name: /Iniciar sessão/i }).click();
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+
+    await openTab(page);
+    const imported = group(page, IMPORTED_KEY);
+    const groupPdf = imported.getByRole("button", { name: `Transferir o PDF do episódio: ${F.imported.specialty}` });
+    await expect(groupPdf).toBeVisible();
+
+    const T = "record-group-imported-pdf-dialog";
+    const NEW_DATE = "2030-01-15";
+    let saved = "";
+    const rows = await rowsLeftBy(async () => {
+      await groupPdf.click();
+      const asked = page.getByTestId(T);
+      await expect(asked).toBeVisible({ timeout: 15_000 });
+      await asked.getByTestId(`${T}-change`).check();
+      const row = asked.getByTestId(`${T}-row`);
+      await expect(row).toHaveCount(1, { timeout: 15_000 });
+      // The row starts on what the registo prints: its heading is "Conteúdo importado".
+      const text = row.getByTestId(`${T}-row-text`);
+      await expect(text).toHaveValue("Conteúdo importado");
+      await text.click();
+      await text.press("ControlOrMeta+a");
+      await text.press("Backspace");
+      await expect(text).toHaveValue("");
+      await fillDate(dateField(row), NEW_DATE);
+      const downloading = page.waitForEvent("download", { timeout: 30_000 });
+      await page.getByRole("dialog").getByRole("button", { name: "Exportar", exact: true }).click();
+      const download = await downloading;
+      expect(await download.failure()).toBeNull();
+      saved = await download.path();
+    });
+    await expect(imported.getByTestId("record-group-imported-pdf-error")).toHaveCount(0);
+
+    // THE FILE: the new date is printed, and the heading is gone.
+    const lines = (await drawnLines(readFileSync(saved))).flat();
+    expect(lines).not.toContain("Conteúdo importado");
+    expect(words(lines)).toContain("15/01/2030");
+    // CONTROL: the registo's stored content is still printed.
+    expect(words(lines)).toContain("Dorsalgia antiga, inventada");
+
+    // THE AUDIT ROW: one, on the patient, with the override recorded.
+    expect(rows).toHaveLength(1);
+    const metadata = rows[0]!.metadata;
+    expect(metadata).toMatchObject({ document: "imported_group", patientId: F.patientId, overridesApplied: true });
+    const overrides = metadata.overrides as Record<string, unknown>[];
+    expect(overrides).toHaveLength(1);
+    expect(overrides[0]).toMatchObject({ recordId: F.imported.recordId, exportedDate: NEW_DATE, textChanged: true });
+    // No text in the row: not the heading, not the specialty, not the patient.
+    const json = JSON.stringify(rows[0]);
+    for (const never of ["Conteúdo", F.patientName, F.imported.specialty, "Dorsalgia"]) expect(json, never).not.toContain(never);
   });
 });

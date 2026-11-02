@@ -23,7 +23,9 @@ import { s } from "@/lib/i18n";
  *       own selection), one row each, with the appointment's date and hour and
  *       the heading the registo prints ("Conteúdo importado" for an imported
  *       one). Each value may be changed; an emptied text prints no heading.
- *       With more than one registo, one date and hour can be applied to all.
+ *       "Sem hora" removes a row's hour. With more than one registo, one date
+ *       and hour (or "Sem hora") can be applied to all. Each row is a
+ *       fieldset named by its caption, so its controls are told apart.
  *       "Exportar" sends every row (`onExport(rows)`).
  *
  * The values are checked here so a mistake is shown, and checked again by the
@@ -72,6 +74,8 @@ export function ExportEditDialog({
   const [allDate, setAllDate] = useState("");
   const [allTime, setAllTime] = useState("");
   const [invalid, setInvalid] = useState(false);
+  /** "Aplicar a todos" with "Sem hora": every row loses its hour. */
+  const [allNoTime, setAllNoTime] = useState(false);
   const [loading, startLoading] = useTransition();
 
   function choose(next: Mode) {
@@ -101,7 +105,11 @@ export function ExportEditDialog({
       Object.fromEntries(
         rows.map((r) => [
           r.recordId,
-          { ...prev[r.recordId]!, ...(allDate ? { date: allDate } : {}), ...(allTime ? { time: allTime } : {}) },
+          {
+            ...prev[r.recordId]!,
+            ...(allDate ? { date: allDate } : {}),
+            ...(allNoTime ? { time: "" } : allTime ? { time: allTime } : {}),
+          },
         ]),
       ),
     );
@@ -178,8 +186,8 @@ export function ExportEditDialog({
             )}
 
             {rows && rows.length > 1 && (
-              <div className="flex flex-col gap-2 rounded border border-border-strong p-3" data-testid={`${testId}-all`}>
-                <span className="text-sm font-medium">{s["patients.exportEdit.applyAllHeading"]}</span>
+              <fieldset className="flex flex-col gap-2 rounded border border-border-strong p-3" data-testid={`${testId}-all`}>
+                <legend className="px-1 text-sm font-medium">{s["patients.exportEdit.applyAllHeading"]}</legend>
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="flex flex-col gap-1 text-sm">
                     <span>{s["patients.exportEdit.date"]}</span>
@@ -193,63 +201,100 @@ export function ExportEditDialog({
                   <label className="flex flex-col gap-1 text-sm">
                     <span>{s["patients.exportEdit.time"]}</span>
                     <div data-testid={`${testId}-all-time`}>
-                      <TimeField value={allTime} onChange={setAllTime} step={5} />
+                      <TimeField
+                        value={allNoTime ? "" : allTime}
+                        onChange={setAllTime}
+                        step={5}
+                        disabled={allNoTime}
+                        hourLabel={s["patients.exportEdit.hours"]}
+                        minuteLabel={s["patients.exportEdit.minutes"]}
+                      />
                     </div>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={allNoTime}
+                      onChange={(e) => setAllNoTime(e.target.checked)}
+                      className={radio}
+                      data-testid={`${testId}-all-no-time`}
+                    />
+                    <span>{s["patients.exportEdit.clearTime"]}</span>
                   </label>
                   <Button
                     type="button"
                     variant="secondary"
                     size="sm"
                     onClick={applyAll}
-                    disabled={allDate === "" && allTime === ""}
+                    disabled={allDate === "" && allTime === "" && !allNoTime}
                     data-testid={`${testId}-apply-all`}
                   >
                     {s["patients.exportEdit.applyAll"]}
                   </Button>
                 </div>
-              </div>
+              </fieldset>
             )}
 
             {rows && (
-              <ul className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto" data-testid={`${testId}-rows`}>
+              // Not a scroll box of its own: the DatePicker's calendar is an
+              // absolute popover, and a scrolling list would clip it. The
+              // dialog scrolls as a whole, as the Declaração's does.
+              <ul className="flex flex-col gap-3" data-testid={`${testId}-rows`}>
                 {rows.map((row) => {
                   const value = edits[row.recordId]!;
+                  const name = caption(row);
                   return (
-                    <li
-                      key={row.recordId}
-                      className="flex flex-col gap-2 border-t border-border-strong pt-3"
-                      data-testid={`${testId}-row`}
-                    >
-                      <span className="text-sm font-medium">{caption(row)}</span>
-                      <div className="flex flex-wrap gap-3">
+                    <li key={row.recordId} className="border-t border-border-strong pt-3" data-testid={`${testId}-row`}>
+                      {/* One group per registo, named by its caption, so a
+                          screen reader tells the rows' Data, Hora and Texto apart. */}
+                      <fieldset className="flex flex-col gap-2">
+                        <legend className="text-sm font-medium">{name}</legend>
+                        <div className="flex flex-wrap items-end gap-3">
+                          <label className="flex flex-col gap-1 text-sm">
+                            <span>{s["patients.exportEdit.date"]}</span>
+                            <DatePicker
+                              value={value.date === "" ? null : value.date}
+                              onChange={(date) => edit(row.recordId, { date })}
+                              triggerLabel={`${s["patients.exportEdit.date"]}: ${name}`}
+                              testId={`${testId}-row-date`}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-sm">
+                            <span>{s["patients.exportEdit.time"]}</span>
+                            <div data-testid={`${testId}-row-time`}>
+                              <TimeField
+                                value={value.time}
+                                onChange={(time) => edit(row.recordId, { time })}
+                                step={5}
+                                hourLabel={s["patients.exportEdit.hours"]}
+                                minuteLabel={s["patients.exportEdit.minutes"]}
+                              />
+                            </div>
+                          </label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => edit(row.recordId, { time: "" })}
+                            disabled={value.time === ""}
+                            data-testid={`${testId}-row-clear-time`}
+                          >
+                            {s["patients.exportEdit.clearTime"]}
+                          </Button>
+                        </div>
                         <label className="flex flex-col gap-1 text-sm">
-                          <span>{s["patients.exportEdit.date"]}</span>
-                          <DatePicker
-                            value={value.date === "" ? null : value.date}
-                            onChange={(date) => edit(row.recordId, { date })}
-                            triggerLabel={s["patients.exportEdit.date"]}
-                            testId={`${testId}-row-date`}
+                          <span>{s["patients.exportEdit.text"]}</span>
+                          <input
+                            type="text"
+                            value={value.text}
+                            maxLength={EXPORT_TEXT_MAX}
+                            onChange={(e) => edit(row.recordId, { text: e.target.value })}
+                            className={field}
+                            data-testid={`${testId}-row-text`}
                           />
+                          <span className="text-xs text-text-secondary">{s["patients.exportEdit.textHint"]}</span>
                         </label>
-                        <label className="flex flex-col gap-1 text-sm">
-                          <span>{s["patients.exportEdit.time"]}</span>
-                          <div data-testid={`${testId}-row-time`}>
-                            <TimeField value={value.time} onChange={(time) => edit(row.recordId, { time })} step={5} />
-                          </div>
-                        </label>
-                      </div>
-                      <label className="flex flex-col gap-1 text-sm">
-                        <span>{s["patients.exportEdit.text"]}</span>
-                        <input
-                          type="text"
-                          value={value.text}
-                          maxLength={EXPORT_TEXT_MAX}
-                          onChange={(e) => edit(row.recordId, { text: e.target.value })}
-                          className={field}
-                          data-testid={`${testId}-row-text`}
-                        />
-                        <span className="text-xs text-text-secondary">{s["patients.exportEdit.textHint"]}</span>
-                      </label>
+                      </fieldset>
                     </li>
                   );
                 })}

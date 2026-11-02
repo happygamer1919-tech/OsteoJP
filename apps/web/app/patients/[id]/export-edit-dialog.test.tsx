@@ -100,9 +100,11 @@ function rowsOf(node: ReactNode) {
   return byTestId(node, `${T}-row`).map((li) => {
     const inside = elements(li.props.children as ReactNode);
     return {
-      caption: inside.find((el) => el.type === "span")!.props.children as string,
+      group: inside.find((el) => el.type === "fieldset")!,
+      caption: inside.find((el) => el.type === "legend")!.props.children as string,
       date: inside.find((el) => el.type === DatePicker)!,
       time: inside.find((el) => el.type === TimeField)!,
+      clearTime: inside.find((el) => el.props["data-testid"] === `${T}-row-clear-time`)!,
       text: inside.find((el) => el.props["data-testid"] === `${T}-row-text`)!,
     };
   });
@@ -252,5 +254,74 @@ describe("ExportEditDialog: 'Alterar'", () => {
     (one(render(), `${T}-keep`).props.onChange as () => void)();
     confirm();
     expect(onExport).toHaveBeenCalledWith(null);
+  });
+});
+
+// R4 round 1 fixes (MINOR): back to "Manter" after an edit, rows a screen
+// reader can tell apart, labels in the locale, "Sem hora", and no scroll box
+// that clips the calendar.
+describe("ExportEditDialog: R4 round 1 fixes", () => {
+  it("M1: 'Alterar', an edited date, then back to 'Manter': 'Exportar' answers null, not the edit", async () => {
+    const rows = rowsOf(await chooseChange());
+    (rows[0]!.date.props.onChange as (v: string) => void)("2026-11-02");
+    expect(rowsOf(render())[0]!.date.props.value).toBe("2026-11-02");
+    (one(render(), `${T}-keep`).props.onChange as () => void)();
+    expect(byTestId(render(), `${T}-row`)).toEqual([]);
+    confirm();
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onExport).toHaveBeenCalledWith(null);
+  });
+
+  it("M2: each row is a fieldset named by its caption; the controls carry the row's name and the locale's hour and minute labels", async () => {
+    const rows = rowsOf(await chooseChange());
+    for (const row of rows) {
+      expect(row.group.type).toBe("fieldset");
+      expect(row.caption.length).toBeGreaterThan(0);
+      expect(row.date.props.triggerLabel).toBe(`${s["patients.exportEdit.date"]}: ${row.caption}`);
+      expect(row.time.props.hourLabel).toBe(s["patients.exportEdit.hours"]);
+      expect(row.time.props.minuteLabel).toBe(s["patients.exportEdit.minutes"]);
+    }
+    expect(new Set(rows.map((r) => r.caption)).size).toBe(rows.length);
+    expect(s["patients.exportEdit.hours"]).toBe("Horas");
+    expect(getStrings("en")["patients.exportEdit.hours"]).toBe("Hours");
+    expect(getStrings("en")["patients.exportEdit.minutes"]).toBe("Minutes");
+    const all = elements(one(render(), `${T}-all`).props.children as ReactNode).find((el) => el.type === TimeField)!;
+    expect(all.props.hourLabel).toBe(s["patients.exportEdit.hours"]);
+    expect(all.props.minuteLabel).toBe(s["patients.exportEdit.minutes"]);
+  });
+
+  it("M4: the rows are not a scroll box of their own (an absolute calendar would be clipped inside one)", async () => {
+    const list = one(await chooseChange(), `${T}-rows`);
+    expect(String(list.props.className)).not.toMatch(/overflow|max-h/);
+  });
+
+  it("M5: 'Sem hora' on a row removes its hour, and is disabled when there is none", async () => {
+    let rows = rowsOf(await chooseChange());
+    expect(rows[0]!.clearTime.props.disabled).toBe(false);
+    expect(rows[1]!.clearTime.props.disabled).toBe(true);
+    expect(rows[0]!.clearTime.props.children).toBe("Sem hora");
+    (rows[0]!.clearTime.props.onClick as () => void)();
+    rows = rowsOf(render());
+    expect(rows[0]!.time.props.value).toBe("");
+    confirm();
+    expect(onExport.mock.calls[0]![0]![0]).toMatchObject({ recordId: R1, time: "" });
+  });
+
+  it("M5: 'Sem hora' in 'Aplicar a todos' removes every row's hour, and alone enables the button", async () => {
+    // Give the second row an hour first, so both have one to lose.
+    let rows = rowsOf(await chooseChange());
+    (rows[1]!.time.props.onChange as (v: string) => void)("12:00");
+    expect(one(render(), `${T}-apply-all`).props.disabled).toBe(true);
+    (one(render(), `${T}-all-no-time`).props.onChange as (e: { target: { checked: boolean } }) => void)({
+      target: { checked: true },
+    });
+    const apply = one(render(), `${T}-apply-all`);
+    expect(apply.props.disabled).toBe(false);
+    (apply.props.onClick as () => void)();
+    rows = rowsOf(render());
+    expect(rows.map((r) => [r.date.props.value, r.time.props.value])).toEqual([
+      ["2026-11-01", ""],
+      ["2026-10-20", ""],
+    ]);
   });
 });
