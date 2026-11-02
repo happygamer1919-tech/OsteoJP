@@ -2134,5 +2134,15 @@
   "blocks.errNote": "Write the reason for the block.",
   "blocks.errForbidden": "You cannot manage this therapist's blocks.",
   "blocks.errNotFound": "That block no longer exists.",
-  "blocks.err": "Could not save. Please try again."
+  "blocks.err": "Could not save. Please try again.",
+  "blocks.fromHours": "Hours (from)",
+  "blocks.fromMinutes": "Minutes (from)",
+  "blocks.toHours": "Hours (to)",
+  "blocks.toMinutes": "Minutes (to)",
+  "blocks.startHours": "Hours (start time)",
+  "blocks.startMinutes": "Minutes (start time)",
+  "blocks.endHours": "Hours (end time)",
+  "blocks.endMinutes": "Minutes (end time)",
+  "blocks.weeklyInList": "Weekly blocks",
+  "blocks.manageWeekly": "Manage in Calendar blocks / Holidays"
 }

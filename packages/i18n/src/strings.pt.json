@@ -2134,5 +2134,15 @@
   "blocks.errNote": "Escreva o motivo do bloqueio.",
   "blocks.errForbidden": "Não pode gerir os bloqueios deste terapeuta.",
   "blocks.errNotFound": "Esse bloqueio já não existe.",
-  "blocks.err": "Não foi possível guardar. Tente novamente."
+  "blocks.err": "Não foi possível guardar. Tente novamente.",
+  "blocks.fromHours": "Horas (Das)",
+  "blocks.fromMinutes": "Minutos (Das)",
+  "blocks.toHours": "Horas (Até)",
+  "blocks.toMinutes": "Minutos (Até)",
+  "blocks.startHours": "Horas (hora inicial)",
+  "blocks.startMinutes": "Minutos (hora inicial)",
+  "blocks.endHours": "Horas (hora final)",
+  "blocks.endMinutes": "Minutos (hora final)",
+  "blocks.weeklyInList": "Bloqueios semanais",
+  "blocks.manageWeekly": "Gerir em Bloqueios na Agenda / Férias"
 }

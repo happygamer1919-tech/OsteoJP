@@ -9,8 +9,10 @@
  * the real store:
  *   - the slot grid (listOpenSlots) on a winter Monday, a summer Monday and the
  *     spring clock-change Sunday;
- *   - the assignment (listAvailableTherapists) and the reschedule guard
- *     (hasWindowConflict), inside and just outside the rule;
+ *   - the autumn clock-change Sunday too;
+ *   - the assignment (listAvailableTherapists), the booking guard (createBooking,
+ *     refused as no_slot) and the reschedule guard (hasWindowConflict), inside
+ *     and just outside the rule;
  *   - THE NEGATIVE CONTROL: the rule deleted, the same hours come back. Without
  *     it, a grid that returned nothing for an unrelated reason would satisfy
  *     every "not offered" arm.
@@ -123,6 +125,7 @@ d(`weekly blocks on the patient portal [${SIDE}]`, () => {
     await db.execute(raw`delete from availability_templates where tenant_id = ${tenantId}`);
     await db.execute(raw`delete from therapist_services where tenant_id = ${tenantId}`);
     await db.execute(raw`delete from services where tenant_id = ${tenantId}`);
+    await db.execute(raw`delete from appointments where tenant_id = ${tenantId}`);
     await db.execute(raw`delete from patients where tenant_id = ${tenantId}`);
     await db.execute(raw`delete from users where tenant_id = ${tenantId}`);
     await db.execute(raw`delete from locations where tenant_id = ${tenantId}`);
@@ -173,6 +176,28 @@ d(`weekly blocks on the patient portal [${SIDE}]`, () => {
     expect((await check("2027-03-08T10:30:00Z", "2027-03-08T11:30:00Z")).conflict).toBe(true);
     expect((await check("2027-03-08T11:00:00Z", "2027-03-08T12:00:00Z")).conflict).toBe(false);
     expect((await check("2027-03-09T09:00:00Z", "2027-03-09T10:00:00Z")).conflict).toBe(false); // Tuesday
+  });
+
+  it("the AUTUMN clock-change Sunday (2027-10-31, 02:00 WEST -> 01:00 WET): 08:00 and 09:00 blocked, 10:00 offered", async () => {
+    const slots = await offered("2027-10-30T23:00:00Z", 0); // Lisbon midnight of Sun 31 Oct 2027, still WEST
+    const sunday = slots.filter((s) => s.startsWith("2027-10-31"));
+    expect(sunday.filter((s) => s < "2027-10-31 10:00")).toEqual([]);
+    expect(sunday).toContain("2027-10-31 10:00");
+  });
+
+  it("the booking guard (createBooking) refuses a slot inside the rule with no_slot, and books just after it", async () => {
+    const book = (iso: string) =>
+      store.createBooking(principal(), {
+        serviceId,
+        locationId,
+        practitionerId: therapistId,
+        startsAt: new Date(iso),
+        endsAt: new Date(new Date(iso).getTime() + 3_600_000),
+      });
+    await expect(book("2027-03-15T09:00:00Z")).rejects.toMatchObject({ code: "no_slot" }); // Mon 09:00 WET
+    const id = await book("2027-03-15T11:00:00Z");
+    expect(typeof id).toBe("string");
+    await db.execute(raw`delete from appointments where id = ${id}`);
   });
 
   it("THE NEGATIVE CONTROL: with the Monday rule deleted, Monday 08:00 comes back", async () => {

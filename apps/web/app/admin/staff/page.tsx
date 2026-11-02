@@ -175,6 +175,10 @@ export default async function StaffPage({
     return held?.manageable ? held.blocks : [];
   };
   const manageableFor = (id: string): boolean => timeOffByMember.get(id)?.manageable ?? false;
+  const weeklyFor = (id: string) => {
+    const held = timeOffByMember.get(id);
+    return held?.manageable ? held.weekly : [];
+  };
 
   // Presentation-only filter over the SAME role-scoped listStaff read (W5-02):
   // name/role search AND (W5-32) assigned location compose as an AND.
@@ -519,6 +523,7 @@ export default async function StaffPage({
                       locations={locations.map((l) => ({ id: l.id, name: l.name }))}
                       memberships={memberships}
                       blocks={blocksFor(u.id)}
+                      weeklyRules={weeklyFor(u.id)}
                       scheduleManageable={manageableFor(u.id)}
                       autoOpen={focusId === u.id}
                     />

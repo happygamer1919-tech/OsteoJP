@@ -5,7 +5,10 @@
  *   - THE CONFLICT CHECK: reception books into a weekly-blocked hour and is
  *     refused with `conflict`, exactly as over a time_off row; "Guardar mesmo
  *     assim" (allowConflict) books it; the hour after the rule books with no
- *     override (the control that the harness can book at all).
+ *     override (the control that the harness can book at all); a COLLEAGUE in
+ *     the same hour books with no override (the rule reads its own therapist).
+ *   - THE WARNING: a rule added over an existing booking counts it, and the
+ *     booking stays.
  *   - THE BAND: listTherapistBlocksAndHours returns the expanded weekly block
  *     for the therapist's agenda week.
  *   - THE PAGE'S WRITES under the INSERT/DELETE policies: reception adds and
@@ -184,10 +187,38 @@ d(`weekly blocks on the staff side [${PRESENT ? "TABLE PRESENT" : "TABLE ABSENT"
     if (!r.ok) expect(r.error).toBe("conflict");
   });
 
-  it("'Guardar mesmo assim' books over the rule, as it does over time_off", async () => {
+  it("the rule is the THERAPIST's: a colleague booked in the same hour needs no override", async () => {
+    as("reception", receptionId);
+    const r = await create({
+      patientId,
+      practitionerId: colleagueId,
+      practitionerTwoId: null,
+      locationId: loc,
+      serviceId,
+      room: null,
+      startsAt: at("09:30").toISOString(),
+      endsAt: at("10:30").toISOString(),
+      notes: null,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("'Guardar mesmo assim' books over the rule, as it does over time_off; a new rule then counts it", async () => {
     as("reception", receptionId);
     const r = await book("09:30", "10:30", true);
     expect(r.ok).toBe(true);
+    // A second rule over that booking, measured from the Monday before: the
+    // page's "Já havia N marcações" count reads 1, and the booking stays.
+    const out = await weekly.createWeeklyBlock(
+      ctx("reception", receptionId) as never,
+      { userId: therapistId, weekday: 1, startTime: "10:00", endTime: "10:30" },
+      new Date("2027-02-01T00:00:00Z"),
+    );
+    expect(out.overlaps).toHaveLength(1);
+    await weekly.deleteWeeklyBlock(ctx("reception", receptionId) as never, out.id);
+    const left = (await sql.execute(raw`select count(*)::int as n from appointments
+      where tenant_id = ${tenantId} and practitioner_id = ${therapistId} and status <> 'cancelled'`)) as unknown as { n: number }[];
+    expect(left[0]!.n).toBe(1);
   });
 
   it("the agenda band for that week carries the weekly block", async () => {

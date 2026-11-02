@@ -5,6 +5,7 @@ import { Button, StatusBadge, useAnimatedDialog, type ButtonVariant } from "@ost
 import { TimeFieldInput } from "@/components/time-field-input";
 import { DateFieldInput } from "@/components/date-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
+import { s } from "@/lib/i18n";
 import { partitionBlocks } from "@/lib/admin/block-list-order";
 import {
   needsProlongadaWarning,
@@ -39,6 +40,26 @@ export type BlockView = {
   endTime: string;
   note: string;
 };
+
+/** A weekly rule as listed here (time_off.ts WeeklyRuleView, restated: that
+ *  module is server-only). Weekday 0 = Sunday .. 6 = Saturday. */
+export type WeeklyRuleRow = { id: string; weekday: number; startTime: string; endTime: string };
+
+const WEEKDAY_KEY = {
+  0: "blocks.weekday.sun",
+  1: "blocks.weekday.mon",
+  2: "blocks.weekday.tue",
+  3: "blocks.weekday.wed",
+  4: "blocks.weekday.thu",
+  5: "blocks.weekday.fri",
+  6: "blocks.weekday.sat",
+} as const;
+
+/** Monday first, Sunday last, then by start time: the Bloqueios page's order. */
+function sortWeekly(rows: readonly WeeklyRuleRow[]): WeeklyRuleRow[] {
+  const rank = (wd: number) => (wd + 6) % 7;
+  return [...rows].sort((a, b) => rank(a.weekday) - rank(b.weekday) || a.startTime.localeCompare(b.startTime));
+}
 
 export type BlockLabels = {
   block: string; // "Bloquear horário"
@@ -129,7 +150,10 @@ export function TherapistBlocks({
   // unavailable, so /horarios shows this as its first, filled button. Equipa
   // keeps the quiet ghost button it had.
   triggerVariant = "ghost",
+  weeklyRules = [],
 }: {
+  /** The therapist's weekly rules, shown read-only (Bloqueios page manages them). */
+  weeklyRules?: readonly WeeklyRuleRow[];
   therapistId: string;
   therapistName: string;
   blocks: BlockView[];
@@ -297,6 +321,30 @@ export function TherapistBlocks({
                 </details>
               )}
             </div>
+          )}
+
+          {/* BLOQUEIOS DE REPETICAO SEMANAL, read-only here: they take this
+              therapist's time every week, so "Bloqueios de X" lists them, and
+              they are managed on the Bloqueios page, which the link opens. */}
+          {weeklyRules.length > 0 && (
+            <section className="flex flex-col gap-1" data-testid="blocks-weekly-readonly" aria-labelledby={`weekly-${therapistId}`}>
+              <h4 id={`weekly-${therapistId}`} className="text-sm font-semibold text-v2-text-primary">
+                {s["blocks.weeklyInList"]}
+              </h4>
+              <ul className="flex flex-col gap-1">
+                {sortWeekly(weeklyRules).map((w) => (
+                  <li key={w.id} className="text-sm tabular-nums text-v2-text-primary" data-testid="blocks-weekly-row">
+                    {s[WEEKDAY_KEY[w.weekday as keyof typeof WEEKDAY_KEY]]}: {w.startTime} -- {w.endTime}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="/horarios/bloqueios"
+                className="w-fit text-sm text-accent-2-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                {s["blocks.manageWeekly"]}
+              </a>
+            </section>
           )}
 
           {/* Create / edit form */}

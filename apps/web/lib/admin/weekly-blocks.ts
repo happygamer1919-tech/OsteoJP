@@ -1,9 +1,10 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { therapistWeeklyBlocks, timeOff, weeklyBlocksSchemaPresent } from "@osteojp/db";
+import { appointments, therapistWeeklyBlocks, timeOff, weeklyBlocksSchemaPresent } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import {
+  expandWeeklyRules,
   weeklyRuleInputError,
   type PontualListRow,
   type WeeklyListRow,
@@ -104,8 +105,49 @@ function isUniqueViolation(e: unknown): boolean {
   return code === "23505";
 }
 
-/** Add a weekly rule. Existing appointments under it are never touched. */
-export async function createWeeklyBlock(actor: RequestContext, input: WeeklyRuleInput): Promise<{ id: string }> {
+/** How far ahead an added weekly rule looks for appointments it now covers. */
+export const WEEKLY_OVERLAP_HORIZON_DAYS = 56;
+
+/**
+ * The appointments of `userId` in [now, now + 8 weeks) that a new weekly rule
+ * covers. Reported, NEVER cancelled (owner ruling Q-W5-4, the rule time_off's
+ * warning follows): the page says "Já havia N marcações" exactly as it does
+ * for a PONTUAL block. Same status filter as time-off.ts' warning (anything
+ * but cancelled). Ids only: the count is all the page shows.
+ */
+async function appointmentsUnderRule(
+  tx: Parameters<Parameters<typeof runScoped>[1]>[0],
+  input: WeeklyRuleInput,
+  now: Date,
+): Promise<{ id: string }[]> {
+  const until = new Date(now.getTime() + WEEKLY_OVERLAP_HORIZON_DAYS * 86_400_000);
+  const spans = expandWeeklyRules([{ id: "new", ...input }], now, until);
+  if (spans.length === 0) return [];
+  const rows = await tx
+    .select({ id: appointments.id, startsAt: appointments.startsAt, endsAt: appointments.endsAt })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.practitionerId, input.userId),
+        ne(appointments.status, "cancelled"),
+        lt(appointments.startsAt, until),
+        gt(appointments.endsAt, now),
+      ),
+    );
+  return rows
+    .filter((a) => spans.some((b) => a.startsAt < b.endsAt && a.endsAt > b.startsAt))
+    .map((a) => ({ id: a.id }));
+}
+
+/**
+ * Add a weekly rule. Existing appointments under it are never touched; those
+ * in the next 8 weeks are counted and returned so the page can warn.
+ */
+export async function createWeeklyBlock(
+  actor: RequestContext,
+  input: WeeklyRuleInput,
+  now: Date = new Date(),
+): Promise<{ id: string; overlaps: { id: string }[] }> {
   assertCan(actor.role, "schedule:manage");
   const err = weeklyRuleInputError(input);
   if (err) throw new AdminError("invalid", `weekly rule: ${err}`);
@@ -135,14 +177,21 @@ export async function createWeeklyBlock(actor: RequestContext, input: WeeklyRule
       throw e;
     }
     if (!row) throw new AdminError("invalid");
+    const overlaps = await appointmentsUnderRule(tx, input, now);
     await writeAudit(tx, actor, {
       action: "weekly_block.create",
       entityType: "therapist_weekly_block",
       entityId: row.id,
-      // PII-free: the weekday only. The therapist is the row's own column.
-      metadata: { weekday: input.weekday },
+      // PII-free: ids, the weekday, the two wall-clock times and a count.
+      metadata: {
+        userId: input.userId,
+        weekday: input.weekday,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        overlappingAppointments: overlaps.length,
+      },
     });
-    return { id: row.id };
+    return { id: row.id, overlaps };
   });
 }
 
@@ -154,7 +203,12 @@ export async function deleteWeeklyBlock(actor: RequestContext, id: string): Prom
   await runScoped(actor, async (tx) => {
     if (!(await weeklyBlocksSchemaPresent(tx))) throw new AdminError("unavailable");
     const [existing] = await tx
-      .select({ userId: therapistWeeklyBlocks.userId, weekday: therapistWeeklyBlocks.weekday })
+      .select({
+        userId: therapistWeeklyBlocks.userId,
+        weekday: therapistWeeklyBlocks.weekday,
+        startTime: therapistWeeklyBlocks.startTime,
+        endTime: therapistWeeklyBlocks.endTime,
+      })
       .from(therapistWeeklyBlocks)
       .where(eq(therapistWeeklyBlocks.id, id))
       .limit(1);
@@ -169,7 +223,12 @@ export async function deleteWeeklyBlock(actor: RequestContext, id: string): Prom
       action: "weekly_block.delete",
       entityType: "therapist_weekly_block",
       entityId: id,
-      metadata: { weekday: existing.weekday },
+      metadata: {
+        userId: existing.userId,
+        weekday: existing.weekday,
+        startTime: existing.startTime.slice(0, 5),
+        endTime: existing.endTime.slice(0, 5),
+      },
     });
   });
 }

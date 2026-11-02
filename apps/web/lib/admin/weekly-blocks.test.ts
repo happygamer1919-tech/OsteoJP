@@ -46,7 +46,15 @@ async function code(fn: () => Promise<unknown>): Promise<string | null> {
   }
 }
 
-function makeTx(opts: { insertError?: unknown; existing?: { userId: string; weekday: number } | null } = {}) {
+type Appt = { id: string; startsAt: Date; endsAt: Date };
+
+function makeTx(
+  opts: {
+    insertError?: unknown;
+    existing?: { userId: string; weekday: number; startTime: string; endTime: string } | null;
+    appts?: Appt[];
+  } = {},
+) {
   const inserted: Record<string, unknown>[] = [];
   const deleted: string[] = [];
   const insertChain = {
@@ -61,9 +69,17 @@ function makeTx(opts: { insertError?: unknown; existing?: { userId: string; week
   const tx = {
     ...insertChain,
     transaction: async (fn: (sp: unknown) => unknown) => fn(insertChain),
+    // Two reads go through select: the delete's lookup (`.limit`) and the
+    // appointments under a new rule (awaited straight after `.where`).
     select: () => ({
       from: () => ({
-        where: () => ({ limit: async () => (opts.existing ? [opts.existing] : []) }),
+        where: () => {
+          const appts = Promise.resolve(opts.appts ?? []);
+          return {
+            limit: async () => (opts.existing ? [opts.existing] : []),
+            then: appts.then.bind(appts),
+          };
+        },
       }),
     }),
     delete: () => ({
@@ -89,7 +105,7 @@ beforeEach(() => {
 describe("createWeeklyBlock", () => {
   it("writes the rule for the target, names the actor as creator, audits once without PII", async () => {
     const { inserted } = makeTx();
-    expect(await createWeeklyBlock(therapist, good)).toEqual({ id: "wb-1" });
+    expect(await createWeeklyBlock(therapist, good)).toEqual({ id: "wb-1", overlaps: [] });
     expect(assertTarget).toHaveBeenCalledWith(expect.anything(), "ther-1", { kind: "self", userId: "ther-1" });
     expect(inserted).toEqual([
       { tenantId: "tenant-A", userId: "ther-1", weekday: 1, startTime: "08:00", endTime: "11:00", createdBy: "ther-1" },
@@ -99,8 +115,27 @@ describe("createWeeklyBlock", () => {
       action: "weekly_block.create",
       entityType: "therapist_weekly_block",
       entityId: "wb-1",
-      metadata: { weekday: 1 },
+      metadata: { userId: "ther-1", weekday: 1, startTime: "08:00", endTime: "11:00", overlappingAppointments: 0 },
     });
+  });
+
+  it("counts the appointments the rule covers in the next 8 weeks, and only those", async () => {
+    // now = Monday 2026-11-02 07:00Z; the rule is Mondays 08:00-11:00 (WET = UTC).
+    const now = new Date("2026-11-02T07:00:00Z");
+    const a = (id: string, s: string, e: string): Appt => ({ id, startsAt: new Date(s), endsAt: new Date(e) });
+    makeTx({
+      appts: [
+        a("inside-today", "2026-11-02T09:00:00Z", "2026-11-02T10:00:00Z"),
+        a("edge-overlap", "2026-11-09T10:30:00Z", "2026-11-09T11:30:00Z"),
+        a("after-rule", "2026-11-09T11:00:00Z", "2026-11-09T12:00:00Z"),
+        a("tuesday", "2026-11-03T09:00:00Z", "2026-11-03T10:00:00Z"),
+        a("week-8", "2026-12-21T09:00:00Z", "2026-12-21T10:00:00Z"),
+        a("beyond-8-weeks", "2026-12-28T09:00:00Z", "2026-12-28T10:00:00Z"),
+      ],
+    });
+    const out = await createWeeklyBlock(therapist, good, now);
+    expect(out.overlaps.map((o) => o.id)).toEqual(["inside-today", "edge-overlap", "week-8"]);
+    expect(mockAudit.mock.calls[0]![2].metadata).toMatchObject({ overlappingAppointments: 3 });
   });
 
   it("refuses a malformed rule before opening a transaction", async () => {
@@ -152,17 +187,17 @@ describe("createWeeklyBlock", () => {
 
 describe("deleteWeeklyBlock", () => {
   it("checks the rule's OWN therapist against the scope, deletes, audits", async () => {
-    const { deleted } = makeTx({ existing: { userId: "ther-1", weekday: 3 } });
+    const { deleted } = makeTx({ existing: { userId: "ther-1", weekday: 3, startTime: "14:00:00", endTime: "18:00:00" } });
     await deleteWeeklyBlock(therapist, "wb-1");
     expect(assertTarget).toHaveBeenCalledWith(expect.anything(), "ther-1", expect.anything());
     expect(deleted).toEqual(["wb-1"]);
-    expect(mockAudit.mock.calls[0]![2]).toMatchObject({ action: "weekly_block.delete", entityId: "wb-1", metadata: { weekday: 3 } });
+    expect(mockAudit.mock.calls[0]![2]).toMatchObject({ action: "weekly_block.delete", entityId: "wb-1", metadata: { userId: "ther-1", weekday: 3, startTime: "14:00", endTime: "18:00" } });
   });
 
   it("an unknown id is not_found; an out-of-scope rule is refused before the delete", async () => {
     makeTx({ existing: null });
     expect(await code(() => deleteWeeklyBlock(reception, "nope"))).toBe("not_found");
-    const { deleted } = makeTx({ existing: { userId: "other", weekday: 1 } });
+    const { deleted } = makeTx({ existing: { userId: "other", weekday: 1, startTime: "08:00:00", endTime: "09:00:00" } });
     assertTarget.mockRejectedValueOnce(new AdminError("not_found"));
     expect(await code(() => deleteWeeklyBlock(reception, "wb-1"))).toBe("not_found");
     expect(deleted).toEqual([]);

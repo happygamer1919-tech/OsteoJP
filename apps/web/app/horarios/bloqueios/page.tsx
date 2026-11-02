@@ -150,7 +150,7 @@ export default async function BloqueiosPage({
           <div data-testid="blocks-weekly">
           <GlassPanel className="p-6">
            <div className="flex flex-col gap-4">
-            <h2 className="border-l-2 border-accent-1-700 pl-3 text-base font-semibold text-v2-text-primary">
+            <h2 className="text-base font-semibold text-v2-text-primary">
               {s["blocks.weeklyHeading"]}
             </h2>
             {!data.weeklyAvailable ? (
@@ -192,13 +192,13 @@ export default async function BloqueiosPage({
                     <span className={adminLabel} aria-hidden="true">
                       {s["blocks.from"]}
                     </span>
-                    <TimeFieldInput name="startTime" step={5} hourLabel={s["blocks.startTime"]} minuteLabel={s["blocks.startTime"]} />
+                    <TimeFieldInput name="startTime" step={5} hourLabel={s["blocks.fromHours"]} minuteLabel={s["blocks.fromMinutes"]} />
                   </span>
                   <span className="flex flex-col gap-1" role="group" aria-label={s["blocks.to"]}>
                     <span className={adminLabel} aria-hidden="true">
                       {s["blocks.to"]}
                     </span>
-                    <TimeFieldInput name="endTime" step={5} hourLabel={s["blocks.endTime"]} minuteLabel={s["blocks.endTime"]} />
+                    <TimeFieldInput name="endTime" step={5} hourLabel={s["blocks.toHours"]} minuteLabel={s["blocks.toMinutes"]} />
                   </span>
                   <Button
                     type="submit"
@@ -254,7 +254,7 @@ export default async function BloqueiosPage({
           <div data-testid="blocks-pontual">
           <GlassPanel className="p-6">
            <div className="flex flex-col gap-4">
-            <h2 className="border-l-2 border-accent-1-700 pl-3 text-base font-semibold text-v2-text-primary">
+            <h2 className="text-base font-semibold text-v2-text-primary">
               {s["blocks.pontualHeading"]}
             </h2>
             <form action={createPontualBlockAction} className="flex flex-wrap items-end gap-3" data-testid="pontual-form">
@@ -268,7 +268,7 @@ export default async function BloqueiosPage({
                 <span className={adminLabel} aria-hidden="true">
                   {s["blocks.startTime"]}
                 </span>
-                <TimeFieldInput name="startTime" step={5} hourLabel={s["blocks.startTime"]} minuteLabel={s["blocks.startTime"]} />
+                <TimeFieldInput name="startTime" step={5} hourLabel={s["blocks.startHours"]} minuteLabel={s["blocks.startMinutes"]} />
               </span>
               <span aria-hidden="true" className="pb-2 text-v2-text-secondary">
                 •
@@ -282,7 +282,7 @@ export default async function BloqueiosPage({
                 <span className={adminLabel} aria-hidden="true">
                   {s["blocks.endTime"]}
                 </span>
-                <TimeFieldInput name="endTime" step={5} hourLabel={s["blocks.endTime"]} minuteLabel={s["blocks.endTime"]} />
+                <TimeFieldInput name="endTime" step={5} hourLabel={s["blocks.endHours"]} minuteLabel={s["blocks.endMinutes"]} />
               </span>
               <span className="flex flex-col gap-1">
                 <span className={adminLabel}>{s["blocks.endDay"]}</span>

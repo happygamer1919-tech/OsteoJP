@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { appointments, patients, timeOff } from "@osteojp/db";
+import { appointments, patients, therapistWeeklyBlocks, timeOff, weeklyBlocksSchemaPresent } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc, lisbonParts } from "@/lib/scheduling/time";
 import { generateLoteSchedule, type LoteEnd } from "@/lib/scheduling/lote";
@@ -271,8 +271,15 @@ export async function listTimeOffBlocks(
  * whose absences you simply cannot see.
  */
 export type RosterTimeOff =
-  | { manageable: true; blocks: TimeOffBlockView[] }
+  | { manageable: true; blocks: TimeOffBlockView[]; weekly: WeeklyRuleView[] }
   | { manageable: false };
+
+/**
+ * BLOQUEIOS DE REPETICAO SEMANAL, shown READ-ONLY beside a therapist's blocks
+ * in Equipa and Horarios, so the person reading "Bloqueios de X" sees every
+ * block that takes X's time. Managed on the Bloqueios page only.
+ */
+export type WeeklyRuleView = { id: string; weekday: number; startTime: string; endTime: string };
 
 /**
  * Time-off for a WHOLE ROSTER, in two queries, with the unmanageable members
@@ -318,7 +325,7 @@ export async function listTimeOffBlocksForRoster(
       .where(inArray(timeOff.userId, wanted))
       .orderBy(asc(timeOff.startsAt));
 
-    for (const id of wanted) out.set(id, { manageable: true, blocks: [] });
+    for (const id of wanted) out.set(id, { manageable: true, blocks: [], weekly: [] });
     for (const row of rows) {
       const held = out.get(row.userId);
       // Defensive rather than decorative: RLS could in principle return a row
@@ -326,6 +333,26 @@ export async function listTimeOffBlocksForRoster(
       // this type exists to prevent, so it is skipped only when the bucket is
       // genuinely absent, which cannot happen for a wanted id.
       if (held?.manageable) held.blocks.push(viewFor(row));
+    }
+
+    // The weekly rules, once their table exists (pending migration; inert before).
+    if (await weeklyBlocksSchemaPresent(tx)) {
+      const weekly = await tx
+        .select({
+          id: therapistWeeklyBlocks.id,
+          userId: therapistWeeklyBlocks.userId,
+          weekday: therapistWeeklyBlocks.weekday,
+          startTime: therapistWeeklyBlocks.startTime,
+          endTime: therapistWeeklyBlocks.endTime,
+        })
+        .from(therapistWeeklyBlocks)
+        .where(inArray(therapistWeeklyBlocks.userId, wanted));
+      for (const r of weekly) {
+        const held = out.get(r.userId);
+        if (held?.manageable) {
+          held.weekly.push({ id: r.id, weekday: r.weekday, startTime: r.startTime.slice(0, 5), endTime: r.endTime.slice(0, 5) });
+        }
+      }
     }
     return out;
   });

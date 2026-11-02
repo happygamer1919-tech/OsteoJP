@@ -383,6 +383,7 @@ export default async function HorariosPage({
                       therapistId={t.id}
                       therapistName={t.label}
                       blocks={timeOff.blocks}
+                      weeklyRules={timeOff.weekly}
                       labels={blockLabels}
                       actions={blockActions}
                       openBlockId={editBlock ?? null}
