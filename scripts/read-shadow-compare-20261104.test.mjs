@@ -33,7 +33,10 @@
 //     the only non-OK verdicts are agreement verdicts reading REVIEW; REVIEW, CLEAN UNDER R32, R24
 //     NOT EXERCISED (exit 0) when, with no label outside the set, verdict 15 is the only VACUOUS;
 //     REVIEW, LABELS OUTSIDE R32's SET (exit 0) when verdict 16 reads REVIEW; and STOPs on anything
-//     else. Each closing line says what happens next.
+//     else. Each closing line says what happens next;
+//   * every closing line carries row 37's count (strategy's Q9(a), 2026-11-02): at most 5 as it was,
+//     above 5 the line forbids the switch until strategy re-rules (exit 0); row 37 missing, doubled
+//     or not a whole number STOPs.
 //
 // WITH A LOCAL DATABASE (SHADOW_COMPARE_1104_TEST_PGURL names one on 127.0.0.1 or localhost whose
 // `public` schema is the repository's): the read runs on a seeded throwaway per case, as the block
@@ -299,6 +302,8 @@ const DAYS2 = ["2026-11-02", "2026-11-03"];
 const HARNESS_DEPLOYED = "2026-11-01T22:14:05Z";
 const HARNESS_PRNUM = "4242";
 
+/** Row 37 as psql prints it (its check text is the read's, with no `|` in it). */
+const ROW37 = (count) => ` 37 | visits that would get an early copy then an on-time send after the switch: live, early, sent claims whose start's mark falls at or after 2026-11-05 07:00 | ${count} | information | INFO`;
 const vrow = (n, text, v = "OK") => ` ${String(n).padStart(2)} | ${n}. ${text} | x | y | ${v}`;
 function verdictRows(days) {
   return [
@@ -319,12 +324,14 @@ const table = (days) => [
   " 20 | window: DEPLOYED_AT | 2026-11-01 22:14:05 | 2026-11-01 22:15:03 | 2026-11-04 08:00:00 | 2026-11-04 07:45:03 | 2026-11-02 to 2026-11-03 (2) | information | INFO",
   ...days.map((d) => ` 22 | passes on ${d} (R11) | 60, 60, 0, 1 to 1, 4 | information | INFO`),
   " 36 | R34, send mode only | 0, 0, 0, 0: 0 sweep-sent rows, as shadow sends nothing | information | INFO",
+  ROW37("0"),
   " 40 | SHADOW_SUMMARY | full days 2026-11-02 to 2026-11-03: both=8 shadow_only=0 run_only=0 matched_share=100.0% | unexplained 0 | INFO",
   ` 51 | run_only 2026-11-02 10:00 48h email | ${MISMATCH_ID} | ${R8_LABEL} | information | INFO`,
   "(25 rows)", "", "ROLLBACK",
 ].join("\n");
 const TABLE_OK = table(DAYS2);
 const swap = (t, n, text, v) => t.replace(vrow(n, text), vrow(n, text, v));
+const early = (t, count) => t.replace(ROW37("0") + "\n", count === null ? "" : `${ROW37(count)}\n`);
 const FIXTURES = {
   ok: TABLE_OK,
   clean: swap(TABLE_OK, 11, "agreement, marks due 2026-11-02, 48h email", "REVIEW"),
@@ -353,6 +360,21 @@ const FIXTURES = {
   nosummary: TABLE_OK.replace(/^ 40 \| SHADOW_SUMMARY[^\n]*\n/m, ""),
   nor11: TABLE_OK.replace(/^ 22 \|[^\n]*\n/gm, ""),
   notreadonly: TABLE_OK.replace(" read only: on", " read only: off"),
+  e37five: early(TABLE_OK, "5"),
+  e37six: early(TABLE_OK, "6"),
+  e37many: early(TABLE_OK, "123"),
+  cleansix: early(swap(TABLE_OK, 11, "agreement, marks due 2026-11-02, 48h email", "REVIEW"), "6"),
+  labelssix: early(swap(swap(TABLE_OK, 12, "agreement, marks due 2026-11-03, 24h sms", "REVIEW"), 16, "every label in R32's set", "REVIEW"), "6"),
+  labelsfive: early(swap(TABLE_OK, 16, "every label in R32's set", "REVIEW"), "5"),
+  vac15six: early(swap(TABLE_OK, 15, "R24 held", "VACUOUS"), "6"),
+  vac15five: early(swap(TABLE_OK, 15, "R24 held", "VACUOUS"), "5"),
+  e37none: early(TABLE_OK, null),
+  e37double: TABLE_OK.replace(ROW37("0"), `${ROW37("0")}\n${ROW37("0")}`),
+  e37text: early(TABLE_OK, "none"),
+  e37neg: early(TABLE_OK, "-1"),
+  e37dec: early(TABLE_OK, "1.5"),
+  e37blank: early(TABLE_OK, ""),
+  e37huge: early(TABLE_OK, "1234567890"),
 };
 for (const [k, v] of Object.entries(FIXTURES)) if (k !== "ok") assert.notEqual(v, TABLE_OK, `the fixture ${k} changed nothing`);
 
@@ -473,25 +495,43 @@ function assertGood(r) {
   assert.doesNotMatch(r.out, /harness: unexpected/);
   assert.equal(r.stdout.split("\n").filter((l) => l.startsWith("SHADOW-COMPARE-1104 ")).length, 1, "not exactly one closing line");
 }
-function assertPass(r) {
+/** Row 37's sentence on the closing line (strategy's Q9(a)), as a regular expression's source. */
+const EARLY_LINE = (count) => `Early-copy pairs that would follow the switch \\(row 37, as of this read\\): ${count}, `
+  + (Number(count) > 5 ? "ABOVE 5: strategy re-rules before the switch, no switch until then\\." : "not above 5\\.");
+const RERULE_NEXT = "SOLO confirms the file; strategy re-rules before the switch, no switch until then";
+const SWITCH_NEXT = "SOLO confirms the file, then R36's switch is the owner's, after 21:00";
+/** Above 5 the line must never name the switch as the owner's next step. */
+function assertEarly(r, count) {
+  const line = r.stdout.split("\n").find((l) => l.startsWith("SHADOW-COMPARE-1104 "));
+  assert.match(line, new RegExp(EARLY_LINE(count)), `row 37's count ${count} is not on the closing line: ${line}`);
+  if (Number(count) > 5) {
+    assert.ok(!line.includes("R36's switch is the owner's"), `above 5 the closing line still names the switch: ${line}`);
+    assert.match(line, /no switch until then/, `above 5 the closing line does not forbid the switch: ${line}`);
+  }
+}
+function assertPass(r, count = "0") {
   assertGood(r);
+  assertEarly(r, count);
   assert.match(r.stdout, /^verdicts: 17 OK \/ 0 REVIEW \/ 0 VACUOUS \/ 0 FAIL$/m);
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 PASSED: 17 OK \/ 0 VACUOUS \/ 0 FAIL over 2 full days\. The whole table is in .*SOLO confirms the file, then R36's switch is the owner's, after 21:00$/m);
+  assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1104 PASSED: 17 OK / 0 VACUOUS / 0 FAIL over 2 full days\\. ${EARLY_LINE(count)} The whole table is in .*GREEN does not open it\\. ${Number(count) > 5 ? RERULE_NEXT : SWITCH_NEXT}$`, "m"));
 }
-function assertClean(r) {
+function assertClean(r, count = "0") {
   assertGood(r);
+  assertEarly(r, count);
   assert.match(r.stdout, /^verdicts: 16 OK \/ 1 REVIEW \/ 0 VACUOUS \/ 0 FAIL$/m);
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32: .*which R32 counts as the clean verdict.*SOLO confirms the file, then R36's switch is the owner's, after 21:00$/m);
+  assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32: .*which R32 counts as the clean verdict\\. ${EARLY_LINE(count)} The table is in .*GREEN does not open it\\. ${Number(count) > 5 ? RERULE_NEXT : SWITCH_NEXT}$`, "m"));
 }
-function assertNotExercised(r, reviews) {
+function assertNotExercised(r, reviews, count = "0") {
   assertGood(r);
+  assertEarly(r, count);
   assert.match(r.stdout, new RegExp(`^verdicts: ${16 - reviews} OK / ${reviews} REVIEW / 1 VACUOUS / 0 FAIL$`, "m"));
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32, R24 NOT EXERCISED: .*verdict 15 alone reads VACUOUS.*Strategy answers first$/m);
+  assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32, R24 NOT EXERCISED: .*verdict 15 alone reads VACUOUS, no mark in the window needed R24\\. ${EARLY_LINE(count)} The table is in .*GREEN does not open it\\. Strategy answers first$`, "m"));
 }
-function assertLabels(r, reviews, vacuous = 0) {
+function assertLabels(r, reviews, vacuous = 0, count = "0") {
   assertGood(r);
+  assertEarly(r, count);
   assert.match(r.stdout, new RegExp(`^verdicts: ${17 - reviews - vacuous} OK / ${reviews} REVIEW / ${vacuous} VACUOUS / 0 FAIL$`, "m"));
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, LABELS OUTSIDE R32'S SET: .*Strategy reads first, no switch until then$/m);
+  assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1104 REVIEW, LABELS OUTSIDE R32'S SET: .*\\(rows 16, 31, 35, 50 and 51\\)\\. ${EARLY_LINE(count)} The table is in .*GREEN does not open it\\. Strategy reads first, no switch until then$`, "m"));
 }
 
 function assertStop(r, re, label) {
@@ -556,6 +596,18 @@ for (const shell of shells) {
       assertNotExercised(runOnce(shell, base, text, { HARNESS_TABLE: "cleanvac15" }), 1);
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nosummary" }), /no SHADOW_SUMMARY row/, "no summary");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nor11" }), /no R11 rows/, "no R11 rows");
+      // Row 37 on the closing line (strategy's Q9(a)): 0 is the clean profile above; 5 is no re-rule,
+      // 6 and above forbid the switch, exit 0; missing, doubled or not a whole number STOPs.
+      assertPass(runOnce(shell, base, text, { HARNESS_TABLE: "e37five" }), "5");
+      assertPass(runOnce(shell, base, text, { HARNESS_TABLE: "e37six" }), "6");
+      assertPass(runOnce(shell, base, text, { HARNESS_TABLE: "e37many" }), "123");
+      assertClean(runOnce(shell, base, text, { HARNESS_TABLE: "cleansix" }), "6");
+      assertLabels(runOnce(shell, base, text, { HARNESS_TABLE: "labelssix" }), 2, 0, "6");
+      assertLabels(runOnce(shell, base, text, { HARNESS_TABLE: "labelsfive" }), 1, 0, "5");
+      assertNotExercised(runOnce(shell, base, text, { HARNESS_TABLE: "vac15six" }), 0, "6");
+      assertNotExercised(runOnce(shell, base, text, { HARNESS_TABLE: "vac15five" }), 0, "5");
+      const row37 = /row 37 \(the early-copy pairs that would follow the switch\) missing, doubled or not a whole number.*No switch, SOLO reports to strategy$/;
+      for (const t of ["e37none", "e37double", "e37text", "e37neg", "e37dec", "e37blank", "e37huge"]) assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), row37, t);
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
       for (const now of ["202611040714", "202611040700", "202611032359", "202611030900"]) {
         const r = runOnce(shell, base, text, { HARNESS_NOW: now });
