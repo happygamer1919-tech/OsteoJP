@@ -38,6 +38,9 @@ export const INLINE_ERROR_FIELDS = new Set<PatientField>([
   "postalCode",
   "city",
   "profession",
+  // Sistemas / SubSistemas (owner request 2026-11-02): both have a slot.
+  "healthSystemId",
+  "healthSystemNumber",
 ]);
 
 /**

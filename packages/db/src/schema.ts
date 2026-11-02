@@ -737,6 +737,43 @@ export const therapistServices = pgTable(
 );
 
 /* ================================================================== */
+/* Sistemas / SubSistemas                                             */
+/* ================================================================== */
+
+// The clinic's own list of health systems and subsystems, each a single
+// free-text name (Fisiozero's "Sistemas / SubSistemas" panel, owner request
+// 2026-11-02). From the PENDING migration
+// migrations-pending/NEXT-AFTER-0109_sistemas_subsistemas.sql. One name per
+// tenant after normalizing case and whitespace (the expression index below).
+// Deactivated, never deleted: no role but the table's owner holds DELETE.
+// RLS: every staff role reads its tenant's rows; owner and admin insert (naming
+// themselves as created_by) and update name and active. A LABEL ONLY: no price,
+// discount or invoice path reads it.
+export const healthSystems = pgTable(
+  "health_systems",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    name: text("name").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    // The target of patients_health_system_fkey (same-tenant proof).
+    unique("health_systems_id_tenant_key").on(t.id, t.tenantId),
+    uniqueIndex("health_systems_tenant_name_key").on(
+      t.tenantId,
+      sql`lower(btrim(regexp_replace(${t.name}, '[[:space:]]+', ' ', 'g')))`,
+    ),
+    check("health_systems_name_not_blank", sql`${t.name} ~ '[^[:space:]]'`),
+    check("health_systems_name_length", sql`char_length(${t.name}) <= 120`),
+  ],
+);
+
+/* ================================================================== */
 /* Patients                                                           */
 /* ================================================================== */
 
@@ -778,6 +815,14 @@ export const patients = pgTable(
       .$type<{ insurer: string | null; number: string }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    // Sistemas / SubSistemas (pending migration NEXT-AFTER-0109_sistemas_
+    // subsistemas): Fisiozero's single "Sistema/SubSistema" choice and the
+    // "Nº da Entidade / Subsistema" text below it. Both NULL until set. The
+    // Sistema is of the patient's own tenant by the composite key
+    // patients_health_system_fkey (below). Independent of
+    // healthInsuranceNumbers above, which stays the clinic's own list of plans.
+    healthSystemId: uuid("health_system_id"),
+    healthSystemNumber: text("health_system_number"),
     email: text("email"),
     phone: varchar("phone", { length: 32 }),
     // 0062 — the E.164 READING of `phone`, derived by the database and written
@@ -927,6 +972,16 @@ export const patients = pgTable(
     // Patient number is unique per tenant; the same number may recur across
     // tenants. Also serves MAX(patient_number) lookups in the assignment path.
     unique("patients_tenant_number_uq").on(t.tenantId, t.patientNumber),
+    // Sistemas / SubSistemas: a ficha names a Sistema of its own tenant only.
+    foreignKey({
+      name: "patients_health_system_fkey",
+      columns: [t.healthSystemId, t.tenantId],
+      foreignColumns: [healthSystems.id, healthSystems.tenantId],
+    }),
+    check(
+      "patients_health_system_number_check",
+      sql`${t.healthSystemNumber} is null or (${t.healthSystemNumber} ~ '[^[:space:]]' and char_length(${t.healthSystemNumber}) <= 64)`,
+    ),
   ],
 );
 

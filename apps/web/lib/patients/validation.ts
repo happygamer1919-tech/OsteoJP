@@ -5,6 +5,7 @@
 import { parsePatientPhone } from "@osteojp/notify";
 
 import { checkNif, type NifProblem } from "./nif";
+import { HEALTH_SYSTEM_NUMBER_MAX } from "../admin/health-systems-core";
 
 /**
  * Which INPUT a refusal belongs to.
@@ -27,6 +28,8 @@ export type PatientField =
   | "nif"
   | "nifExemptReason"
   | "healthInsuranceNumbers"
+  | "healthSystemId"
+  | "healthSystemNumber"
   | "email"
   | "phone"
   | "address"
@@ -95,6 +98,12 @@ export type CreatePatientInput = {
   // PL-23 — health insurance plans, a list because a patient may hold more than
   // one. Entries arrive from the form and are normalized/capped below.
   healthInsuranceNumbers?: HealthInsuranceEntry[] | null;
+  // Sistemas / SubSistemas (owner request 2026-11-02): the chosen Sistema (a
+  // health_systems id, "" or null for "Seleccione") and the "Nº da Entidade /
+  // Subsistema" text. Independent of healthInsuranceNumbers. The id is checked
+  // against the caller's own tenant in the action.
+  healthSystemId?: string | null;
+  healthSystemNumber?: string | null;
   email?: string | null;
   phone?: string | null;
   address?: string | null;
@@ -136,6 +145,8 @@ export type CreatePatientValues = {
   nifExempt: boolean;
   nifExemptReason: string | null;
   healthInsuranceNumbers: HealthInsuranceEntry[];
+  healthSystemId: string | null;
+  healthSystemNumber: string | null;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -396,6 +407,8 @@ export function parseCreatePatient(
     nifExempt: nif.nifExempt,
     nifExemptReason: nif.nifExemptReason,
     healthInsuranceNumbers: optionalInsuranceList(r.healthInsuranceNumbers) ?? [],
+    healthSystemId: optionalUuid(r.healthSystemId, "healthSystemId"),
+    healthSystemNumber: optionalText(r.healthSystemNumber, "healthSystemNumber", HEALTH_SYSTEM_NUMBER_MAX),
     email: optionalEmail(r.email),
     phone: optionalPhone(r.phone),
     address: optionalText(r.address, "address", 500),
@@ -450,6 +463,9 @@ export function parseUpdatePatient(
   if ("healthInsuranceNumbers" in r) {
     out.healthInsuranceNumbers = optionalInsuranceList(r.healthInsuranceNumbers) ?? [];
   }
+  if ("healthSystemId" in r) out.healthSystemId = optionalUuid(r.healthSystemId, "healthSystemId");
+  if ("healthSystemNumber" in r)
+    out.healthSystemNumber = optionalText(r.healthSystemNumber, "healthSystemNumber", HEALTH_SYSTEM_NUMBER_MAX);
   if ("email" in r) out.email = optionalEmail(r.email);
   if ("phone" in r && !phoneUnchanged(r.phone, opts.storedPhone)) out.phone = optionalPhone(r.phone);
   if ("address" in r) out.address = optionalText(r.address, "address", 500);

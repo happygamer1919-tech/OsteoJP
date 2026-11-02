@@ -54,6 +54,10 @@ export type AdminErrorCode =
   // dialog has had its own distinct `note_required` since SCHED-18 for exactly
   // this reason; this is the same refusal reaching the Equipa modal.
   | "note_required"
+  // Sistemas / SubSistemas: the clinic already has an ACTIVE entry with this
+  // name (case and whitespace aside). A switched-off one is switched back on
+  // instead, so this only fires on a real duplicate.
+  | "name_taken"
   | "invalid";
 
 export class AdminError extends Error {
