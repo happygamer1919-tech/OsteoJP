@@ -167,7 +167,8 @@ test("the block's shape: pipefail on line 2, no set -e, no # line, one read-only
   assert.ok(lines.includes(`UNDOFILE=${OUT_DIR}/${UNDO_NAME}`), "the undo steps are not named by their absolute path");
   assert.doesNotMatch(block, /\brm\b/, "the block deletes a file");
   for (const l of lines) {
-    if (/echo "STOP: /.test(l) && !/UNDO NOW/.test(l)) assert.ok(l.includes(OWNER), `a STOP line without the owner's sentence: ${l}`);
+    if (/echo "STOP: /.test(l) && /first 5 minutes of a 15 minute slot/.test(l)) assert.ok(!l.includes("give this line to SOLO"), `the slot STOP is a wait, not a report: ${l}`);
+    else if (/echo "STOP: /.test(l) && !/UNDO NOW/.test(l)) assert.ok(l.includes(OWNER), `a STOP line without the owner's sentence: ${l}`);
     if (/^\[ "\$\{RES\}" != "(CLEAN|REVIEW)" \]/.test(l)) assert.ok(l.includes(OWNER), `a closing line without the owner's sentence: ${l}`);
   }
   assert.ok(lines[14].startsWith('echo "${PRHEAD} ${DOCSHA} ${PRNUM} ${SWITCHED_AT}" | grep -qxE'), "the PENDING check is not the first command");
@@ -617,8 +618,14 @@ const CASES = [
     info: [[5, /one start sent twice 0; two takers, each followed by a send 0; early copy then on-time send 1/], [40, /double_sends=0 early_copy_then_on_time=1/], [55, new RegExp(`${appt(1)} \\| early copy then on-time send`)]],
   },
   { name: "an early copy AND a real double send on another visit: FAIL", seed: EARLY() + ledger(appt(2), "24h", "2026-11-05 09:30:00"), want: only({ 5: "FAIL" }), info: [[5, /one start sent twice 1; two takers, each followed by a send 0; early copy then on-time send 1/]] },
+  {
+    name: "an early copy AND a live pair of takers on the same start, not the copy: FAIL",
+    seed: TWO_TAKERS(true) + claim(V, "24h", "2026-11-06 08:15", "2026-11-04 20:00", { taker: "run", attempt: 3, early: true }) + ledger(V, "24h", "2026-11-04 20:00:01"),
+    want: only({ 5: "FAIL" }),
+    info: [[5, /one start sent twice 0; two takers, each followed by a send 1; early copy then on-time send 1/]],
+  },
   { name: "an early copy and two on-time sends: three rows on one start: FAIL", seed: EARLY() + ledger(appt(1), "24h", "2026-11-05 08:30:00"), want: only({ 5: "FAIL" }) },
-  { name: "an early copy and another row before the switch, then the sweep's: three rows on one start: FAIL", seed: EARLY() + claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-04 20:05", { taker: "run", attempt: 3 }) + ledger(appt(1), "24h", "2026-11-04 20:05:01"), want: only({ 5: "FAIL" }) },
+  { name: "an early copy and another row before the switch, then the sweep's: three rows on one start: FAIL", seed: EARLY() + claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-04 20:05", { attempt: 3 }) + ledger(appt(1), "24h", "2026-11-04 20:05:01"), want: only({ 5: "FAIL" }) },
   { name: "an early claim written since the switch, then the sweep's: not the pair: FAIL", seed: claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-05 07:30", { taker: "run", attempt: 2, early: true }) + ledger(appt(1), "24h", "2026-11-05 07:30:01"), want: only({ 5: "FAIL", 6: "REVIEW" }) },
   { name: "an early claim of the sweep's before the switch: not the pair: FAIL", seed: EARLY("sweep"), want: only({ 5: "FAIL" }) },
   { name: "DOUBLE SEND across the switch: the job's claim on Wednesday was not early, the sweep's on Thursday, one start", seed: EARLY("run", false), want: only({ 5: "FAIL" }), info: [[5, /one start sent twice 1;/]] },
@@ -768,7 +775,8 @@ const MUTANTS = [
   ["only the job is not REVIEW", "when sweep_since_first_slot = 0 then 'REVIEW'", "when false then 'REVIEW'", "only the sleeping job"],
   ["the double send's count", "having count(*) > 1 and bool_or(s.since_switch)", "having count(*) > 2 and bool_or(s.since_switch)", "DOUBLE SEND: one start, two sent rows"],
   ["an early copy is a double send", "     and not exists (select 1 from early_copy q\n                      where q.tenant_id = s.tenant_id and q.appointment_id = s.appointment_id\n                        and q.offset_id = s.offset_id and q.channel = s.channel and q.starts_at = s.starts_at)\n", "", "EARLY COPY then an on-time send"],
-  ["an early copy is two takers", "   where not exists (select 1 from early_copy q\n                      where q.tenant_id = a.tenant_id and q.appointment_id = a.appointment_id\n                        and q.offset_id = a.offset_id and q.channel = a.channel and q.starts_at = a.starts_at)\n", "", "EARLY COPY then an on-time send"],
+  ["an early copy is two takers", "   where not (a.early = true and exists (select 1 from early_copy q\n                      where q.tenant_id = a.tenant_id and q.appointment_id = a.appointment_id\n                        and q.offset_id = a.offset_id and q.channel = a.channel and q.starts_at = a.starts_at))\n", "", "EARLY COPY then an on-time send"],
+  ["the two-takers exclusion is the whole start", "   where not (a.early = true and exists (select 1 from early_copy q\n", "   where not (exists (select 1 from early_copy q\n", "an early copy AND a live pair of takers on the same start"],
   ["the early copy's REVIEW dead", "when (select count(*) from early_copy) > 0 then 'REVIEW'", "when false then 'REVIEW'", "EARLY COPY then an on-time send"],
   ["the pair has any number of rows", "  having count(*) = 2\n", "  having count(*) >= 2\n", "an early copy and another row before the switch"],
   ["the pair's copy may be since the switch", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where s.taker = 'run' and s.early = true) = 1", "an early claim written since the switch"],

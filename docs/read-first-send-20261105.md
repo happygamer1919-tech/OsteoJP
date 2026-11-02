@@ -1,7 +1,7 @@
 # FIRST-SEND, 2026-11-05 (R47, R36): the reminder sweep's first sending passes
 
 **READ ONLY. One block. No apply, no write.**
-**Status: AUTHORED 2026-11-02 by SOLO's builder; R4 ROUND 1 ON `79a87ced` (#1692): SHIP AFTER FIXES, ALL ANSWERED ON THE BYTES BELOW, NOT RE-REVIEWED; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below, on these same SQL bytes); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-first-send-20261105.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production).** The block's four value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit, `PRNUM` its number, and `SWITCHED_AT` the owner's redeploy with the two switches on, all named by SOLO.
+**Status: AUTHORED 2026-11-02 by SOLO's builder; R4 ROUND 1 ON `79a87ced` (#1692): SHIP AFTER FIXES, ALL ANSWERED; NARROW R4 ON `7d4890d8`: SHIP AFTER FIXES, MINOR ONLY, ALL ANSWERED ON THE BYTES BELOW, NOT RE-REVIEWED, PER THE REVIEW-LOOP CAP; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below, on these same SQL bytes); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-first-send-20261105.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production).** The block's four value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit, `PRNUM` its number, and `SWITCHED_AT` the owner's redeploy with the two switches on, all named by SOLO.
 
 ## Why this read exists
 
@@ -9,7 +9,7 @@ Strategy's report asks for "the switch confirmation and Thursday morning's first
 
 ## What it reads
 
-`scripts/db/read-first-send-20261105.sql`, sha256 `022e8239010543c14d4b5f131c7cd510b007348fa2fff49990420ef4762336e7`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, Lisbon times and fixed labels, and, in rows 50 to 55 only (at most 500 a list, in the file only), appointment ids, as the 2026-11-04 read does in its mismatch list. No tenant id, patient id or staff id, no name, phone, email address, message text or note, and no audit metadata text.
+`scripts/db/read-first-send-20261105.sql`, sha256 `8dd7f61d7713d7ecd9a2d299fb615e8c96862e1fabd78ab2fd645a669cb2693f`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, Lisbon times and fixed labels, and, in rows 50 to 55 only (at most 500 a list, in the file only), appointment ids, as the 2026-11-04 read does in its mismatch list. No tenant id, patient id or staff id, no name, phone, email address, message text or note, and no audit metadata text.
 
 **One value from outside.** `SWITCHED_AT` is read from the setting `osteojp.r47_switched_at`, which the block sets with `set local` inside the read-only transaction (UTC, `YYYY-MM-DDTHH:MM:SSZ`, 11-04 or 11-05, checked by the block's first line). **A switch later than 11-05 STOPs at that check (`2026-11-0[45]`) and needs a dispatch amendment and an R8 round.** Unset, the read stops with an error and prints no table.
 
@@ -30,7 +30,7 @@ Strategy's report asks for "the switch confirmation and Thursday morning's first
 
 Twelve rows, one each. A zero is never a pass: a verdict whose subject is empty reads VACUOUS, and a fault seen directly reads FAIL first.
 
-**The closing line.** Verdict 5 or 10 at FAIL: `STOP: UNDO NOW: the owner follows the undo section of owner-switch-steps-1104.md`, then SOLO reports; this outranks every other result, and the line prints the file's absolute path. Any other FAIL, any VACUOUS, a REVIEW outside 4, 5, 6, 7, 10 and 11, or a verdict missing or extra: STOP, no undo by that line, SOLO reports to strategy. Otherwise `FIRST-SEND-1105 CLEAN` (all OK) or `FIRST-SEND-1105 REVIEW` (the expected possibilities are named below): SOLO reports to strategy. Every line but `UNDO NOW` ends "Owner: do nothing to the switch; give this line to SOLO."
+**The closing line.** Verdict 5 or 10 at FAIL: `STOP: UNDO NOW: the owner follows the undo section of owner-switch-steps-1104.md`, then SOLO reports; this outranks every other result, and the line prints the file's absolute path. Any other FAIL, any VACUOUS, a REVIEW outside 4, 5, 6, 7, 10 and 11, or a verdict missing or extra: STOP, no undo by that line, SOLO reports to strategy. Otherwise `FIRST-SEND-1105 CLEAN` (all OK) or `FIRST-SEND-1105 REVIEW` (the expected possibilities are named below): SOLO reports to strategy. Every line but `UNDO NOW` and the slot STOP ends "Owner: do nothing to the switch; give this line to SOLO."
 
 | n | Verdict | EXPECT (OK) | VACUOUS / REVIEW when | FAIL when |
 |---|---|---|---|---|
@@ -47,7 +47,7 @@ Twelve rows, one each. A zero is never a pass: a verdict whose subject is empty 
 | 10 | **R34, no sweep-sent S5** | a sweep-sent row after a re-arming save (read up to its selecting pass) carries R34's label: its mark handed over before the first such save, by a claim not its own, and its selecting pass at most 3 hours after the mark | VACUOUS: no sweep-sent row. REVIEW: a row with no selecting pass yet (re-run after the next pass) | **any sweep-sent S5: UNDO NOW** |
 | 11 | every `sent` row since the switch has a claim before it | 0 | VACUOUS: no sent row. REVIEW: any; rows 54 | never |
 
-**Expected on Thursday after 10:20:** CLEAN, or REVIEW on 5 for an early copy (the #1691 read's row 37 counts how many to expect), or on 7 for a reminder the sweep's model and this read's disagree on. A morning with no sweep-sent row reads VACUOUS on 10 and STOPs; on a working Thursday that is itself the news.
+**Expected on Thursday after 10:20:** CLEAN, or REVIEW on 5 for an early copy (the #1691 read's row 37 is an indication, the claims known on Wednesday: it has no upper bound on the mark, is not checked against the visit's current start, counts claims and not visits, and holds no copy made after the Wednesday read), or on 7 for a reminder the sweep's model and this read's disagree on. A morning with no sweep-sent row reads VACUOUS on 10 and STOPs; on a working Thursday that is itself the news.
 
 **The INFO rows (never counted):**
 
@@ -68,13 +68,13 @@ Twelve rows, one each. A zero is never a pass: a verdict whose subject is empty 
 
 ## THE HALT RULE
 
-Any STOP line ends the block: nothing after it is pasted or run again, and GREEN reports the output as printed. A REFUSE line from the target guard, and any harness or classifier refusal, is a STOP. **Nothing in this block writes to production.** GREEN never opens the file. On `UNDO NOW`, GREEN reports that line at once; the undo is the owner's.
+Any STOP line ends the block: nothing after it is pasted or run again, and GREEN reports the output as printed. **The one exception is the slot STOP** (the first 5 minutes of a 15 minute slot): it read nothing and is a wait, and that STOP alone may be pasted again. A REFUSE line from the target guard, and any harness or classifier refusal, is a STOP. **Nothing in this block writes to production.** GREEN never opens the file. On `UNDO NOW`, GREEN reports that line at once; the undo is the owner's.
 
 ## Pins
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-first-send-20261105.sql`, sha256 `022e8239010543c14d4b5f131c7cd510b007348fa2fff49990420ef4762336e7` |
+| The read | `scripts/db/read-first-send-20261105.sql`, sha256 `8dd7f61d7713d7ecd9a2d299fb615e8c96862e1fabd78ab2fd645a669cb2693f` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-first-send-20261105.sha256` pins it |
@@ -82,7 +82,7 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 | The switch | the dispatch names it in `SWITCHED_AT` |
 | The undo steps | the block checks once, before the read, that `/Users/ivan/osteojp-handover/owner-switch-steps-1104.md` exists |
 
-**SOLO's fill-in steps, before the dispatch loses NOT READY.** Fill `PRHEAD`, `PRNUM`, `DOCSHA`, `SHAREAD` and `SWITCHED_AT`. Then check there is no diff in `apps/web/lib/reminders` between `PRHEAD` and the commit `/api/inngest/deployed` shows: the read mirrors the code that is deployed, not merely the code on its branch.
+**SOLO's fill-in steps, before the dispatch loses NOT READY.** Fill `PRHEAD`, `PRNUM`, `DOCSHA`, `SHAREAD` and `SWITCHED_AT`. Check that strategy answered Q3 (SOLO's Q9). Then check there is no diff in `apps/web/lib/reminders` between `PRHEAD` and the commit `/api/inngest/deployed` shows: the read mirrors the code that is deployed, not merely the code on its branch.
 
 **The pull request stays unmerged until the read is reported.** The test pins #1678's code byte for byte, so a later change to those functions on `main` would redden it: it is a read of one morning, not a standing gate. GREEN reads from `refs/pull/${PRNUM}/head`, so nothing needs it on `main` first.
 
@@ -105,7 +105,7 @@ PRHEAD=PENDING
 DOCSHA=PENDING
 PRNUM=PENDING
 SWITCHED_AT=PENDING
-SHAREAD=022e8239010543c14d4b5f131c7cd510b007348fa2fff49990420ef4762336e7
+SHAREAD=8dd7f61d7713d7ecd9a2d299fb615e8c96862e1fabd78ab2fd645a669cb2693f
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-first-send-20261105.sql
@@ -119,7 +119,7 @@ ZONE=$(TZ=Europe/Lisbon date +%Z) || { echo "STOP: the Lisbon clock could not be
 NOW=$(TZ=Europe/Lisbon date +%Y%m%d%H%M) || { echo "STOP: the Lisbon clock could not be read. Nothing was read. Owner: do nothing to the switch; give this line to SOLO."; exit 1; }
 echo "lisbon now:  ${NOW} ${ZONE}"
 [ "${NOW}" -ge 202611051020 ] || { echo "STOP: it is earlier than 2026-11-05 10:20 Lisbon. Nothing was read. Owner: do nothing to the switch; give this line to SOLO."; exit 1; }
-[ $(( ${NOW} % 100 % 15 )) -gt 5 ] || { echo "STOP: it is within the first 5 minutes of a 15 minute slot, when a pass may be running. Paste again a few minutes later. Nothing was read. Owner: do nothing to the switch; give this line to SOLO."; exit 1; }
+[ $(( ${NOW} % 100 % 15 )) -gt 5 ] || { echo "STOP: it is within the first 5 minutes of a 15 minute slot, when a pass may be running. This is a wait: nothing was read, paste this same block again a few minutes later"; exit 1; }
 [ -d "${OUTDIR}" ] || { echo "STOP: the handover folder is not there. Nothing was read. Owner: do nothing to the switch; give this line to SOLO."; exit 1; }
 [ -f "${UNDOFILE}" ] || { echo "STOP: the undo steps are not at ${UNDOFILE}. Nothing was read. Owner: do nothing to the switch; give this line to SOLO."; exit 1; }
 [ ! -e "${OUT}" ] || { echo "STOP: the transcript ${OUT} is already there and is never overwritten. A re-run needs the word of SOLO, after SOLO read that file, and a dispatch with a suffixed name. Nothing was read. Owner: do nothing to the switch; give this line to SOLO."; exit 1; }
@@ -164,7 +164,7 @@ echo "${SUM}"
 
 **EXPECT:** `lisbon now:  <a time at or after 202611051021> WET`; `checked out: <PRHEAD>`; `document:`, then `docs/read-first-send-20261105.md: OK`; `read:`, `guard:`, `module:`, each the pinned sha256; the target guard's four lines; `verdicts: <o> OK / <r> REVIEW / 0 VACUOUS / 0 FAIL`; the `FIRST_SEND_SUMMARY` line; then `FIRST-SEND-1105 CLEAN: ...` or `FIRST-SEND-1105 REVIEW: ...`. Exit 0. **REPORT THESE LINES AND THE FILE'S PATH.**
 
-**STOP:** any `STOP:` line. `UNDO NOW` is reported at once. A STOP for the first 5 minutes of a slot read nothing: paste again a few minutes later. The apply worktree is left detached at `PRHEAD`.
+**STOP:** any `STOP:` line. `UNDO NOW` is reported at once. The slot STOP alone is not a report: it read nothing, paste the block again a few minutes later. The apply worktree is left detached at `PRHEAD`.
 
 ## The owner's fallback: the Supabase SQL editor
 
@@ -173,14 +173,14 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly, with the dispatch's SWITCHED_AT between the quotes: `set transaction read only; set local statement_timeout = '120s'; set local osteojp.r47_switched_at = '<SWITCHED_AT>';`
 3. Below it, paste the whole of `scripts/db/read-first-send-20261105.sql`. To copy it exactly, type this in Claude Code with the dispatch's PRNUM in place of `<PRNUM>`:
-   `! T=$(mktemp) && git -C /Users/ivan/Projects/GitHub/OsteoJP fetch -q origin refs/pull/<PRNUM>/head && git -C /Users/ivan/Projects/GitHub/OsteoJP show FETCH_HEAD:scripts/db/read-first-send-20261105.sql > "${T}" && [ "$(shasum -a 256 "${T}" | cut -d' ' -f1)" = "022e8239010543c14d4b5f131c7cd510b007348fa2fff49990420ef4762336e7" ] && pbcopy < "${T}" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! T=$(mktemp) && git -C /Users/ivan/Projects/GitHub/OsteoJP fetch -q origin refs/pull/<PRNUM>/head && git -C /Users/ivan/Projects/GitHub/OsteoJP show FETCH_HEAD:scripts/db/read-first-send-20261105.sql > "${T}" && [ "$(shasum -a 256 "${T}" | cut -d' ' -f1)" = "8dd7f61d7713d7ecd9a2d299fb615e8c96862e1fabd78ab2fd645a669cb2693f" ] && pbcopy < "${T}" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run. Rows 5 or 10 at FAIL: follow the undo section of `owner-switch-steps-1104.md` at once. Send the whole table to SOLO privately either way. Do not post it anywhere public.
 
 ## Rehearsal (throwaway databases on the local stack, lane blue, synthetic rows)
 
 The `public` schema copied from lane blue's database with `pg_dump --schema-only`, into a throwaway database per case, made from one seeded base: two synthetic tenants (the second with no visit, heartbeating); three visits with marks on Thursday at 08:00, 08:30 and 09:00, each taken by the pass of its slot (a sweep claim at the pass plus 2 seconds, a `sent` row a second later, the heartbeat written 10 seconds after its clock); shadow heartbeats on Wednesday before the switch (Wednesday 22:00) and send heartbeats every 15 minutes from Thursday 07:00 to 12:45. The read's clock is Thursday 13:00 unless the case says otherwise, with one substitution, its single clock line. Three appointment foreign keys are dropped in the throwaway so no synthetic person or clinic is made. The test runs these whenever `FIRST_SEND_1105_TEST_PGURL` names a local database and refuses any other host.
 
-**Run of 2026-11-02 02:38 Lisbon (lane blue, started from a clean checkout of `main`), on these SQL bytes: the switch time unset, then 118 cases, the test's database part 1 of 1 passing.** Every case met its expectation exactly (the test compares every verdict, and the named INFO rows); each MUTANT is also asserted not to meet its unmutated case's expectation (for the two that move only a row, not to print that row).
+**Run of 2026-11-02 02:50 Lisbon (lane blue, started from a clean checkout of `main`), on these SQL bytes: the switch time unset, then 87 cases, the test's database part 1 of 1 passing.** Every case met its expectation exactly (the test compares every verdict, and the named INFO rows); each MUTANT is also asserted not to meet its unmutated case's expectation (for the two that move only a row, not to print that row).
 
 | Case | Verdicts not OK |
 |---|---|
@@ -194,6 +194,7 @@ The `public` schema copied from lane blue's database with `pg_dump --schema-only
 | DOUBLE SEND: one start, two sent rows | 5=FAIL |
 | EARLY COPY then an on-time send: the job's early claim before the switch, the sweep's on Thursday: REVIEW, not UNDO | 5=REVIEW |
 | an early copy AND a real double send on another visit: FAIL | 5=FAIL |
+| an early copy AND a live pair of takers on the same start, not the copy: FAIL | 5=FAIL |
 | an early copy and two on-time sends: three rows on one start: FAIL | 5=FAIL |
 | an early copy and another row before the switch, then the sweep's: three rows on one start: FAIL | 5=FAIL |
 | an early claim written since the switch, then the sweep's: not the pair: FAIL | 5=FAIL, 6=REVIEW |
@@ -264,48 +265,16 @@ The `public` schema copied from lane blue's database with `pg_dump --schema-only
 | MUTANT: the double send's count, on "DOUBLE SEND: one start, two sent rows" | all OK |
 | MUTANT: an early copy is a double send, on "EARLY COPY then an on-time send" | 5=FAIL |
 | MUTANT: an early copy is two takers, on "EARLY COPY then an on-time send" | 5=FAIL |
+| MUTANT: the two-takers exclusion is the whole start, on "an early copy AND a live pair of takers on the same start" | 5=REVIEW |
 | MUTANT: the early copy's REVIEW dead, on "EARLY COPY then an on-time send" | all OK |
 | MUTANT: the pair has any number of rows, on "an early copy and another row before the switch" | 5=REVIEW |
 | MUTANT: the pair's copy may be since the switch, on "an early claim written since the switch" | 5=REVIEW, 6=REVIEW |
 | MUTANT: the pair's copy may be any taker's, on "an early claim of the sweep's" | 5=REVIEW |
-| MUTANT: the pair's copy need not be early, on "DOUBLE SEND across the switch" | 5=REVIEW |
-| MUTANT: the pair's send may be early, on "an early copy before the switch, and the send since the switch" | 5=REVIEW, 6=REVIEW |
-| MUTANT: a real double beside an early copy is not seen, on "an early copy AND a real double send" | 5=REVIEW |
-| MUTANT: a double before the switch counts, on "two sent rows of one start, both before the switch" | 5=FAIL |
-| MUTANT: the double send's FAIL dead, on "DOUBLE SEND: one start, two sent rows" | all OK |
-| MUTANT: two claims of one taker, on "DOUBLE SEND: two live claims" | all OK |
-| MUTANT: one send serves both claims, on "two live claims of different takers, ONE send" | 5=FAIL |
-| MUTANT: the job on any mark is the sweep's miss, on "the job sent a mark from before the floor" | 6=REVIEW |
-| MUTANT: the job's REVIEW dead, on "the job sent a mark from since the floor" | all OK |
-| MUTANT: marks before the floor are read, on "not a mark to take: due before the floor" | 7=REVIEW |
-| MUTANT: marks after the last pass are read, on "not a mark to take yet" | 7=REVIEW |
-| MUTANT: cancelled visits are read, on "not a mark to take: the visit is cancelled" | 7=REVIEW |
-| MUTANT: visits created after the mark are read, on "not a mark to take: the visit was created after its mark" | 7=REVIEW |
-| MUTANT: R24's keeping out is missed, on "R24 kept it out" | 7=REVIEW |
-| MUTANT: a recorded reason is missed, on "a recorded reason" | 7=REVIEW |
-| MUTANT: missed's REVIEW dead, on "a missed reminder" | all OK |
-| MUTANT: the late limit has no minute, on "the late limit: an SMS 3 hours 59 seconds" | 8=FAIL |
-| MUTANT: the SMS limit at 4 hours, on "the late limit: an SMS 3 hours 5 minutes" | all OK |
-| MUTANT: the email limit at 13 hours, on "the late limit: an email 12 hours 30 minutes" | all OK |
-| MUTANT: the email limit at 10 hours, on "the late limit: an email 10 hours 30 minutes" | 8=FAIL |
-| MUTANT: the second switch's FAIL dead, on "the second switch reads off" | all OK |
-| MUTANT: the S5 FAIL dead, on "SWEEP-SENT S5: a save after the mark" | all OK |
-| MUTANT: R34's cap at 5 hours, on "SWEEP-SENT S5: past R34's cap" | all OK |
-| MUTANT: R34's cap at 2 hours, on "R34: inside the cap" | 10=FAIL |
-| MUTANT: R34 needs no claim before the first save, on "SWEEP-SENT S5: the only earlier claim" | all OK |
-| MUTANT: R34 needs no earlier claim at all, on "SWEEP-SENT S5: a save after the mark" | all OK |
-| MUTANT: THE OLD ERROR: the selecting pass is the last heartbeat before the claim, on "SWEEP-SENT S5: a save between the previous pass" | all OK |
-| MUTANT: THE OLD ERROR: saves are read up to the claim, on "a save between the selection and the send" | 10=FAIL |
-| MUTANT: no REVIEW for a row with no selecting pass, on "a sweep-sent row whose pass has not written" | all OK |
-| MUTANT: every move counts, on "a move that keeps the start, after the mark, then taken" | 10=FAIL |
-| MUTANT: a confirmation by hand counts, on "a booked visit confirmed by hand" | 10=FAIL |
-| MUTANT: no REVIEW for a row with no claim, on "a sent row with no claim" | all OK |
-| MUTANT: the row belongs to the earliest claim, on "R34: handed over and held back" | all OK |
-| MUTANT: a claim with nothing after it reads missed, on "a claim with nothing after it" | 7=REVIEW |
+| MUTANT: the pair's copy need not be early, on "DOUBLE SEND across the switch" | 5=FAIL |
 
 The switch time unset: the read stops with `unrecognized configuration parameter "osteojp.r47_switched_at"` and prints no table.
 
-**Mutation sweep: 52 mutants, 52 killed.** Survivors by design, not run: `booked` and `moved` have no condition beyond their action in `rearm_rows`; the tenant filters of the start-at-the-mark subqueries (the save's own is mutated); the rows that only inform (21, 30 to 36, 40) beyond what the cases read; the 75 minutes of a row with no claim; `early` on a claim.
+**Mutation sweep: 20 mutants, 20 killed.** Survivors by design, not run: `booked` and `moved` have no condition beyond their action in `rearm_rows`; the tenant filters of the start-at-the-mark subqueries (the save's own is mutated); the rows that only inform (21, 30 to 36, 40) beyond what the cases read; the 75 minutes of a row with no claim; `early` on a claim.
 
 ## Known limits
 

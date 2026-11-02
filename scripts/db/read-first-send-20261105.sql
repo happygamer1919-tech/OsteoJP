@@ -194,7 +194,8 @@ live as (
 ),
 two_takers as (
   -- Two live claims of one start, of different takers. `each_sent`: each has a `sent` row of its
-  -- own at or after it, two rows in all, one of them since the switch.
+  -- own at or after it, two rows in all, one of them since the switch. `a` is the older claim, so
+  -- in the by-design pair `a` is the early copy; only that pair is left out, not the start.
   select a.tenant_id, a.appointment_id, a.offset_id, a.channel, a.starts_at,
          exists (select 1 from sent x join sent y on y.id <> x.id
                                                  and y.tenant_id = x.tenant_id and y.appointment_id = x.appointment_id
@@ -207,9 +208,9 @@ two_takers as (
     join live b on b.tenant_id = a.tenant_id and b.appointment_id = a.appointment_id
                and b.offset_id = a.offset_id and b.channel = a.channel and b.starts_at = a.starts_at
                and b.taker <> a.taker and (b.created_at, b.id) > (a.created_at, a.id)
-   where not exists (select 1 from early_copy q
+   where not (a.early = true and exists (select 1 from early_copy q
                       where q.tenant_id = a.tenant_id and q.appointment_id = a.appointment_id
-                        and q.offset_id = a.offset_id and q.channel = a.channel and q.starts_at = a.starts_at)
+                        and q.offset_id = a.offset_id and q.channel = a.channel and q.starts_at = a.starts_at))
 ),
 moved_start as (
   -- INFO: one reminder sent for two starts: a re-plan may legitimately send for a new start.
