@@ -74,3 +74,11 @@ export * from "./src/guest-intake-staff";
 // read and the creation form both gate on the same answer, and each keeping its
 // own check is how they would come to disagree about whether the table exists.
 export * from "./src/rgpd-acceptance-schema";
+
+// BLOQUEIOS DE REPETICAO SEMANAL - whether the pending therapist_weekly_blocks
+// table exists yet. Exported from the package for the reason `shared-resource`
+// above is: the staff conflict check, the agenda band, the availability read
+// and the patient portal (apps/api) all gate on the same answer, and each
+// keeping its own check is how they would come to disagree about whether a
+// weekly rule can block anything.
+export * from "./src/weekly-blocks-schema";

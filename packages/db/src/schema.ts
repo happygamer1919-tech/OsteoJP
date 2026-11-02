@@ -1194,6 +1194,43 @@ export const timeOff = pgTable(
   ],
 );
 
+// BLOQUEIOS DE REPETICAO SEMANAL (the clinic's request of 2026-11-02,
+// Fisiozero's "Modo REPETICAO SEMANAL"): a therapist blocked every <weekday>
+// from <start_time> to <end_time>, Lisbon wall clock, with NO end date. From
+// the PENDING migration migrations-pending/NEXT-AFTER-0109_weekly_blocks.sql,
+// so the table exists only on a database that file was applied to: every
+// reader asks `weeklyBlocksSchemaPresent` (./weekly-blocks-schema.ts) first.
+// Weekday 0 = Sunday .. 6 = Saturday, as availability_templates. No update
+// path: a rule is deleted and added again.
+export const therapistWeeklyBlocks = pgTable(
+  "therapist_weekly_blocks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weekday: smallint("weekday").notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    unique("therapist_weekly_blocks_dedupe_uq").on(
+      t.tenantId,
+      t.userId,
+      t.weekday,
+      t.startTime,
+      t.endTime,
+    ),
+    check("therapist_weekly_blocks_weekday_range", sql`${t.weekday} between 0 and 6`),
+    check("therapist_weekly_blocks_start_before_end", sql`${t.startTime} < ${t.endTime}`),
+  ],
+);
+
 /* ================================================================== */
 /* Clinical                                                           */
 /* ================================================================== */
