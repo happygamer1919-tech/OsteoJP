@@ -13,7 +13,13 @@
  *     movable, and no row when the update moved nothing;
  *   - no transaction at all when `rescheduleAppointment` refuses the move (the
  *     24h rule, a slot conflict, a closed clinic, a held clinic);
- *   - the staff notice still goes out only after the move has committed.
+ *   - the staff notice still goes out only after the move has committed;
+ *   - the re-plan event (owner, 2026-11-02, option 1) is sent once, AFTER the
+ *     commit, with ids and the new start only; never for a move that did not
+ *     commit, was refused, or moved an unaccepted request; and a failing send
+ *     leaves the move and its row committed and the call resolved.
+ * The Inngest package is replaced by a recorder here; the real client with no
+ * key is exercised in portal-move-replan.test.ts.
  * Not proven here (needs a database): that Postgres rolls back on that throw.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +49,23 @@ const db = vi.hoisted(() => ({
     transactions: number;
     timeline: string[];
     transaction: (cb: (tx: unknown) => Promise<unknown>) => Promise<unknown>;
+  },
+}));
+
+/** What the stand-in Inngest client was asked to send, and whether its next send fails. */
+const bus = vi.hoisted(() => ({
+  sent: [] as Array<{ name: string; data: Record<string, unknown> }>,
+  fail: false,
+}));
+
+vi.mock("inngest", () => ({
+  Inngest: class {
+    send = async (e: { name: string; data: Record<string, unknown> }) => {
+      db.current?.timeline.push("send");
+      if (bus.fail) throw new TypeError("send refused");
+      bus.sent.push(e);
+      return { ids: ["evt"] };
+    };
   },
 }));
 
@@ -135,7 +158,20 @@ const NEW_START = new Date(NOW.getTime() + 7 * 24 * H);
 const NEW_END = new Date(NEW_START.getTime() + 45 * 60_000);
 
 /** The two reads a successful move makes: the owner check, then the locked read of the start it leaves. */
-const OWNED_AND_BEFORE = [[{ practitionerId: PRAC }], [{ startsAt: OLD_START, locationId: LOC }]];
+const OWNED_AND_BEFORE = [
+  [{ practitionerId: PRAC }],
+  [{ startsAt: OLD_START, locationId: LOC, status: "confirmed", origin: "patient_portal" }],
+];
+/** The same move, of a request the clinic has not accepted yet. */
+const OWNED_AND_BEFORE_UNACCEPTED = [
+  [{ practitionerId: PRAC }],
+  [{ startsAt: OLD_START, locationId: LOC, status: "scheduled", origin: "patient_portal" }],
+];
+/** A visit reception booked, still Agendada: not a request, so it re-plans. */
+const OWNED_AND_BEFORE_STAFF_BOOKED = [
+  [{ practitionerId: PRAC }],
+  [{ startsAt: OLD_START, locationId: LOC, status: "scheduled", origin: "staff" }],
+];
 
 beforeEach(() => {
   setPatientChangeConsumer(async () => {
@@ -144,6 +180,9 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  bus.sent = [];
+  bus.fail = false;
+  vi.restoreAllMocks();
   resetPatientChangeConsumer();
   vi.unstubAllEnvs();
   db.current = null;
@@ -192,6 +231,7 @@ describe("R44: rescheduleOwn writes the move's audit row in the move's transacti
     expect(fake.transactions).toBe(1);
     expect(fake.committed).toEqual([]);
     expect(fake.timeline).toEqual([]);
+    expect(bus.sent).toEqual([]);
   });
 
   it("not the patient's, or not movable: no lock, no update, no row", async () => {
@@ -210,6 +250,69 @@ describe("R44: rescheduleOwn writes the move's audit row in the move's transacti
     const fake = installFakeDb({ selects: OWNED_AND_BEFORE, updated: [] });
     await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
     expect(fake.committed.map((o) => o.op)).toEqual(["select", "lock", "select", "update"]);
+    expect(bus.sent).toEqual([]);
+  });
+});
+
+describe("R44: rescheduleOwn re-plans the visit's reminders after the commit", () => {
+  it("one appointment/scheduled, after the commit, ids and the new start only, no confirmation", async () => {
+    const fake = installFakeDb({ selects: OWNED_AND_BEFORE });
+    await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
+    expect(fake.timeline).toEqual(["commit", "send"]);
+    expect(bus.sent).toHaveLength(1);
+    const { saveId, ...rest } = bus.sent[0]!.data;
+    expect(bus.sent[0]!.name).toBe("appointment/scheduled");
+    expect(rest).toEqual({
+      appointmentId: APPT,
+      tenantId: TENANT,
+      startsAt: NEW_START.toISOString(),
+      practitionerId: PRAC,
+      confirmationEligible: false,
+    });
+    expect(saveId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it("a visit reception booked, still Agendada, is not a request: it re-plans", async () => {
+    const fake = installFakeDb({ selects: OWNED_AND_BEFORE_STAFF_BOOKED });
+    await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
+    expect(fake.timeline).toEqual(["commit", "send"]);
+  });
+
+  it("an unaccepted request: the move and its row commit, and nothing is sent (as on the staff move)", async () => {
+    const fake = installFakeDb({ selects: OWNED_AND_BEFORE_UNACCEPTED });
+    await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
+    expect(fake.committed.map((o) => o.op)).toEqual(["select", "lock", "select", "update", "insert"]);
+    expect(fake.timeline).toEqual(["commit"]);
+    expect(bus.sent).toEqual([]);
+  });
+
+  it("a failing send: the call resolves, the move and its row stay committed, the failure is logged by name only", async () => {
+    const errors: unknown[][] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
+      errors.push(a);
+    });
+    bus.fail = true;
+    const fake = installFakeDb({ selects: OWNED_AND_BEFORE });
+    await expect(
+      drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END }),
+    ).resolves.toBeUndefined();
+    expect(fake.committed.map((o) => o.op)).toEqual(["select", "lock", "select", "update", "insert"]);
+    expect(fake.timeline).toEqual(["commit", "send"]);
+    expect(errors).toEqual([["portal: reminder re-plan failed", "TypeError"]]);
+  });
+
+  it("nothing committed (the audit insert failed): nothing is sent", async () => {
+    installFakeDb({ selects: OWNED_AND_BEFORE, insertFails: true });
+    await expect(
+      drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END }),
+    ).rejects.toThrow();
+    expect(bus.sent).toEqual([]);
+  });
+
+  it("not the patient's: nothing is sent", async () => {
+    installFakeDb({ selects: [[]] });
+    await drizzleAppointmentsStore.rescheduleOwn(PRINCIPAL, APPT, { startsAt: NEW_START, endsAt: NEW_END });
+    expect(bus.sent).toEqual([]);
   });
 });
 
@@ -244,13 +347,14 @@ describe("R44: a refused move opens no transaction, so it writes no row", () => 
     expect((err as InstanceType<typeof AppointmentError>).code).toBe(code);
     expect(fake.transactions).toBe(0);
     expect(fake.committed).toEqual([]);
+    expect(bus.sent).toEqual([]);
   });
 
-  it("the control: the same move, not refused, writes its row, and the staff notice follows the commit", async () => {
+  it("the control: the same move, not refused, writes its row, re-plans, and the staff notice follows", async () => {
     vi.stubEnv("ONLINE_BOOKING_HELD_LOCATION_IDS", HELD);
     const fake = installFakeDb({ selects: OWNED_AND_BEFORE });
     await rescheduleAppointment(PRINCIPAL, APPT, { startsAt: NEW_START }, storeFor({}), NOW);
     expect(fake.committed.filter((o) => o.op === "insert")).toHaveLength(1);
-    expect(fake.timeline).toEqual(["commit", "notice"]);
+    expect(fake.timeline).toEqual(["commit", "send", "notice"]);
   });
 });

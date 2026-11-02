@@ -221,22 +221,33 @@ export function hasSchedulingEvent(tx: DbTx): SQL {
  * audit row). Audit rows only: no claim is read.
  *
  * THE GAP THAT REMAINS. Every writer of those two rows records the start, but
- * not every path that changes `starts_at` writes one: the patient's own move
- * in the portal (apps/api/lib/appointments/store.ts, `rescheduleOwn`) and the
- * importer's re-upsert change it with no audit row and no event. Either rule
- * can then read a stale start: rule 1 when such a change falls between the
- * mark and the first move after it (that move's `fromStartsAt` is the start
- * the unaudited change left, not the start at the mark), rule 2 when it falls
- * between the last row and the mark. A move back to the start at the mark
- * then reads as a change and counts (the mark is skipped), or a move that
- * keeps the start now reads as kept when the start at the mark was another
- * (a mark the live job never had is taken). The trail cannot say on which
- * side of the mark such a change fell. Exposure: the 48h email through the
- * portal (`rescheduleOwn` refuses a start under 24h away, so the 24h SMS is
- * out of its reach), and either mark through the importer. The real fix is
- * an audit row of its own for the portal move, carded. Rule 1 also trusts the read of the row it
- * moved, which takes no row lock: a second move of the same row committing
- * between that read and the update would make it one move behind.
+ * not every path that changes `starts_at` writes one: the importer's re-upsert
+ * changes it with no audit row and no event. Either rule can then read a stale
+ * start: rule 1 when such a change falls between the mark and the first move
+ * after it (that move's `fromStartsAt` is the start the unaudited change left,
+ * not the start at the mark), rule 2 when it falls between the last row and the
+ * mark. A move back to the start at the mark then reads as a change and counts
+ * (the mark is skipped), or a move that keeps the start now reads as kept when
+ * the start at the mark was another (a mark the live job never had is taken).
+ * The trail cannot say on which side of the mark such a change fell. Exposure:
+ * either mark, through the importer. Rule 1 also trusts the read of the row a
+ * staff move moved, which takes no row lock: a second move of the same row
+ * committing between that read and the update would make it one move behind.
+ *
+ * THE PORTAL MOVE IS NO LONGER PART OF THE GAP (R44, strategy and owner,
+ * 2026-11-02). The patient's own move (apps/api/lib/appointments/store.ts,
+ * `rescheduleOwn`) writes an `appointment.reschedule` row with `fromStartsAt`
+ * and `startsAt` in its own transaction (apps/api/lib/appointments/
+ * portal-move-audit.ts), reading the start it leaves under a row lock, and
+ * after the commit sends its own `appointment/scheduled`
+ * (apps/api/lib/appointments/portal-move-replan.ts), except for an unaccepted
+ * request, as on the staff move. So it is a door of the `moved` clause that the
+ * `doors` list in the table below does not name: it does not go through
+ * `enqueueRemindersAfterCommit`, and this table's code was frozen when it
+ * landed. re-arming-saves.test.ts holds it from the source. A portal move
+ * whose event failed to send (it is best-effort, as the staff move's is) reads
+ * on the trail exactly as one whose event went: the trail cannot see a failed
+ * send, the same as for a staff move.
  *
  * re-arming-saves.test.ts lists the doors from the source and holds this table
  * to them: a door added, removed or given another condition fails it.
