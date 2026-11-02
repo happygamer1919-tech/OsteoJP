@@ -162,7 +162,11 @@ test.describe("the timing panel is granted, not hidden", () => {
       // future query labelled `db:something-new` would be invisible to a
       // hard-coded list and is caught here on the day it is added.
       const payload = await payloadOf(page, "/patients?medicao=1");
-      const leaked = [...payload.matchAll(/db:[a-z0-9-]+/gi)].map((m) => m[0]);
+      // Case-sensitive, a lowercase first letter, and no letter or digit before
+      // "db": an RSC flight row id that ends in hex "db" ("\n1db:I[...") is a
+      // module import row, not a span label, and the old /gi pattern read it as
+      // "db:I". Every span label in the code is lowercase kebab-case.
+      const leaked = [...payload.matchAll(/(?<![0-9a-z])db:[a-z][a-z0-9-]*/g)].map((m) => m[0]);
       expect(
         [...new Set(leaked)],
         "span labels reached a receptionist's payload - collectFor was given an audience it " +
