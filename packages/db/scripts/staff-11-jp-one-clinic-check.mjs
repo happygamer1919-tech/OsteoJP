@@ -23,11 +23,13 @@
  * Neither: it prints what each row holds and VERDICT: NOT APPLICABLE, exit 0.
  *
  * THE PREDICATE IS THE PORTAL'S, NOT A STRICTER ONE, AND THE PORTAL'S CHANGED. It is
- * now is_active = true AND the row's [valid_from, valid_until] window covering today in
- * Lisbon, because listBookableTherapists reads that window (PORTAL-ROSTER, 2026-09-18,
- * owner ruling Q-ROSTER = now). An expired day-defined row that is still active
- * therefore NO LONGER counts: it cannot put a therapist on the portal list, so it
- * cannot produce the double-listing this check exists to catch.
+ * now is_active = true AND the row's [valid_from, valid_until] window overlapping
+ * [today, today + OPEN_SLOTS_HORIZON_DAYS] in Lisbon, because listBookableTherapists
+ * reads that window (PORTAL-ROSTER, 2026-09-18, owner ruling Q-ROSTER = now; widened
+ * to the slot horizon by strategy R15, 2026-10-26). An expired day-defined row that is
+ * still active therefore does NOT count: it cannot put a therapist on the portal list,
+ * so it cannot produce the double-listing this check exists to catch. A row that starts
+ * within the horizon DOES count, because the portal lists its therapist.
  *
  * THIS PARAGRAPH USED TO SAY THE OPPOSITE - "is_active = true and NO date window" - and
  * the raw `active` count decided. Both readings are still printed side by side; what
@@ -35,13 +37,16 @@
  * forced the change: it fails the moment the portal's predicate and this one disagree,
  * which is exactly what it did when the window landed.
  *
- * SINCE R15 (strategy, 2026-10-26) THE TWO DIFFER, AND THIS ONE IS THE NARROWER. The
- * portal now counts a row whose window overlaps [today, today + the 14-day slot
- * horizon] (OPEN_SLOTS_HORIZON_DAYS in apps/api/lib/appointments/booking.ts); this
- * check still counts a row valid TODAY. So a row that starts within the horizon can
- * put a therapist on the portal list at a clinic while this check does not count it.
- * The test above still passes, because it pins the shape of the two bounds, not the
- * date each is read against. Aligning this check with the portal is a follow-up.
+ * FROM R15 (2026-10-26) TO R52 (2026-11-02) THE TWO DIFFERED, AND THIS ONE WAS THE
+ * NARROWER: the portal counted a row starting within the 14-day slot horizon, and this
+ * check counted only a row valid today. R52 aligned them. The horizon is restated below
+ * as OPEN_SLOTS_HORIZON_DAYS, because this script runs under plain node and cannot import
+ * apps/api/lib/appointments/booking.ts (TypeScript). This test fails if the two values
+ * drift, or if this check's two window conditions differ from the portal's in anything
+ * but the zone literal and the `av.` alias:
+ *   scripts/staff-11-horizon-parity.test.mjs
+ * The frozen test above pins only the shape of the two bounds, not the date each is
+ * read against, which is why it did not catch the R15 difference.
  *
  * OUT OF SCOPE: is_bookable (the ruling on the row not taking patients is still open;
  * it is printed, it decides nothing) and names (ruled: they already differ).
@@ -67,6 +72,11 @@ const CB = "de000002-0000-0000-0000-000000000002";
 const LV = "de000002-0000-0000-0000-000000000001";
 const ACTION = "staff.jp_split.reassign";
 const ACTION_ROLLBACK = "staff.jp_split.rollback";
+/**
+ * The portal's slot horizon in days, restated from apps/api/lib/appointments/booking.ts
+ * (OPEN_SLOTS_HORIZON_DAYS). scripts/staff-11-horizon-parity.test.mjs fails if they drift.
+ */
+export const OPEN_SLOTS_HORIZON_DAYS = 14;
 
 /** Each JP row and the one clinic it keeps after the split. */
 const ROWS = [
@@ -106,10 +116,8 @@ async function read(sql) {
       select user_id::text, location_id::text,
              count(*) filter (where is_active)::int as active,
              count(*) filter (where is_active
-                              and (valid_from  is null
-                                   or valid_from  <= (now() at time zone 'Europe/Lisbon')::date)
-                              and (valid_until is null
-                                   or valid_until >= (now() at time zone 'Europe/Lisbon')::date))::int as active_in_window,
+                              and (valid_from  is null or valid_from  <= (now() at time zone 'Europe/Lisbon')::date + ${OPEN_SLOTS_HORIZON_DAYS}::int)
+                              and (valid_until is null or valid_until >= (now() at time zone 'Europe/Lisbon')::date))::int as active_in_window,
              count(*)::int as total
         from availability_templates
        where tenant_id = ${TENANT} and user_id = any(${[JP_CB, JP_LV]})
@@ -130,7 +138,7 @@ async function read(sql) {
 /**
  * THE DECISION, as a pure function of what was read, so the tests drive every state
  * without a database. `hours` rows carry `active_in_window` (the portal's predicate:
- * active AND inside the template's date window) per row and clinic, and `active` beside
+ * active AND the template's date window overlapping the slot horizon) per row and clinic, and `active` beside
  * it for the reader; `audit.live` counts un-reversed reassign rows.
  */
 export function evaluate({ users, hours, audit }) {
