@@ -19,14 +19,8 @@ import {
   updatePackPrice,
 } from "@/lib/admin/packs";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
+import { parsePriceToCents } from "@/lib/admin/price-input";
 
-function parsePriceToCents(raw: string): number | null {
-  const t = raw.trim();
-  if (!t) return null;
-  const n = Number(t.replace(",", "."));
-  if (!Number.isFinite(n) || n < 0) throw new AdminError("invalid", "invalid price");
-  return Math.round(n * 100);
-}
 
 function parseDuration(raw: string): number {
   const n = Number(raw.trim());

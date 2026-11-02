@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
   PACK_CONSUMING_STATUS_SQL,
@@ -11,6 +11,7 @@ import {
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import {
   PACKS_IN_USE_CAPABILITIES,
+  PACKS_IN_USE_READ_CAP,
   buildPacksInUse,
   isInUseCandidate,
   type PackInstanceRow,
@@ -50,11 +51,26 @@ const INSTANCE_ID = '"patient_pack_instances"."id"';
 
 const visibleLinked = sql<number>`${sql.raw(packLinkedCountSql(INSTANCE_ID))}`;
 
-const visibleUpcoming = sql<number>`${sql.raw(`(
+const UPCOMING_COUNT_SQL = `(
   SELECT count(*)::int FROM appointments a
    WHERE a.pack_instance_id = ${INSTANCE_ID}
      AND a.${PACK_CONSUMING_STATUS_SQL}
      AND a.starts_at > now()
+)`;
+
+const visibleUpcoming = sql<number>`${sql.raw(UPCOMING_COUNT_SQL)}`;
+
+/**
+ * `isInUseCandidate` (./in-use.ts), as SQL, so only candidates are read and
+ * the cap below counts candidates rather than every pacote ever sold. The JS
+ * rule still runs over the rows that come back; the two are the same rule and
+ * the unit suite pins the JS one.
+ */
+const isCandidateSql = sql`${sql.raw(`(
+  ("patient_pack_instances"."sessions_total"
+     - "patient_pack_instances"."legacy_consumed"
+     - ${packLinkedCountSql(INSTANCE_ID)}) > 0
+  OR ${UPCOMING_COUNT_SQL} > 0
 )`)}`;
 
 export async function listPacksInUse(
@@ -91,9 +107,16 @@ export async function listPacksInUse(
         .innerJoin(servicePacks, eq(servicePacks.id, patientPackInstances.packId))
         // A soft-deleted patient is not on the patient list, so their pacotes
         // are not "a decorrer" either.
-        .where(isNull(patients.deletedAt));
+        .where(and(isNull(patients.deletedAt), isCandidateSql))
+        // BOUNDED. Newest purchases first, and one row past the cap so the
+        // page can say it stopped. Each candidate costs one call of 0108's
+        // function, so an unbounded read is an unbounded page.
+        .orderBy(desc(patientPackInstances.purchasedAt), desc(patientPackInstances.id))
+        .limit(PACKS_IN_USE_READ_CAP + 1);
 
+      const truncated = rows.length > PACKS_IN_USE_READ_CAP;
       const candidates: PackInstanceRow[] = rows
+        .slice(0, PACKS_IN_USE_READ_CAP)
         .filter((r) =>
           isInUseCandidate({
             sessionsTotal: r.sessionsTotal,
@@ -137,7 +160,7 @@ export async function listPacksInUse(
         }
       }
 
-      return buildPacksInUse(candidates, sessionsByInstance, now, query);
+      return { ...buildPacksInUse(candidates, sessionsByInstance, now, query), truncated };
     },
     "db:packs-in-use",
   );

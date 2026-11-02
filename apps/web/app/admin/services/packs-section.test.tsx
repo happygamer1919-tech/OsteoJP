@@ -91,11 +91,43 @@ describe("PacksSection, Fisiozero layout", () => {
     expect(html).toMatch(/<button type="submit" title="Apagar Pack" aria-label="Apagar Pack"[^>]*text-error-700/);
   });
 
-  it("a pack a patient holds keeps the cross, disabled, and the tooltip says why", () => {
+  it("a pack a patient holds keeps the cross, aria-disabled and described by the reason", () => {
     const html = render([pack()], ["p-1"]);
     expect(html).toContain(`title="Apagar Pack: ${s["admin.packs.deleteBlockedTooltip"]}"`);
-    expect(html).toMatch(/<button type="button" disabled=""/);
+    expect(html).toMatch(
+      /<button type="button" aria-disabled="true" aria-label="Apagar Pack" aria-describedby="pack-delete-blocked-p-1"/,
+    );
+    expect(html).toContain(
+      `<span id="pack-delete-blocked-p-1" class="sr-only">${s["admin.packs.deleteBlockedTooltip"]}</span>`,
+    );
+    // Focusable on purpose (no `disabled`), and it submits nothing.
+    expect(html).not.toMatch(/data-testid="pack-delete-blocked"[^>]*disabled=""/);
     expect(html).not.toMatch(/<button type="submit" title="Apagar Pack"/);
+  });
+
+  it("the inline save is labelled 'Guardar preço'", () => {
+    expect(s["admin.packs.savePrice"]).toBe("Guardar preço");
+    expect(render()).toContain(`>${s["admin.packs.savePrice"]}</button>`);
+  });
+
+  it("the 'preço base' hint shows only on a pack with per-location prices", () => {
+    const loc = { id: "loc-1", name: "LV" } as never;
+    const withOverride = renderToStaticMarkup(
+      createElement(PacksSection, {
+        packs: [pack()],
+        activeServices: [{ id: "svc-1", name: "Osteopatia (servico)" } as never],
+        activeLocations: [loc],
+        referencedPackIds: new Set<string>(),
+        packFilter: "all",
+        serviceNameById: new Map([["svc-1", "Osteopatia (servico)"]]),
+        locationNameById: new Map([["loc-1", "LV"]]),
+        overrideByPackLocation: new Map<string, number>([["p-1:loc-1", 55000]]),
+        offeredPackLocation: new Set<string>(["p-1:loc-1"]),
+      }),
+    );
+    expect(withOverride).toContain('data-testid="pack-base-price-hint"');
+    expect(withOverride).toContain(s["admin.packs.basePriceHint"]);
+    expect(render()).not.toContain('data-testid="pack-base-price-hint"');
   });
 
   it("'Novo PACK': Nome Pack..., Número sessões..., Preço..., then base service and location, then Inserir", () => {

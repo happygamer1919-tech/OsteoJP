@@ -174,7 +174,23 @@ export type PacksInUsePage = {
   totalInUse: number;
   /** The rows the table shows: in use, matching the search, sorted. */
   rows: PackInUseView[];
+  /**
+   * True when the read stopped at PACKS_IN_USE_READ_CAP candidates. The page
+   * then says it shows the most recent ones, and the count is a floor.
+   */
+  truncated: boolean;
 };
+
+/**
+ * THE READ IS BOUNDED. At most this many candidate pacotes (newest purchase
+ * first) are read, and each costs one call of 0108's function. Fisiozero
+ * showed 127 running; ten times that is far above the clinic's size, so the
+ * cap changes nothing it does today and only stops a runaway, such as
+ * imported pacotes with sessions left over that will never be used. WHICH
+ * pacotes should stop counting as "a decorrer" (by age, say) is a product
+ * question for the owner, not a cap: docs/design/QUESTIONS.md, Q-PACKS-IN-USE-1.
+ */
+export const PACKS_IN_USE_READ_CAP = 1000;
 
 export function buildPacksInUse(
   rows: readonly PackInstanceRow[],
@@ -186,7 +202,7 @@ export function buildPacksInUse(
     .map((r) => summarizePackInstance(r, sessionsByInstance.get(r.instanceId) ?? [], now))
     .filter(isPackInUse);
   const shown = inUse.filter((v) => matchesPatientSearch(v.patientName, query)).sort(comparePacksInUse);
-  return { totalInUse: inUse.length, rows: shown };
+  return { totalInUse: inUse.length, rows: shown, truncated: false };
 }
 
 /** "450" for whole euros, "237,50" otherwise. No currency sign: the caller adds "€". */

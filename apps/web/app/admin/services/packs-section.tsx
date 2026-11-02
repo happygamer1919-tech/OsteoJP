@@ -125,6 +125,9 @@ export function PacksSection({
             // Edit dropdown shows active services; keep the current base
             // selectable even if it was archived after creation, so the form's
             // defaultValue always matches an option.
+            const hasOverrides = activeLocations.some((loc) =>
+              overrideByPackLocation.has(`${pack.id}:${loc.id}`),
+            );
             const editServiceOptions = activeServices.map((svc) => ({ id: svc.id, name: svc.name }));
             if (!editServiceOptions.some((o) => o.id === pack.baseServiceId)) {
               editServiceOptions.push({ id: pack.baseServiceId, name: baseName });
@@ -161,8 +164,16 @@ export function PacksSection({
                     className={`w-[4.5rem] text-right tabular-nums ${adminInputInline}`}
                   />
                   <span aria-hidden="true">€</span>
+                  {hasOverrides && (
+                    /* The box holds the BASE price. With per-location prices
+                       set (under "Gerir"), a location may charge something
+                       else, so the row says which price this is. */
+                    <span className={adminHelp} data-testid="pack-base-price-hint">
+                      {s["admin.packs.basePriceHint"]}
+                    </span>
+                  )}
                   <Button type="submit" variant="ghost" size="sm">
-                    {s["common.save"]}
+                    {s["admin.packs.savePrice"]}
                   </Button>
                 </form>
                 {/* "Gerir" holds every other edit. Open, it drops to its own
@@ -317,18 +328,28 @@ export function PacksSection({
                     </button>
                   </form>
                 ) : (
+                  /* aria-disabled, NOT disabled: a disabled button leaves the
+                     tab order, so a keyboard or screen-reader user could never
+                     reach the reason. This one stays focusable, does nothing
+                     (type="button", no form), and is described by the sr-only
+                     reason below. The server refuses the delete regardless. */
                   <span
                     className="ml-auto inline-flex shrink-0"
                     title={`${s["admin.packs.deleteIcon"]}: ${s["admin.packs.deleteBlockedTooltip"]}`}
                   >
                     <button
                       type="button"
-                      disabled
-                      aria-label={`${s["admin.packs.deleteIcon"]}: ${s["admin.packs.deleteBlockedTooltip"]}`}
-                      className="inline-flex size-8 cursor-not-allowed items-center justify-center rounded-v2 text-error-700 opacity-40"
+                      aria-disabled="true"
+                      aria-label={s["admin.packs.deleteIcon"]}
+                      aria-describedby={`pack-delete-blocked-${pack.id}`}
+                      data-testid="pack-delete-blocked"
+                      className={`inline-flex size-8 cursor-not-allowed items-center justify-center rounded-v2 text-error-700 opacity-40 ${focusRing}`}
                     >
                       <X aria-hidden="true" className="size-4" strokeWidth={2.5} />
                     </button>
+                    <span id={`pack-delete-blocked-${pack.id}`} className="sr-only">
+                      {s["admin.packs.deleteBlockedTooltip"]}
+                    </span>
                   </span>
                 )}
               </li>

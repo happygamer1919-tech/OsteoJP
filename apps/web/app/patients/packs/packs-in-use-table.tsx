@@ -4,9 +4,11 @@ import { s } from "@/lib/i18n";
 import { formatEurosShort, type PackInUseView } from "@/lib/packs/in-use";
 
 /**
- * The "Packs em uso" table. Fisiozero's columns, in Fisiozero's order, with
- * OsteoJP's table chrome (UI-STYLE: a <table> in an overflow-x-auto panel, the
- * admin header and cell classes).
+ * The "Packs em uso" table. Fisiozero's columns, in Fisiozero's order, in
+ * OsteoJP's table shape (UI-STYLE: a <table> in an overflow-x-auto wrapper,
+ * inside the page's GlassPanel). The header and cell classes are local: the
+ * admin ones (`adminTh`, `adminTd`) with the headers in capitals, as Fisiozero
+ * prints them, and the two counts right-aligned.
  *
  * PRESENTATIONAL AND SERVER-RENDERED. The session list opens with a native
  * <details> in the NOME PACK cell, so it needs no JavaScript and works by
@@ -53,12 +55,12 @@ export function PacksInUseTable({ rows }: { rows: PackInUseView[] }) {
       <table className="w-full border-collapse text-sm" data-testid="packs-in-use-table">
         <thead>
           <tr className="border-b border-v2-border">
-            <th className={th}>{s["packsInUse.colPatient"]}</th>
-            <th className={th}>{s["packsInUse.colPack"]}</th>
-            <th className={th}>{s["packsInUse.colStarted"]}</th>
-            <th className={th}>{s["packsInUse.colPayment"]}</th>
-            <th className={`${th} text-right`}>{s["packsInUse.colReserved"]}</th>
-            <th className={`${th} text-right`}>{s["packsInUse.colFree"]}</th>
+            <th scope="col" className={th}>{s["packsInUse.colPatient"]}</th>
+            <th scope="col" className={th}>{s["packsInUse.colPack"]}</th>
+            <th scope="col" className={th}>{s["packsInUse.colStarted"]}</th>
+            <th scope="col" className={th}>{s["packsInUse.colPayment"]}</th>
+            <th scope="col" className={`${th} text-right`}>{s["packsInUse.colReserved"]}</th>
+            <th scope="col" className={`${th} text-right`}>{s["packsInUse.colFree"]}</th>
           </tr>
         </thead>
         <tbody>

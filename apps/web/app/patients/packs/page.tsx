@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
-import { PACKS_IN_USE_CAPABILITIES } from "@/lib/packs/in-use";
+import { PACKS_IN_USE_CAPABILITIES, PACKS_IN_USE_READ_CAP } from "@/lib/packs/in-use";
 import { listPacksInUse } from "@/lib/packs/in-use-read";
 import { SearchBox } from "../_components/search-box";
 import { PacksInUseTable } from "./packs-in-use-table";
@@ -40,7 +40,7 @@ export default async function PacksInUsePage({
   const raw = Array.isArray(sp.q) ? sp.q[0] : sp.q;
   const q = (raw ?? "").trim();
 
-  const { totalInUse, rows } = await listPacksInUse(ctx, q);
+  const { totalInUse, rows, truncated } = await listPacksInUse(ctx, q);
 
   return (
     <main className="flex flex-col gap-5">
@@ -68,6 +68,12 @@ export default async function PacksInUsePage({
         </h2>
         <p className="text-xs text-v2-text-secondary">{s["packsInUse.paymentSoon"]}</p>
       </div>
+
+      {truncated && (
+        <p className="text-sm text-v2-text-secondary" role="status" data-testid="packs-in-use-truncated">
+          {s["packsInUse.truncated"].replace("{n}", String(PACKS_IN_USE_READ_CAP))}
+        </p>
+      )}
 
       <GlassPanel>
         {rows.length === 0 ? (

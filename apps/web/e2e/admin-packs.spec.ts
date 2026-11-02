@@ -94,7 +94,7 @@ test("Serviços: pack CRUD + filter split (W8-01b)", async ({ page }) => {
   await packRow.locator('input[name="price"]').first().fill("395.00");
   await Promise.all([
     page.waitForURL(/mp=ok/),
-    packRow.getByRole("button", { name: "Guardar", exact: true }).first().click(),
+    packRow.getByRole("button", { name: "Guardar preço", exact: true }).click(),
   ]);
   await expect(rows.filter({ hasText: packName }).first().locator('input[name="price"]').first()).toHaveValue(
     "395.00",

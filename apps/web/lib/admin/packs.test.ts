@@ -4,6 +4,18 @@ import { describe, it, expect, vi } from "vitest";
 // for the node runner. Only the pure validation is exercised here.
 vi.mock("server-only", () => ({}));
 
+// No database here. If a refusal below ever stops happening BEFORE the read,
+// the call reaches this stand-in, which throws an error that is neither a
+// ForbiddenError nor an AdminError, and the refusal tests fail.
+const runScopedReached = vi.fn();
+vi.mock("@/lib/auth/context", () => ({
+  runScoped: async () => {
+    runScopedReached();
+    throw new Error("runScoped reached: the refusal did not happen before the read");
+  },
+}));
+
+import { ForbiddenError } from "@osteojp/auth";
 import { normalizePackInput } from "./packs";
 import { isAdminError } from "./errors";
 
@@ -60,8 +72,15 @@ describe("updatePackPrice refuses before it reads", () => {
 
   it("refuses reception and therapist (no services:write)", async () => {
     const { updatePackPrice } = await import("./packs");
-    await expect(updatePackPrice({ ...admin, role: "reception" }, "p-1", 1000)).rejects.toThrow();
-    await expect(updatePackPrice({ ...admin, role: "therapist" }, "p-1", 1000)).rejects.toThrow();
+    for (const role of ["reception", "therapist"] as const) {
+      const err = await updatePackPrice({ ...admin, role }, "p-1", 1000).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err, role).toBeInstanceOf(ForbiddenError);
+      expect((err as Error).message, role).toMatch(/services:write/);
+    }
+    expect(runScopedReached).not.toHaveBeenCalled();
   });
 
   it("refuses a missing id, a negative price and a fraction of a cent", async () => {
@@ -74,5 +93,6 @@ describe("updatePackPrice refuses before it reads", () => {
         expect(isAdminError(e) && e.code).toBe("invalid");
       }
     }
+    expect(runScopedReached).not.toHaveBeenCalled();
   });
 });
