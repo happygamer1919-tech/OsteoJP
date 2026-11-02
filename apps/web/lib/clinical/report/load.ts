@@ -155,6 +155,7 @@ export function loadClinicalReportInputs(
         view,
         annulledAt: annulment[0]?.createdAt ?? null,
         consultationDate: r.appointmentStartsAt ?? r.createdAt,
+        appointmentStartsAt: r.appointmentStartsAt ?? null,
         signedAt: r.signedAt,
       },
       patient: {

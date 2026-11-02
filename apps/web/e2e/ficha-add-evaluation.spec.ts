@@ -160,6 +160,18 @@ function expectIdsAndCountsOnly(row: Omit<ExportRow, "id">) {
   }
 }
 
+/**
+ * RODICA-export-edit-before-download: an export asks first. The dialog opens
+ * on "Manter os dados da consulta"; "Exportar" then downloads the file as it
+ * always was. `testId` is the dialog's own prefix.
+ */
+async function keepAndExport(page: Page, testId: string) {
+  const asked = page.getByTestId(testId);
+  await expect(asked).toBeVisible({ timeout: 15_000 });
+  await expect(asked.getByTestId(`${testId}-keep`)).toBeChecked();
+  await page.getByRole("dialog").getByRole("button", { name: "Exportar", exact: true }).click();
+}
+
 /** Click a group's "+ Avaliação" and return the id of the registo it opened. */
 async function addEvaluation(page: Page, key: string): Promise<string> {
   await group(page, key).getByTestId("record-group-add-evaluation").click();
@@ -211,6 +223,7 @@ test.describe("EPI-01b: '+ Avaliação' on an episode group (therapist)", () => 
     const rows = await rowsLeftBy(async () => {
       const downloading = page.waitForEvent("download", { timeout: 30_000 });
       await pdf.click();
+      await keepAndExport(page, "record-group-episode-pdf-dialog");
       const download = await downloading;
       expect(download.suggestedFilename()).toBe(`relatorio-episodio-${F.appEpisode.episodeId.slice(0, 8)}.pdf`);
       expect(await download.failure()).toBeNull();
@@ -528,6 +541,7 @@ test.describe("EXPORT-01, gate G1: the owner exports an imported registo and an 
     const groupRows = await rowsLeftBy(async () => {
       const groupDownloading = page.waitForEvent("download", { timeout: 30_000 });
       await groupPdf.click();
+      await keepAndExport(page, "record-group-imported-pdf-dialog");
       const groupDownload = await groupDownloading;
       expect(groupDownload.suggestedFilename()).toBe(`relatorio-episodio-importado-${F.patientId.slice(0, 8)}.pdf`);
       expect(await groupDownload.failure()).toBeNull();
@@ -575,6 +589,7 @@ test.describe("EXPORT-01, gate G1: the owner exports an imported registo and an 
     const rows = await rowsLeftBy(async () => {
       const downloading = page.waitForEvent("download", { timeout: 60_000 });
       await exportFicha.click();
+      await keepAndExport(page, "ficha-export-dialog");
       const download = await downloading;
       expect(download.suggestedFilename()).toBe(`relatorio-ficha-${F.patientId.slice(0, 8)}.pdf`);
       expect(await download.failure()).toBeNull();
