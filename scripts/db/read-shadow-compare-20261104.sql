@@ -35,20 +35,27 @@
 --      sweep's old selection predicates P1 to P8 as of each pass, for every run-only UNEXPLAINED
 --      mark of part 1.
 --   3. This read's own: R8 (the 2026-10-31 read's, unchanged), the re-arming saves of #1678 as
---      SQL, R9, the labelled comparison, the verdicts and the rows.
+--      SQL, RK, the labelled comparison, the verdicts and the rows.
 --
 -- THE LABELS. R20's, unchanged, and R8 (2026-10-31), unchanged; and one new candidate:
---   R9  a run-only mark R20 leaves UNEXPLAINED, not R8, that R24 kept out: at least one pass had
+--   RK  a run-only mark R20 leaves UNEXPLAINED, not R8, that R24 kept out: at least one pass had
 --       it in range with every predicate of the old selection true (R22's `every`), and at every
 --       pass that had it in range a re-arming save written after the mark was already on the
 --       visit's trail (as of that pass), unless an old predicate was false there. The shape:
 --       a visit cancelled at its mark or before the next pass and brought back after the mark.
 --       Under #1678 the bring-back keeps the sweep out (R24); before it, the sweep took the mark
---       after the bring-back and the pair read `both`. R9 is NOT in R32's accepted set: a day
---       with an R9 mark reads REVIEW, and verdict 16 reads REVIEW, so strategy reads it.
+--       after the bring-back and the pair read `both`. RK is NOT in R32's accepted set: a day
+--       with an RK mark reads REVIEW, and verdict 16 reads REVIEW, so strategy reads it.
+--   S8  a shadow-only mark R20 leaves UNEXPLAINED whose visit has a re-arming save written in the
+--       30 seconds up to the mark: the sweep reads that save as before the mark and takes it, the
+--       sleeping job handles it after its debounce and drops the mark (the header of sweep.ts, "THE
+--       TWO CLOCKS"). NOT in R32's accepted set: strategy reads it, nothing is hidden.
+--   S5K is no label of its own: an S5 row whose re-arming probe is not `rearmed` (R20's S5 also
+--       matches a move that keeps the start). Verdict 15 does not FAIL on it, R24 held; verdict 16
+--       names it as S5K and reads REVIEW, since R47 ruled no kept-start label.
 --   NO KEPT-START LABEL. A move written after the mark that keeps the start does not count under
 --   R33 (#1678, R4 round 2), so the shadow takes that mark and the pair reads `both`; a run-only
---   row for such a visit is UNEXPLAINED, and R9 cannot name it (that save does not count).
+--   row for such a visit is UNEXPLAINED, and RK cannot name it (that save does not count).
 --   R34 is a label of the sending pass's rows; the shadow sends nothing, so in this read it has no
 --   subject. Its predicate is written in (`r34`, row 36) for the read after the switch.
 --
@@ -63,10 +70,11 @@
 --
 -- THE DAYS AND THE WINDOW. t0 is the first `shadow` heartbeat at or after DEPLOYED_AT. The
 -- window of marks runs from t0 to the read's clock. Monday 11-02 and Tuesday 11-03 are the full
--- days, fixed: verdict 2 FAILs unless t0 falls in or before Monday's 07:00 slot and no Monday mark
--- is due before t0, so each full day is wholly under the new code. Sunday 11-01 (from t0) and
+-- days, fixed: verdict 2 FAILs unless t0 falls in or before Monday's 07:00 slot and every Monday
+-- mark due before t0 is on both sides, so each full day is wholly compared under the new code. Sunday 11-01 (from t0) and
 -- Wednesday 11-04 (to the read's clock) are partial: INFO, except verdicts 13, 15 and 16. Marks
--- due in the 24 hours before t0 ran under the old code: row 23 counts them, no verdict reads them.
+-- due in the 24 hours before t0: row 23 counts them. No agreement verdict reads them; verdict 15
+-- does read a shadow row written since t0 whatever its mark, since the sweep has no late limit.
 --
 -- ONE CLOCK. The read's clock is `clock.t1` below, read once from now(). A rehearsal on a
 -- throwaway replaces that one line with a fixed instant; nothing else in the file reads the time.
@@ -77,12 +85,13 @@
 -- exception, by the calendar: an agreement verdict for a day whose visits would start on a Sunday
 -- (the clinics are closed, strategy's S-1003-A R29) reads OK when that day has no mark at all.
 --
--- VERDICTS (the block succeeds on 0 FAIL, 0 VACUOUS, REVIEW only on 11, 12 and 16, one row each
+-- VERDICTS (the block succeeds on 0 FAIL, no VACUOUS but 15, REVIEW only on 11, 12 and 16, one row each
 -- of 0, 1, 2, 6 to 10, 13, 15 and 16, and exactly two rows each of 3, 11 and 12):
 --    0  the transaction is READ ONLY
 --    1  the clock: the read runs at or after 2026-11-04 07:15 Lisbon (Tuesday 11-03 has closed)
---    2  the window: t0 exists, in or before Monday's 07:00 slot; no Monday mark due before t0;
---       every move written since t0 records the start it left (the deployed code is #1678's)
+--    2  the window: t0 exists, in or before Monday's 07:00 slot; every Monday mark due before t0
+--       is on both sides; every move written from DEPLOYED_AT + 13 h records the start it left
+--       (Skew Protection, 12 h, can still route a stale tab to the old deployment before that)
 --    3  heartbeats, ONE ROW PER FULL DAY: every tenant has 60 shadow heartbeats in the 60 slots
 --    6  the shadow sent nothing since the deploy
 --    7  no pass over the ceiling on the full days
@@ -92,8 +101,9 @@
 --   11  agreement, 48h email, ONE ROW PER FULL DAY  } OK with at least one match and no mismatch, or
 --   12  agreement, 24h sms, ONE ROW PER FULL DAY    } by the calendar; REVIEW, FAIL, VACUOUS
 --   13  no mark stays UNEXPLAINED, on any side and any day from t0 to the read's clock
---   15  R24 held: 0 shadow-only S5 rows due in the window, 0 shadow rows taken after a re-arming
---       save written after their mark, and at least one mark R24 had to keep out (the control)
+--   15  R24 held: 0 shadow rows taken after a re-arming save written after their mark, the exact
+--       mirror of the sweep's gate, FAIL on any. S5 rows are printed. VACUOUS when no mark needed
+--       R24 (the control); alone, that does not stop the block (R32 and R36 do not require it)
 --   16  every mismatch label is in R32's accepted set (R2, R4, R8, S5; R34 has no row here): OK,
 --       or REVIEW naming the others (window-edge labels R5 and S7 on a partial day not judged)
 --   (14 was the 2026-10-31 read's R8 count; the number is not reused.)
@@ -621,20 +631,21 @@ swept as (
 probe as (
   -- The questions this read asks of R24. Each: a visit, a mark, the start that mark is for, and
   -- an instant `upto`: was a re-arming save written after the mark and at or before `upto`?
-  --   shadow   every shadow row due in the window; upto its own created_at (its pass's
-  --            transaction): the save the pass could see
+  --   shadow   every shadow row due in the window or written since t0, whatever its mark (the
+  --            sweep has no late limit); upto its own created_at (its pass's transaction): the
+  --            save the pass could see
   --   subject  every mark due in the window, by the visit's start now, of a visit with an audit
   --            row of a re-arming action written in the window; upto the read's clock or the
   --            visit's start, the earlier (verdict 15's control)
   --   pass     every pass that had a run-only UNEXPLAINED mark in range (R22's `pr`); upto that
-  --            pass's created_at (R9)
+  --            pass's created_at (RK)
   --   sent     every sweep-sent row (send mode only); upto its claim's created_at (R34)
   select 'shadow' as src, c.id::text as k, c.tenant_id, c.appointment_id, c.offset_id, c.channel,
          c.due_at as mark,
          to_char(date_trunc('milliseconds', c.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as start_text,
          c.created_at as upto
     from public.reminder_claims c cross join win
-   where c.kind = 'shadow' and c.due_at >= win.t0 and c.due_at <= win.t1
+   where c.kind = 'shadow' and (c.due_at >= win.t0 or c.created_at >= win.t0c) and c.due_at <= win.t1
   union all
   select 'subject', null, a.tenant_id, a.id, rm.offset_id, rm.channel,
          a.starts_at - make_interval(mins => om.minutes),
@@ -721,11 +732,11 @@ probe_eval as (
          and r.created_at > p.mark and r.created_at <= p.upto
          and (r.clause <> 'moved' or m.start_at_mark is distinct from p.start_text)) z on true
 ),
-r9 as (
-  -- R9: a run-only UNEXPLAINED mark (R22's `u`), not R8, that R24 kept out: at least one pass
+rk as (
+  -- RK: a run-only UNEXPLAINED mark (R22's `u`), not R8, that R24 kept out: at least one pass
   -- had it in range with every old predicate true (`every` T) and a re-arming save after the mark
   -- already written, and at every pass that had it in range either such a save was already
-  -- written or an old predicate was false (an unknown `?` without such a save keeps it out of R9).
+  -- written or an old predicate was false (an unknown `?` without such a save keeps it out of RK).
   select u.tenant_id, u.appointment_id, u.offset_id, u.channel, u.starts_at
     from u
    where not exists (select 1 from r8
@@ -739,7 +750,9 @@ r9 as (
                       where pr.uk = u.uk and pr.in_range and pr.every <> 'F' and not coalesce(e.rearmed, false))
 ),
 pcl as (
-  -- R20's comparison with R8 and R9 put on the marks they name; every other label is R20's.
+  -- R20's comparison with R8, RK and S8 put on the marks they name; every other label is R20's.
+  -- S8 counts a save of any clause, a move that keeps the start included: every one of them
+  -- re-plans the sleeping job, and only the job's side of the race is in question here.
   select p.tenant_id, p.appointment_id, p.offset_id, p.channel, p.starts_at, p.due_at, p.day, p.side,
          case when p.side = 'run_only' and p.category = 'UNEXPLAINED'
                    and exists (select 1 from r8
@@ -748,11 +761,16 @@ pcl as (
                                   and r8.starts_at = p.starts_at)
               then 'R8 no scheduling save before any pass that could take the mark (by design while REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER is false)'
               when p.side = 'run_only' and p.category = 'UNEXPLAINED'
-                   and exists (select 1 from r9
-                                where r9.tenant_id = p.tenant_id and r9.appointment_id = p.appointment_id
-                                  and r9.offset_id = p.offset_id and r9.channel = p.channel
-                                  and r9.starts_at = p.starts_at)
-              then 'R9 kept out by R24: a re-arming save after its mark at every pass that could otherwise take it'
+                   and exists (select 1 from rk
+                                where rk.tenant_id = p.tenant_id and rk.appointment_id = p.appointment_id
+                                  and rk.offset_id = p.offset_id and rk.channel = p.channel
+                                  and rk.starts_at = p.starts_at)
+              then 'RK kept out by R24: a re-arming save after its mark at every pass that could otherwise take it'
+              when p.side = 'shadow_only' and p.category = 'UNEXPLAINED'
+                   and exists (select 1 from rearm_rows v
+                                where v.tenant_id = p.tenant_id and v.appointment_id = p.appointment_id
+                                  and v.created_at >= p.due_at - interval '30 seconds' and v.created_at <= p.due_at)
+              then 'S8 a re-arming save in the 30 seconds up to its mark: the sleeping job dropped it, the sweep took it'
               else p.category end as category
     from pc p
 ),
@@ -768,7 +786,7 @@ agree as (
          count(m.appointment_id) filter (where m.side = 'run_only') as run_only,
          count(m.appointment_id) filter (where m.side = 'run_only' and m.category = 'UNEXPLAINED') as run_unexplained,
          count(m.appointment_id) filter (where m.side = 'run_only' and m.category like 'R8 %') as run_r8,
-         count(m.appointment_id) filter (where m.side = 'run_only' and m.category like 'R9 %') as run_r9,
+         count(m.appointment_id) filter (where m.side = 'run_only' and m.category like 'RK %') as run_rk,
          count(m.appointment_id) filter (where m.side = 'live_only') as live_only
     from full_day fd
    cross join reminder rm
@@ -848,20 +866,35 @@ unexp as (
          count(*) filter (where p.category = 'UNEXPLAINED' and p.day not in (select d from full_day)) as partial_u
     from pcl p
 ),
+monday_before as (
+  -- Monday's marks due before t0, by key. No pass ran between them and t0 (a 07:00:00 mark and
+  -- t0 at 07:00:0x), so one on both sides is harmless; one on a single side would be a mismatch
+  -- the window drops, and verdict 2 FAILs on it.
+  select bool_or(c.kind = 'shadow') as s, bool_or(c.kind = 'claim') as r
+    from public.reminder_claims c cross join win
+   where (c.kind = 'shadow' or (c.kind = 'claim' and c.taker = 'run'))
+     and c.due_at >= timestamptz '2026-11-02 00:00:00 Europe/Lisbon' and c.due_at < win.t0
+   group by c.tenant_id, c.appointment_id, c.offset_id, c.channel, c.starts_at
+),
 window_check as (
-  -- Verdict 2's two premises beyond t0's slot. A Monday mark due before t0 was the old code's to
-  -- take, so Monday would not be wholly under #1678. And #1678 makes every move record the start
-  -- it left (`fromStartsAt`, actions.ts moveAppointment, the only writer of the row): a move
-  -- written since t0 without that key means the old code was still serving after t0.
-  select (select count(*) from public.reminder_claims c cross join win
-           where (c.kind = 'shadow' or (c.kind = 'claim' and c.taker = 'run'))
-             and c.due_at >= timestamptz '2026-11-02 00:00:00 Europe/Lisbon' and c.due_at < win.t0) as monday_before_t0,
-         (select count(*) from public.audit_log l cross join win
+  -- Verdict 2's two premises beyond t0's slot. `monday_before` above. And #1678 makes every move
+  -- record the start it left (`fromStartsAt`, actions.ts moveAppointment, the only writer of the
+  -- row): a move without that key means the old code served it. Skew Protection (maximum age 12
+  -- hours, board card SKEW-01) can route a stale tab's move to the old deployment, and the row is
+  -- harmless (`startAtTheMark` falls to its rule 2), so only a row from DEPLOYED_AT + 13 hours on
+  -- is a FAIL; an earlier one is printed.
+  select (select count(*) from monday_before) as monday_before_t0,
+         (select count(*) from monday_before where not (s and r)) as monday_one_side,
+         (select count(*) from public.audit_log l cross join k
            where l.entity_type = 'appointment' and l.action = 'appointment.reschedule'
-             and l.created_at >= win.t0c) as moves_since,
-         (select count(*) from public.audit_log l cross join win
+             and l.created_at >= k.resync) as moves_since,
+         (select count(*) from public.audit_log l cross join k
            where l.entity_type = 'appointment' and l.action = 'appointment.reschedule'
-             and l.created_at >= win.t0c and not (l.metadata ? 'fromStartsAt')) as old_moves,
+             and l.created_at >= k.resync and l.created_at < k.resync + interval '13 hours'
+             and not (l.metadata ? 'fromStartsAt')) as old_moves_early,
+         (select count(*) from public.audit_log l cross join k
+           where l.entity_type = 'appointment' and l.action = 'appointment.reschedule'
+             and l.created_at >= k.resync + interval '13 hours' and not (l.metadata ? 'fromStartsAt')) as old_moves_late,
          (select count(*) from public.audit_log l cross join k
            where l.entity_type = 'appointment' and l.action = 'appointment.reschedule'
              and l.created_at < k.resync and (l.metadata ? 'fromStartsAt')) as new_moves_before
@@ -893,7 +926,18 @@ lab as (
   -- Verdict 16: R32's accepted set is R2, R4, R8, S5 and R34's label (none here: R34 labels
   -- sweep-sent rows). UNEXPLAINED is verdict 13's. On a partial day, the window-edge labels R5 (no
   -- pass since its mark) and S7 (due in the 15 minutes before the read) are printed, not judged.
-  select p.day, p.side, split_part(p.category, ' ', 1) as letter,
+  -- An S5 row with no re-arming save behind it (its probe not `rearmed`: R20's S5 also matches a
+  -- move that keeps the start) is S5K here, outside the set: R47 ruled no kept-start label, so
+  -- strategy reads it.
+  select p.day, p.side,
+         case when p.category like 'S5 %'
+                   and not exists (select 1 from probe_eval e
+                                    where e.src = 'shadow' and e.rearmed
+                                      and e.tenant_id = p.tenant_id and e.appointment_id = p.appointment_id
+                                      and e.offset_id = p.offset_id and e.channel = p.channel
+                                      and e.start_text = to_char(date_trunc('milliseconds', p.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+              then 'S5K'
+              else split_part(p.category, ' ', 1) end as letter,
          p.day in (select d from full_day) as full_day
     from pcl p
    where p.side <> 'both' and p.category <> 'UNEXPLAINED'
@@ -917,7 +961,8 @@ r34 as (
   -- early, at or before it (2), and whose selecting pass (the tenant's last `send` heartbeat at or
   -- before the claim; the claim's own time when there is none) ran at most 3 hours after the
   -- mark, exactly 3 hours inside (3). A sweep-sent row after such a save that is not R34 is a
-  -- sweep-sent S5: R36 requires none.
+  -- sweep-sent S5: R36 requires none. TO FIX BEFORE THE READ AFTER THE SWITCH REUSES IT (the
+  -- document's limits): the selecting pass and the instant saves are read up to.
   select s.id, e.rearmed,
          e.rearmed
          and exists (select 1 from public.reminder_claims c0
@@ -950,7 +995,7 @@ summary as (
          coalesce(sum(run_only), 0) as run_only,
          coalesce(sum(run_unexplained), 0) as run_unexplained,
          coalesce(sum(run_r8), 0) as run_r8,
-         coalesce(sum(run_r9), 0) as run_r9,
+         coalesce(sum(run_rk), 0) as run_rk,
          coalesce(sum(live_only), 0) as live_only,
          (select min(d)::text || ' to ' || max(d)::text from full_day) as span
     from agree
@@ -979,13 +1024,16 @@ select n, "check", observed, expected, verdict from (
   union all
   select 2,
          '2. the window: the first shadow heartbeat at or after the deploy (DEPLOYED_AT, Lisbon ' || lisbon.deployed
-           || '), no later than Monday 11-02''s 07:00 slot; no Monday mark due before it; every move written since it records the start it left (#1678''s code)',
+           || '), no later than Monday 11-02''s 07:00 slot; every Monday mark due before it on both sides; every move from DEPLOYED_AT + 13 hours records the start it left (#1678''s code)',
          'Lisbon ' || coalesce(lisbon.t0, 'none') || '; Monday marks due before it ' || w.monday_before_t0::text
-           || '; moves written since it ' || w.moves_since::text || ', of them without fromStartsAt ' || w.old_moves::text
-           || '; moves recording it written before the deploy ' || w.new_moves_before::text || ' (information)',
-         'a heartbeat before 2026-11-02 07:15; 0; any, 0',
+           || ', on one side only ' || w.monday_one_side::text
+           || '; moves since the deploy ' || w.moves_since::text
+           || ', without fromStartsAt from DEPLOYED_AT + 13 hours ' || w.old_moves_late::text
+           || '; information: without it before that (Skew Protection) ' || w.old_moves_early::text
+           || ', recording it before the deploy ' || w.new_moves_before::text,
+         'a heartbeat before 2026-11-02 07:15; any, on one side 0; any, 0',
          case when win.t0 is null then 'VACUOUS'
-              when win.t0 >= k.first_full_pass + interval '15 minutes' or w.monday_before_t0 > 0 or w.old_moves > 0 then 'FAIL'
+              when win.t0 >= k.first_full_pass + interval '15 minutes' or w.monday_one_side > 0 or w.old_moves_late > 0 then 'FAIL'
               else 'OK' end
     from win cross join k cross join lisbon cross join window_check w
   union all
@@ -1053,7 +1101,7 @@ select n, "check", observed, expected, verdict from (
            || ': the shadow and the sleeping job took the same reminders (OK only with no mismatch, or by the calendar)',
          'both ' || a.matched::text || '; shadow only ' || a.shadow_only::text
            || ' (unexplained ' || a.shadow_unexplained::text || '); run only ' || a.run_only::text
-           || ' (unexplained ' || a.run_unexplained::text || ', R8 ' || a.run_r8::text || ', R9 ' || a.run_r9::text
+           || ' (unexplained ' || a.run_unexplained::text || ', R8 ' || a.run_r8::text || ', RK ' || a.run_rk::text
            || '); sent with neither ' || a.live_only::text
            || '; visits starting ' || a.start_day::text
            || case when a.closed_start then ', a Sunday: the clinics are closed' else '' end,
@@ -1078,13 +1126,14 @@ select n, "check", observed, expected, verdict from (
     from unexp
   union all
   select 15,
-         '15. R24 held: no shadow-only S5 row due from t0 to the read''s clock, no shadow row taken after a re-arming save written after its mark, and at least one mark R24 had to keep out (the control)',
-         'S5 shadow-only rows ' || s5_rows::text || '; shadow rows taken after a re-arming save ' || taken_after_save::text
+         '15. R24 held: no shadow row taken after a re-arming save written after its mark, and at least one mark R24 had to keep out (the control; VACUOUS alone does not stop the block)',
+         'S5 shadow-only rows ' || s5_rows::text || ', with no re-arming save (verdict 16) ' || (select count(*) from lab where letter = 'S5K')::text
+           || '; shadow rows taken after a re-arming save ' || taken_after_save::text
            || '; marks saved after their mark by a re-arming save before the shadow took them ' || subjects::text
            || ' over visits ' || subject_visits::text,
-         '0; 0; control > 0',
+         'printed; 0; control > 0',
          case when (select t0 from win) is null then 'VACUOUS'
-              when s5_rows > 0 or taken_after_save > 0 then 'FAIL'
+              when taken_after_save > 0 then 'FAIL'
               when subjects = 0 then 'VACUOUS'
               else 'OK' end
     from r24
@@ -1188,12 +1237,12 @@ select n, "check", observed, expected, verdict from (
           and e.kind = 'claim' and e.taker = 'run' and e.early = true
           and e.offset_id = p.offset_id and e.channel = p.channel and e.starts_at = p.starts_at)
   union all
-  select 35, 'R8 and R9 per mark day: the run-only marks R20 leaves UNEXPLAINED that R22''s predicates read as P7 alone (R8) or as kept out by R24 (R9), every day',
+  select 35, 'R8 and RK per mark day: the run-only marks R20 leaves UNEXPLAINED that R22''s predicates read as P7 alone (R8) or as kept out by R24 (RK), every day',
          split_part(p.category, ' ', 1) || ' ' || p.day::text || ' ' || p.offset_id || ' ' || p.channel || ': ' || count(*)::text,
          case when p.day in (select d from full_day) then 'full day' else 'partial day' end,
          'INFO'
     from pcl p
-   where p.category like 'R8 %' or p.category like 'R9 %'
+   where p.category like 'R8 %' or p.category like 'RK %'
    group by split_part(p.category, ' ', 1), p.day, p.offset_id, p.channel
   union all
   select 36, 'R34, send mode only: sweep-sent rows since t0; of them sent after a re-arming save written after their mark; of those, R34 (held back, then tried again within 3 hours of the mark) and outside R34 (a sweep-sent S5)',
@@ -1207,7 +1256,7 @@ select n, "check", observed, expected, verdict from (
          'full days ' || coalesce(span, 'none') || ': both=' || matched::text
            || ' shadow_only=' || shadow_only::text || ' shadow_unexplained=' || shadow_unexplained::text
            || ' run_only=' || run_only::text || ' run_unexplained=' || run_unexplained::text
-           || ' run_r8=' || run_r8::text || ' run_r9=' || run_r9::text
+           || ' run_r8=' || run_r8::text || ' run_rk=' || run_rk::text
            || ' sent_with_neither=' || live_only::text
            || ' matched_share=' || case when matched + shadow_only + run_only + live_only = 0 then 'none'
                                        else round(100.0 * matched / (matched + shadow_only + run_only + live_only), 1)::text || '%' end,

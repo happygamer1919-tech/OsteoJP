@@ -30,8 +30,10 @@
 //     chain stopped. Under bash always; under zsh wherever zsh is installed (not on the GitHub
 //     runner);
 //   * the block prints PASSED only when every verdict is OK; REVIEW, CLEAN UNDER R32 (exit 0) when
-//     the only non-OK verdicts are agreement verdicts reading REVIEW; REVIEW, LABELS OUTSIDE R32's
-//     SET (exit 0) when verdict 16 reads REVIEW; and STOPs on anything else.
+//     the only non-OK verdicts are agreement verdicts reading REVIEW; REVIEW, CLEAN UNDER R32, R24
+//     NOT EXERCISED (exit 0) when, with no label outside the set, verdict 15 is the only VACUOUS;
+//     REVIEW, LABELS OUTSIDE R32's SET (exit 0) when verdict 16 reads REVIEW; and STOPs on anything
+//     else. Each closing line says what happens next.
 //
 // WITH A LOCAL DATABASE (SHADOW_COMPARE_1104_TEST_PGURL names one on 127.0.0.1 or localhost whose
 // `public` schema is the repository's): the read runs on a seeded throwaway per case, as the block
@@ -68,7 +70,8 @@ const PRHEAD = "a".repeat(40);
 const CLOCK_LINE = "  select now() as t1";
 const GUC = "osteojp.r47_deployed_at";
 const R8_LABEL = "R8 no scheduling save before any pass that could take the mark (by design while REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER is false)";
-const R9_LABEL = "R9 kept out by R24: a re-arming save after its mark at every pass that could otherwise take it";
+const RK_LABEL = "RK kept out by R24: a re-arming save after its mark at every pass that could otherwise take it";
+const S8_LABEL = "S8 a re-arming save in the 30 seconds up to its mark: the sleeping job dropped it, the sweep took it";
 
 /** R8's eighth condition (the 2026-10-31 read's): every in-range pass recorded a visit left out. */
 const R8_EXCLUDED = "not exists (select 1 from pr where pr.uk = u.uk and pr.in_range and coalesce(pr.excluded_count, 0) = 0)";
@@ -187,15 +190,15 @@ test("the read's re-arming saves name every clause once, with the conditions of 
   ]) assert.ok(ev.includes(piece), `probe_eval lost: ${piece}`);
 });
 
-test("R8 is the 2026-10-31 read's, R9 and the labels sit after R20's, and no kept-start label exists", () => {
-  for (const label of [R8_LABEL, R9_LABEL]) assert.equal(sql.split(`'${label}'`).length, 2, `the label is not written exactly once: ${label}`);
+test("R8 is the 2026-10-31 read's, RK and the labels sit after R20's, and no kept-start label exists", () => {
+  for (const label of [R8_LABEL, RK_LABEL, S8_LABEL]) assert.equal(sql.split(`'${label}'`).length, 2, `the label is not written exactly once: ${label}`);
   for (const c of ["s.in_range > 0", "s.f7 = s.in_range", "s.f1 = 0", "s.f2 = 0 and s.u2 = 0", "s.f3 = 0 and s.u3 = 0", "s.f6 = 0", "s.f8 = 0", R8_EXCLUDED]) {
     assert.ok(sql.includes(c), `r8 lost its condition ${c}`);
   }
   assert.equal((sql.match(/case when p\.side = 'run_only' and p\.category = 'UNEXPLAINED'\n/g) || []).length, 1);
   assert.equal((sql.match(/when p\.side = 'run_only' and p\.category = 'UNEXPLAINED'\n/g) || []).length, 2);
   assert.doesNotMatch(code, /kept/i, "a kept-start label in the read");
-  assert.ok(doc.includes(R8_LABEL) && doc.includes(R9_LABEL), "the document does not name R8 and R9 exactly");
+  assert.ok(doc.includes(R8_LABEL) && doc.includes(RK_LABEL) && doc.includes(S8_LABEL), "the document does not name R8, RK and S8 exactly");
   const after = sql.slice(sql.indexOf("\nagree as ("));
   assert.doesNotMatch(after.replace(/--[^\n]*/g, ""), /\bfrom pc\b|join pc\b/, "a verdict reads pc, not pcl");
   // R32's accepted set, as verdict 16 reads it.
@@ -331,6 +334,9 @@ const FIXTURES = {
   one: table(DAYS2.slice(0, 1)),
   vacuous: swap(TABLE_OK, 11, "agreement, marks due 2026-11-03, 48h email", "VACUOUS"),
   vac15: swap(TABLE_OK, 15, "R24 held", "VACUOUS"),
+  cleanvac15: swap(swap(TABLE_OK, 15, "R24 held", "VACUOUS"), 12, "agreement, marks due 2026-11-02, 24h sms", "REVIEW"),
+  labelsvac15: swap(swap(TABLE_OK, 15, "R24 held", "VACUOUS"), 16, "every label in R32's set", "REVIEW"),
+  vac15and13: swap(swap(TABLE_OK, 15, "R24 held", "VACUOUS"), 13, "no mark stays UNEXPLAINED", "VACUOUS"),
   fail15: swap(TABLE_OK, 15, "R24 held", "FAIL"),
   review15: swap(TABLE_OK, 15, "R24 held", "REVIEW"),
   reviewhead: swap(TABLE_OK, 3, "heartbeats on 2026-11-03", "REVIEW"),
@@ -470,17 +476,22 @@ function assertGood(r) {
 function assertPass(r) {
   assertGood(r);
   assert.match(r.stdout, /^verdicts: 17 OK \/ 0 REVIEW \/ 0 VACUOUS \/ 0 FAIL$/m);
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 PASSED: 17 OK \/ 0 VACUOUS \/ 0 FAIL over 2 full days\. The whole table is in /m);
+  assert.match(r.stdout, /^SHADOW-COMPARE-1104 PASSED: 17 OK \/ 0 VACUOUS \/ 0 FAIL over 2 full days\. The whole table is in .*SOLO confirms the file, then R36's switch is the owner's, after 21:00$/m);
 }
 function assertClean(r) {
   assertGood(r);
   assert.match(r.stdout, /^verdicts: 16 OK \/ 1 REVIEW \/ 0 VACUOUS \/ 0 FAIL$/m);
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32: .*This is NOT a pass by itself/m);
+  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32: .*which R32 counts as the clean verdict.*SOLO confirms the file, then R36's switch is the owner's, after 21:00$/m);
 }
-function assertLabels(r, reviews) {
+function assertNotExercised(r, reviews) {
   assertGood(r);
-  assert.match(r.stdout, new RegExp(`^verdicts: ${17 - reviews} OK / ${reviews} REVIEW / 0 VACUOUS / 0 FAIL$`, "m"));
-  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, LABELS OUTSIDE R32'S SET: .*strategy reads/m);
+  assert.match(r.stdout, new RegExp(`^verdicts: ${16 - reviews} OK / ${reviews} REVIEW / 1 VACUOUS / 0 FAIL$`, "m"));
+  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, CLEAN UNDER R32, R24 NOT EXERCISED: .*verdict 15 alone reads VACUOUS.*Strategy answers first$/m);
+}
+function assertLabels(r, reviews, vacuous = 0) {
+  assertGood(r);
+  assert.match(r.stdout, new RegExp(`^verdicts: ${17 - reviews - vacuous} OK / ${reviews} REVIEW / ${vacuous} VACUOUS / 0 FAIL$`, "m"));
+  assert.match(r.stdout, /^SHADOW-COMPARE-1104 REVIEW, LABELS OUTSIDE R32'S SET: .*Strategy reads first, no switch until then$/m);
 }
 
 function assertStop(r, re, label) {
@@ -533,13 +544,16 @@ for (const shell of shells) {
     const base = makeBase();
     try {
       const text = filled(base);
-      const profile = /a FAIL or a VACUOUS verdict, a REVIEW outside verdicts 11, 12 and 16, a full day count other than 2, or a verdict missing, doubled or extra/;
-      for (const t of ["vacuous", "vac15", "fail15", "review15", "fail", "fail2", "fail16", "short", "no15", "no16", "extra", "double13", "daydrift", "three", "one", "reviewhead", "review13"]) {
+      const profile = /a FAIL, a VACUOUS verdict other than 15, a REVIEW outside verdicts 11, 12 and 16, a full day count other than 2, or a verdict missing, doubled or extra.*No switch, SOLO reports to strategy/;
+      for (const t of ["vacuous", "vac15and13", "fail15", "review15", "fail", "fail2", "fail16", "short", "no15", "no16", "extra", "double13", "daydrift", "three", "one", "reviewhead", "review13"]) {
         assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), profile, t);
       }
       assertClean(runOnce(shell, base, text, { HARNESS_TABLE: "clean" }));
       assertLabels(runOnce(shell, base, text, { HARNESS_TABLE: "labels" }), 2);
       assertLabels(runOnce(shell, base, text, { HARNESS_TABLE: "labelsonly" }), 1);
+      assertLabels(runOnce(shell, base, text, { HARNESS_TABLE: "labelsvac15" }), 1, 1);
+      assertNotExercised(runOnce(shell, base, text, { HARNESS_TABLE: "vac15" }), 0);
+      assertNotExercised(runOnce(shell, base, text, { HARNESS_TABLE: "cleanvac15" }), 1);
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nosummary" }), /no SHADOW_SUMMARY row/, "no summary");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nor11" }), /no R11 rows/, "no R11 rows");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
@@ -732,11 +746,11 @@ const KEPT = (shadowTook = true) => [
 ].join("\n");
 
 /**
- * R9's shape: a staff visit for Tuesday 13:00 cancelled on Sunday after t0, so at its 24h mark
+ * RK's shape: a staff visit for Tuesday 13:00 cancelled on Sunday after t0, so at its 24h mark
  * (Monday 13:00) the sleeping job claimed and suppressed it (status); brought back at Monday 13:20
  * (cancelled to scheduled, a re-arming save after the mark). Under #1678 the sweep never takes it.
  */
-const R9_SHAPE = ({ origin = "staff", extra = "" } = {}) => [
+const RK_SHAPE = ({ origin = "staff", extra = "" } = {}) => [
   visit(appt(0xc1), "2026-11-03 13:00", { origin, updated: "2026-11-02 13:20" }),
   audit(appt(0xc1), "appointment.update", "2026-11-01 18:00", '{"fromStatus":"scheduled","toStatus":"cancelled"}'),
   runClaim(appt(0xc1), "24h", "2026-11-03 13:00", undefined, "suppressed", "status"),
@@ -814,10 +828,10 @@ const CASES = [
     want: only({}),
     info: [
       [20, /^window: .* \| 2026-11-01 15:20:00 \| 2026-11-01 15:30:03 \| 2026-11-04 08:00:00 \| 2026-11-04 07:45:03 \| 2026-11-02 to 2026-11-03 \(2\)/],
-      [2, /Lisbon 2026-11-01 15:30:03; Monday marks due before it 0; moves written since it 0, of them without fromStartsAt 0/],
+      [2, /Lisbon 2026-11-01 15:30:03; Monday marks due before it 0, on one side only 0; moves since the deploy 0, without fromStartsAt from DEPLOYED_AT \+ 13 hours 0;/],
       [23, /\| 4, 0, 0 \|/],
       [36, /\| 0, 0, 0, 0: 0 sweep-sent rows, as shadow sends nothing \|/],
-      [40, /full days 2026-11-02 to 2026-11-03: both=8 shadow_only=0 .* run_r8=0 run_r9=0 /],
+      [40, /full days 2026-11-02 to 2026-11-03: both=8 shadow_only=0 .* run_r8=0 run_rk=0 /],
       [11, /both 2; .*visits starting 2026-11-04 \|/],
     ],
   },
@@ -828,36 +842,110 @@ const CASES = [
     seed: "", deployed: "2026-11-02T08:00:00Z",
     want: only({ 2: "FAIL", [`3 ${MON}`]: "FAIL" }),
   },
-  { name: "the deploy at Monday 06:50: t0 is the 07:00 pass, in the first slot, OK", seed: "", deployed: "2026-11-02T06:50:00Z", want: only({}), info: [[2, /Lisbon 2026-11-02 07:00:03; Monday marks due before it 0/]] },
-  { name: "the production deploy, Sunday 23:07, after Sunday's last pass: t0 is Monday's 07:00 pass, OK", seed: "", deployed: "2026-11-01T23:07:00Z", want: only({}), info: [[2, /Lisbon 2026-11-02 07:00:03; Monday marks due before it 0/], [20, /\| 2026-11-01 23:07:00 \| 2026-11-02 07:00:03 \|/]] },
+  { name: "the deploy at Monday 06:50: t0 is the 07:00 pass, in the first slot, OK", seed: "", deployed: "2026-11-02T06:50:00Z", want: only({}), info: [[2, /Lisbon 2026-11-02 07:00:03; Monday marks due before it 0,/]] },
+  { name: "the production deploy, Sunday 23:07, after Sunday's last pass: t0 is Monday's 07:00 pass, OK", seed: "", deployed: "2026-11-01T23:07:00Z", want: only({}), info: [[2, /Lisbon 2026-11-02 07:00:03; Monday marks due before it 0,/], [20, /\| 2026-11-01 23:07:00 \| 2026-11-02 07:00:03 \|/]] },
   {
-    name: "the deploy at Monday 06:50 and a Monday mark due at 03:00: Monday is not wholly under the new code, verdict 2 FAILs",
-    seed: [visit(appt(0x90), "2026-11-03 03:00"), runClaim(appt(0x90), "24h", "2026-11-03 03:00"), shadowRow(appt(0x90), "24h", "2026-11-03 03:00", "2026-11-02 07:00")].join("\n"),
+    name: "the deploy at Monday 06:50 and a Monday mark due before t0, on both sides: harmless, printed, verdict 2 OK",
+    seed: [visit(appt(0x90), "2026-11-03 07:00"), runClaim(appt(0x90), "24h", "2026-11-03 07:00"), shadowRow(appt(0x90), "24h", "2026-11-03 07:00", "2026-11-02 07:00")].join("\n"),
     deployed: "2026-11-02T06:50:00Z",
-    want: only({ 2: "FAIL" }),
-    info: [[2, /Monday marks due before it 2;/]],
+    want: only({}),
+    info: [[2, /Monday marks due before it 1, on one side only 0;/]],
   },
   {
-    name: "a move written since t0 without fromStartsAt: the old code was still serving, verdict 2 FAILs",
-    seed: moved(appt(3), "2026-11-02 09:00", "2026-11-03 10:00"),
+    name: "the deploy at Monday 06:50 and a Monday mark due before t0, the sleeping job's alone: verdict 2 FAILs",
+    seed: [visit(appt(0x90), "2026-11-03 03:00"), runClaim(appt(0x90), "24h", "2026-11-03 03:00")].join("\n"),
+    deployed: "2026-11-02T06:50:00Z",
     want: only({ 2: "FAIL" }),
-    info: [[2, /moves written since it 1, of them without fromStartsAt 1/]],
+    info: [[2, /Monday marks due before it 1, on one side only 1;/]],
+  },
+  {
+    name: "the deploy at Monday 06:50 and a Monday mark due before t0, the shadow's alone: verdict 2 FAILs",
+    seed: [visit(appt(0x90), "2026-11-03 03:00"), shadowRow(appt(0x90), "24h", "2026-11-03 03:00", "2026-11-02 07:00")].join("\n"),
+    deployed: "2026-11-02T06:50:00Z",
+    want: only({ 2: "FAIL" }),
+    info: [[2, /Monday marks due before it 1, on one side only 1;/]],
+  },
+  {
+    name: "a move without fromStartsAt at DEPLOYED_AT + 13 hours exactly: the old code past Skew Protection's age, verdict 2 FAILs",
+    seed: moved(appt(3), "2026-11-02 04:20:00", "2026-11-03 10:00"),
+    want: only({ 2: "FAIL" }),
+    info: [[2, /moves since the deploy 1, without fromStartsAt from DEPLOYED_AT \+ 13 hours 1; information: without it before that \(Skew Protection\) 0,/]],
+  },
+  {
+    name: "a move without fromStartsAt one second before DEPLOYED_AT + 13 hours: Skew Protection's stale tab, printed, verdict 2 OK",
+    seed: moved(appt(3), "2026-11-02 04:19:59", "2026-11-03 10:00"),
+    want: only({}),
+    info: [[2, /moves since the deploy 1, without fromStartsAt from DEPLOYED_AT \+ 13 hours 0; information: without it before that \(Skew Protection\) 1,/]],
   },
   {
     name: "R24 held: a visit moved after its 48h mark to a start whose mark is past; neither side takes it, the control counts it, verdict 15 OK",
     seed: R24_HELD,
     want: only({ 15: "OK" }),
-    info: [[15, /S5 shadow-only rows 0; shadow rows taken after a re-arming save 0; marks saved after their mark by a re-arming save before the shadow took them 1 over visits 1/]],
+    info: [[15, /S5 shadow-only rows 0, with no re-arming save \(verdict 16\) 0; shadow rows taken after a re-arming save 0; marks saved after their mark by a re-arming save before the shadow took them 1 over visits 1/]],
   },
   {
-    name: "R24 violated: the same, and the shadow took the new start's past mark after the move: S5, verdict 15 FAILs",
+    name: "R24 violated: the same, and the shadow took the new start's past mark after the move: S5, verdict 15 FAILs, verdict 16 OK",
     seed: [R24_HELD, shadowRow(appt(0xa1), "48h", "2026-11-04 11:00", "2026-11-02 13:15", true)].join("\n"),
     want: only({ [`11 ${MON}`]: "REVIEW", 15: "FAIL" }),
-    info: [[15, /S5 shadow-only rows 1; shadow rows taken after a re-arming save 1;/], [31, /marks due 2026-11-02, 48h email, shadow_only: S5 saved after its mark, before the pass \| 1 \|/]],
+    info: [[15, /S5 shadow-only rows 1, with no re-arming save \(verdict 16\) 0; shadow rows taken after a re-arming save 1;/], [31, /marks due 2026-11-02, 48h email, shadow_only: S5 saved after its mark, before the pass \| 1 \|/]],
+  },
+  {
+    name: "S5K: an unaccepted request given a move that keeps the start: shadow only, S5, R24 held, so verdict 15 does not FAIL and verdict 16 reads REVIEW",
+    seed: [
+      visit(appt(0xb4), "2026-11-04 12:45", { origin: "patient_portal" }),
+      moved(appt(0xb4), "2026-11-02 12:45:01", "2026-11-04 12:45", "2026-11-04 12:45"),
+      shadowRow(appt(0xb4), "48h", "2026-11-04 12:45", "2026-11-02 12:45", true),
+    ].join("\n"),
+    want: only({ [`11 ${MON}`]: "REVIEW", 16: "REVIEW" }),
+    info: [
+      [15, /S5 shadow-only rows 1, with no re-arming save \(verdict 16\) 1; shadow rows taken after a re-arming save 0;/],
+      [16, /with a label outside the set 1 \(S5K 1\)/],
+      [31, /shadow_only: S5 saved after its mark, before the pass \| 1 \|/],
+    ],
+  },
+  {
+    name: "a shadow row written since t0 for a mark due before it, after a re-arming save: the new code took it, verdict 15 FAILs",
+    seed: [
+      visit(appt(0xb5), "2026-11-02 12:00", { bookedAt: "2026-11-02 13:00" }),
+      moved(appt(0xb5), "2026-11-01 14:00", "2026-11-02 12:00", "2026-11-02 13:00"),
+      shadowRow(appt(0xb5), "24h", "2026-11-02 12:00", "2026-11-01 15:30", true),
+    ].join("\n"),
+    want: only({ 15: "FAIL" }),
+    info: [[15, /shadow rows taken after a re-arming save 1;/]],
+  },
+  {
+    name: "S8: a move to this start 10 seconds before its mark, the sleeping job dropped it, the shadow took it: its day REVIEW, verdict 16 REVIEW",
+    seed: [
+      visit(appt(0xb6), "2026-11-04 12:45", { bookedAt: "2026-11-04 13:00" }),
+      moved(appt(0xb6), "2026-11-02 12:44:50", "2026-11-04 12:45", "2026-11-04 13:00"),
+      shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
+    ].join("\n"),
+    want: only({ [`11 ${MON}`]: "REVIEW", 16: "REVIEW" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(S8_LABEL)}`)], [16, /\(S8 1\)/]],
+  },
+  {
+    name: "S8 negative: the same move 31 seconds before the mark: UNEXPLAINED",
+    seed: [
+      visit(appt(0xb6), "2026-11-04 12:45", { bookedAt: "2026-11-04 13:00" }),
+      moved(appt(0xb6), "2026-11-02 12:44:29", "2026-11-04 12:45", "2026-11-04 13:00"),
+      shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
+    ].join("\n"),
+    want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)]],
+  },
+  {
+    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: UNEXPLAINED",
+    seed: [
+      visit(appt(0xb6), "2026-11-04 12:45"),
+      audit(appt(0xb6), "appointment.update", "2026-11-02 12:44:50", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
+      shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
+    ].join("\n"),
+    want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)]],
   },
   { name: "a move that keeps the start, after the mark and before the pass: it does not count (R33), the shadow takes it, `both`", seed: KEPT(true), want: only({}) },
   {
-    name: "a move that keeps the start, after the mark, and NO shadow row: run only, UNEXPLAINED (no kept-start label, not R9)",
+    name: "a move that keeps the start, after the mark, and NO shadow row: run only, UNEXPLAINED (no kept-start label, not RK)",
     seed: KEPT(false),
     want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
     info: [[51, new RegExp(`${appt(0xb1)} \\| UNEXPLAINED`)]],
@@ -891,24 +979,24 @@ const CASES = [
     want: only({}),
   },
   {
-    name: "R9: cancelled at its mark (the sleeping job suppressed it), brought back after the mark; under R24 the sweep never takes it",
-    seed: R9_SHAPE(),
+    name: "RK: cancelled at its mark (the sleeping job suppressed it), brought back after the mark; under R24 the sweep never takes it",
+    seed: RK_SHAPE(),
     want: only({ [`12 ${MON}`]: "REVIEW", 15: "OK", 16: "REVIEW" }),
     info: [
-      [51, new RegExp(`${appt(0xc1)} \\| ${re(R9_LABEL)}`)],
-      [16, /with a label outside the set 1 \(R9 1\)/],
-      [35, /R9 2026-11-02 24h sms: 1/],
-      [40, /run_r9=1 /],
+      [51, new RegExp(`${appt(0xc1)} \\| ${re(RK_LABEL)}`)],
+      [16, /with a label outside the set 1 \(RK 1\)/],
+      [35, /RK 2026-11-02 24h sms: 1/],
+      [40, /run_rk=1 /],
     ],
   },
   {
-    name: "R9 negative: brought back to scheduled on an online request (not a re-arming save): UNEXPLAINED",
-    seed: R9_SHAPE({ origin: "patient_portal" }),
+    name: "RK negative: brought back to scheduled on an online request (not a re-arming save): UNEXPLAINED",
+    seed: RK_SHAPE({ origin: "patient_portal" }),
     want: only({ [`12 ${MON}`]: "FAIL", 13: "FAIL" }),
     info: [[51, new RegExp(`${appt(0xc1)} \\| UNEXPLAINED`)]],
   },
   {
-    name: "R9 negative: a pass with every old predicate true before any re-arming save (cancelled at 13:05, after the 13:00 pass; brought back at 13:20): UNEXPLAINED",
+    name: "RK negative: a pass with every old predicate true before any re-arming save (cancelled at 13:05, after the 13:00 pass; brought back at 13:20): UNEXPLAINED",
     seed: [
       visit(appt(0xc2), "2026-11-03 13:00", { updated: "2026-11-02 13:20" }),
       runClaim(appt(0xc2), "24h", "2026-11-03 13:00"),
@@ -919,15 +1007,15 @@ const CASES = [
     info: [[51, new RegExp(`${appt(0xc2)} \\| UNEXPLAINED`)]],
   },
   {
-    name: "R9 negative: an unknown status at a pass before the bring-back, with no save yet: UNEXPLAINED",
-    seed: R9_SHAPE({ extra: audit(appt(0xc1), "appointment.update", "2026-11-02 13:10", '{"toStatus":"cancelled"}') }),
+    name: "RK negative: an unknown status at a pass before the bring-back, with no save yet: UNEXPLAINED",
+    seed: RK_SHAPE({ extra: audit(appt(0xc1), "appointment.update", "2026-11-02 13:10", '{"toStatus":"cancelled"}') }),
     want: only({ [`12 ${MON}`]: "FAIL", 13: "FAIL", 15: "OK" }),
     info: [[51, new RegExp(`${appt(0xc1)} \\| UNEXPLAINED`)]],
   },
   {
-    name: "R9 negative: no pass had every old predicate true (a live sweep claim of the key before the mark): UNEXPLAINED",
+    name: "RK negative: no pass had every old predicate true (a live sweep claim of the key before the mark): UNEXPLAINED",
     seed: [
-      R9_SHAPE(),
+      RK_SHAPE(),
       `insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
          values ('${TENANT}', '${appt(0xc1)}', 'claim', '24h', 'sms', ${at("2026-11-03 13:00")}, ${at("2026-11-02 13:00")}, 'sweep', false, 2, ${at("2026-11-02 12:00")});`,
     ].join("\n"),
@@ -975,7 +1063,7 @@ const CASES = [
     info: [[50, new RegExp(`${appt(5)} \\| UNEXPLAINED`)]],
   },
   {
-    name: "run only: the shadow row for Monday's 48h email at 10:00 removed (a booked visit, no save after the mark: not R8, not R9)",
+    name: "run only: the shadow row for Monday's 48h email at 10:00 removed (a booked visit, no save after the mark: not R8, not RK)",
     seed: dropShadow(5, "48h"),
     want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
     info: [[51, new RegExp(`${appt(5)} \\| UNEXPLAINED`)]],
@@ -1085,23 +1173,32 @@ for (const [name, counts, args] of CLAUSE_CASES) {
  */
 const MUTANTS = [
   ["every move counts (the start-at-the-mark rule dead)", "and (r.clause <> 'moved' or m.start_at_mark is distinct from p.start_text)", "and true", "a move that keeps the start, after the mark and before the pass"],
-  ["every move counts, on the run-only case: R9 would name a kept start", "and (r.clause <> 'moved' or m.start_at_mark is distinct from p.start_text)", "and true", "a move that keeps the start, after the mark, and NO shadow row"],
+  ["every move counts, on the run-only case: RK would name a kept start", "and (r.clause <> 'moved' or m.start_at_mark is distinct from p.start_text)", "and true", "a move that keeps the start, after the mark, and NO shadow row"],
   ["rule 1 reads the LATEST move after the mark", "order by n.created_at, n.id limit 1", "order by n.created_at desc, n.id desc limit 1", "moved away and back after the mark"],
   ["rule 2 dead", "and b.clause in ('booked', 'moved') and b.created_at <= p.mark", "and false", "a kept-start move whose fromStartsAt is null"],
   ["a save AT the mark counts", "and r.created_at > p.mark and r.created_at <= p.upto\n", "and r.created_at >= p.mark and r.created_at <= p.upto\n", "a re-arming save written AT the mark exactly"],
-  ["brought_back without its origin condition", "or (l.metadata->>'toStatus' = 'scheduled' and a.origin <> 'patient_portal'))", "or (l.metadata->>'toStatus' = 'scheduled'))", "R9 negative: brought back to scheduled on an online request"],
+  ["brought_back without its origin condition", "or (l.metadata->>'toStatus' = 'scheduled' and a.origin <> 'patient_portal'))", "or (l.metadata->>'toStatus' = 'scheduled'))", "RK negative: brought back to scheduled on an online request"],
   ["accepted_with_estado without its origin condition", "and l.metadata->>'toStatus' = 'confirmed' and a.origin = 'patient_portal'\n               then 'accepted_with_estado'", "and l.metadata->>'toStatus' = 'confirmed'\n               then 'accepted_with_estado'", "CLAUSE near miss: a booked visit set to Confirmada by hand"],
   ["accepted_in_sms_review without applied", "and l.metadata->>'applied' = 'true' and a.origin = 'patient_portal'", "and a.origin = 'patient_portal'", "CLAUSE near miss: the same on an online request, not applied"],
   ["accepted_by_sms_reply without its origin condition", "and l.metadata->>'outcome' = 'confirmed'\n                  and a.origin = 'patient_portal'\n", "and l.metadata->>'outcome' = 'confirmed'\n", "CLAUSE near miss: the patient's SMS confirmo on a booked visit"],
   ["the visit's own tenant dropped", "join public.appointments a on a.id = l.entity_id and a.tenant_id = l.tenant_id\n     where l.entity_type = 'appointment'\n       and l.entity_id in (select appointment_id from probe)", "join public.appointments a on a.id = l.entity_id\n     where l.entity_type = 'appointment'\n       and l.entity_id in (select appointment_id from probe)", "CLAUSE near miss: a booking row written under another tenant", (s) => s.replace("where r.tenant_id = p.tenant_id and r.appointment_id = p.appointment_id\n", "where r.appointment_id = p.appointment_id\n")],
-  ["R9 without a pass where every old predicate held", "where pr.uk = u.uk and pr.in_range and pr.every = 'T' and e.rearmed)", "where pr.uk = u.uk and pr.in_range)", "R9 negative: no pass had every old predicate true"],
-  ["R9 lets a pass with every old predicate true and no save through", "pr.in_range and pr.every <> 'F' and not coalesce(e.rearmed, false))", "pr.in_range and pr.every <> 'F' and false)", "R9 negative: a pass with every old predicate true before any re-arming save"],
-  ["R9 lets an unknown pass with no save through", "pr.in_range and pr.every <> 'F' and not coalesce(e.rearmed, false))", "pr.in_range and pr.every = 'T' and not coalesce(e.rearmed, false))", "R9 negative: an unknown status at a pass"],
-  ["verdict 2 without the Monday-mark condition", " or w.monday_before_t0 > 0 or w.old_moves > 0 then 'FAIL'", " or w.old_moves > 0 then 'FAIL'", "the deploy at Monday 06:50 and a Monday mark due at 03:00"],
-  ["verdict 2 without the old-code-move condition", " or w.monday_before_t0 > 0 or w.old_moves > 0 then 'FAIL'", " or w.monday_before_t0 > 0 then 'FAIL'", "a move written since t0 without fromStartsAt"],
+  ["RK without a pass where every old predicate held", "where pr.uk = u.uk and pr.in_range and pr.every = 'T' and e.rearmed)", "where pr.uk = u.uk and pr.in_range)", "RK negative: no pass had every old predicate true"],
+  ["RK lets a pass with every old predicate true and no save through", "pr.in_range and pr.every <> 'F' and not coalesce(e.rearmed, false))", "pr.in_range and pr.every <> 'F' and false)", "RK negative: a pass with every old predicate true before any re-arming save"],
+  ["RK lets an unknown pass with no save through", "pr.in_range and pr.every <> 'F' and not coalesce(e.rearmed, false))", "pr.in_range and pr.every = 'T' and not coalesce(e.rearmed, false))", "RK negative: an unknown status at a pass"],
+  ["verdict 2 without the Monday-mark condition, the sleeping job's alone", " or w.monday_one_side > 0 or w.old_moves_late > 0 then 'FAIL'", " or w.old_moves_late > 0 then 'FAIL'", "the deploy at Monday 06:50 and a Monday mark due before t0, the sleeping job's alone"],
+  ["verdict 2 without the Monday-mark condition, the shadow's alone", " or w.monday_one_side > 0 or w.old_moves_late > 0 then 'FAIL'", " or w.old_moves_late > 0 then 'FAIL'", "the deploy at Monday 06:50 and a Monday mark due before t0, the shadow's alone"],
+  ["verdict 2 FAILs a Monday mark on both sides", " or w.monday_one_side > 0 or w.old_moves_late > 0 then 'FAIL'", " or w.monday_before_t0 > 0 or w.old_moves_late > 0 then 'FAIL'", "the deploy at Monday 06:50 and a Monday mark due before t0, on both sides"],
+  ["verdict 2 without the old-code-move condition", " or w.monday_one_side > 0 or w.old_moves_late > 0 then 'FAIL'", " or w.monday_one_side > 0 then 'FAIL'", "a move without fromStartsAt at DEPLOYED_AT + 13 hours exactly"],
+  ["the 13 hours exclusive", "l.created_at >= k.resync + interval '13 hours' and not (", "l.created_at > k.resync + interval '13 hours' and not (", "a move without fromStartsAt at DEPLOYED_AT + 13 hours exactly"],
+  ["the 13 hours at 12", "l.created_at >= k.resync + interval '13 hours' and not (", "l.created_at >= k.resync + interval '12 hours' and not (", "a move without fromStartsAt one second before DEPLOYED_AT + 13 hours"],
+  ["verdict 15 FAILs on any S5 row again", "when taken_after_save > 0 then 'FAIL'", "when s5_rows > 0 or taken_after_save > 0 then 'FAIL'", "S5K: an unaccepted request"],
+  ["an S5 row with no re-arming save stays in R32's set", "then 'S5K'", "then 'S5'", "S5K: an unaccepted request"],
+  ["the shadow probe reads only marks due since t0", "(c.due_at >= win.t0 or c.created_at >= win.t0c) and c.due_at <= win.t1", "c.due_at >= win.t0 and c.due_at <= win.t1", "a shadow row written since t0 for a mark due before it"],
+  ["S8 at 5 minutes", "v.created_at >= p.due_at - interval '30 seconds' and v.created_at <= p.due_at", "v.created_at >= p.due_at - interval '5 minutes' and v.created_at <= p.due_at", "S8 negative: the same move 31 seconds before the mark"],
+  ["S8 counts any save", "exists (select 1 from rearm_rows v\n", "exists (select 1 from (select l.tenant_id, l.entity_id as appointment_id, l.created_at from public.audit_log l) v\n", "S8 negative: a status-only save"],
   ["the calendar arm without its Sunday", "when a.closed_start and a.matched = 0 and a.shadow_only = 0 and a.run_only = 0 then 'OK'", "when a.matched = 0 and a.shadow_only = 0 and a.run_only = 0 then 'OK'", "Tuesday has no 48h mark at all"],
   ["verdict 16 judges the window-edge labels of a partial day", "and (full_day or letter not in ('R5', 'S7'))) as outside", "and true) as outside", "R5 on the partial Wednesday"],
-  ["verdict 15's S5 count dead", "where p.side = 'shadow_only' and p.category like 'S5 %') as s5_rows", "where false) as s5_rows", "R24 violated", (s) => s.replace("(select count(*) from probe_eval e where e.src = 'shadow' and e.rearmed) as taken_after_save", "0 as taken_after_save")],
+  ["verdict 15's FAIL dead", "when taken_after_save > 0 then 'FAIL'", "when false then 'FAIL'", "R24 violated"],
   ["verdict 15's control dead", "(select count(*) from subj) as subjects", "0 as subjects", "R24 held"],
   ["R34's cap at 5 hours", "<= s.due_at + interval '3 hours' as is_r34", "<= s.due_at + interval '5 hours' as is_r34", "R34's predicate", null, [36, /\| 4, 3, 1, 2 \|/]],
   ["R34 without the claim before the first save", "and c0.id <> s.id and c0.created_at <= e.first_rearm_at)", "and c0.id <> s.id)", "R34's predicate", null, [36, /\| 4, 3, 1, 2 \|/]],
