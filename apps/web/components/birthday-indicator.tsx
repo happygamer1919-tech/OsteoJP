@@ -20,7 +20,8 @@ import type { BirthdayRow } from "@/lib/patients/birthdays";
  * A native `<details>`: the `<summary>` is a real button to the keyboard (Tab,
  * then Enter or Space opens and closes it) and to a screen reader, and the
  * links inside are ordinary tab stops. The one client piece is
- * BirthdayDisclosure, which closes it on a route change and on Escape.
+ * BirthdayDisclosure, which closes it on a route change, on Escape and on a
+ * press outside it.
  *
  * Its look follows the notification bell beside it: a 44px round target, the
  * secondary text colour, the same focus ring and the same badge.
@@ -71,9 +72,9 @@ export function BirthdayIndicator({
               <li key={r.id}>
                 <Link
                   href={`/patients/${r.id}`}
-                  className="flex items-baseline justify-between gap-3 rounded-v2 px-2 py-1.5 text-sm hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                  className="flex min-w-0 items-baseline justify-between gap-3 rounded-v2 px-2 py-1.5 text-sm hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                 >
-                  <span className="text-accent-2-700">{r.fullName}</span>
+                  <span className="min-w-0 break-words text-accent-2-700">{r.fullName}</span>
                   <span className="shrink-0 text-v2-text-secondary">
                     {r.age === 1
                       ? s["birthdays.turnsOne"]

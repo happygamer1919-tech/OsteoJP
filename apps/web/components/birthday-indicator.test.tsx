@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/agenda" }));
 
-import { closeOnEscape } from "./birthday-disclosure.client";
+import {
+  attachDismissListeners,
+  closeOnEscape,
+  closeOnOutsidePointer,
+} from "./birthday-disclosure.client";
 import { BirthdayIndicator } from "./birthday-indicator";
 
 const SHELL = readFileSync(join(__dirname, "app-shell.tsx"), "utf8");
@@ -70,16 +74,35 @@ describe("the birthday icon", () => {
 describe("it closes", () => {
   const fakeEvent = (key: string) => {
     const calls: string[] = [];
-    return {
-      e: { key, preventDefault: () => calls.push("prevent"), stopPropagation: () => calls.push("stop") },
-      calls,
-    };
+    return { e: { key, preventDefault: () => calls.push("prevent") }, calls };
   };
+  /** A fake open <details>; `inside` is the one node it contains. */
   const fakeDetails = (open: boolean) => {
     const focused: string[] = [];
+    const inside = { id: "inside" };
+    const d = {
+      open,
+      querySelector: () => ({ focus: () => focused.push("summary") }),
+      contains: (n: unknown) => n === inside,
+    } as unknown as HTMLDetailsElement;
+    return { d, focused, inside };
+  };
+  /** A fake document recording the listeners it holds. */
+  const fakeDoc = () => {
+    const held = new Map<string, Set<(e: never) => void>>();
     return {
-      d: { open, querySelector: () => ({ focus: () => focused.push("summary") }) } as unknown as HTMLDetailsElement,
-      focused,
+      held,
+      addEventListener: (t: string, fn: (e: never) => void) => {
+        if (!held.has(t)) held.set(t, new Set());
+        held.get(t)!.add(fn);
+      },
+      removeEventListener: (t: string, fn: (e: never) => void) => {
+        held.get(t)?.delete(fn);
+      },
+      fire: (t: string, e: unknown) => {
+        for (const fn of held.get(t) ?? []) (fn as (e: unknown) => void)(e);
+      },
+      count: () => [...held.values()].reduce((n, set) => n + set.size, 0),
     };
   };
 
@@ -89,7 +112,7 @@ describe("it closes", () => {
     expect(closeOnEscape(e, d)).toBe(true);
     expect(d.open).toBe(false);
     expect(focused).toEqual(["summary"]);
-    expect(calls).toEqual(["prevent", "stop"]);
+    expect(calls).toEqual(["prevent"]);
   });
 
   it("any other key, or a closed list, is left alone", () => {
@@ -103,13 +126,54 @@ describe("it closes", () => {
     expect(closeOnEscape(e, null)).toBe(false);
   });
 
-  it("the disclosure is keyed on the pathname, so a navigation mounts it closed", () => {
+  it("a pointer press OUTSIDE closes it; a press inside does not", () => {
+    const { d, inside } = fakeDetails(true);
+    expect(closeOnOutsidePointer(inside, d)).toBe(false);
+    expect(d.open).toBe(true);
+    expect(closeOnOutsidePointer({ id: "elsewhere" }, d)).toBe(true);
+    expect(d.open).toBe(false);
+  });
+
+  it("while open, Escape and an outside press work from ANYWHERE in the document (focus need not be inside)", () => {
+    const doc = fakeDoc();
+    const esc = fakeDetails(true);
+    attachDismissListeners(doc, esc.d);
+    expect([...doc.held.keys()].sort()).toEqual(["keydown", "pointerdown"]);
+    doc.fire("keydown", fakeEvent("Escape").e);
+    expect(esc.d.open).toBe(false);
+    expect(esc.focused).toEqual(["summary"]);
+
+    const doc2 = fakeDoc();
+    const out = fakeDetails(true);
+    attachDismissListeners(doc2, out.d);
+    doc2.fire("pointerdown", { target: out.inside });
+    expect(out.d.open).toBe(true);
+    doc2.fire("pointerdown", { target: { id: "elsewhere" } });
+    expect(out.d.open).toBe(false);
+  });
+
+  it("the cleanup removes exactly the two listeners it added", () => {
+    const doc = fakeDoc();
+    const cleanup = attachDismissListeners(doc, fakeDetails(true).d);
+    expect(doc.count()).toBe(2);
+    cleanup();
+    expect(doc.count()).toBe(0);
+  });
+
+  it("listens only while open (the toggle event), and is keyed on the pathname", () => {
     const src = readFileSync(join(__dirname, "birthday-disclosure.client.tsx"), "utf8");
+    expect(src).toMatch(/onToggle=\{\(e\) => setOpen\(e\.currentTarget\.open\)\}/);
+    expect(src).toMatch(/if \(!open \|\| !ref\.current\) return;\s*return attachDismissListeners\(document, ref\.current\);\s*\}, \[open\]\);/);
     expect(src).toMatch(/const pathname = usePathname\(\);/);
-    expect(src).toMatch(/key=\{pathname \?\? ""\}/);
-    expect(src).toMatch(/onKeyDown=\{\(e\) => closeOnEscape\(e, ref\.current\)\}/);
+    expect(src).toMatch(/<OpenAwareDetails key=\{pathname \?\? ""\}/);
     // and the icon renders closed
     expect(renderToStaticMarkup(<BirthdayIndicator rows={ROWS} />)).not.toMatch(/<details[^>]*\sopen/);
+  });
+
+  it("a long name cannot push the row wider than the list (min-w-0)", () => {
+    const html = renderToStaticMarkup(<BirthdayIndicator rows={ROWS} />);
+    expect(html).toMatch(/<a href="\/patients\/[^"]+" class="[^"]*\bmin-w-0\b/);
+    expect(html).toMatch(/<span class="[^"]*\bmin-w-0\b[^"]*\bbreak-words\b[^"]*">Ana Exemplo</);
   });
 });
 

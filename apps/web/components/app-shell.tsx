@@ -141,15 +141,20 @@ export async function AppShell({
   // W13-02: the bell's badge. Read here rather than in a client component so it
   // is derived from data on every render and cannot drift from the list it
   // describes. Failure is non-fatal: it degrades to zero and says so in the log.
-  const identityRead = staffShellIdentity(ctx);
+  //
+  // A FAILED IDENTITY READ IS LOGGED ONCE. It resolves to null here, so the
+  // birthday arm below sees "no identity" and draws nothing without a second,
+  // misleading "[birthdays]" line. app-shell.resilience.test.tsx renders the
+  // shell with each read rejecting.
+  const identityRead = staffShellIdentity(ctx).catch((e: unknown) => {
+    console.error(
+      "[shell] display name unavailable, falling back to the email derivation",
+      e instanceof Error ? e.name : "unknown",
+    );
+    return null;
+  });
   const [identity, unread, birthdays] = await Promise.all([
-    identityRead.catch((e: unknown) => {
-      console.error(
-        "[shell] display name unavailable, falling back to the email derivation",
-        e instanceof Error ? e.name : "unknown",
-      );
-      return null;
-    }),
+    identityRead,
     unreadCount(ctx).catch((err: unknown) => {
       console.error(
         "[notifications] unread count failed; rendering the bell without a badge",
@@ -158,7 +163,9 @@ export async function AppShell({
       return 0;
     }),
     identityRead
-      .then((id): Promise<BirthdayRow[] | null> => loadBirthdayIndication(ctx, id.birthdayIconOn))
+      .then((id): Promise<BirthdayRow[] | null> | null =>
+        id ? loadBirthdayIndication(ctx, id.birthdayIconOn) : null,
+      )
       .catch((err: unknown) => {
         console.error(
           "[birthdays] birthday indication failed; rendering the shell without it",

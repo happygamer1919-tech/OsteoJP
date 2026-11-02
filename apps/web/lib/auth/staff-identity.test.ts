@@ -32,7 +32,7 @@ vi.mock("@/lib/auth/context", () => ({
 import { tenants } from "@osteojp/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { staffDisplayName, staffShellIdentity, initialsFor } from "./staff-identity";
+import { staffShellIdentity, initialsFor } from "./staff-identity";
 import type { RequestContext } from "@/lib/auth/context";
 
 const ctx: RequestContext = { tenantId: "t", role: "therapist", userId: "u1" };
@@ -96,21 +96,21 @@ describe("staffShellIdentity - the name and the birthday switch, in one read", (
  * ruling asks for already existed - `users.full_name`, required at invite and
  * editable in O meu perfil - so this reads it rather than adding one.
  */
-describe("staffDisplayName - the name the clinic typed", () => {
+describe("staffShellIdentity - the name the clinic typed", () => {
   it("returns the stored full name", async () => {
     rows = [{ fullName: "Ana Morais" }];
-    expect(await staffDisplayName(ctx)).toBe("Ana Morais");
+    expect((await staffShellIdentity(ctx)).name).toBe("Ana Morais");
   });
 
   it("returns null when the name is empty or whitespace, so the caller falls back", async () => {
     // NOT an empty string: the caller distinguishes "no name" from "a name that
     // happens to be blank", and `?? fallback` only works on null.
     rows = [{ fullName: "   " }];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
     rows = [{ fullName: "" }];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
     rows = [{ fullName: null }];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
   });
 
   it("returns null when there is no row at all", async () => {
@@ -119,19 +119,19 @@ describe("staffDisplayName - the name the clinic typed", () => {
     // render the platform over a cosmetic string would be wildly out of
     // proportion.
     rows = [];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
   });
 
   it("trims, so a stray space does not become the name", async () => {
     rows = [{ fullName: "  Ana Morais  " }];
-    expect(await staffDisplayName(ctx)).toBe("Ana Morais");
+    expect((await staffShellIdentity(ctx)).name).toBe("Ana Morais");
   });
 
   it("lets a read failure surface to the caller, which catches it", async () => {
     // The function does not swallow: the SHELL decides that a failure is
     // non-fatal, because the shell is what knows the consequence.
     throwOnRead = true;
-    await expect(staffDisplayName(ctx)).rejects.toThrow();
+    await expect(staffShellIdentity(ctx)).rejects.toThrow();
   });
 });
 

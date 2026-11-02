@@ -48,23 +48,10 @@ import { headerIconOnSql } from "@/lib/patients/birthday-setting";
  * render the shell because a name could not be read would take the whole
  * platform down over a cosmetic string. An empty result returns null and the
  * caller keeps the old behaviour.
- */
-export async function staffDisplayName(ctx: RequestContext): Promise<string | null> {
-  const rows = await runScoped(ctx, (tx) =>
-    tx
-      .select({ fullName: users.fullName })
-      .from(users)
-      .where(eq(users.id, ctx.userId))
-      .limit(1),
-  );
-  const name = rows[0]?.fullName?.trim();
-  return name ? name : null;
-}
-
-/**
+ *
  * What the staff shell reads about the viewer, in ONE statement: the name
- * above, and whether the tenant has "Notificação de aniversariantes" switched
- * on (Indicação de Aniversários).
+ * (the rule above), and whether the tenant has "Notificação de
+ * aniversariantes" switched on (Indicação de Aniversários).
  *
  * WHY THE SETTING RIDES ON THIS READ. The shell renders on every staff page,
  * and the switch is OFF by default. Reading it here, joined from the viewer's
@@ -73,9 +60,9 @@ export async function staffDisplayName(ctx: RequestContext): Promise<string | nu
  * under the viewer's claims: `users` and `tenants_tenant_select` (0094) admit
  * every staff role to their own row.
  *
- * Same failure contract as `staffDisplayName`: a missing `users` row is not a
- * throw, it is no name and no icon; a read failure surfaces to the shell,
- * which catches it.
+ * It replaced `staffDisplayName` (the name alone), which had no other caller.
+ * Same failure contract: a missing `users` row is not a throw, it is no name
+ * and no icon; a read failure surfaces to the shell, which catches it.
  */
 export async function staffShellIdentity(
   ctx: RequestContext,

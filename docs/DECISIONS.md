@@ -5475,8 +5475,11 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   badge. It shows today's count; clicking opens a short list (name, "faz N
   anos"), each a link to `/patients/<id>`. A native `<details>`/`<summary>`, so
   it is keyboard reachable. One small client wrapper closes it: it is keyed on
-  the pathname (a navigation mounts it closed) and Escape closes it and returns
-  focus to the summary. At zero the icon shows with no count and the list says
+  the pathname (a navigation mounts it closed), and while it is open (from its
+  `toggle` event) two document-level listeners close it on Escape (returning
+  focus to the summary; listening on the element was not enough, Safari does
+  not focus a summary on click) and on a pointer press outside it. A long name
+  wraps (`min-w-0`) instead of widening the row. At zero the icon shows with no count and the list says
   "Sem aniversariantes hoje.".
 - **PROVISIONAL until the owner's screenshot.** Fisiozero's icon was not seen
   switched on, so its look, its zero state and what its click opens are
@@ -5487,9 +5490,10 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   and the 640 to 1023px header has never been seen with a second 44px icon in
   it. With the setting OFF nothing changes at any width.
 - **Cost.** OFF (the default): no extra transaction, the switch is a column of
-  the shell's existing name read. ON: one more scoped read per staff page
-  render, today's birthdays (capped at 200 rows), in parallel with the bell's
-  count. **That read is not cheap and is not measured.** `to_char` is not
+  the shell's existing name read. ON: one or more scoped reads per staff page
+  render (today's birthdays, capped at 200 rows, plus the viewer's clinic list
+  for a located viewer and, for a therapist, the care-team helper probe that
+  the /patients list's scope makes too), in parallel with the bell's count. **That read is not cheap and is not measured.** `to_char` is not
   leakproof, so Postgres applies `patients_select` (RLS) to every patient row
   of the tenant before the birthday test, on each render. Measuring it on a
   lane is owed before the owner switches it ON.
@@ -5511,4 +5515,6 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   13 of 13 green (run 41486248377). It was then extended after R4 (an assigned
   receptionist, the owner, fixtures registered by a third user so the therapist
   arm is treatment alone, and a birthday patient the therapist has no link to)
-  and reruns in CI.
+  to 16 tests. `app-shell.resilience.test.tsx` renders the real shell with
+  each best-effort read rejecting: the page still renders, and a failed
+  identity read is logged once.
