@@ -232,12 +232,14 @@ d("HOR-01: a therapist with no Horarios rows works the clinic's hours (staff sid
         // database; it is a NOTICE, and it is not this arm's evidence.
         await tx.execute(raw`set local client_min_messages = warning`);
         // The ALTERs below need ACCESS EXCLUSIVE on `locations`, which every
-        // other suite reads. Under CI load a reader can hold it, and without a
+        // other suite touches. Under CI load another suite's open transaction
+        // on `locations` (a read, or a foreign-key check) can hold it, and without a
         // bound this arm queues for it with no end: vitest gives up on the test
         // at 5s, but the ALTER stays queued on the server, and every later
         // reader of `locations` waits behind it. 3s is under vitest's 5s, so
         // the arm fails with 55P03 (lock_not_available), the transaction rolls
-        // back and leaves the queue, and the failure names the lock. LOCAL
+        // back and leaves the queue, and the failed query in the error names
+        // the ALTER on `locations`. LOCAL
         // ends with the rollback.
         await tx.execute(raw`set local lock_timeout = '3s'`);
         await tx.execute(raw`alter table public.locations
