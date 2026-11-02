@@ -352,7 +352,7 @@ Nota: uma pessoa sem localização atribuída vê todas as localizações e toda
 
 ## Administração: Serviços
 
-**Serviços** tem a lista dos serviços da clínica, com **Duração (min)**, **Preço (€)** e **Estado**, e, mais abaixo, os **Pacotes** de sessões. A etiqueta **Portal** indica que o serviço está aberto à marcação pelos pacientes, no portal. O serviço só aparece no portal numa clínica se também estiver assinalado, em **Administração**, **Equipa**, **Gerir**, **Serviço principal**, para pelo menos um terapeuta **Disponível para marcações** com horário nessa clínica.
+**Serviços** tem a lista dos serviços da clínica, com **Duração (min)**, **Preço (€)** e **Estado**, e, mais abaixo, a **Gestão de Packs**, com a **LISTA DE PACKS** de sessões. A etiqueta **Portal** indica que o serviço está aberto à marcação pelos pacientes, no portal. O serviço só aparece no portal numa clínica se também estiver assinalado, em **Administração**, **Equipa**, **Gerir**, **Serviço principal**, para pelo menos um terapeuta **Disponível para marcações** com horário nessa clínica.
 
 ### Como fazer: criar um serviço
 
@@ -367,8 +367,8 @@ Nota: uma pessoa sem localização atribuída vê todas as localizações e toda
 
 ### Como fazer: criar um pacote
 
-1. Em **Adicionar pacote**, preencha **Nome**, **Serviço base**, **Nº de sessões**, **Preço (€)** e **Local**.
-2. Clique em **Adicionar pacote**.
+1. Em **Gestão de Packs**, na linha **Novo PACK**, preencha **Nome Pack...**, **Número sessões...**, **Preço...** (o total do pacote), **Serviço base** e **Local**.
+2. Clique em **Inserir**.
 
 ![Serviços no telemóvel](../screens/proprietario/admin-servicos-390.png)
 ![Serviços no computador](../screens/proprietario/admin-servicos-desktop.png)
