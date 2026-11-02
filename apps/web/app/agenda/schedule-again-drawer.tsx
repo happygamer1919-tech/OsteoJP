@@ -162,7 +162,10 @@ export function ScheduleAgainDrawer({
       // override, so "Marcar mesmo assim" cannot reach it and must not be
       // offered.
       setError(outsideClinicHoursMessage(result.clinicWindow));
-    } else if (result.error === "location_not_assigned") {
+    } else if (result.error === "location_not_assigned" || result.error === "forbidden") {
+      // R52: `forbidden` is a therapist copying a colleague's visit (the
+      // create rule). The same "no permission" sentence as a clinic outside
+      // the actor's scope, rather than the generic failure.
       setError(s["errors.forbidden"]);
     } else {
       setError(s["patients.scheduleAgainError"]);
