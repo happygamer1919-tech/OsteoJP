@@ -24,6 +24,8 @@ import {
   type EpisodeExportRow,
 } from "./episode-export-core";
 import { mergeReportPdfs } from "./episode-pdf";
+import { overrideAuditMetadata, type ExportOverride, type ExportRow, type OverrideAuditEntry } from "./export-overrides";
+import { readExportRows } from "./export-rows";
 import { generateRegistoReportPdf, registoReadScope } from "./generate";
 import type { RecordStatus } from "./report-model";
 
@@ -196,6 +198,8 @@ export type EpisodeReportPdf = {
   recordIds: string[];
   /** How many registos of the episode the caller reads that it does not hold. */
   leftOut: number;
+  /** RODICA-export-edit-before-download: the registos printed with changed values; absent when none. */
+  overridden?: OverrideAuditEntry[];
 };
 
 /**
@@ -213,8 +217,9 @@ export async function renderEpisodeReport(
   ctx: RequestContext,
   selection: EpisodeExportSelection,
   locale: Locale,
+  overrides?: ReadonlyMap<string, ExportOverride>,
 ): Promise<EpisodeReportPdf | null> {
-  const rendered = await renderRegistos(ctx, selection, locale);
+  const rendered = await renderRegistos(ctx, selection, locale, overrides);
   return rendered && { ...rendered, filename: episodeReportFilename(selection.episodeId) };
 }
 
@@ -231,16 +236,25 @@ async function renderRegistos(
   ctx: RequestContext,
   selection: { recordIds: readonly string[]; leftOut: number },
   locale: Locale,
-): Promise<{ bytes: Uint8Array; recordIds: string[]; leftOut: number } | null> {
+  overrides?: ReadonlyMap<string, ExportOverride>,
+): Promise<{ bytes: Uint8Array; recordIds: string[]; leftOut: number; overridden?: OverrideAuditEntry[] } | null> {
   assertCan(ctx.role, "clinical_records:read");
   const scope = await registoReadScope(ctx);
   const parts: Uint8Array[] = [];
   const recordIds: string[] = [];
+  const overridden: OverrideAuditEntry[] = [];
   let leftOut = selection.leftOut;
   for (const recordId of selection.recordIds) {
     try {
-      parts.push((await generateRegistoReportPdf(ctx, recordId, locale, scope)).bytes);
+      // RODICA-export-edit-before-download: this registo's date, hour and
+      // heading for this file, when the dialog changed them.
+      const override = overrides?.get(recordId.toLowerCase());
+      const one = override
+        ? await generateRegistoReportPdf(ctx, recordId, locale, scope, override)
+        : await generateRegistoReportPdf(ctx, recordId, locale, scope);
+      parts.push(one.bytes);
       recordIds.push(recordId);
+      if (one.overridden) overridden.push(one.overridden);
     } catch (e) {
       if (isClinicalError(e) && (e.code === "not_found" || e.code === "not_printable")) {
         leftOut += 1;
@@ -255,7 +269,22 @@ async function renderRegistos(
     bytes: await mergeReportPdfs(parts, getStrings(locale)["report.clinical.title"]),
     recordIds,
     leftOut,
+    ...(overridden.length > 0 ? { overridden } : {}),
   };
+}
+
+/**
+ * RODICA-export-edit-before-download: THE DIALOG'S ROWS for an episode's or an
+ * imported group's file: every registo of the selection the file would print,
+ * in the file's order, with the date, hour and heading it prints when nothing
+ * is changed (export-rows.ts). Reads only. One group, so no section name.
+ */
+export function readSelectionExportRows(
+  ctx: RequestContext,
+  selection: { recordIds: readonly string[] },
+  locale: Locale,
+): Promise<ExportRow[]> {
+  return readExportRows(ctx, [{ group: null, recordIds: selection.recordIds }], locale);
 }
 
 /** The longest group label the imported export reads; a specialty is a word. */
@@ -341,6 +370,8 @@ export type ImportedGroupReportPdf = {
   recordIds: string[];
   /** How many registos of the group the caller reads that it does not hold. */
   leftOut: number;
+  /** RODICA-export-edit-before-download: the registos printed with changed values; absent when none. */
+  overridden?: OverrideAuditEntry[];
 };
 
 /**
@@ -354,8 +385,9 @@ export async function renderImportedGroupReport(
   ctx: RequestContext,
   selection: ImportedGroupExportSelection,
   locale: Locale,
+  overrides?: ReadonlyMap<string, ExportOverride>,
 ): Promise<ImportedGroupReportPdf | null> {
-  const rendered = await renderRegistos(ctx, selection, locale);
+  const rendered = await renderRegistos(ctx, selection, locale, overrides);
   return rendered && { ...rendered, filename: importedGroupReportFilename(selection.patientId) };
 }
 
@@ -372,7 +404,14 @@ export async function renderImportedGroupReport(
  */
 export async function recordEpisodeExport(
   ctx: RequestContext,
-  exported: { episodeId: string; patientId: string; recordIds: readonly string[]; leftOut: number },
+  exported: {
+    episodeId: string;
+    patientId: string;
+    recordIds: readonly string[];
+    leftOut: number;
+    /** RODICA-export-edit-before-download: what the export changed, per registo (export-overrides.ts). */
+    overridden?: readonly OverrideAuditEntry[];
+  },
 ): Promise<void> {
   const ip = await clientIp();
   await runScoped(
@@ -390,6 +429,7 @@ export async function recordEpisodeExport(
           recordIds: [...exported.recordIds],
           recordsIncluded: exported.recordIds.length,
           recordsLeftOut: exported.leftOut,
+          ...overrideAuditMetadata(exported.overridden),
         },
         ip,
       }),
