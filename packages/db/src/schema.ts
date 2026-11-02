@@ -390,7 +390,8 @@ export const services = pgTable(
     vatExemptionCode: text("vat_exemption_code"),
     //   follow_up_days: NULL = "FollowUP: nenhum", 2 = "FollowUp 2 dias".
     followUpDays: smallint("follow_up_days"),
-    //   sms_reminders: the SMS tag. TRUE for every existing row = today.
+    //   sms_reminders: The SMS tag. Whether it stops only the SMS or every
+    //   reminder is not ruled yet. TRUE (the default) for every existing row.
     smsReminders: boolean("sms_reminders").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

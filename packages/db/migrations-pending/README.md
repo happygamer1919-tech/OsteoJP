@@ -33,7 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
-| `NEXT-AFTER-0109_services_booking_type_fields.sql` | `0109` (HOR-02, held on #1682) | 2026-11-02, branch `db/RODICA-services-vat-colour` | this branch's pull request, held; no number until strategy rules it and `0109` is applied and merged |
+| `NEXT-AFTER-0109_services_booking_type_fields.sql` | `0109` (HOR-02, held on #1682) | 2026-11-02, branch `db/RODICA-services-vat-colour` | #1704, held; no number until strategy rules it and `0109` is applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
@@ -55,7 +55,7 @@ request is promoted as `0101` (see the Promoted table), so the table above is em
 (see the Promoted table), so the table above is empty here too. `0102` was applied on
 2026-10-07 and merged; on the branch `db/0103-anon-sequences-default` the revoke of `anon`'s SEQUENCES default stands in
 `packages/db/migrations` as `0103` from its first commit, with no pending file before it (see the last row of the Promoted
-table, and why), so the table above is empty here too. Other branches hold their own pending files, which this table does not
+table, and why), so the table above was empty there too. `0103` to `0108` are on `main` with no pending file left behind, so the table is empty on `main`. **On the branch `db/RODICA-services-vat-colour` (#1704) it is NOT empty:** it holds the one row above, the five Tipos de Marcacao columns on `services`, parked as `NEXT-AFTER-0109` because `0109` is HOR-02, held on #1682. Other branches hold their own pending files, which this table does not
 list: it is only accurate for the branch you read it on.
 
 **THE RULED QUEUE, RE-RULED BY THE OWNER AND THE LEAD ON 2026-09-30 (the fifth time).**

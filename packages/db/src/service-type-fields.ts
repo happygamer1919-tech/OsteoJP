@@ -12,10 +12,13 @@
  * screen, read in a browser session on 2026-11-02 (the clinic asked for that
  * screen copied exactly). The VAT rates are the four Fisiozero offers. The
  * exemption reasons are the 33 its dropdown lists, with Fisiozero's own wording;
- * M31 to M34 were abbreviated in that session and are written here from the
- * Autoridade Tributaria's table of VAT exemption reason codes (the SAF-T (PT)
- * TaxExemptionCode list) as known to the author, NOT checked against the AT's
- * published document in this change: confirm before any invoice reads them.
+ * M31 to M34 were abbreviated in that session and are written here in full.
+ *
+ * CONFIRMED AGAINST THE AT TABLE. The R4 reviewer of 2026-11-02 checked the set
+ * against the Autoridade Tributaria's official "Tabela dos Codigos de Motivo de
+ * Isencao", version 4.0 of 18-06-2026: it lists 33 codes, exactly the 33 below,
+ * and M31 to M34 are the autoliquidacao codes of Artigo 2.º n.º 1 alineas j),
+ * l), m) and n) do CIVA as written here.
  */
 
 /** The VAT percentages an appointment type may carry ("IVA"). */
@@ -55,7 +58,7 @@ export const VAT_EXEMPTION_REASONS = [
   { code: "M25", label: "M25 - Mercadorias à consignação" },
   { code: "M26", label: "M26 - Isenção de IVA com direito à dedução no cabaz alimentar" },
   { code: "M30", label: "M30 - IVA - autoliquidação - Artigo 2.º n.º 1 alínea i) do CIVA" },
-  // M31 to M34: written from the AT table, see the header. To confirm.
+  // M31 to M34: written in full; confirmed against the AT table V4.0, see the header.
   { code: "M31", label: "M31 - IVA - autoliquidação - Artigo 2.º n.º 1 alínea j) do CIVA" },
   { code: "M32", label: "M32 - IVA - autoliquidação - Artigo 2.º n.º 1 alínea l) do CIVA" },
   { code: "M33", label: "M33 - IVA - autoliquidação - Artigo 2.º n.º 1 alínea m) do CIVA" },

@@ -129,6 +129,4 @@ COMMENT ON COLUMN public.services.follow_up_days IS
   'Stored only: nothing creates a follow-up from it yet.';--> statement-breakpoint
 
 COMMENT ON COLUMN public.services.sms_reminders IS
-  'Tipos de Marcacao. Whether appointments of this type get reminders (the SMS '
-  'tag). TRUE for every row this column was added to, which is what happens '
-  'today. Stored only: the reminder sender does not read it yet.';--> statement-breakpoint
+  'The SMS tag. Whether it stops only the SMS or every reminder is not ruled yet.';--> statement-breakpoint
