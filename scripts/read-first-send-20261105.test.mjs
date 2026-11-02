@@ -10,14 +10,15 @@
 //     sweep-send.ts, and that a sending pass writes its heartbeat after its marks;
 //   * the document pins the real read, guard and module, and the sidecar pins the document;
 //   * the read writes nothing, controls no transaction, reads the clock once, names no column that
-//     holds a person and prints no tenant id; appointment ids only in the list of rows 50 to 54;
+//     holds a person and prints no tenant id; appointment ids only in the list of rows 50 to 55;
 //   * the document's verdict table names the verdicts the read prints;
 //   * the block: line 2 is `set -o pipefail`, no `set -e`, no `#` line, no continuation; one psql
 //     call, read only, the switch time set inside it, writing to the handover file only;
 //   * EVERY HALT IS EXPLICIT: the block runs in GREEN's tool shape, every external command a stub,
 //     each call made to fail in turn. Under bash always; under zsh wherever zsh is installed;
 //   * a double send or a sweep-sent S5 closes on UNDO NOW whatever else the table holds; any other
-//     FAIL or VACUOUS STOPs with no undo; else CLEAN or REVIEW.
+//     FAIL or VACUOUS STOPs with no undo; else CLEAN or REVIEW; the block overwrites no transcript,
+//     and refuses the first 5 minutes of a slot.
 //
 // WITH A LOCAL DATABASE (FIRST_SEND_1105_TEST_PGURL names one on 127.0.0.1 or localhost whose
 // `public` schema is the repository's): the read runs on a seeded throwaway per case. Any other host
@@ -50,6 +51,8 @@ const OUT_NAME = "first-send-20261105.out";
 const PRHEAD = "a".repeat(40);
 const CLOCK_LINE = "  select now() as t1";
 const GUC = "osteojp.r47_switched_at";
+const UNDO_NAME = "owner-switch-steps-1104.md";
+const OWNER = "Owner: do nothing to the switch; give this line to SOLO.";
 
 const MIRRORED = [
   { file: "apps/web/lib/reminders/reminder-population.ts", from: "export const RE_ARMING_SAVES = [", toEnd: true, sha: "12ddbfbf97406a216f2c59bcd98900c0de4c22ec3042d6b9edb95fabd799b8ca" },
@@ -57,6 +60,9 @@ const MIRRORED = [
   { file: "apps/web/lib/reminders/sweep.ts", from: "function markOf(", sha: "603114a10f12dafd7434c136a43556b480dbe2a52d0efb1e203dd3b302cb7970" },
   { file: "apps/web/lib/reminders/sweep-send.ts", from: "function notSavedAfterMarkBeforeItWasHandedOver(", sha: "e0b3be957a9b41c672a1f411d6cf557f0922e6e64d171276de397bcf29ba3eab" },
   { file: "apps/web/lib/reminders/sweep-send.ts", from: "function claimOfThisMark(", sha: "0024eef63ca71e6e4ceabfbf1c290ee98ac1cb3075fde0632bb0691c0e9c0da2" },
+  { file: "apps/web/lib/reminders/reminder-claim.ts", from: "export async function claimIsLive(", sha: "d5f46a5441016dc13f92906996920fc2eb2c16ed9062d712aa3aadd84888d3e9" },
+  { file: "apps/web/lib/reminders/sweep-send.ts", from: "export async function readSweepFloor(", sha: "90214d62c635b96499884e1e9b87f821f67a05db700958a9058311789b1b6abd" },
+  { file: "apps/web/lib/reminders/sweep.ts", from: "export function dueVisits(", sha: "172fd1face6ae0d61f3e27c328aae170965ed7e2f75b7219a4415075a2795920" },
 ];
 const CLAUSES = ["booked", "moved", "accepted_in_pedidos", "accepted_with_estado", "brought_back", "accepted_in_sms_review", "accepted_by_sms_reply"];
 
@@ -158,7 +164,13 @@ test("the block's shape: pipefail on line 2, no set -e, no # line, one read-only
   assert.doesNotMatch(block, /\b(cat|head|tail|less|more)\b[^\n]*\$\{OUT\}/);
   assert.deepEqual(lines.slice(2, 6), ["PRHEAD=PENDING", "DOCSHA=PENDING", "PRNUM=PENDING", "SWITCHED_AT=PENDING"]);
   assert.equal((block.match(/=PENDING$/gm) || []).length, 4);
-  assert.ok(lines[13].startsWith('echo "${PRHEAD} ${DOCSHA} ${PRNUM} ${SWITCHED_AT}" | grep -qxE'), "the PENDING check is not the first command");
+  assert.ok(lines.includes(`UNDOFILE=${OUT_DIR}/${UNDO_NAME}`), "the undo steps are not named by their absolute path");
+  assert.doesNotMatch(block, /\brm\b/, "the block deletes a file");
+  for (const l of lines) {
+    if (/echo "STOP: /.test(l) && !/UNDO NOW/.test(l)) assert.ok(l.includes(OWNER), `a STOP line without the owner's sentence: ${l}`);
+    if (/^\[ "\$\{RES\}" != "(CLEAN|REVIEW)" \]/.test(l)) assert.ok(l.includes(OWNER), `a closing line without the owner's sentence: ${l}`);
+  }
+  assert.ok(lines[14].startsWith('echo "${PRHEAD} ${DOCSHA} ${PRNUM} ${SWITCHED_AT}" | grep -qxE'), "the PENDING check is not the first command");
   assert.ok(lines.includes(`OUT=${OUT_DIR}/${OUT_NAME}`));
   assert.ok(lines.some((l) => l.startsWith('[ "${FH}" = "${PRHEAD}" ] ||')));
   assert.ok(lines.some((l) => l.startsWith('[ "${HD}" = "${PRHEAD}" ] ||')));
@@ -178,7 +190,7 @@ const realOf = (name) => {
   if (r.status !== 0 || !p.startsWith("/")) throw new Error(`the harness needs ${name} on ${SYSTEM_PATH}`);
   return p;
 };
-const STUBBED = ["git", "node", "psql", "date", "grep", "awk", "cut", "shasum", "rm"];
+const STUBBED = ["git", "node", "psql", "date", "grep", "awk", "cut", "shasum"];
 const FAKED = ["git", "node", "psql", "date"];
 const LIST_ID = "00000000-0000-4000-8000-0000000000a9";
 const HARNESS_SWITCHED = "2026-11-04T22:10:05Z";
@@ -289,6 +301,7 @@ function makeBase() {
     cpSync(join(ROOT, p), join(wt, p));
   }
   mkdirSync(join(base, "handover"));
+  writeFileSync(join(base, "handover", UNDO_NAME), "the undo steps\n");
   writeFileSync(join(base, "prod.env"), "DATABASE_URL_DIRECT=postgresql://postgres.harness:x@harness.invalid:5432/postgres\n");
   for (const [k, v] of Object.entries(FIXTURES)) writeFileSync(join(base, `fix.${k}`), v + "\n");
   return base;
@@ -305,7 +318,8 @@ function filled(base, { docsha, switched, prnum } = {}) {
     .replaceAll(OUT_DIR, join(base, "handover"));
 }
 
-function runOnce(shell, base, text, env = {}) {
+function runOnce(shell, base, text, env = {}, keepOut = false) {
+  if (!keepOut) rmSync(join(base, "handover", OUT_NAME), { force: true });
   rmSync(join(base, "calls"), { force: true });
   for (const n of STUBBED) rmSync(join(base, `count.${n}`), { force: true });
   const tail = `true && eval '${text.replaceAll("'", `'\\''`)}' < /dev/null && echo TOOL-CHAIN-CONTINUED`;
@@ -324,7 +338,7 @@ function runOnce(shell, base, text, env = {}) {
       HARNESS_DBURL: "postgresql://postgres.harness:x@harness.invalid:5432/postgres",
       HARNESS_TABLE: "ok",
       HARNESS_ZONE: "WET",
-      HARNESS_NOW: "202611050930",
+      HARNESS_NOW: "202611051037",
       ...env,
     },
   });
@@ -346,11 +360,11 @@ function assertGood(r) {
 function assertClean(r) {
   assertGood(r);
   assert.match(r.stdout, /^verdicts: 12 OK \/ 0 REVIEW \/ 0 VACUOUS \/ 0 FAIL$/m);
-  assert.match(r.stdout, /^FIRST-SEND-1105 CLEAN: 12 OK; no double send.*SOLO reports to strategy$/m);
+  assert.match(r.stdout, /^FIRST-SEND-1105 CLEAN: 12 OK; no double send.*SOLO reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/m);
 }
 function assertReview(r) {
   assertGood(r);
-  assert.match(r.stdout, /^FIRST-SEND-1105 REVIEW: no double send.*SOLO reads rows .* and reports to strategy$/m);
+  assert.match(r.stdout, /^FIRST-SEND-1105 REVIEW: .*SOLO reads rows .* and reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/m);
 }
 function assertStop(r, re, label) {
   assert.notEqual(r.status, 0, `${label}: the block went on\n${r.out}`);
@@ -362,7 +376,7 @@ function assertStop(r, re, label) {
   assert.doesNotMatch(r.stdout, /TOOL-CHAIN-CONTINUED/, `${label}: the tool chain went on`);
   assert.doesNotMatch(r.out, /harness: unexpected/, `${label}: an unexpected call`);
 }
-const UNDO = /^STOP: UNDO NOW: the owner follows the undo section of owner-switch-steps-1104\.md\..*Then SOLO reports to strategy$/;
+const UNDO = /^STOP: UNDO NOW: the owner follows the undo section of \/\S*\/owner-switch-steps-1104\.md\..*Then SOLO reports to strategy$/;
 
 const shells = ["bash"];
 if (spawnSync("/bin/sh", ["-c", "command -v zsh"], { env: { PATH: SYSTEM_PATH } }).status === 0) shells.push("zsh");
@@ -403,19 +417,36 @@ for (const shell of shells) {
     try {
       const text = filled(base);
       for (const t of ["double", "s5", "doubleandmore"]) assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), UNDO, t);
-      const profile = /a FAIL, a VACUOUS verdict, a REVIEW outside verdicts 4, 6, 7, 10 and 11, or a verdict missing, doubled or extra.*No undo by this line: SOLO reports to strategy$/;
-      for (const t of ["gap", "shadow", "late", "off", "vacuous4", "vacuous5", "vacuous10", "review5", "review3", "short", "no5", "extra", "double9"]) {
+      const profile = /a FAIL, a VACUOUS verdict, a REVIEW outside verdicts 4, 5, 6, 7, 10 and 11, or a verdict missing, doubled or extra.*No undo by this line: SOLO reports to strategy\. Owner: do nothing to the switch; give this line to SOLO\.$/;
+      for (const t of ["gap", "shadow", "late", "off", "vacuous4", "vacuous5", "vacuous10", "review3", "short", "no5", "extra", "double9"]) {
         assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), profile, t);
       }
-      for (const t of ["review", "review4", "review10", "review11"]) assertReview(runOnce(shell, base, text, { HARNESS_TABLE: t }));
+      for (const t of ["review", "review4", "review5", "review10", "review11"]) assertReview(runOnce(shell, base, text, { HARNESS_TABLE: t }));
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "nosummary" }), /no FIRST_SEND_SUMMARY row/, "no summary");
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
-      for (const now of ["202611050914", "202611050700", "202611042359"]) {
+      for (const now of ["202611051019", "202611050915", "202611042359"]) {
         const r = runOnce(shell, base, text, { HARNESS_NOW: now });
-        assertStop(r, /earlier than 2026-11-05 09:15 Lisbon/, `clock ${now}`);
+        assertStop(r, /earlier than 2026-11-05 10:20 Lisbon/, `clock ${now}`);
         assert.ok(!/^(git|node|psql):/m.test(r.calls), `a command ran before the clock check: ${r.calls}`);
       }
-      assertClean(runOnce(shell, base, text, { HARNESS_NOW: "202611050915" }));
+      for (const now of ["202611051020", "202611051030", "202611051035", "202611051500"]) {
+        const r = runOnce(shell, base, text, { HARNESS_NOW: now });
+        assertStop(r, /first 5 minutes of a 15 minute slot/, `slot ${now}`);
+        assert.ok(!/^(git|node|psql):/m.test(r.calls), `a command ran inside a slot's first minutes: ${r.calls}`);
+      }
+      for (const now of ["202611051021", "202611051036", "202611051059"]) assertClean(runOnce(shell, base, text, { HARNESS_NOW: now }));
+      writeFileSync(join(base, "handover", OUT_NAME), "the old transcript\n");
+      const kept = runOnce(shell, base, text, {}, true);
+      assertStop(kept, /already there and is never overwritten/, "an old transcript");
+      assert.equal(readFileSync(join(base, "handover", OUT_NAME), "utf8"), "the old transcript\n", "the old transcript was touched");
+      assert.ok(!/^(git|node|psql):/m.test(kept.calls), `a command ran with an old transcript there: ${kept.calls}`);
+      rmSync(join(base, "handover", OUT_NAME), { force: true });
+      const undoFile = join(base, "handover", UNDO_NAME);
+      rmSync(undoFile);
+      const noUndo = runOnce(shell, base, text);
+      assertStop(noUndo, /the undo steps are not at/, "no undo steps");
+      assert.ok(!/^(git|node|psql):/m.test(noUndo.calls), `a command ran with no undo steps: ${noUndo.calls}`);
+      writeFileSync(undoFile, "the undo steps\n");
       assertStop(runOnce(shell, base, text, { HARNESS_NOW: "soon" }), null, "a clock that is not a number");
       for (const zone of ["EST", "UTC", ""]) assertStop(runOnce(shell, base, text, { HARNESS_ZONE: zone }), /not WET or WEST/, `zone ${zone}`);
       assertStop(runOnce(shell, base, text, { HARNESS_DIRTY: "yes" }), /not clean/, "dirty");
@@ -492,9 +523,9 @@ insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, 
 const ledger = (id, offset, when, outcome = "sent", reason = null) => `
 insert into public.reminder_dispatches (tenant_id, appointment_id, channel, template_id, outcome, suppression_reason, created_at)
   values ('${TENANT}', '${id}', '${channelOf(offset)}', 'reminder.${offset}.${channelOf(offset)}', '${outcome}', ${reason ? `'${reason}'` : "null"}, ${at(when)});`;
-const audit = (id, action, when, metadata = "{}") => `
+const audit = (id, action, when, metadata = "{}", tenant = TENANT) => `
 insert into public.audit_log (tenant_id, action, entity_type, entity_id, metadata, created_at)
-  values ('${TENANT}', '${action}', 'appointment', '${id}', '${metadata}', ${at(when)});`;
+  values ('${tenant}', '${action}', 'appointment', '${id}', '${metadata}', ${at(when)});`;
 const moved = (id, when, toStart, fromStart) => audit(id, "appointment.reschedule", when, JSON.stringify({
   ...(fromStart === undefined ? {} : { fromStartsAt: iso(fromStart) }),
   startsAt: iso(toStart),
@@ -528,6 +559,7 @@ const TWO_TAKERS = (second = true) => [
   ledger(V, "24h", "2026-11-05 08:15:06"),
   second ? moved(V, "2026-11-05 08:40", "2026-11-06 09:30", "2026-11-06 08:15") + taken(V, "24h", "2026-11-06 09:30") : "",
 ].join("\n");
+const EARLY = (taker = "run", early = true) => claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-04 20:00", { taker, attempt: 2, early }) + ledger(appt(1), "24h", "2026-11-04 20:00:01");
 const NO_ROWS = `delete from public.reminder_dispatches; delete from public.reminder_claims;`;
 
 const CASES = [
@@ -541,9 +573,10 @@ const CASES = [
       [7, /marks 3; sent 3; a recorded reason 0; kept out by R24 0; a claim with nothing after it 0; missed 0/],
       [10, /sweep-sent rows 3; after such a save 0, R34 0, sweep-sent S5 0; with no selecting pass yet 0/],
       [36, /\| 0 \|/],
-      [40, /sent_by_sweep=3 sent_by_job=0 sent_no_claim=0 double_sends=0 sweep_sent_s5=0 missed=0/],
+      [40, /sent_by_sweep=3 sent_by_job=0 sent_no_claim=0 double_sends=0 early_copy_then_on_time=0 sweep_sent_s5=0 missed=0/],
       [30, /sweep, 24h sms \| 2 \|/],
       [33, /\| 0 \|/],
+      [9, /never-reminded visits taken 0; proven on: no/],
     ],
   },
   {
@@ -578,10 +611,21 @@ const CASES = [
     info: [[5, /one start sent twice 1; two takers, each followed by a send 0/], [40, /double_sends=1/], [50, new RegExp(`${appt(1)} \\| one start sent twice`)]],
   },
   {
-    name: "DOUBLE SEND across the switch: the job sent on Wednesday, the sweep on Thursday, one start",
-    seed: claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-04 20:00", { taker: "run", attempt: 2, early: true }) + ledger(appt(1), "24h", "2026-11-04 20:00:01"),
-    want: only({ 5: "FAIL" }),
-    info: [[5, /one start sent twice 1;/]],
+    name: "EARLY COPY then an on-time send: the job's early claim before the switch, the sweep's on Thursday: REVIEW, not UNDO",
+    seed: EARLY(),
+    want: only({ 5: "REVIEW" }),
+    info: [[5, /one start sent twice 0; two takers, each followed by a send 0; early copy then on-time send 1/], [40, /double_sends=0 early_copy_then_on_time=1/], [55, new RegExp(`${appt(1)} \\| early copy then on-time send`)]],
+  },
+  { name: "an early copy AND a real double send on another visit: FAIL", seed: EARLY() + ledger(appt(2), "24h", "2026-11-05 09:30:00"), want: only({ 5: "FAIL" }), info: [[5, /one start sent twice 1; two takers, each followed by a send 0; early copy then on-time send 1/]] },
+  { name: "an early copy and two on-time sends: three rows on one start: FAIL", seed: EARLY() + ledger(appt(1), "24h", "2026-11-05 08:30:00"), want: only({ 5: "FAIL" }) },
+  { name: "an early copy and another row before the switch, then the sweep's: three rows on one start: FAIL", seed: EARLY() + claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-04 20:05", { taker: "run", attempt: 3 }) + ledger(appt(1), "24h", "2026-11-04 20:05:01"), want: only({ 5: "FAIL" }) },
+  { name: "an early claim written since the switch, then the sweep's: not the pair: FAIL", seed: claim(appt(1), "24h", "2026-11-06 08:00", "2026-11-05 07:30", { taker: "run", attempt: 2, early: true }) + ledger(appt(1), "24h", "2026-11-05 07:30:01"), want: only({ 5: "FAIL", 6: "REVIEW" }) },
+  { name: "an early claim of the sweep's before the switch: not the pair: FAIL", seed: EARLY("sweep"), want: only({ 5: "FAIL" }) },
+  { name: "DOUBLE SEND across the switch: the job's claim on Wednesday was not early, the sweep's on Thursday, one start", seed: EARLY("run", false), want: only({ 5: "FAIL" }), info: [[5, /one start sent twice 1;/]] },
+  {
+    name: "an early copy before the switch, and the send since the switch is on an early claim too: not the pair: FAIL",
+    seed: [visit(V, "2026-11-06 08:50"), claim(V, "24h", "2026-11-06 08:50", "2026-11-04 20:00", { taker: "run", early: true }), ledger(V, "24h", "2026-11-04 20:00:01"), claim(V, "24h", "2026-11-06 08:50", "2026-11-05 07:30", { taker: "run", attempt: 2, early: true }), ledger(V, "24h", "2026-11-05 07:30:01")].join("\n"),
+    want: only({ 5: "FAIL", 6: "REVIEW" }),
   },
   {
     name: "two sent rows of one start, both before the switch: not this read's",
@@ -640,7 +684,7 @@ const CASES = [
   { name: "the late limit: an email 12 hours 30 minutes after its mark", seed: visit(V, "2026-11-06 20:00") + claim(V, "48h", "2026-11-06 20:00", "2026-11-05 08:30", { taker: "run" }) + ledger(V, "48h", "2026-11-05 08:30:01"), want: only({ 8: "FAIL" }) },
   { name: "the late limit: an email 10 hours 30 minutes after its mark", seed: visit(V, "2026-11-06 22:30") + claim(V, "48h", "2026-11-06 22:30", "2026-11-05 09:00", { taker: "run" }) + ledger(V, "48h", "2026-11-05 09:00:01"), want: only({}) },
   { name: "the second switch reads off: a pass left a visit out", seed: `update public.reminder_sweep_passes set excluded_count = 1 where tenant_id = '${TENANT}' and pass_at = ${at("2026-11-05 08:00:03")};`, want: only({ 9: "FAIL" }) },
-  { name: "a never-reminded visit taken and sent: counted", seed: visit(V, "2026-11-06 11:00", { saved: false }) + taken(V, "24h", "2026-11-06 11:00"), want: only({}), info: [[9, /never-reminded visits taken 1/], [35, /\| 1; 1; 1 \|/]] },
+  { name: "a never-reminded visit taken and sent: counted, and the second switch proven on", seed: visit(V, "2026-11-06 11:00", { saved: false }) + taken(V, "24h", "2026-11-06 11:00"), want: only({}), info: [[9, /never-reminded visits taken 1; proven on: yes/], [35, /\| 1; 1; 1 \|/]] },
   { name: "R34: handed over and held back before the save, tried again inside 3 hours: its label", seed: R34_SHAPE(), want: only({}), info: [[10, /after such a save 1, R34 1, sweep-sent S5 0/]] },
   { name: "SWEEP-SENT S5: a save after the mark, no claim before it", seed: R34_SHAPE({ c0: null }), want: only({ 10: "FAIL" }), info: [[10, /sweep-sent S5 1/], [52, new RegExp(`${V} \\| sweep-sent S5`)], [40, /sweep_sent_s5=1/]] },
   { name: "SWEEP-SENT S5: the only earlier claim came after the save", seed: R34_SHAPE({ c0: "2026-11-05 10:15:05", save: "2026-11-05 10:10" }), want: only({ 10: "FAIL" }) },
@@ -653,16 +697,85 @@ const CASES = [
   { name: "a move that keeps the start, after the mark, then taken: no S5", seed: visit(V, "2026-11-06 08:05") + moved(V, "2026-11-05 08:10", "2026-11-06 08:05", "2026-11-06 08:05") + taken(V, "24h", "2026-11-06 08:05", "2026-11-05 08:15"), want: only({}) },
   { name: "a booked visit confirmed by hand after its mark, then taken: no S5", seed: visit(V, "2026-11-06 08:05") + audit(V, "appointment.update", "2026-11-05 08:10", '{"fromStatus":"scheduled","toStatus":"confirmed"}') + taken(V, "24h", "2026-11-06 08:05", "2026-11-05 08:15"), want: only({}) },
   { name: "a sent row with no claim: REVIEW", seed: visit(V, "2026-11-06 08:20") + ledger(V, "24h", "2026-11-05 08:20:30"), want: only({ 11: "REVIEW" }), info: [[54, new RegExp(`${V} \\| sent with no claim`)], [40, /sent_no_claim=1/]] },
-  { name: "the read's clock at Thursday 09:10", seed: "", clock: "2026-11-05 09:10:00", want: only({ 1: "FAIL" }) },
+  { name: "the read's clock at Thursday 10:10", seed: "", clock: "2026-11-05 10:10:00", want: only({ 1: "FAIL" }) },
+  {
+    name: "SWITCHED_AT Thursday 22:00, the clock on Friday: the slots and the floor are Friday's",
+    seed: [
+      `insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, due_count, recorded_count, over_ceiling, excluded_count, created_at)
+         select t.id, 'fri-' || n, 'send', ((date '2026-11-06' + time '07:00') + make_interval(mins => 15 * n)) at time zone 'Europe/Lisbon' + interval '3 seconds', 0, 0, false, 0,
+                ((date '2026-11-06' + time '07:00') + make_interval(mins => 15 * n)) at time zone 'Europe/Lisbon' + interval '13 seconds'
+           from generate_series(0, 23) n cross join (values ('${TENANT}'::uuid), ('${OTHER_TENANT}'::uuid)) as t(id);`,
+      visit(V, "2026-11-07 08:00"),
+      taken(V, "24h", "2026-11-07 08:00"),
+      taken(appt(3), "24h", "2026-11-07 08:30"),
+    ].join("\n"),
+    switched: "2026-11-05T22:00:00Z",
+    clock: "2026-11-06 13:00:00",
+    want: only({}),
+    info: [[3, /slots expected 24 /], [7, /marks 2; sent 2;/], [20, /2026-11-05 22:00:00 \| 2026-11-06 07:00:03 /]],
+  },
+  {
+    name: "marks from the switch to the floor: printed, judged by no verdict",
+    seed: [
+      visit(V, "2026-11-06 03:00"), claim(V, "24h", "2026-11-06 03:00", "2026-11-05 03:20", { taker: "run" }), ledger(V, "24h", "2026-11-05 03:20:01"),
+      visit(appt(0xa2), "2026-11-06 04:00"),
+    ].join("\n"),
+    want: only({}),
+    info: [[24, /24h sms: sent by run \| 1 \|/], [24, /24h sms: no row \| 1 \|/], [6, /marks since the floor 0; marks before it, by design 1/]],
+  },
 ];
+
+/**
+ * Each clause of RE_ARMING_SAVES on a mark the sweep took at the 08:15 pass, the save written after
+ * the mark (08:05) and before the pass: a clause that counts makes it a sweep-sent S5; its near miss,
+ * which R33 says re-arms nothing, does not.
+ */
+const CLAUSE_SEED = ({ origin = "staff", action, metadata, tenant = TENANT }) =>
+  visit(V, "2026-11-06 08:05", { origin }) + audit(V, action, "2026-11-05 08:10", metadata, tenant) + taken(V, "24h", "2026-11-06 08:05", "2026-11-05 08:15");
+const BOOKED = `{"startsAt":"${iso("2026-11-06 08:05")}"}`;
+const CLAUSE_CASES = [
+  ["booked: a booking row after the mark", true, { action: "appointment.create", metadata: BOOKED }],
+  ["accepted_in_pedidos: an online request accepted in Pedidos", true, { action: "appointment.update", metadata: PEDIDO }],
+  ["near miss: an update by another way", false, { action: "appointment.update", metadata: '{"via":"agenda"}' }],
+  ["accepted_with_estado: an online request set to Confirmada", true, { origin: "patient_portal", action: "appointment.update", metadata: '{"fromStatus":"scheduled","toStatus":"confirmed"}' }],
+  ["brought_back: Cancelada to Confirmada", true, { action: "appointment.update", metadata: '{"fromStatus":"cancelled","toStatus":"confirmed"}' }],
+  ["brought_back: Cancelada to Agendada on a booked visit", true, { action: "appointment.update", metadata: '{"fromStatus":"cancelled","toStatus":"scheduled"}' }],
+  ["near miss: Cancelada to Agendada on an online request", false, { origin: "patient_portal", action: "appointment.update", metadata: '{"fromStatus":"cancelled","toStatus":"scheduled"}' }],
+  ["accepted_in_sms_review: a review-queue confirmada applied on an online request", true, { origin: "patient_portal", action: "appointment.sms_reply_reviewed", metadata: '{"resolution":"confirmed","applied":true}' }],
+  ["near miss: the review on a booked visit", false, { action: "appointment.sms_reply_reviewed", metadata: '{"resolution":"confirmed","applied":true}' }],
+  ["near miss: the review on an online request, not applied", false, { origin: "patient_portal", action: "appointment.sms_reply_reviewed", metadata: '{"resolution":"confirmed","applied":false}' }],
+  ["accepted_by_sms_reply: the patient's SMS confirmo on an online request", true, { origin: "patient_portal", action: "appointment.patient_sms_reply", metadata: '{"outcome":"confirmed"}' }],
+  ["near miss: the patient's SMS confirmo on a booked visit", false, { action: "appointment.patient_sms_reply", metadata: '{"outcome":"confirmed"}' }],
+  ["near miss: the patient's SMS cancel on an online request", false, { origin: "patient_portal", action: "appointment.patient_sms_reply", metadata: '{"outcome":"cancelled"}' }],
+  ["near miss: a booking row written under another tenant", false, { action: "appointment.create", metadata: BOOKED, tenant: OTHER_TENANT }],
+];
+for (const [name, counts, args] of CLAUSE_CASES) {
+  CASES.push({ name: `CLAUSE ${name}: ${counts ? "counts: a sweep-sent S5" : "re-arms nothing, no S5"}`, seed: CLAUSE_SEED(args), want: only(counts ? { 10: "FAIL" } : {}) });
+}
 
 /** Each predicate changed once, on the case that must kill it. `info` kills on a row, not a verdict. */
 const MUTANTS = [
   ["no FAIL on another mode", "when s.other_beats > 0 then 'FAIL' when", "when false then 'FAIL' when", "a shadow heartbeat after the switch"],
+  ["brought_back without its origin condition", "or (l.metadata->>'toStatus' = 'scheduled' and a.origin <> 'patient_portal'))", "or (l.metadata->>'toStatus' = 'scheduled'))", "CLAUSE near miss: Cancelada to Agendada on an online request"],
+  ["accepted_in_sms_review without its origin condition", "and l.metadata->>'applied' = 'true' and a.origin = 'patient_portal'", "and l.metadata->>'applied' = 'true'", "CLAUSE near miss: the review on a booked visit"],
+  ["accepted_in_sms_review without applied", "and l.metadata->>'applied' = 'true' and a.origin = 'patient_portal'", "and a.origin = 'patient_portal'", "CLAUSE near miss: the review on an online request, not applied"],
+  ["accepted_by_sms_reply without its origin condition", "and l.metadata->>'outcome' = 'confirmed'\n                  and a.origin = 'patient_portal'\n", "and l.metadata->>'outcome' = 'confirmed'\n", "CLAUSE near miss: the patient's SMS confirmo on a booked visit"],
+  ["accepted_by_sms_reply on any outcome", "and l.metadata->>'outcome' = 'confirmed'\n", "\n", "CLAUSE near miss: the patient's SMS cancel on an online request"],
+  ["accepted_in_pedidos on any way", "and l.metadata->>'via' = 'portal_request_confirm'\n", "\n", "CLAUSE near miss: an update by another way"],
+  ["the visit's own tenant dropped", "join public.appointments a on a.id = l.entity_id and a.tenant_id = l.tenant_id\n", "join public.appointments a on a.id = l.entity_id\n", "CLAUSE near miss: a booking row written under another tenant", (s) => s.replace("where r.tenant_id = p.tenant_id and r.appointment_id = p.appointment_id\n", "where r.appointment_id = p.appointment_id\n")],
   ["no FAIL on a gap", "when gaps > 0 then 'FAIL'", "when false then 'FAIL'", "a gap"],
   ["a zero send is not VACUOUS", "when since_first_slot = 0 then 'VACUOUS'", "when false then 'VACUOUS'", "no send at all"],
   ["only the job is not REVIEW", "when sweep_since_first_slot = 0 then 'REVIEW'", "when false then 'REVIEW'", "only the sleeping job"],
   ["the double send's count", "having count(*) > 1 and bool_or(s.since_switch)", "having count(*) > 2 and bool_or(s.since_switch)", "DOUBLE SEND: one start, two sent rows"],
+  ["an early copy is a double send", "     and not exists (select 1 from early_copy q\n                      where q.tenant_id = s.tenant_id and q.appointment_id = s.appointment_id\n                        and q.offset_id = s.offset_id and q.channel = s.channel and q.starts_at = s.starts_at)\n", "", "EARLY COPY then an on-time send"],
+  ["an early copy is two takers", "   where not exists (select 1 from early_copy q\n                      where q.tenant_id = a.tenant_id and q.appointment_id = a.appointment_id\n                        and q.offset_id = a.offset_id and q.channel = a.channel and q.starts_at = a.starts_at)\n", "", "EARLY COPY then an on-time send"],
+  ["the early copy's REVIEW dead", "when (select count(*) from early_copy) > 0 then 'REVIEW'", "when false then 'REVIEW'", "EARLY COPY then an on-time send"],
+  ["the pair has any number of rows", "  having count(*) = 2\n", "  having count(*) >= 2\n", "an early copy and another row before the switch"],
+  ["the pair's copy may be since the switch", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where s.taker = 'run' and s.early = true) = 1", "an early claim written since the switch"],
+  ["the pair's copy may be any taker's", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where not s.since_switch and s.early = true) = 1", "an early claim of the sweep's"],
+  ["the pair's copy need not be early", "where not s.since_switch and s.taker = 'run' and s.early = true) = 1", "where not s.since_switch and s.taker = 'run') = 1", "DOUBLE SEND across the switch"],
+  ["the pair's send may be early", "where s.since_switch and s.early is distinct from true) = 1", "where s.since_switch) = 1", "an early copy before the switch, and the send since the switch"],
+  ["a real double beside an early copy is not seen", "when (select count(*) from same_start) > 0 or (select count(*) from two_takers where each_sent) > 0 then 'FAIL'", "when false then 'FAIL'", "an early copy AND a real double send"],
   ["a double before the switch counts", "having count(*) > 1 and bool_or(s.since_switch)", "having count(*) > 1", "two sent rows of one start, both before the switch"],
   ["the double send's FAIL dead", "when (select count(*) from same_start) > 0 or (select count(*) from two_takers where each_sent) > 0 then 'FAIL'", "when false then 'FAIL'", "DOUBLE SEND: one start, two sent rows"],
   ["two claims of one taker", "and b.taker <> a.taker and", "and b.taker = a.taker and", "DOUBLE SEND: two live claims"],
@@ -705,7 +818,8 @@ for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
     clock: base.clock,
     mutate: (s) => {
       assert.equal(s.split(from).length, 2, `the mutated text is not written exactly once: ${from}`);
-      return s.replace(from, () => to);
+      const m = s.replace(from, () => to);
+      return more ? more(m) : m;
     },
     kills: infoKill ? undefined : base.name,
     killsInfo: infoKill,

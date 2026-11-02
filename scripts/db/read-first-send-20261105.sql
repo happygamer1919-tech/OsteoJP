@@ -13,7 +13,7 @@
 -- WHAT IT PRINTS: ONE result set, ordered by `n`, columns n | check | observed | expected |
 -- verdict. Verdicts are OK, REVIEW, VACUOUS or FAIL; rows that only inform read INFO and are never
 -- counted. It prints counts, Lisbon times, the fixed labels of offsets, channels, takers, ledger
--- outcomes and suppression reasons, and, in the list of rows 50 to 54 only, appointment ids (at most
+-- outcomes and suppression reasons, and, in the list of rows 50 to 55 only, appointment ids (at most
 -- 500 a list). No tenant id, no patient id, no staff id, no name, no phone, no email address, no
 -- message text, no note, and no audit metadata text (metadata is compared, never printed).
 --
@@ -36,8 +36,15 @@
 -- floor is by design; of a mark at or after it, it is a reminder the sweep missed (verdict 6).
 --
 -- THE RE-ARMING SAVES. `rearm_rows` and `probe_eval` are RE_ARMING_SAVES and hasReArmingSaveAfter
--- of reminder-population.ts, as in scripts/db/read-shadow-compare-20261104.sql; the test holds them
--- to that code's bytes.
+-- of reminder-population.ts. The test holds them to that code's bytes and runs every clause's case
+-- and near miss here.
+--
+-- AN EARLY COPY THEN AN ON-TIME SEND IS BY DESIGN. A patient moves a visit later in the portal (no
+-- event, no audit row). Before the switch the old job wakes at the old mark, the open path has no
+-- clock check, so it sends and leaves a live `early` claim for the NEW start. After the floor the
+-- sweep reaches the new start's mark; `claimOfThisMark` and `claimIsLive` skip early claims, and R24
+-- sees no save, so the sweep sends: two `sent` rows on one start ("today both go out",
+-- reminder-claim.ts). Verdict 5 reads REVIEW when that is its only hit; anything else is a FAIL.
 --
 -- ONE CLOCK. The read's clock is `clock.t1` below, read once from now(). A rehearsal on a
 -- throwaway replaces that one line with a fixed instant; nothing else in the file reads the time.
@@ -46,18 +53,19 @@
 -- seen directly reads FAIL first.
 --
 -- VERDICTS (twelve rows, one each). 5 or 10 at FAIL: UNDO NOW. Any other FAIL, any VACUOUS, or a
--- REVIEW outside 4, 6, 7, 10 and 11: the block STOPs. Else CLEAN (all OK) or REVIEW:
+-- REVIEW outside 4, 5, 6, 7, 10 and 11: the block STOPs. Else CLEAN (all OK) or REVIEW:
 --    0  the transaction is READ ONLY
---    1  the clock: at or after 2026-11-05 09:15 Lisbon
+--    1  the clock: at or after 2026-11-05 10:20 Lisbon
 --    2  the switch: a send heartbeat since SWITCHED_AT, no shadow heartbeat since it
 --    3  passes: every tenant has a send heartbeat in every slot expected since 07:00 (a gap FAILs)
 --    4  something was sent since 07:00, by the sweep (no send at all: VACUOUS; only the job: REVIEW)
 --    5  DOUBLE SENDS, MUST BE 0: one start with two `sent` rows, or two live claims of different
---       takers each followed by a send of its own
+--       takers each followed by a send of its own; REVIEW when the only hit is an early copy from
+--       before the switch then an on-time send
 --    6  the sleeping job sent no mark due since the floor (else REVIEW: the sweep missed it)
 --    7  no mark due since the floor and covered by a finished pass is without a send or a reason
 --    8  the late limit: no `sent` row later than 3 hours (SMS) or 12 hours (email) after its mark
---    9  the second switch reads on: no send heartbeat left a visit out
+--    9  no pass proved the second switch off: no send heartbeat left a visit out
 --   10  R34, no sweep-sent S5: a sweep-sent row after a re-arming save carries R34's label
 --   11  every `sent` row since the switch has a claim before it
 --
@@ -73,7 +81,7 @@ clock as (
 k as (
   select current_setting('osteojp.r47_switched_at')::timestamptz as switched,
          timestamptz '2026-11-05 07:00:00 Europe/Lisbon' as first_slot,
-         timestamptz '2026-11-05 09:15:00 Europe/Lisbon' as closes
+         timestamptz '2026-11-05 10:20:00 Europe/Lisbon' as closes
 ),
 reminder as (
   -- apps/web/lib/reminders/offsets.ts REMINDER_OFFSETS and dispatch.ts REMINDER_LATE_LIMIT_MS.
@@ -121,12 +129,12 @@ led as (
   select x.id, x.tenant_id, x.appointment_id, rm.offset_id, rm.channel, x.outcome,
          coalesce(x.suppression_reason, '') as reason, x.created_at,
          x.created_at >= k.switched as since_switch,
-         o.id as claim_id, o.taker, o.starts_at, o.due_at
+         o.id as claim_id, o.taker, o.starts_at, o.due_at, o.early
     from public.reminder_dispatches x
     join reminder rm on rm.channel = x.channel and x.template_id like 'reminder.' || rm.offset_id || '.%'
    cross join k
     left join lateral (
-      select c.id, c.taker, c.starts_at, c.due_at
+      select c.id, c.taker, c.starts_at, c.due_at, c.early
         from public.reminder_claims c
        where c.tenant_id = x.tenant_id and c.appointment_id = x.appointment_id
          and c.kind = 'claim' and c.offset_id = rm.offset_id and c.channel = rm.channel
@@ -152,11 +160,25 @@ sends as (
     left join fl f on f.tenant_id = s.tenant_id
    where s.since_switch
 ),
-same_start as (
-  -- One start, two `sent` rows, one of them since the switch.
+early_copy as (
+  -- By design (the header): exactly two `sent` rows on one start, the sleeping job's on an `early`
+  -- claim from before the switch, and one since the switch on a claim that is not early.
   select s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at
     from sent s
    where s.claim_id is not null
+   group by s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at
+  having count(*) = 2
+     and count(*) filter (where not s.since_switch and s.taker = 'run' and s.early = true) = 1
+     and count(*) filter (where s.since_switch and s.early is distinct from true) = 1
+),
+same_start as (
+  -- One start, two `sent` rows, one of them since the switch, and not that pair.
+  select s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at
+    from sent s
+   where s.claim_id is not null
+     and not exists (select 1 from early_copy q
+                      where q.tenant_id = s.tenant_id and q.appointment_id = s.appointment_id
+                        and q.offset_id = s.offset_id and q.channel = s.channel and q.starts_at = s.starts_at)
    group by s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at
   having count(*) > 1 and bool_or(s.since_switch)
 ),
@@ -185,6 +207,9 @@ two_takers as (
     join live b on b.tenant_id = a.tenant_id and b.appointment_id = a.appointment_id
                and b.offset_id = a.offset_id and b.channel = a.channel and b.starts_at = a.starts_at
                and b.taker <> a.taker and (b.created_at, b.id) > (a.created_at, a.id)
+   where not exists (select 1 from early_copy q
+                      where q.tenant_id = a.tenant_id and q.appointment_id = a.appointment_id
+                        and q.offset_id = a.offset_id and q.channel = a.channel and q.starts_at = a.starts_at)
 ),
 moved_start as (
   -- INFO: one reminder sent for two starts: a re-plan may legitimately send for a new start.
@@ -208,6 +233,26 @@ cand as (
      and a.starts_at - make_interval(mins => rm.minutes) >= f.floor_at
      and a.starts_at - make_interval(mins => rm.minutes) <= f.last_pass
      and a.created_at < a.starts_at - make_interval(mins => rm.minutes)
+),
+pre_floor as (
+  -- Row 24: marks due from the switch to the floor. Those are the sleeping job's, and no verdict
+  -- judges them: what became of each, by what the ledger holds of its start.
+  select c.offset_id, c.channel,
+         coalesce((select 'sent by ' || coalesce(s.taker, 'no claim') from sent s
+                    where s.tenant_id = c.tenant_id and s.appointment_id = c.appointment_id
+                      and s.offset_id = c.offset_id and s.channel = c.channel and s.starts_at = c.starts_at limit 1),
+                  (select 'a recorded reason' from led s
+                    where s.outcome <> 'sent' and s.tenant_id = c.tenant_id and s.appointment_id = c.appointment_id
+                      and s.offset_id = c.offset_id and s.channel = c.channel and s.starts_at = c.starts_at limit 1),
+                  'no row') as became
+    from (select a.tenant_id, a.id as appointment_id, rm.offset_id, rm.channel, date_trunc('milliseconds', a.starts_at) as starts_at
+            from public.appointments a
+            join fl f on f.tenant_id = a.tenant_id
+           cross join reminder rm cross join k
+           where a.status::text in ('scheduled', 'confirmed')
+             and a.starts_at - make_interval(mins => rm.minutes) >= k.switched
+             and a.starts_at - make_interval(mins => rm.minutes) < f.floor_at
+             and a.created_at < a.starts_at - make_interval(mins => rm.minutes)) c
 ),
 swept as (
   -- SWEEP-SENT ROWS: `sent` since the switch whose claim is the sweep's and live, with the
@@ -384,7 +429,7 @@ late as (
    where s.since_switch and s.due_at is not null
 ),
 issues as (
-  -- The list of rows 50 to 54: the one place an appointment id is printed.
+  -- The list of rows 50 to 55: the one place an appointment id is printed.
   select 50 as n, s.due_at as at_mark, s.offset_id, s.channel, s.appointment_id, 'one start sent twice' as category
     from same_start q join sent s on s.tenant_id = q.tenant_id and s.appointment_id = q.appointment_id
                                  and s.offset_id = q.offset_id and s.channel = q.channel and s.starts_at = q.starts_at
@@ -404,6 +449,9 @@ issues as (
   union all
   select 54, s.created_at, s.offset_id, s.channel, s.appointment_id, 'sent with no claim before it'
     from sent s where s.since_switch and s.claim_id is null
+  union all
+  select 55, q.starts_at, q.offset_id, q.channel, q.appointment_id, 'early copy then on-time send'
+    from early_copy q
 ),
 lisbon as (
   select to_char(k.switched at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS') as switched,
@@ -420,9 +468,9 @@ select n, "check", observed, expected, verdict from (
          case when current_setting('transaction_read_only') = 'on' then 'OK' else 'FAIL' end as verdict
   union all
   select 1,
-         '1. the clock: the read runs at or after 2026-11-05 09:15 Lisbon',
+         '1. the clock: the read runs at or after 2026-11-05 10:20 Lisbon',
          'Lisbon ' || lisbon.t1,
-         'at or after 2026-11-05 09:15:00',
+         'at or after 2026-11-05 10:20:00',
          case when clock.t1 >= k.closes then 'OK' else 'FAIL' end
     from clock cross join k cross join lisbon
   union all
@@ -452,10 +500,13 @@ select n, "check", observed, expected, verdict from (
          '5. DOUBLE SENDS, MUST BE 0: one appointment, offset, channel and start with two sent rows, or two live claims of different takers each followed by a send',
          'one start sent twice ' || (select count(*) from same_start)::text
            || '; two takers, each followed by a send ' || (select count(*) from two_takers where each_sent)::text
+           || '; early copy then on-time send ' || (select count(*) from early_copy)::text
            || ' (of sent rows since the switch ' || total::text || ')',
-         '0; 0 (with sent rows present)',
+         '0; 0; 0 (with sent rows present)',
          case when (select count(*) from same_start) > 0 or (select count(*) from two_takers where each_sent) > 0 then 'FAIL'
-              when total = 0 then 'VACUOUS' else 'OK' end
+              when total = 0 then 'VACUOUS'
+              when (select count(*) from early_copy) > 0 then 'REVIEW'
+              else 'OK' end
     from sends
   union all
   select 6,
@@ -487,9 +538,10 @@ select n, "check", observed, expected, verdict from (
     from late
   union all
   select 9,
-         '9. the second switch reads on: no send heartbeat left a visit out (a pass with the switch off counts them)',
+         '9. no pass proved the second switch off: no send heartbeat left a visit out (a pass with the switch off counts them; only a never-reminded visit taken proves it on)',
          'send heartbeats ' || send_beats::text || '; that left a visit out ' || (select count(*) from hb where mode = 'send' and excluded_count > 0)::text
-           || '; never-reminded visits taken ' || (select count(*) from never_taken)::text || ' (information)',
+           || '; never-reminded visits taken ' || (select count(*) from never_taken)::text
+           || '; proven on: ' || case when (select count(*) from never_taken) > 0 then 'yes' else 'no' end,
          'send > 0; 0',
          case when (select count(*) from hb where mode = 'send' and excluded_count > 0) > 0 then 'FAIL'
               when send_beats = 0 then 'VACUOUS' else 'OK' end
@@ -530,6 +582,11 @@ select n, "check", observed, expected, verdict from (
     from hb h
    group by h.slot, h.mode
   union all
+  select 24, 'marks due from the switch to the floor, the job''s, judged by no verdict, ' || p.offset_id || ' ' || p.channel || ': ' || p.became,
+         count(*)::text, 'information', 'INFO'
+    from pre_floor p
+   group by p.offset_id, p.channel, p.became
+  union all
   select 30, 'handed to the provider since the switch, ' || coalesce(s.taker, 'no claim') || ', ' || s.offset_id || ' ' || s.channel,
          count(*)::text, 'information', 'INFO'
     from sent s where s.since_switch
@@ -565,6 +622,7 @@ select n, "check", observed, expected, verdict from (
   select 40, 'FIRST_SEND_SUMMARY',
          'since the switch: sent_by_sweep=' || by_sweep::text || ' sent_by_job=' || by_job::text || ' sent_no_claim=' || no_claim::text
            || ' double_sends=' || ((select count(*) from same_start) + (select count(*) from two_takers where each_sent))::text
+           || ' early_copy_then_on_time=' || (select count(*) from early_copy)::text
            || ' sweep_sent_s5=' || (select count(*) from r34 where rearmed and not is_r34)::text
            || ' missed=' || (select count(*) from marks_l where became = 'missed')::text,
          'double sends must be 0',
