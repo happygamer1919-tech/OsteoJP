@@ -25,6 +25,7 @@ vi.mock("@/lib/auth/context", () => ({ requireRequestContext: vi.fn() }));
 vi.mock("@/lib/clinical/report/ficha-export", () => ({
   readPatientFichaExportSelection: vi.fn(),
   renderPatientFichaReport: vi.fn(),
+  readPatientFichaExportRows: vi.fn(),
 }));
 vi.mock("@/lib/clinical/export-audit", () => ({ recordPatientFichaExport: vi.fn() }));
 vi.mock("@/lib/clinical/document-rate-limit", () => ({ documentGenerationAllowed: vi.fn() }));
@@ -35,13 +36,18 @@ import type { RequestContext } from "@osteojp/auth";
 import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import { recordPatientFichaExport } from "@/lib/clinical/export-audit";
-import { readPatientFichaExportSelection, renderPatientFichaReport } from "@/lib/clinical/report/ficha-export";
+import {
+  readPatientFichaExportRows,
+  readPatientFichaExportSelection,
+  renderPatientFichaReport,
+} from "@/lib/clinical/report/ficha-export";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { downloadPatientFichaUrlAction } from "./ficha-pdf-actions";
+import { downloadPatientFichaUrlAction, readPatientFichaExportRowsAction } from "./ficha-pdf-actions";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockSelection = vi.mocked(readPatientFichaExportSelection);
 const mockRender = vi.mocked(renderPatientFichaReport);
+const mockRows = vi.mocked(readPatientFichaExportRows);
 const mockAudit = vi.mocked(recordPatientFichaExport);
 const mockCeiling = vi.mocked(documentGenerationAllowed);
 const mockAdmin = vi.mocked(createSupabaseAdminClient);
@@ -392,5 +398,138 @@ describe("downloadPatientFichaUrlAction: a failure logs one line naming the step
     const line = String(logged.mock.calls[0]![0]);
     expect(line).not.toContain(PATIENT);
     expect(line).not.toContain("Inventado");
+  });
+});
+
+// RODICA-export-edit-before-download (owner ruling 2026-11-02): the export
+// dialog's date, hour and heading per registo. The action checks every value
+// before any read, checks every registo against ITS OWN selection, and a
+// refusal at either check produces nothing and spends nothing. The render is
+// handed the values keyed by registo; what changed reaches the audit row.
+describe("downloadPatientFichaUrlAction: the dialog's overrides (RODICA-export-edit-before-download)", () => {
+  const U1 = "7777cccc-7777-4777-8777-777777777771";
+  const U2 = "7777cccc-7777-4777-8777-777777777772";
+  const OUTSIDE = "7777cccc-7777-4777-8777-777777777779";
+  const uuidSelection = {
+    patientId: PATIENT,
+    sections: [
+      { kind: "imported" as const, label: "Osteopatia", recordIds: [U1] },
+      { kind: "none" as const, label: null, recordIds: [U2] },
+    ],
+    leftOut: 0,
+  };
+  const ONE = { recordId: U1, date: "2026-11-02", time: "15:45", text: "" };
+  const ENTRY = {
+    recordId: U1,
+    originalDate: "2026-11-01",
+    originalTime: "09:00",
+    exportedDate: "2026-11-02",
+    exportedTime: "15:45",
+    textChanged: true,
+  };
+
+  beforeEach(() => {
+    mockSelection.mockImplementation(async () => {
+      steps.push("selection");
+      return uuidSelection;
+    });
+  });
+
+  it.each([
+    ["a bad date", [{ ...ONE, date: "2026-02-30" }]],
+    ["a bad hour", [{ ...ONE, time: "25:00" }]],
+    ["a text over the limit", [{ ...ONE, text: "x".repeat(201) }]],
+    ["a text of two lines", [{ ...ONE, text: "a\nb" }]],
+    ["the same registo twice", [ONE, ONE]],
+    ["a registo id that is not a uuid", [{ ...ONE, recordId: "r1" }]],
+    ["not a list", { ...ONE }],
+  ])("%s: refused before any read, and nothing produced or spent", async (_label, overrides) => {
+    expect(await downloadPatientFichaUrlAction(PATIENT, overrides)).toEqual({ url: null });
+    expect(mockSelection).not.toHaveBeenCalled();
+    expect(mockCeiling).not.toHaveBeenCalled();
+    expectNothingProduced();
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("a registo the export does not hold: refused after the read, before the ceiling; nothing produced", async () => {
+    expect(await downloadPatientFichaUrlAction(PATIENT, [ONE, { ...ONE, recordId: OUTSIDE }])).toEqual({ url: null });
+    expect(steps).toEqual(["selection"]);
+    expect(mockCeiling).not.toHaveBeenCalled();
+    expectNothingProduced();
+  });
+
+  it("valid overrides: the export runs in its usual order, and the render gets them keyed by registo", async () => {
+    expect(await downloadPatientFichaUrlAction(PATIENT, [{ ...ONE, recordId: U1.toUpperCase() }])).toEqual({ url: SIGNED });
+    expect(steps).toEqual(["selection", "ceiling", "render", "admin", "upload", "sign", "audit"]);
+    expect(mockRender).toHaveBeenCalledTimes(1);
+    const [ctx, sel, loc, byRecord] = mockRender.mock.calls[0]!;
+    expect([ctx, sel, loc]).toEqual([ctxOf("owner"), uuidSelection, "pt"]);
+    expect(byRecord).toBeInstanceOf(Map);
+    expect([...byRecord!.entries()]).toEqual([[U1, ONE]]);
+  });
+
+  it("the registos exported are the selection's, never the dialog's list: overriding one does not drop the other", async () => {
+    await downloadPatientFichaUrlAction(PATIENT, [ONE]);
+    expect(mockRender.mock.calls[0]![1]).toBe(uuidSelection);
+  });
+
+  it("what the render says it changed goes in the audit row; a render that changed nothing adds nothing", async () => {
+    mockRender.mockResolvedValue({ ...pdf, overridden: [ENTRY] });
+    await downloadPatientFichaUrlAction(PATIENT, [ONE]);
+    expect(mockAudit.mock.calls[0]![1]).toEqual({
+      patientId: PATIENT,
+      recordIds: ["r1", "r2", "r3"],
+      sections: 2,
+      leftOut: 1,
+      durationMs: expect.any(Number),
+      overridden: [ENTRY],
+    });
+
+    mockAudit.mockClear();
+    mockRender.mockResolvedValue(pdf);
+    await downloadPatientFichaUrlAction(PATIENT, [ONE]);
+    expect(mockAudit.mock.calls[0]![1]).not.toHaveProperty("overridden");
+  });
+
+  it("an empty list is 'keep': the render is called exactly as with no overrides", async () => {
+    await downloadPatientFichaUrlAction(PATIENT, []);
+    expect(mockRender.mock.calls[0]).toEqual([ctxOf("owner"), uuidSelection, "pt"]);
+  });
+});
+
+describe("readPatientFichaExportRowsAction: the dialog's rows (RODICA-export-edit-before-download)", () => {
+  const ROWS = [{ recordId: "r1", group: "Osteopatia", version: 1, date: "2026-11-01", time: "09:00", text: "" }];
+
+  it.each(["owner", "admin", "therapist"] as const)("%s: the rows of the export's own selection, as that caller; nothing produced or spent", async (role) => {
+    allGood(role);
+    mockRows.mockResolvedValue(ROWS);
+    expect(await readPatientFichaExportRowsAction(PATIENT)).toEqual({ rows: ROWS });
+    expect(mockSelection).toHaveBeenCalledWith(ctxOf(role), { patientId: PATIENT });
+    expect(mockRows).toHaveBeenCalledWith(ctxOf(role), selection, "pt");
+    expect(mockCeiling).not.toHaveBeenCalled();
+    expectNothingProduced();
+  });
+
+  it("RECEPTION, a bad patient id, nothing to export, no row printable: { rows: null }", async () => {
+    allGood("reception");
+    expect(await readPatientFichaExportRowsAction(PATIENT)).toEqual({ rows: null });
+    expect(mockSelection).not.toHaveBeenCalled();
+    allGood();
+    expect(await readPatientFichaExportRowsAction("not-a-uuid")).toEqual({ rows: null });
+    expect(mockSelection).not.toHaveBeenCalled();
+    mockSelection.mockResolvedValue(null);
+    expect(await readPatientFichaExportRowsAction(PATIENT)).toEqual({ rows: null });
+    expect(mockRows).not.toHaveBeenCalled();
+    allGood();
+    mockRows.mockResolvedValue([]);
+    expect(await readPatientFichaExportRowsAction(PATIENT)).toEqual({ rows: null });
+  });
+
+  it("a read that throws: { rows: null } and one line with no id and no error text", async () => {
+    mockRows.mockRejectedValue(new Error("Zzz Paciente Inventado"));
+    expect(await readPatientFichaExportRowsAction(PATIENT)).toEqual({ rows: null });
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(String(logged.mock.calls[0]![0])).not.toContain("Inventado");
+    expect(String(logged.mock.calls[0]![0])).not.toContain(PATIENT);
   });
 });

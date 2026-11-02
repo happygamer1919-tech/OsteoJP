@@ -530,3 +530,61 @@ describe("recordEpisodeExport: the audit row", () => {
     },
   );
 });
+
+// RODICA-export-edit-before-download (owner ruling 2026-11-02): the export
+// dialog's values per registo. The render hands each registo ITS override
+// (and none to the others, which print as always), collects what the engine
+// says it changed, and the audit row carries it.
+describe("renderEpisodeReport and recordEpisodeExport: the export dialog's overrides", () => {
+  const sel = { episodeId: EPISODE, patientId: PATIENT, recordIds: [R1, R2], leftOut: 0 };
+  const OVR = { recordId: R2, date: "2026-11-02", time: "15:45", text: "" };
+  const ENTRY = {
+    recordId: R2,
+    originalDate: "2026-11-01",
+    originalTime: "09:00",
+    exportedDate: "2026-11-02",
+    exportedTime: "15:45",
+    textChanged: true,
+  };
+
+  beforeEach(() => {
+    mockReadScope.mockResolvedValue({ value: undefined });
+    mockMerge.mockResolvedValue(new Uint8Array([9]));
+    mockGenerate.mockImplementation(async (_ctx, _id, _locale, _scope, override) => ({
+      bytes: new Uint8Array([1]),
+      filename: "x.pdf",
+      ...(override ? { overridden: ENTRY } : {}),
+    }));
+  });
+
+  it("only the overridden registo is handed its override; the entry the engine returns is collected", async () => {
+    const pdf = await renderEpisodeReport(owner, sel, "pt", new Map([[R2, OVR]]));
+    expect(mockGenerate.mock.calls[0]).toHaveLength(4);
+    expect(mockGenerate.mock.calls[1]![4]).toEqual(OVR);
+    expect(pdf!.overridden).toEqual([ENTRY]);
+  });
+
+  it("no overrides: every engine call is the call it always was, and the file carries no entry", async () => {
+    const pdf = await renderEpisodeReport(owner, sel, "pt");
+    for (const call of mockGenerate.mock.calls) expect(call).toHaveLength(4);
+    expect(pdf).not.toHaveProperty("overridden");
+  });
+
+  it("recordEpisodeExport: the flag and the entries on the one row; none when nothing changed", async () => {
+    const t = fakeTx([]);
+    await recordEpisodeExport(owner, { episodeId: EPISODE, patientId: PATIENT, recordIds: [R1, R2], leftOut: 0, overridden: [ENTRY] });
+    expect(t.inserted).toHaveLength(1);
+    expect(t.inserted[0]!.v.metadata).toEqual({
+      episodeId: EPISODE,
+      patientId: PATIENT,
+      recordIds: [R1, R2],
+      recordsIncluded: 2,
+      recordsLeftOut: 0,
+      overridesApplied: true,
+      overrides: [ENTRY],
+    });
+    const plain = fakeTx([]);
+    await recordEpisodeExport(owner, { episodeId: EPISODE, patientId: PATIENT, recordIds: [R1], leftOut: 0, overridden: [] });
+    expect(plain.inserted[0]!.v.metadata).not.toHaveProperty("overridesApplied");
+  });
+});

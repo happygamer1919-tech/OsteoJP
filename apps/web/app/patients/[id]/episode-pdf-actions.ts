@@ -8,10 +8,17 @@ import { recordImportedGroupExport } from "@/lib/clinical/export-audit";
 import {
   readEpisodeExportSelection,
   readImportedGroupExportSelection,
+  readSelectionExportRows,
   recordEpisodeExport,
   renderEpisodeReport,
   renderImportedGroupReport,
 } from "@/lib/clinical/report/episode-export";
+import {
+  overridesByRecord,
+  overridesWithin,
+  parseExportOverrides,
+  type ExportRow,
+} from "@/lib/clinical/report/export-overrides";
 import { episodeReportPath, importedGroupReportPath } from "@/lib/clinical/report/episode-export-core";
 import { ATTACHMENTS_BUCKET } from "@/lib/clinical/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -44,27 +51,42 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *      cannot be written, the URL is not handed out: no export leaves without
  *      its row. The file just stored is then removed, best effort, since
  *      nothing will ever link to it.
+ *
+ * RODICA-export-edit-before-download (owner ruling 2026-11-02): `overrides`,
+ * the export dialog's date, hour and heading per registo, is checked as
+ * "Exportar ficha" checks it (ficha-pdf-actions.ts): every value before any
+ * read, every registo against the server's own selection, and a refusal
+ * produces nothing. What changed goes in the audit row; no registo is written.
  */
 export async function downloadEpisodeReportUrlAction(
   patientId: string,
   episodeId: string,
+  overrides?: unknown,
 ): Promise<{ url: string | null }> {
   const ctx = await requireRequestContext();
   if (!can(ctx.role, "clinical_records:read")) return { url: null };
   if (typeof patientId !== "string" || typeof episodeId !== "string") return { url: null };
   if (!UUID_RE.test(patientId) || !UUID_RE.test(episodeId)) return { url: null };
+  const asked = parseExportOverrides(overrides);
+  if (!asked) return { url: null };
 
   // The step under way, so a fault thrown from it is logged under its name.
   let step: ExportStep = "read";
   try {
     const selection = await readEpisodeExportSelection(ctx, { patientId, episodeId });
     if (!selection) return { url: null };
+    if (!overridesWithin(asked, selection.recordIds)) return { url: null };
 
     step = "limit";
     if (!(await documentGenerationAllowed(ctx.userId))) return { url: null };
 
     step = "render";
-    const pdf = await renderEpisodeReport(ctx, selection, locale);
+    // With no override the render is called exactly as it always was.
+    const byRecord = overridesByRecord(asked);
+    const pdf =
+      byRecord.size > 0
+        ? await renderEpisodeReport(ctx, selection, locale, byRecord)
+        : await renderEpisodeReport(ctx, selection, locale);
     if (!pdf) return { url: null };
 
     step = "upload";
@@ -88,6 +110,7 @@ export async function downloadEpisodeReportUrlAction(
         patientId: selection.patientId,
         recordIds: pdf.recordIds,
         leftOut: pdf.leftOut,
+        ...(pdf.overridden ? { overridden: pdf.overridden } : {}),
       });
     } catch {
       // No row, so no URL, and the file just stored will never be linked to:
@@ -128,26 +151,38 @@ export async function downloadEpisodeReportUrlAction(
  *      removed, as above. The row names the patient and the registos in the
  *      file; the group's label is not written.
  * `{ url: null }` for every refusal and every failure, as above.
+ *
+ * RODICA-export-edit-before-download: `overrides` is checked and applied as
+ * for an app episode, above.
  */
 export async function downloadImportedGroupReportUrlAction(
   patientId: string,
   specialty: string,
+  overrides?: unknown,
 ): Promise<{ url: string | null }> {
   const ctx = await requireRequestContext();
   if (!can(ctx.role, "clinical_records:read")) return { url: null };
   if (typeof patientId !== "string" || typeof specialty !== "string") return { url: null };
   if (!UUID_RE.test(patientId) || specialty === "") return { url: null };
+  const asked = parseExportOverrides(overrides);
+  if (!asked) return { url: null };
 
   let step: ExportStep = "read";
   try {
     const selection = await readImportedGroupExportSelection(ctx, { patientId, specialty });
     if (!selection) return { url: null };
+    if (!overridesWithin(asked, selection.recordIds)) return { url: null };
 
     step = "limit";
     if (!(await documentGenerationAllowed(ctx.userId))) return { url: null };
 
     step = "render";
-    const pdf = await renderImportedGroupReport(ctx, selection, locale);
+    // With no override the render is called exactly as it always was.
+    const byRecord = overridesByRecord(asked);
+    const pdf =
+      byRecord.size > 0
+        ? await renderImportedGroupReport(ctx, selection, locale, byRecord)
+        : await renderImportedGroupReport(ctx, selection, locale);
     if (!pdf) return { url: null };
 
     step = "upload";
@@ -170,6 +205,7 @@ export async function downloadImportedGroupReportUrlAction(
         patientId: selection.patientId,
         recordIds: pdf.recordIds,
         leftOut: pdf.leftOut,
+        ...(pdf.overridden ? { overridden: pdf.overridden } : {}),
       });
     } catch {
       // No row, so no URL: the file just stored is removed, as above.
@@ -185,6 +221,56 @@ export async function downloadImportedGroupReportUrlAction(
     // A read, the ceiling, the render or a Storage call threw: never surface
     // internals or PII.
     return failedAt(step);
+  }
+}
+
+/**
+ * RODICA-export-edit-before-download: THE EXPORT DIALOG'S ROWS for "PDF do
+ * episódio" on an app episode, asked when the user chooses "Alterar": every
+ * registo the file would print, with the appointment's date and hour and the
+ * heading it prints when nothing is changed. The export's own checks and
+ * selection; reads only, so no ceiling and no audit row. `{ rows: null }` for
+ * every refusal and every failure.
+ */
+export async function readEpisodeExportRowsAction(
+  patientId: string,
+  episodeId: string,
+): Promise<{ rows: ExportRow[] | null }> {
+  const ctx = await requireRequestContext();
+  if (!can(ctx.role, "clinical_records:read")) return { rows: null };
+  if (typeof patientId !== "string" || typeof episodeId !== "string") return { rows: null };
+  if (!UUID_RE.test(patientId) || !UUID_RE.test(episodeId)) return { rows: null };
+  try {
+    const selection = await readEpisodeExportSelection(ctx, { patientId, episodeId });
+    if (!selection) return { rows: null };
+    const rows = await readSelectionExportRows(ctx, selection, locale);
+    return { rows: rows.length > 0 ? rows : null };
+  } catch {
+    console.error("[episode-pdf] the episode export's dialog rows failed to load");
+    return { rows: null };
+  }
+}
+
+/**
+ * RODICA-export-edit-before-download: the same, for "PDF do episódio" on an
+ * imported group.
+ */
+export async function readImportedGroupExportRowsAction(
+  patientId: string,
+  specialty: string,
+): Promise<{ rows: ExportRow[] | null }> {
+  const ctx = await requireRequestContext();
+  if (!can(ctx.role, "clinical_records:read")) return { rows: null };
+  if (typeof patientId !== "string" || typeof specialty !== "string") return { rows: null };
+  if (!UUID_RE.test(patientId) || specialty === "") return { rows: null };
+  try {
+    const selection = await readImportedGroupExportSelection(ctx, { patientId, specialty });
+    if (!selection) return { rows: null };
+    const rows = await readSelectionExportRows(ctx, selection, locale);
+    return { rows: rows.length > 0 ? rows : null };
+  } catch {
+    console.error("[episode-pdf] the imported group export's dialog rows failed to load");
+    return { rows: null };
   }
 }
 
