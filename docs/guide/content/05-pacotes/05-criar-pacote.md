@@ -10,14 +10,14 @@ screens: admin-servicos
 ## Criar um pacote
 
 1. Em **Administração**, abra **Serviços**.
-2. Mais abaixo, em **Adicionar pacote**, preencha **Nome**, **Serviço base**, **Nº de sessões** e **Preço (€)**.
-3. Em **Local**, escolha o local onde o pacote é oferecido, ou **Todos os locais**.
-4. Clique em **Adicionar pacote**. Aparece **Pacote guardado.**
+2. Mais abaixo, em **Gestão de Packs**, na linha **Novo PACK**, preencha **Nome Pack...**, **Número sessões...** e **Preço...**. O preço é o total do pacote, para todas as sessões.
+3. Escolha o **Serviço base** e, em **Local**, o local onde o pacote é oferecido, ou **Todos os locais**.
+4. Clique em **Inserir**. Aparece **Pacote guardado.**
 
-O pacote passa a aparecer no campo **Pacote** da janela **Nova marcação**, nos locais onde é oferecido.
+O pacote passa a aparecer na **LISTA DE PACKS** e no campo **Pacote** da janela **Nova marcação**, nos locais onde é oferecido.
 
-Para alterar um pacote, clique em **Gerir** na linha do pacote. Para um preço diferente num local, abra **Preços por local**, por baixo da linha do pacote.
+Para mudar só o preço, altere-o na linha do pacote e clique em **Guardar preço**. Para alterar o resto, clique em **Gerir** na linha do pacote. Para um preço diferente num local, abra **Preços por local**, dentro de **Gerir**.
 
-Um pacote que já foi vendido não pode mudar o número de sessões: crie um pacote novo. Também não pode ser eliminado; use **Arquivar** para deixar de o oferecer.
+Um pacote que já foi vendido não pode mudar o número de sessões: crie um pacote novo. Também não pode ser apagado (a cruz **Apagar Pack** fica inativa); use **Arquivar**, dentro de **Gerir**, para deixar de o oferecer.
 
 Sem nenhum serviço ativo não é possível criar um pacote: crie primeiro o serviço.
