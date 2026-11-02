@@ -144,7 +144,9 @@ test("Pacotes: per-location price toggles the offered-here affordance (W12-20)",
     await expect(packRow).toBeVisible();
     await packRow.locator("summary").first().click();
     const priceRow = packRow;
-    await priceRow.getByText("Preços por local").click();
+    // exact: the row also carries the "preço base (há preços por local)" hint once
+    // a per-location price exists, and a substring match would hit both.
+    await priceRow.getByText("Preços por local", { exact: true }).click();
     const priceInput = priceRow.locator(`input[name="price__${LOCATION.id}"]`);
     await expect(priceInput).toBeVisible();
     const locField = priceRow.locator("label").filter({ hasText: LOCATION.name }).first();
