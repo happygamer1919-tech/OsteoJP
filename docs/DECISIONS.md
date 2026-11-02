@@ -5410,3 +5410,63 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
 - **Unchanged:** read only, the output lines, the exit codes, and the frozen
   gate test `scripts/staff-11-jp-one-clinic-check.test.mjs` (not edited; it
   passes 18 of 18).
+
+## 2026-11-02 - Indicação de Aniversários, part 1: the setting and the top-bar icon (Fisiozero parity)
+
+- **Owner request (via the clinic):** copy Fisiozero's "Indicação de
+  Aniversários" exactly in structure and behaviour, in OsteoJP's own design.
+  Source: section 1 of the Fisiozero browser report of 2026-11-02. Part 1 only:
+  the setting and the header icon. The birthday SMS ("Envio de SMS de
+  Aniversários") is NOT built: it is a send path and a marketing message that
+  needs consent, and it waits.
+- **The setting.** Administração > Definições: a panel "Indicação de
+  Aniversários", placed FIRST as in Fisiozero, with one row: label
+  "Notificação de aniversariantes", grey sub-text "Ícone no topo da página", an
+  on/off switch. Default OFF. Stored at `tenants.settings.birthdayIndication =
+  { headerIcon: boolean }` in the existing jsonb blob: no migration. It is kept
+  out of `TenantConfig` (which the main form saves and the reminder pipeline
+  reads) and has its own form and save, like the delete password. Only the
+  JSON boolean `true` is ON. Owner and admin only (`settings:manage`, and
+  `tenants_manager_update` of 0094 underneath); audited as `tenant.update` with
+  `fields: ["birthdayIndication"]`.
+- **The switch saves when pressed** (a submit button with `role="switch"`, the
+  ficha's survey switch pattern, no client JavaScript). Whether Fisiozero's
+  switch saves at once was not observed.
+- **The date rule (chosen, stated here as asked):** today is the calendar day
+  IN LISBON (`Europe/Lisbon`), never the UTC day; just after midnight in summer
+  Lisbon is already on the next day while UTC is not, and the Lisbon day wins.
+  A birthday matches on month and day of `patients.date_of_birth`. **A
+  29 February birthday shows on 28 February in a non-leap year**, and only on
+  29 February in a leap year. The age shown is the age the patient turns: the
+  Lisbon year minus the birth year. A date of birth in the current year or
+  later is left out (a typing error, not a birthday).
+- **Who sees whom.** The read runs under the viewer's own claims
+  (`runScoped`, RLS on) with the /patients list's own app scope
+  (`scopeConditions`: a therapist's read scope, else a located viewer's
+  clinics, else the tenant). No admin client, no service-role read. Registered
+  in `scope-callers.test.ts` as a `read` and in `scope-call-sites.test.ts` as
+  covered by `birthdays.db.test.ts`. The setting itself is read by every staff
+  role (`tenants_tenant_select`, 0094), selecting only the one boolean.
+- **The icon.** A cake glyph (lucide `Cake`, already a dependency) in the top
+  bar beside the notification bell, the same 44px round target, focus ring and
+  badge. It shows today's count; clicking opens a short list (name, "faz N
+  anos"), each a link to `/patients/<id>`. A native `<details>`/`<summary>`, so
+  it is keyboard reachable without client JavaScript. At zero the icon shows
+  with no count and the list says "Sem aniversariantes hoje.".
+- **PROVISIONAL until the owner's screenshot.** Fisiozero's icon was not seen
+  switched on, so its look, its zero state and what its click opens are
+  OsteoJP's guess. A screenshot from the owner is owed.
+- **Hidden below the `sm` breakpoint.** The top bar's user area has about 18px
+  to spare at 360px (AGENDA-MOBILE-WEEK); a second 44px icon would make every
+  staff page scroll sideways on a phone. With the setting OFF nothing changes
+  at any width.
+- **Cost.** With the setting ON, every staff page render makes one extra
+  scoped read for the setting and one for today's birthdays (capped at 200
+  rows). With it OFF, only the setting read.
+- **Tests:** `apps/web/lib/patients/birthday-rule.test.ts` (Lisbon day incl.
+  just after midnight in summer, 29 February), `birthdays.test.ts` (the read
+  goes through `runScoped` with the viewer's context, each role's scope, the
+  setting gates the read), `components/birthday-indicator.test.tsx`,
+  `lib/admin/settings.birthday.test.ts`, `settings-config.test.ts`.
+  `birthdays.db.test.ts` (real database, RLS, the four location classes) was
+  written and NOT run locally; the DB Tests workflow runs it.

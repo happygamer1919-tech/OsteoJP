@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_BIRTHDAY_INDICATION,
   DEFAULT_TENANT_CONFIG,
+  parseBirthdayIndication,
   parseTenantConfig,
   validateConfigInput,
   type TenantConfigInput,
@@ -118,5 +120,32 @@ describe("validateConfigInput (strict write)", () => {
   it("rejects a malformed invoice email", () => {
     const result = validateConfigInput(baseInput({ billingInvoiceEmail: "not-an-email" }));
     expect(result).toEqual({ ok: false, field: "billingInvoiceEmail" });
+  });
+});
+
+describe("parseBirthdayIndication (Indicação de Aniversários)", () => {
+  it("is OFF by default: a tenant with no key, or no blob, hides the icon", () => {
+    expect(DEFAULT_BIRTHDAY_INDICATION).toEqual({ headerIcon: false });
+    expect(parseBirthdayIndication({})).toEqual({ headerIcon: false });
+    expect(parseBirthdayIndication(undefined)).toEqual({ headerIcon: false });
+    expect(parseBirthdayIndication(null)).toEqual({ headerIcon: false });
+  });
+
+  it("reads ON only from a literal true", () => {
+    expect(parseBirthdayIndication({ birthdayIndication: { headerIcon: true } })).toEqual({
+      headerIcon: true,
+    });
+  });
+
+  it("reads anything else as OFF", () => {
+    for (const raw of [{ headerIcon: "true" }, { headerIcon: 1 }, { headerIcon: false }, "on", true, []]) {
+      expect(parseBirthdayIndication({ birthdayIndication: raw })).toEqual({ headerIcon: false });
+    }
+  });
+
+  it("is not part of TenantConfig, so the main form and the reminder pipeline do not see it", () => {
+    const parsed = parseTenantConfig({ birthdayIndication: { headerIcon: true } });
+    expect(parsed).toEqual(DEFAULT_TENANT_CONFIG);
+    expect(Object.keys(parsed)).not.toContain("birthdayIndication");
   });
 });

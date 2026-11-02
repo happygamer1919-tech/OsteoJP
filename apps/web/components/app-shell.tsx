@@ -8,10 +8,12 @@ import { getRequestContext } from "@/lib/auth/context";
 import { requiresPasswordRotation } from "@/lib/auth/password-rotation";
 import { staffDisplayName, initialsFor } from "@/lib/auth/staff-identity";
 import { unreadCount } from "@/lib/notifications/centre";
+import { loadBirthdayIndication, type BirthdayRow } from "@/lib/patients/birthdays";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { s } from "@/lib/i18n";
 import { navItemsForRole } from "@/lib/nav/nav-items";
 
+import { BirthdayIndicator } from "./birthday-indicator";
 import { LogoutForm } from "./logout-form.client";
 import { StaffShellClient } from "./staff-shell.client";
 
@@ -152,6 +154,21 @@ export async function AppShell({
     );
   }
 
+  // Indicação de Aniversários: null when the tenant has the switch OFF (the
+  // default), and then nothing is drawn. Read under the viewer's own claims
+  // (lib/patients/birthdays.ts), so each role counts only patients it may
+  // already see. Best effort, like the bell's count: a failed read draws no
+  // icon rather than taking down every staff page.
+  let birthdays: BirthdayRow[] | null = null;
+  try {
+    birthdays = await loadBirthdayIndication(ctx);
+  } catch (err) {
+    console.error(
+      "[birthdays] birthday indication failed; rendering the shell without it",
+      err instanceof Error ? err.name : "unknown",
+    );
+  }
+
   // W7-02: the profile was already routed and already linked — but ONLY as the
   // avatar/name chip, whose sole affordance was an aria-label. Sighted users had
   // no way to know it was clickable, so the page was effectively unreachable and
@@ -160,6 +177,13 @@ export async function AppShell({
   // primitive and the same styling as the sign-out control — no new shell pattern.
   const userArea = (
     <div className="flex items-center gap-4 max-sm:gap-1">
+      {/* Indicação de Aniversários. HIDDEN BELOW `sm`: the user area has about
+          18px to spare at 360px (AGENDA-MOBILE-WEEK, below), and a second
+          44px icon would make every staff page scroll sideways on a phone.
+          With the switch OFF (the default) nothing renders at any width. */}
+      {birthdays && (
+        <BirthdayIndicator className="max-sm:hidden" rows={birthdays} linkComponent={Link} />
+      )}
       {/* W13-02 (PG4): the bell is a REAL control with its own destination, and
           it sits OUTSIDE the profile link below. That placement is the whole
           fix. It was previously a decorative aria-hidden span INSIDE
