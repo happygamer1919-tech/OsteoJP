@@ -184,6 +184,18 @@ test("the block's shape: pipefail on line 2, no set -e, no # line, one read-only
   for (const l of lines) {
     if (/\|\| \{/.test(l)) assert.match(l, /\|\| \{ echo "STOP: [^"]+"; exit 1; \}$/, `a halt that is not one STOP and exit 1: ${l}`);
   }
+  // Every command substitution halts on its own failure, with ONE exception, by design: the read of
+  // the count of sweep sends R24 should have blocked falls to `unreadable` instead, because a halt
+  // there would come before UNDO NOW (R4 on the 2026-11-02 changes, MAJOR). The `0` check after the
+  // UNDO line still STOPs CLEAN and REVIEW on `unreadable`.
+  const subs = lines.filter((l) => /^[A-Z0-9]+=\$\(/.test(l));
+  const unhalted = subs.filter((l) => !/\|\| \{ echo "STOP: [^"]+"; exit 1; \}$/.test(l));
+  assert.equal(unhalted.length, 1, `not exactly one unhalted command substitution: ${unhalted.join("\n")}`);
+  assert.match(unhalted[0], /^S5=\$\(awk .*\) \|\| S5=unreadable$/, "the one unhalted command is not the count's read");
+  const s5At = lines.indexOf(unhalted[0]);
+  assert.ok(s5At > lines.findIndex((l) => l.startsWith("RES=$(")), "the count is read before the verdicts are judged");
+  assert.ok(s5At < lines.findIndex((l) => l.startsWith('[ "${RES}" != "UNDO" ]')), "the count is read after UNDO NOW");
+  assert.ok(lines.findIndex((l) => l.startsWith('[ "${S5}" = "0" ] || ')) > lines.findIndex((l) => l.startsWith('[ "${RES}" = "CLEAN" ]')), "the 0 check does not follow the other-FAIL STOP");
 });
 
 // ---- The fault-injection harness (the 2026-11-04 read's). ----
@@ -435,6 +447,21 @@ for (const shell of shells) {
       assert.ok(calls.length >= 16, `too few calls were stubbed: ${calls.length}`);
       for (const n of STUBBED) assert.ok(calls.some((c) => c.startsWith(`${n}:`)), `${n} was never called`);
       for (const id of calls) assertStop(runOnce(shell, base, text, { HARNESS_FAIL: id }), null, `${shell} fail ${id}`);
+      // With verdict 5 at FAIL, every call failed after the verdicts are judged (the RES awk) must still
+      // let UNDO NOW print; every call before it is a clean STOP as above. R4 on the 2026-11-02 changes.
+      const undo = runOnce(shell, base, text, { HARNESS_TABLE: "double" });
+      assertStop(undo, UNDO_WITH("0"), "double, no fault");
+      const undoCalls = undo.calls.trim().split("\n");
+      const judged = undoCalls.findIndex((l) => l.startsWith("awk:") && l.includes('print "UNDO"'));
+      assert.ok(judged > 0, "the verdicts' judgement was not found among the calls");
+      const after = undoCalls.slice(judged + 1).map((l) => l.split(" ")[0]);
+      assert.ok(after.some((id) => id.startsWith("awk:")), "the count's read is not a call after the judgement");
+      for (const [i, line] of undoCalls.entries()) {
+        const id = line.split(" ")[0];
+        const r = runOnce(shell, base, text, { HARNESS_TABLE: "double", HARNESS_FAIL: id });
+        if (i > judged) assertStop(r, UNDO_WITH("unreadable"), `${shell} double, fail ${id} after the judgement`);
+        else assertStop(r, null, `${shell} double, fail ${id}`);
+      }
     } finally { rmSync(base, { recursive: true, force: true }); }
   });
 
