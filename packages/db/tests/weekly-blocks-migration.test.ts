@@ -99,12 +99,13 @@ describe(`pending migration ${FILE}`, () => {
     expect(stmts.some((s) => /FORCE ROW LEVEL SECURITY/i.test(s))).toBe(false);
   });
 
-  it("the table gates: revoke by name from every role, then exactly SELECT/INSERT/DELETE to authenticated and SELECT to service_role", () => {
+  it("the table gates: revoke by name from every role, then exactly SELECT/INSERT/DELETE to authenticated and nothing else", () => {
     const grants = stmts.filter((s) => /^(GRANT|REVOKE)\b/i.test(s));
+    // No service_role grant: the portal reads through getDbAdmin, which is the
+    // owning role, so nothing would use one.
     expect(grants).toEqual([
       "REVOKE ALL ON TABLE public.therapist_weekly_blocks FROM PUBLIC, anon, authenticated, patient, service_role",
       "GRANT SELECT, INSERT, DELETE ON TABLE public.therapist_weekly_blocks TO authenticated",
-      "GRANT SELECT ON TABLE public.therapist_weekly_blocks TO service_role",
     ]);
     // UPDATE is granted to nobody: a rule is deleted and added again.
     expect(grants.some((g) => /UPDATE/i.test(g))).toBe(false);
@@ -132,15 +133,24 @@ describe(`pending migration ${FILE}`, () => {
     }
   });
 
-  it("insert names its creator; insert and delete hold a therapist to their own rules; select does not", () => {
-    const [select, insert, del] = stmts.slice(-3);
+  /**
+   * EXACT EQUALITY, whitespace collapsed, for each policy. A `toContain` per
+   * clause let an added `OR true` survive (R4, 2026-11-02): every clause was
+   * still "contained". The whole statement is the claim.
+   */
+  it("each CREATE POLICY is exactly the reviewed statement", () => {
+    const tenant = "tenant_id = (SELECT public.jwt_tenant_id())";
+    const roles = "(SELECT public.jwt_role()) IN ('owner', 'admin', 'therapist', 'reception')";
     const own = "((SELECT public.jwt_role()) <> 'therapist' OR user_id = (SELECT auth.uid()))";
-    expect(insert).toContain("created_by = (SELECT auth.uid())");
-    expect(insert).toContain(own);
-    expect(del).toContain(own);
-    expect(select).not.toContain(own);
-    expect(insert).toMatch(/^CREATE POLICY therapist_weekly_blocks_staff_insert .* WITH CHECK \(/);
-    expect(del).toMatch(/^CREATE POLICY therapist_weekly_blocks_staff_delete .* USING \(/);
+    const sameTenantUser =
+      "EXISTS (SELECT 1 FROM public.users u WHERE u.id = therapist_weekly_blocks.user_id AND u.tenant_id = (SELECT public.jwt_tenant_id()))";
+    const head = (name: string, cmd: string) =>
+      `CREATE POLICY ${name} ON public.therapist_weekly_blocks AS PERMISSIVE FOR ${cmd} TO authenticated`;
+    expect(stmts.slice(-3)).toEqual([
+      `${head("therapist_weekly_blocks_staff_select", "SELECT")} USING ( ${tenant} AND ${roles} )`,
+      `${head("therapist_weekly_blocks_staff_insert", "INSERT")} WITH CHECK ( ${tenant} AND ${roles} AND created_by = (SELECT auth.uid()) AND ${own} AND ${sameTenantUser} )`,
+      `${head("therapist_weekly_blocks_staff_delete", "DELETE")} USING ( ${tenant} AND ${roles} AND ${own} )`,
+    ]);
   });
 
   it("the drizzle declaration names the same columns and constraints as the SQL", () => {

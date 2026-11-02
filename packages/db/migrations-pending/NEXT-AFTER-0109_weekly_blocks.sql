@@ -85,7 +85,8 @@
 /*           therapist it names.                                          */
 /*   INSERT  owner, admin, therapist and reception of the row's tenant;   */
 /*           the row names its creator (created_by = auth.uid()); a       */
-/*           therapist only for their own user_id.                        */
+/*           therapist only for their own user_id; user_id is a users row */
+/*           of the caller's own tenant.                                  */
 /*   DELETE  owner, admin, therapist and reception of the row's tenant; a */
 /*           therapist only their own rows.                               */
 /*   UPDATE  nobody (no grant, no policy).                                */
@@ -99,12 +100,17 @@
 /* CREATE TABLE, and a REVOKE from PUBLIC does not touch a role granted   */
 /* by name), then:                                                        */
 /*   authenticated  SELECT, INSERT, DELETE.                               */
-/*   service_role   SELECT only. The patient portal's slot grid and its   */
-/*                  booking guards run as the service role               */
-/*                  (apps/api/lib/appointments/store.ts, getDbAdmin) and  */
-/*                  must see every therapist's rules, exactly as they see */
-/*                  time_off. It writes nothing here.                     */
-/*   patient, anon  nothing.                                              */
+/*   service_role, patient, anon   nothing.                               */
+/* The patient portal's slot grid and booking guards                      */
+/* (apps/api/lib/appointments/store.ts) read through getDbAdmin, which    */
+/* connects as the table's OWNING role, not as service_role: the owner    */
+/* holds every privilege and RLS (ENABLE, not FORCE) does not apply to    */
+/* it. So no role needs a grant for the portal, and none is given.        */
+/*                                                                        */
+/* THE THERAPIST IS OF THE CALLER'S TENANT. The INSERT check also asks    */
+/* that user_id names a users row of the JWT tenant, so a rule can never  */
+/* point at another clinic's staff member. The subquery runs under the    */
+/* caller's own users policies, which show staff their tenant's rows.     */
 /*                                                                        */
 /* ====================================================================== */
 /* 3. THE LOCKS, read from the statements, in order                       */
@@ -165,7 +171,6 @@ ALTER TABLE public.therapist_weekly_blocks ENABLE ROW LEVEL SECURITY;--> stateme
 /* ====================================================================== */
 REVOKE ALL ON TABLE public.therapist_weekly_blocks FROM PUBLIC, anon, authenticated, patient, service_role;--> statement-breakpoint
 GRANT SELECT, INSERT, DELETE ON TABLE public.therapist_weekly_blocks TO authenticated;--> statement-breakpoint
-GRANT SELECT ON TABLE public.therapist_weekly_blocks TO service_role;--> statement-breakpoint
 
 /* ====================================================================== */
 /* D. THE KEYS TO TABLES THAT EXISTED BEFORE THIS FILE                    */
@@ -202,6 +207,7 @@ CREATE POLICY therapist_weekly_blocks_staff_insert ON public.therapist_weekly_bl
     AND (SELECT public.jwt_role()) IN ('owner', 'admin', 'therapist', 'reception')
     AND created_by = (SELECT auth.uid())
     AND ((SELECT public.jwt_role()) <> 'therapist' OR user_id = (SELECT auth.uid()))
+    AND EXISTS (SELECT 1 FROM public.users u WHERE u.id = therapist_weekly_blocks.user_id AND u.tenant_id = (SELECT public.jwt_tenant_id()))
   );--> statement-breakpoint
 
 CREATE POLICY therapist_weekly_blocks_staff_delete ON public.therapist_weekly_blocks
