@@ -19,7 +19,7 @@ import {
   updatePackPrice,
 } from "@/lib/admin/packs";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
-import { parsePriceToCents } from "@/lib/admin/price-input";
+import { locationPriceEntries, parsePriceToCents } from "@/lib/admin/price-input";
 
 
 function parseDuration(raw: string): number {
@@ -130,16 +130,12 @@ export async function setServiceLocationPricesAction(formData: FormData): Promis
   const actor = await requireRequestContext();
   const serviceId = String(formData.get("serviceId") ?? "");
   // One input per location, named `price__<locationId>`. Empty clears the
-  // override (the location falls back to the service base price).
-  const entries: { locationId: string; priceCents: number | null }[] = [];
-  for (const [key, value] of formData.entries()) {
-    if (!key.startsWith("price__")) continue;
-    entries.push({
-      locationId: key.slice("price__".length),
-      priceCents: parsePriceToCents(String(value)),
-    });
-  }
-  await run(() => setServiceLocationPrices(actor, serviceId, entries));
+  // override (the location falls back to the service base price). Parsed
+  // INSIDE run(): a refused price is then the page's banner, not an uncaught
+  // throw that lands on the global error page.
+  await run(() =>
+    setServiceLocationPrices(actor, serviceId, locationPriceEntries(formData.entries())),
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -209,13 +205,8 @@ export async function setPackLocationPricesAction(formData: FormData): Promise<v
   // grid). Empty clears the override (the location falls back to the pack base
   // price). Runs through runPack so the agenda reference cache is invalidated —
   // a pack's per-location price feeds booking display just like its base price.
-  const entries: { locationId: string; priceCents: number | null }[] = [];
-  for (const [key, value] of formData.entries()) {
-    if (!key.startsWith("price__")) continue;
-    entries.push({
-      locationId: key.slice("price__".length),
-      priceCents: parsePriceToCents(String(value)),
-    });
-  }
-  await runPack(() => setPackLocationPrices(actor, packId, entries));
+  // Parsed INSIDE runPack(), so a refused price is the banner, not a crash.
+  await runPack(() =>
+    setPackLocationPrices(actor, packId, locationPriceEntries(formData.entries())),
+  );
 }

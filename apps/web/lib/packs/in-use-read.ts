@@ -76,9 +76,14 @@ const isCandidateSql = sql`${sql.raw(`(
 export async function listPacksInUse(
   actor: RequestContext,
   query: string,
-  now: Date = new Date(),
+  opts: { now?: Date; cap?: number } = {},
 ): Promise<PacksInUsePage> {
   for (const c of PACKS_IN_USE_CAPABILITIES) assertCan(actor.role, c);
+  // Injectable for the tests only; the page passes neither. A cap below 1 or
+  // a fraction would read nothing and call it complete, so it is refused.
+  const now = opts.now ?? new Date();
+  const cap = opts.cap ?? PACKS_IN_USE_READ_CAP;
+  if (!Number.isInteger(cap) || cap < 1) throw new RangeError("cap must be a positive integer");
 
   return runScoped(
     actor,
@@ -112,11 +117,11 @@ export async function listPacksInUse(
         // page can say it stopped. Each candidate costs one call of 0108's
         // function, so an unbounded read is an unbounded page.
         .orderBy(desc(patientPackInstances.purchasedAt), desc(patientPackInstances.id))
-        .limit(PACKS_IN_USE_READ_CAP + 1);
+        .limit(cap + 1);
 
-      const truncated = rows.length > PACKS_IN_USE_READ_CAP;
+      const truncated = rows.length > cap;
       const candidates: PackInstanceRow[] = rows
-        .slice(0, PACKS_IN_USE_READ_CAP)
+        .slice(0, cap)
         .filter((r) =>
           isInUseCandidate({
             sessionsTotal: r.sessionsTotal,

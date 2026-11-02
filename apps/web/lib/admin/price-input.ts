@@ -28,3 +28,20 @@ export function parsePriceToCents(raw: string): number | null {
   if (cents > MAX_PRICE_CENTS) throw new AdminError("invalid", "price above the allowed maximum");
   return cents;
 }
+
+/**
+ * The per-location price grid: one input per location, named
+ * `price__<locationId>`. Blank clears the override (null). Throws the same
+ * "invalid" AdminError as `parsePriceToCents` on the first bad value, so the
+ * caller must run it inside its error-to-banner wrapper.
+ */
+export function locationPriceEntries(
+  fields: Iterable<[string, FormDataEntryValue]>,
+): { locationId: string; priceCents: number | null }[] {
+  const entries: { locationId: string; priceCents: number | null }[] = [];
+  for (const [key, value] of fields) {
+    if (!key.startsWith("price__")) continue;
+    entries.push({ locationId: key.slice("price__".length), priceCents: parsePriceToCents(String(value)) });
+  }
+  return entries;
+}

@@ -288,6 +288,21 @@ d("Packs em uso: what each role reads", () => {
     expect(page.rows.find((r) => r.instanceId === anaPack)!.reserved).toBe(2);
   });
 
+  it("the cap: with cap 2 over the 3 running pacotes, the two NEWEST are read and truncated is true", async () => {
+    // Opened in this order: anaPack, (anaSpent), anaAhead, brunoPack, so the
+    // two newest candidates are anaAhead and brunoPack; anaPack is the one cut.
+    const page = await listPacksInUse(actor("owner", owner), "", { cap: 2 });
+    expect(page.truncated).toBe(true);
+    expect(page.rows.map((r) => r.instanceId)).toEqual([anaAhead, brunoPack]);
+    expect(page.totalInUse).toBe(2);
+  });
+
+  it("the cap: exactly 3 running pacotes under cap 3 are all read and NOT truncated", async () => {
+    const page = await listPacksInUse(actor("owner", owner), "", { cap: 3 });
+    expect(page.truncated).toBe(false);
+    expect(page.rows.map((r) => r.instanceId)).toEqual([anaPack, anaAhead, brunoPack]);
+  });
+
   it("search narrows the rows and leaves the count", async () => {
     const page = await listPacksInUse(actor("owner", owner), "bruno");
     expect(page.rows.map((r) => r.instanceId)).toEqual([brunoPack]);

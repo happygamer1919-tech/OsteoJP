@@ -55,6 +55,13 @@ describe("listPacksInUse: the gate", () => {
     expect(runScoped).not.toHaveBeenCalled();
   });
 
+  it("refuses a cap that would read nothing (0, negative, fractional) before any read", async () => {
+    for (const cap of [0, -1, 1.5]) {
+      await expect(listPacksInUse(actor, "", { cap })).rejects.toThrow(/cap/);
+    }
+    expect(runScoped).not.toHaveBeenCalled();
+  });
+
   it("reads under the VIEWER's session: runScoped with the viewer's own context", async () => {
     await listPacksInUse(actor, "");
     expect((runScoped.mock.calls[0] as unknown[])[0]).toBe(actor);

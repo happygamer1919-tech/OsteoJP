@@ -135,12 +135,17 @@ export default async function ServicesPage({
     // PACK-04. Its own message: it points at a different repair than the delete
     // one, namely changing the pacote's base service.
     : m === "err:has_packs" ? { ok: false, text: s["admin.services.archiveHasPacks"] }
+    // A refused value (a price the parser does not accept, a bad duration):
+    // its own message, because "could not save" sends people looking for a
+    // server fault when the fix is in what they typed.
+    : m === "err:invalid" ? { ok: false, text: s["admin.services.invalidValue"] }
     : m && m.startsWith("err") ? { ok: false, text: s["admin.services.error"] }
     : mp === "ok" ? { ok: true, text: s["admin.packs.saved"] }
     : mp === "err:has_references" ? { ok: false, text: s["admin.packs.deleteHasReferences"] }
     // PACK-07. Its own message: it points at a different repair than the delete
     // one - create a new pacote, rather than remove this one.
     : mp === "err:has_instances" ? { ok: false, text: s["admin.packs.sessionCountHasInstances"] }
+    : mp === "err:invalid" ? { ok: false, text: s["admin.services.invalidValue"] }
     : mp && mp.startsWith("err") ? { ok: false, text: s["admin.packs.error"] }
     : null;
 
