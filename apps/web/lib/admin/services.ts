@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
   analyticsEvents,
@@ -13,6 +13,8 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { effectivePriceCents } from "./pricing";
+import type { ServiceTypeRow } from "./service-types-form";
+import type { ServiceFollowUpDays, ServiceVatRate, VatExemptionCode } from "@osteojp/db";
 import { archiveBlockedReason, packsBoundToService } from "./service-archive";
 import {
   serviceDeleteBlockers,
@@ -54,6 +56,14 @@ export type ServiceView = {
   /** W13-04 (Decision B): may a PATIENT book this in the portal. Orthogonal to
    *  isActive (staff-bookable) and to internalOnly. */
   patientBookable: boolean;
+  // TIPOS DE MARCACAO (pending migration NEXT-AFTER-0109). Stored and shown on
+  // /admin/services only: no reminder, invoice, agenda or follow-up path reads
+  // them yet.
+  color: string | null;
+  vatRate: number | null;
+  vatExemptionCode: string | null;
+  followUpDays: number | null;
+  smsReminders: boolean;
 };
 
 export type ServiceInput = {
@@ -66,6 +76,10 @@ export type ServiceInput = {
   priceCents: number | null;
   // NESA contraindication sensitivity (0031) — drives the soft booking warning.
   contraindicationSensitive?: boolean;
+  // Fisiozero's new-type row (Tipos de Marcacao). Omitted = the column default.
+  followUpDays?: ServiceFollowUpDays | null;
+  vatRate?: ServiceVatRate | null;
+  vatExemptionCode?: VatExemptionCode | null;
 };
 
 export async function listServices(actor: RequestContext): Promise<ServiceView[]> {
@@ -81,6 +95,11 @@ export async function listServices(actor: RequestContext): Promise<ServiceView[]
         isActive: services.isActive,
         contraindicationSensitive: services.contraindicationSensitive,
         patientBookable: services.patientBookable,
+        color: services.color,
+        vatRate: services.vatRate,
+        vatExemptionCode: services.vatExemptionCode,
+        followUpDays: services.followUpDays,
+        smsReminders: services.smsReminders,
       })
       .from(services)
       .orderBy(asc(services.name)),
@@ -114,6 +133,9 @@ export async function createService(actor: RequestContext, input: ServiceInput):
         durationMin,
         priceCents: input.priceCents,
         contraindicationSensitive: input.contraindicationSensitive ?? false,
+        followUpDays: input.followUpDays ?? null,
+        vatRate: input.vatRate ?? null,
+        vatExemptionCode: input.vatExemptionCode ?? null,
       })
       .returning({ id: services.id });
     await writeAudit(tx, actor, {
@@ -124,23 +146,21 @@ export async function createService(actor: RequestContext, input: ServiceInput):
   });
 }
 
-export async function updateService(
+/**
+ * The NESA contraindication flag, from the row's Gerir drawer. Name, price and
+ * duration moved into the Tipos de Marcacao table (`saveServiceTypesTable`), so
+ * this is the one field of the old edit form that is not a table column.
+ */
+export async function setServiceContraindicationSensitive(
   actor: RequestContext,
   id: string,
-  input: ServiceInput,
+  sensitive: boolean,
 ): Promise<void> {
   assertCan(actor.role, "services:write");
-  const { name, durationMin } = validate(input);
-
   await runScoped(actor, async (tx) => {
     const rows = await tx
       .update(services)
-      .set({
-        name,
-        durationMin,
-        priceCents: input.priceCents,
-        contraindicationSensitive: input.contraindicationSensitive ?? false,
-      })
+      .set({ contraindicationSensitive: sensitive })
       .where(eq(services.id, id))
       .returning({ id: services.id });
     if (!rows[0]) throw new AdminError("not_found");
@@ -148,7 +168,114 @@ export async function updateService(
       action: "service.update",
       entityType: "service",
       entityId: id,
+      metadata: { fields: ["contraindicationSensitive"] },
     });
+  });
+}
+
+/**
+ * TIPOS DE MARCACAO: the table's one save button ("Guardar alteracoes - Tipos
+ * de Marcacao / Precos / IVA"), every row in ONE transaction.
+ *
+ * ALL OR NOTHING. A row of another tenant (RLS hides it, so it reads as
+ * missing) is `not_found`; switching off a type a pacote is bound to is
+ * `has_packs`, naming the pacote (PACK-04, the guard `setServiceActive`
+ * applies). Either refuses the whole save before anything is written, so a
+ * table is never half saved.
+ *
+ * THE AUDIT TRAIL KEEPS ITS SHAPE. A changed type gets one `service.update`
+ * row naming the changed FIELDS (never the values, CLAUDE.md rule 7). The
+ * switch and the AGENDA tag write the actions their own buttons always wrote
+ * (`service.archive` / `service.restore`, `service.patient_bookable_on` /
+ * `_off`), so "who switched this off" reads the same as before the table.
+ * An untouched row writes nothing.
+ */
+export async function saveServiceTypesTable(
+  actor: RequestContext,
+  rows: ServiceTypeRow[],
+): Promise<void> {
+  assertCan(actor.role, "services:write");
+  if (rows.length === 0) throw new AdminError("invalid", "no rows");
+  for (const r of rows) {
+    validate({ name: r.name, durationMin: r.durationMin, priceCents: r.priceCents });
+  }
+
+  await runScoped(actor, async (tx) => {
+    const ids = rows.map((r) => r.id);
+    const current = await tx
+      .select({
+        id: services.id,
+        name: services.name,
+        priceCents: services.priceCents,
+        durationMin: services.durationMin,
+        followUpDays: services.followUpDays,
+        vatRate: services.vatRate,
+        vatExemptionCode: services.vatExemptionCode,
+        smsReminders: services.smsReminders,
+        color: services.color,
+        isActive: services.isActive,
+        patientBookable: services.patientBookable,
+      })
+      .from(services)
+      .where(inArray(services.id, ids));
+    const byId = new Map(current.map((c) => [c.id, c] as const));
+    if (ids.some((id) => !byId.has(id))) throw new AdminError("not_found");
+
+    const archiving = rows.filter((r) => !r.isActive && byId.get(r.id)?.isActive).map((r) => r.id);
+    if (archiving.length > 0) {
+      const bound = await tx
+        .select({ id: servicePacks.id, name: servicePacks.name, baseServiceId: servicePacks.baseServiceId })
+        .from(servicePacks)
+        .where(inArray(servicePacks.baseServiceId, archiving));
+      for (const id of archiving) {
+        const blocking = packsBoundToService(bound, id);
+        if (blocking.length > 0) throw new AdminError("has_packs", archiveBlockedReason(blocking));
+      }
+    }
+
+    for (const r of rows) {
+      const c = byId.get(r.id);
+      if (!c) throw new AdminError("not_found");
+      const next = {
+        name: r.name.trim(),
+        priceCents: r.priceCents,
+        durationMin: r.durationMin,
+        followUpDays: r.followUpDays,
+        vatRate: r.vatRate,
+        vatExemptionCode: r.vatExemptionCode,
+        smsReminders: r.smsReminders,
+        ...(r.color !== undefined ? { color: r.color } : {}),
+      };
+      const fields = (Object.keys(next) as (keyof typeof next)[]).filter((k) => next[k] !== c[k]);
+      if (fields.length > 0) {
+        await tx.update(services).set(next).where(eq(services.id, r.id));
+        await writeAudit(tx, actor, {
+          action: "service.update",
+          entityType: "service",
+          entityId: r.id,
+          metadata: { fields },
+        });
+      }
+      if (r.isActive !== c.isActive) {
+        await tx.update(services).set({ isActive: r.isActive }).where(eq(services.id, r.id));
+        await writeAudit(tx, actor, {
+          action: r.isActive ? "service.restore" : "service.archive",
+          entityType: "service",
+          entityId: r.id,
+        });
+      }
+      if (r.patientBookable !== c.patientBookable) {
+        await tx
+          .update(services)
+          .set({ patientBookable: r.patientBookable })
+          .where(eq(services.id, r.id));
+        await writeAudit(tx, actor, {
+          action: r.patientBookable ? "service.patient_bookable_on" : "service.patient_bookable_off",
+          entityType: "service",
+          entityId: r.id,
+        });
+      }
+    }
   });
 }
 

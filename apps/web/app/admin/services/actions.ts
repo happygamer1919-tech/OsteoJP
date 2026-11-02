@@ -5,11 +5,15 @@ import { requireRequestContext } from "@/lib/auth/context";
 import {
   createService,
   deleteService,
-  setServiceActive,
+  saveServiceTypesTable,
+  setServiceContraindicationSensitive,
   setServiceLocationPrices,
-  setServicePatientBookable,
-  updateService,
 } from "@/lib/admin/services";
+import {
+  ServiceTypesFormError,
+  parseNewServiceType,
+  parseServiceTypesTable,
+} from "@/lib/admin/service-types-form";
 import {
   createPack,
   deletePack,
@@ -25,12 +29,6 @@ function parsePriceToCents(raw: string): number | null {
   const n = Number(t.replace(",", "."));
   if (!Number.isFinite(n) || n < 0) throw new AdminError("invalid", "invalid price");
   return Math.round(n * 100);
-}
-
-function parseDuration(raw: string): number {
-  const n = Number(raw.trim());
-  if (!Number.isInteger(n)) throw new AdminError("invalid", "invalid duration");
-  return n;
 }
 
 function parseSessionCount(raw: string): number {
@@ -77,52 +75,43 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
   redirect(`/admin/services?mp=${code}`);
 }
 
-export async function createServiceAction(formData: FormData): Promise<void> {
-  const actor = await requireRequestContext();
-  await run(() =>
-    createService(actor, {
-      name: String(formData.get("name") ?? ""),
-      durationMin: parseDuration(String(formData.get("durationMin") ?? "")),
-      priceCents: parsePriceToCents(String(formData.get("price") ?? "")),
-      contraindicationSensitive: formData.get("contraindicationSensitive") === "on",
-    }),
-  );
-}
-
-export async function updateServiceAction(formData: FormData): Promise<void> {
-  const actor = await requireRequestContext();
-  const id = String(formData.get("id") ?? "");
-  await run(() =>
-    updateService(actor, id, {
-      name: String(formData.get("name") ?? ""),
-      durationMin: parseDuration(String(formData.get("durationMin") ?? "")),
-      priceCents: parsePriceToCents(String(formData.get("price") ?? "")),
-      contraindicationSensitive: formData.get("contraindicationSensitive") === "on",
-    }),
-  );
-}
-
-export async function setServiceActiveAction(formData: FormData): Promise<void> {
-  const actor = await requireRequestContext();
-  const id = String(formData.get("id") ?? "");
-  const active = String(formData.get("active") ?? "") === "true";
-  await run(() => setServiceActive(actor, id, active));
-}
-
 /**
- * W13-04 step 7 — toggle whether PATIENTS may book a service in the portal.
+ * TIPOS DE MARCACAO: the table's one save button and its new-type row.
  *
- * A separate action from setServiceActiveAction because the two answer
- * different questions: `active` is "does the clinic still offer this at all",
- * `patient_bookable` is "may a patient book it themselves". Folding them into
- * one control would make archiving a service the only way to take it off the
- * portal, which would also take it off the staff agenda.
+ * A form value the table cannot hold (a VAT rate Fisiozero does not offer, a
+ * price that is not euros) reads as `err:invalid`, and nothing is saved. The
+ * agenda's cached reference data is invalidated at once (as the pack actions
+ * do): a type's name, duration and active switch feed the booking drawer.
  */
-export async function setServicePatientBookableAction(formData: FormData): Promise<void> {
+async function runTypes(fn: () => Promise<void>): Promise<never> {
+  let code = "ok";
+  try {
+    await fn();
+  } catch (e) {
+    code =
+      e instanceof ServiceTypesFormError ? "err:invalid" : isAdminError(e) ? `err:${e.code}` : "err";
+  }
+  revalidatePath("/admin/services");
+  updateTag("agenda-reference-data");
+  redirect(`/admin/services?m=${code}`);
+}
+
+export async function saveServiceTypesTableAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  await runTypes(() => saveServiceTypesTable(actor, parseServiceTypesTable(formData.entries())));
+}
+
+export async function createServiceTypeAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  await runTypes(() => createService(actor, parseNewServiceType(formData.entries())));
+}
+
+/** The NESA contraindication flag, from the row's Gerir drawer. */
+export async function setServiceContraindicationAction(formData: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const id = String(formData.get("id") ?? "");
-  const bookable = String(formData.get("bookable") ?? "") === "true";
-  await run(() => setServicePatientBookable(actor, id, bookable));
+  const sensitive = formData.get("contraindicationSensitive") === "on";
+  await run(() => setServiceContraindicationSensitive(actor, id, sensitive));
 }
 
 export async function deleteServiceAction(formData: FormData): Promise<void> {

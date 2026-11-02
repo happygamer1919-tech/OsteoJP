@@ -36,6 +36,12 @@ const service = (id: string, isActive: boolean): ServiceView => ({
   // W13-04: independent of everything this suite tests (pack filtering by
   // service activity), so false is the neutral fixture value.
   patientBookable: false,
+  // Tipos de Marcacao columns: neutral values (none chosen, today's SMS).
+  color: null,
+  vatRate: null,
+  vatExemptionCode: null,
+  followUpDays: null,
+  smsReminders: true,
 });
 
 describe("parsePackStatusFilter", () => {

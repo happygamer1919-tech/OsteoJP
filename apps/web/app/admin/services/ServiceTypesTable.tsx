@@ -1,0 +1,435 @@
+import { Fragment } from "react";
+import { Button, GlassPanel, StatusBadge } from "@osteojp/ui";
+import { getStrings, DEFAULT_LOCALE } from "@osteojp/i18n";
+import { SERVICE_VAT_RATES, VAT_EXEMPTION_REASONS } from "@osteojp/db";
+import {
+  archiveBlockedReason,
+  effectivePriceCents,
+  packsBoundToService,
+  type ServiceDeleteBlocker,
+  type ServiceView,
+} from "@/lib/admin/services";
+import type { PackView } from "@/lib/admin/packs";
+import type { LocationView } from "@/lib/admin/locations";
+import { UNSET_COLOR_SHOWN, centsToInput } from "@/lib/admin/service-types-form";
+import {
+  createServiceTypeAction,
+  deleteServiceAction,
+  saveServiceTypesTableAction,
+  setServiceContraindicationAction,
+  setServiceLocationPricesAction,
+} from "./actions";
+import { adminHelp, adminInputInline, adminLabel, adminTd, adminTh, adminTrBorder } from "../admin-ui";
+
+const s = getStrings(DEFAULT_LOCALE);
+
+/** The id of the one form the whole table posts to (Fisiozero's single save button). */
+export const TABLE_FORM_ID = "service-types-table";
+
+const SERVICE_BLOCKER_KEY: Record<ServiceDeleteBlocker, keyof typeof s> = {
+  appointments: "admin.services.deleteBlocked.appointments",
+  therapist_services: "admin.services.deleteBlocked.therapistServices",
+  analytics: "admin.services.deleteBlocked.analytics",
+  pack: "admin.services.deleteBlocked.pack",
+};
+
+function serviceBlockedTooltip(blockers: ServiceDeleteBlocker[]): string {
+  const reasons = blockers.map((b) => s[SERVICE_BLOCKER_KEY[b]]).join(", ");
+  return `${s["admin.services.deleteBlockedPrefix"]} ${reasons}. ${s["admin.services.deleteBlockedSuffix"]}`;
+}
+
+function euros(cents: number | null): string {
+  return cents === null ? "" : (cents / 100).toFixed(2);
+}
+
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+
+/** A Fisiozero tag ("SMS", "AGENDA"): a labelled checkbox, so the state is the box, never the colour. */
+function Tag({ name, label, title, checked }: { name: string; label: string; title: string; checked: boolean }) {
+  return (
+    <label
+      title={title}
+      className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-v2-border bg-v2-surface px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-v2-text-primary has-[:checked]:bg-v2-surface-hover"
+    >
+      <input type="checkbox" name={name} form={TABLE_FORM_ID} defaultChecked={checked} className={focusRing} />
+      {label}
+    </label>
+  );
+}
+
+function FollowUpSelect({ name, value, form }: { name: string; value: number | null; form?: string }) {
+  return (
+    <select
+      name={name}
+      form={form}
+      defaultValue={value === null ? "" : String(value)}
+      aria-label={s["admin.serviceTypes.colFollowUp"]}
+      className={`w-40 ${adminInputInline}`}
+    >
+      <option value="">{s["admin.serviceTypes.followUpNone"]}</option>
+      <option value="2">{s["admin.serviceTypes.followUp2Days"]}</option>
+    </select>
+  );
+}
+
+function VatSelect({ name, value, form }: { name: string; value: number | null; form?: string }) {
+  return (
+    <select
+      name={name}
+      form={form}
+      defaultValue={value === null ? "" : String(value)}
+      aria-label={s["admin.serviceTypes.colVat"]}
+      className={`w-20 ${adminInputInline}`}
+    >
+      {/* Not one of Fisiozero's four: OsteoJP's types start with no rate, and a
+          select that showed "0%" for "not set" would claim an exemption nobody
+          chose. */}
+      <option value="">{s["admin.serviceTypes.vatUnset"]}</option>
+      {SERVICE_VAT_RATES.map((r) => (
+        <option key={r} value={String(r)}>{`${r}%`}</option>
+      ))}
+    </select>
+  );
+}
+
+function VatReasonSelect({ name, value, form }: { name: string; value: string | null; form?: string }) {
+  return (
+    <select
+      name={name}
+      form={form}
+      defaultValue={value ?? ""}
+      aria-label={s["admin.serviceTypes.colVatReason"]}
+      className={`w-44 ${adminInputInline}`}
+    >
+      <option value="">{s["admin.serviceTypes.vatReasonPlaceholder"]}</option>
+      {VAT_EXEMPTION_REASONS.map((r) => (
+        <option key={r.code} value={r.code}>
+          {r.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export function ServiceTypesTable({
+  services,
+  packs,
+  serviceBlockers,
+  activeLocations,
+  overrideByServiceLocation,
+  offeredServiceLocation,
+}: {
+  services: ServiceView[];
+  packs: PackView[];
+  serviceBlockers: Map<string, ServiceDeleteBlocker[]>;
+  activeLocations: LocationView[];
+  overrideByServiceLocation: Map<string, number>;
+  offeredServiceLocation: Set<string>;
+}) {
+  const COLS = 11;
+  return (
+    <GlassPanel title={s["admin.serviceTypes.title"]}>
+      <div className="flex flex-col gap-4">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm" data-testid="service-types-table">
+            <thead>
+              <tr className={adminTrBorder}>
+                <th className={adminTh}>{s["admin.serviceTypes.colName"]}</th>
+                <th className={adminTh}>{s["admin.serviceTypes.colFollowUp"]}</th>
+                <th className={adminTh}>{s["admin.serviceTypes.colPrice"]}</th>
+                <th className={adminTh}>{s["admin.serviceTypes.colVat"]}</th>
+                <th className={adminTh}>{s["admin.serviceTypes.colVatReason"]}</th>
+                {/* Fisiozero's four controls carry no header; screen readers get one. */}
+                <th className={adminTh}>
+                  <span className="sr-only">{s["admin.serviceTypes.activeSwitch"]}</span>
+                </th>
+                <th className={adminTh}>
+                  <span className="sr-only">{s["admin.serviceTypes.color"]}</span>
+                </th>
+                <th className={adminTh}>
+                  <span className="sr-only">{s["admin.serviceTypes.sms"]}</span>
+                </th>
+                <th className={adminTh}>
+                  <span className="sr-only">{s["admin.serviceTypes.agenda"]}</span>
+                </th>
+                {/* OsteoJP's own columns, after Fisiozero's: booking needs the duration. */}
+                <th className={adminTh}>{s["admin.services.duration"]}</th>
+                <th className={adminTh}>{s["admin.staff.colActions"]}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {services.map((svc) => {
+                const blockers = serviceBlockers.get(svc.id) ?? [];
+                const archiveBlocking = packsBoundToService(packs, svc.id);
+                // PACK-04: a type a pacote is bound to cannot be switched off. The
+                // server refuses regardless; this is the affordance. A disabled
+                // checkbox posts nothing, so a hidden input carries "on".
+                const switchLocked = svc.isActive && archiveBlocking.length > 0;
+                return (
+                  <Fragment key={svc.id}>
+                    <tr className={adminTrBorder} data-service-id={svc.id}>
+                      <td className={adminTd}>
+                        <input type="hidden" name="row" value={svc.id} form={TABLE_FORM_ID} />
+                        <input
+                          name={`name__${svc.id}`}
+                          form={TABLE_FORM_ID}
+                          defaultValue={svc.name}
+                          required
+                          aria-label={s["admin.serviceTypes.colName"]}
+                          className={`w-56 ${adminInputInline}`}
+                        />
+                      </td>
+                      <td className={adminTd}>
+                        <FollowUpSelect name={`followUp__${svc.id}`} value={svc.followUpDays} form={TABLE_FORM_ID} />
+                      </td>
+                      <td className={adminTd}>
+                        <span className="inline-flex items-center gap-1">
+                          <input
+                            name={`price__${svc.id}`}
+                            form={TABLE_FORM_ID}
+                            type="text"
+                            inputMode="decimal"
+                            defaultValue={centsToInput(svc.priceCents)}
+                            placeholder="0.00"
+                            aria-label={s["admin.serviceTypes.colPrice"]}
+                            className={`w-20 text-right ${adminInputInline}`}
+                          />
+                          <span aria-hidden="true">€</span>
+                        </span>
+                      </td>
+                      <td className={adminTd}>
+                        <VatSelect name={`vat__${svc.id}`} value={svc.vatRate} form={TABLE_FORM_ID} />
+                      </td>
+                      <td className={adminTd}>
+                        <VatReasonSelect name={`vatReason__${svc.id}`} value={svc.vatExemptionCode} form={TABLE_FORM_ID} />
+                      </td>
+                      <td className={adminTd}>
+                        <span
+                          className="inline-flex"
+                          title={
+                            switchLocked
+                              ? `${s["admin.services.archiveBlockedBy"]} ${archiveBlockedReason(archiveBlocking)}`
+                              : s["admin.serviceTypes.deactivate"]
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            name={`active__${svc.id}`}
+                            form={TABLE_FORM_ID}
+                            defaultChecked={svc.isActive}
+                            disabled={switchLocked}
+                            aria-label={s["admin.serviceTypes.activeSwitch"]}
+                            className={`h-4 w-4 ${focusRing}`}
+                          />
+                          {switchLocked && (
+                            <input type="hidden" name={`active__${svc.id}`} value="on" form={TABLE_FORM_ID} />
+                          )}
+                        </span>
+                      </td>
+                      <td className={adminTd}>
+                        <input type="hidden" name={`colorWas__${svc.id}`} value={svc.color ?? ""} form={TABLE_FORM_ID} />
+                        <input
+                          type="color"
+                          name={`color__${svc.id}`}
+                          form={TABLE_FORM_ID}
+                          defaultValue={(svc.color ?? UNSET_COLOR_SHOWN).toLowerCase()}
+                          aria-label={s["admin.serviceTypes.color"]}
+                          title={svc.color ?? s["admin.serviceTypes.colorUnset"]}
+                          className={`h-6 w-6 cursor-pointer rounded-full border border-v2-border bg-transparent p-0 ${focusRing}`}
+                        />
+                      </td>
+                      <td className={adminTd}>
+                        <Tag
+                          name={`sms__${svc.id}`}
+                          label={s["admin.serviceTypes.sms"]}
+                          title={s["admin.serviceTypes.smsHelp"]}
+                          checked={svc.smsReminders}
+                        />
+                      </td>
+                      <td className={adminTd}>
+                        <Tag
+                          name={`agenda__${svc.id}`}
+                          label={s["admin.serviceTypes.agenda"]}
+                          title={s["admin.serviceTypes.agendaHelp"]}
+                          checked={svc.patientBookable}
+                        />
+                      </td>
+                      <td className={adminTd}>
+                        <input
+                          name={`duration__${svc.id}`}
+                          form={TABLE_FORM_ID}
+                          type="number"
+                          min={1}
+                          defaultValue={svc.durationMin}
+                          required
+                          aria-label={s["admin.services.duration"]}
+                          className={`w-20 ${adminInputInline}`}
+                        />
+                      </td>
+                      <td className={adminTd}>
+                        <details className="group">
+                          <summary className={`inline-flex w-fit cursor-pointer list-none items-center gap-1 rounded-v2 border border-v2-border bg-v2-surface px-3 py-1.5 text-sm text-v2-text-primary hover:bg-v2-surface-hover [&::-webkit-details-marker]:hidden ${focusRing}`}>
+                            {s["admin.staff.manage"]}
+                          </summary>
+                          <div className="mt-3 flex w-72 flex-col gap-3 rounded-v2 border border-v2-border bg-v2-surface p-3">
+                            <form action={setServiceContraindicationAction} className="flex flex-wrap items-center gap-2">
+                              <input type="hidden" name="id" value={svc.id} />
+                              <label className="flex items-center gap-1 text-sm text-v2-text-primary">
+                                <input
+                                  type="checkbox"
+                                  name="contraindicationSensitive"
+                                  defaultChecked={svc.contraindicationSensitive}
+                                />
+                                {s["admin.services.contraindicationSensitive"]}
+                              </label>
+                              <Button type="submit" variant="ghost" size="sm">
+                                {s["common.save"]}
+                              </Button>
+                            </form>
+                            <p className={adminHelp}>
+                              {s["admin.serviceTypes.therapistsHint"]}{" "}
+                              <a href="/admin/staff" className={`text-accent-2-700 underline ${focusRing}`}>
+                                {s["admin.serviceTypes.therapistsLink"]}
+                              </a>
+                            </p>
+                            {blockers.length > 0 ? (
+                              <span title={serviceBlockedTooltip(blockers)} className="inline-flex">
+                                <Button type="button" variant="ghost" size="sm" disabled>
+                                  {s["admin.services.delete"]}
+                                </Button>
+                              </span>
+                            ) : (
+                              <form action={deleteServiceAction}>
+                                <input type="hidden" name="id" value={svc.id} />
+                                <Button type="submit" variant="destructive" size="sm">
+                                  {s["admin.services.delete"]}
+                                </Button>
+                              </form>
+                            )}
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                    <tr className={adminTrBorder}>
+                      <td colSpan={COLS} className="pb-3 pr-4">
+                        <details className="text-sm text-v2-text-primary">
+                          <summary className={`cursor-pointer rounded ${focusRing} ${adminHelp}`}>
+                            {s["admin.services.locationPrices"]}
+                          </summary>
+                          {activeLocations.length === 0 ? (
+                            <p className={`mt-2 ${adminHelp}`}>{s["admin.services.noLocations"]}</p>
+                          ) : (
+                            <form action={setServiceLocationPricesAction} className="mt-2 flex flex-wrap items-end gap-3">
+                              <input type="hidden" name="serviceId" value={svc.id} />
+                              <p className={`w-full ${adminHelp}`}>
+                                {s["admin.services.basePrice"]}:{" "}
+                                {svc.priceCents === null
+                                  ? s["admin.services.noBasePrice"]
+                                  : `${euros(svc.priceCents)} ${svc.currency}`}
+                              </p>
+                              {activeLocations.map((loc) => {
+                                const override = overrideByServiceLocation.get(`${svc.id}:${loc.id}`) ?? null;
+                                const effective = effectivePriceCents(svc.priceCents, override);
+                                const offered = offeredServiceLocation.has(`${svc.id}:${loc.id}`);
+                                return (
+                                  <label key={loc.id} className="space-y-1">
+                                    <span className={`block ${adminLabel}`}>{loc.name}</span>
+                                    <input
+                                      name={`price__${loc.id}`}
+                                      type="text"
+                                      inputMode="decimal"
+                                      defaultValue={euros(override)}
+                                      placeholder={euros(svc.priceCents) || "0.00"}
+                                      className={`w-24 ${adminInputInline}`}
+                                    />
+                                    <span className="mt-1 flex items-center gap-2">
+                                      <StatusBadge tone={offered ? "confirmed" : "cancelled"}>
+                                        {offered ? s["admin.services.offeredHere"] : s["admin.services.notOfferedHere"]}
+                                      </StatusBadge>
+                                      <span className={adminHelp}>
+                                        {override === null
+                                          ? s["admin.services.usesBasePrice"]
+                                          : `${s["admin.services.effective"]}: ${euros(effective)}`}
+                                      </span>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                              <Button type="submit" variant="primary">
+                                {s["admin.services.savePrices"]}
+                              </Button>
+                            </form>
+                          )}
+                        </details>
+                      </td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* The one save button. Every table control names this form by id, so
+            the row forms above (location prices, the Gerir drawer) are never
+            nested inside it. */}
+        <form id={TABLE_FORM_ID} action={saveServiceTypesTableAction}>
+          <Button type="submit" variant="primary">
+            {s["admin.serviceTypes.save"]}
+          </Button>
+        </form>
+
+        <form
+          action={createServiceTypeAction}
+          className="flex flex-wrap items-end gap-2 border-t border-v2-border pt-4"
+          data-testid="service-types-new-row"
+        >
+          <input
+            name="name"
+            required
+            placeholder={s["admin.serviceTypes.newName"]}
+            aria-label={s["admin.serviceTypes.newName"]}
+            className={`w-56 ${adminInputInline}`}
+          />
+          <FollowUpSelect name="followUp" value={null} />
+          <span className="inline-flex items-center gap-1">
+            <input
+              name="price"
+              type="text"
+              inputMode="decimal"
+              placeholder={s["admin.serviceTypes.colPrice"]}
+              aria-label={s["admin.serviceTypes.colPrice"]}
+              className={`w-20 text-right ${adminInputInline}`}
+            />
+            <span aria-hidden="true">€</span>
+          </span>
+          <VatSelect name="vat" value={0} />
+          <VatReasonSelect name="vatReason" value={null} />
+          {/* Not in Fisiozero's row: OsteoJP books by duration, so a new type
+              states it rather than inheriting a silent 60. */}
+          <label className="inline-flex items-center gap-1 text-sm text-v2-text-primary">
+            {s["admin.services.duration"]}
+            <input
+              name="durationMin"
+              type="number"
+              min={1}
+              defaultValue={60}
+              required
+              className={`w-20 ${adminInputInline}`}
+            />
+          </label>
+          <Button type="submit" variant="primary">
+            {s["admin.serviceTypes.insert"]}
+          </Button>
+        </form>
+
+        <div className="flex flex-col gap-1">
+          <p className={adminHelp}>{s["admin.serviceTypes.note1"]}</p>
+          <p className={adminHelp}>{s["admin.serviceTypes.note2"]}</p>
+        </div>
+      </div>
+    </GlassPanel>
+  );
+}

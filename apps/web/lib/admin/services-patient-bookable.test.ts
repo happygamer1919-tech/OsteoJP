@@ -137,19 +137,28 @@ describe("the mis-click cannot expose an internal service", () => {
 });
 
 describe("the surface keeps the two decisions separate", () => {
-  const page = readFileSync(
-    join(__dirname, "..", "..", "app", "admin", "services", "page.tsx"),
+  // TIPOS DE MARCACAO (2026-11-02): the active switch and the AGENDA tag now
+  // live in the one table Fisiozero saves with one button
+  // (ServiceTypesTable.tsx), so they are no longer two forms. What this pins
+  // is unchanged: they are two INDEPENDENT inputs, and the save writes each
+  // with its own audit action, so archiving is still not the only way off the
+  // portal.
+  const table = readFileSync(
+    join(__dirname, "..", "..", "app", "admin", "services", "ServiceTypesTable.tsx"),
     "utf-8",
   );
+  const lib = readFileSync(join(__dirname, "services.ts"), "utf-8");
 
-  it("renders its own form, not a field inside the archive form", () => {
-    expect(page).toContain("setServicePatientBookableAction");
-    expect(page).toContain("setServiceActiveAction");
-    // Two distinct forms: archiving must not be the only way off the portal.
-    const bookableIdx = page.indexOf("action={setServicePatientBookableAction}");
-    const activeIdx = page.indexOf("action={setServiceActiveAction}");
-    expect(bookableIdx).toBeGreaterThan(-1);
-    expect(activeIdx).toBeGreaterThan(bookableIdx);
+  it("renders the AGENDA tag and the active switch as two inputs of their own", () => {
+    expect(table).toContain("name={`agenda__${svc.id}`}");
+    expect(table).toContain("name={`active__${svc.id}`}");
+  });
+
+  it("the table save writes each with its own audit action", () => {
+    expect(lib).toContain("set({ isActive: r.isActive })");
+    expect(lib).toContain(".set({ patientBookable: r.patientBookable })");
+    expect(lib).toContain('"service.patient_bookable_on" : "service.patient_bookable_off"');
+    expect(lib).toContain('"service.restore" : "service.archive"');
   });
 
   it("labels both states in pt-PT", () => {
