@@ -246,7 +246,9 @@ export interface AppointmentsStore {
   ): Promise<MutableAppointment | null>;
   /** Cancel an OWN appointment (status → cancelled). */
   cancelOwn(principal: PatientPrincipal, id: string): Promise<void>;
-  /** Move an OWN appointment to a new window. */
+  /** Move an OWN appointment to a new window. R44: the move and its
+   *  `appointment.reschedule` audit row (./portal-move-audit.ts) commit in one
+   *  transaction, or neither does. */
   rescheduleOwn(
     principal: PatientPrincipal,
     id: string,
@@ -776,6 +778,12 @@ export async function rescheduleAppointment(
   if (verdict.conflict) throw new AppointmentError("no_slot");
 
   await store.rescheduleOwn(principal, id, { startsAt: input.startsAt, endsAt: newEndsAt });
+
+  // R44: NO RE-PLAN EVENT IS SENT FROM HERE YET. The staff move re-plans the
+  // visit's reminders after its commit (apps/web/lib/scheduling/reminders.ts,
+  // `enqueueRemindersAfterCommit`); apps/api has no Inngest client, and adding
+  // one is an owner decision, so a portal move still leaves the old sleeping
+  // reminder in place until that half lands.
 
   // POST-COMMIT, same rule as cancel. Both instants are carried so the centre
   // can render "moved from X to Y" without a second read.

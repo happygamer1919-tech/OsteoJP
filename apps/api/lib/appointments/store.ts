@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import {
   appointments,
+  auditLog,
   locations,
   patients,
   services,
@@ -30,6 +31,7 @@ import type {
 import { OPEN_SLOTS_HORIZON_DAYS } from "./booking";
 import type { TherapistCandidate } from "./therapist";
 import { acquireSlotLocks } from "./slot-lock";
+import { portalMoveAuditRow } from "./portal-move-audit";
 import { locationHasBookableTherapist } from "@/lib/booking/location-bookable";
 
 /**
@@ -1111,7 +1113,26 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         ),
       );
 
-      await tx
+      // R44: the start this move LEAVES, read AFTER the slot lock and under a
+      // row lock (the same order every move takes them: slot, then row), so a
+      // second move of the same row cannot commit between this read and the
+      // update and leave `fromStartsAt` one move behind.
+      const before = await tx
+        .select({ startsAt: appointments.startsAt, locationId: appointments.locationId })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.id, id),
+            eq(appointments.patientId, principal.patientId),
+            eq(appointments.tenantId, principal.tenantId),
+            inArray(appointments.status, ["scheduled", "confirmed"]),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (before.length === 0) return;
+
+      const moved = await tx
         .update(appointments)
         .set({ startsAt, endsAt })
         .where(
@@ -1121,7 +1142,24 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             eq(appointments.tenantId, principal.tenantId),
             inArray(appointments.status, ["scheduled", "confirmed"]),
           ),
-        );
+        )
+        .returning({ id: appointments.id });
+      if (moved.length === 0) return;
+
+      // R44: the move's audit row, IN THIS TRANSACTION, so a move without its
+      // row (or a row without its move) cannot commit. A failed insert throws
+      // and rolls the move back with it.
+      await tx.insert(auditLog).values(
+        portalMoveAuditRow({
+          tenantId: principal.tenantId,
+          appointmentId: id,
+          practitionerId: owned[0].practitionerId,
+          locationId: before[0].locationId,
+          fromStartsAt: before[0].startsAt,
+          startsAt,
+          endsAt,
+        }),
+      );
     });
   },
 
