@@ -5403,7 +5403,7 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
 - **The horizon is restated, not imported.** The script runs under plain node
   and cannot import `apps/api/lib/appointments/booking.ts`. It exports its own
   `OPEN_SLOTS_HORIZON_DAYS = 14`, and
-  `packages/db/tests/staff-11-horizon-parity.test.ts` fails if the two values
+  `scripts/staff-11-horizon-parity.test.mjs` fails if the two values
   drift, or if the check's two window conditions differ from the store's
   (`listBookableTherapists` and `getCatalog`) in anything but whitespace, the
   `av.` alias and the zone literal.

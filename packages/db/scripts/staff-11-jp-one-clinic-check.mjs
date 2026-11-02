@@ -41,11 +41,12 @@
  * NARROWER: the portal counted a row starting within the 14-day slot horizon, and this
  * check counted only a row valid today. R52 aligned them. The horizon is restated below
  * as OPEN_SLOTS_HORIZON_DAYS, because this script runs under plain node and cannot import
- * apps/api/lib/appointments/booking.ts (TypeScript). packages/db/tests/
- * staff-11-horizon-parity.test.ts fails if the two values drift, or if this check's two
- * window conditions differ from the portal's in anything but the zone literal and the
- * `av.` alias. The frozen test above pins only the shape of the two bounds, not the date
- * each is read against, which is why it did not catch the R15 difference.
+ * apps/api/lib/appointments/booking.ts (TypeScript). This test fails if the two values
+ * drift, or if this check's two window conditions differ from the portal's in anything
+ * but the zone literal and the `av.` alias:
+ *   scripts/staff-11-horizon-parity.test.mjs
+ * The frozen test above pins only the shape of the two bounds, not the date each is
+ * read against, which is why it did not catch the R15 difference.
  *
  * OUT OF SCOPE: is_bookable (the ruling on the row not taking patients is still open;
  * it is printed, it decides nothing) and names (ruled: they already differ).
@@ -73,7 +74,7 @@ const ACTION = "staff.jp_split.reassign";
 const ACTION_ROLLBACK = "staff.jp_split.rollback";
 /**
  * The portal's slot horizon in days, restated from apps/api/lib/appointments/booking.ts
- * (OPEN_SLOTS_HORIZON_DAYS). staff-11-horizon-parity.test.ts fails if they drift.
+ * (OPEN_SLOTS_HORIZON_DAYS). scripts/staff-11-horizon-parity.test.mjs fails if they drift.
  */
 export const OPEN_SLOTS_HORIZON_DAYS = 14;
 
