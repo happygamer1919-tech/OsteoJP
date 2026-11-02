@@ -976,6 +976,24 @@ r34 as (
     from swept s
     join probe_eval e on e.src = 'sent' and e.k = s.id::text
 ),
+early_to_come as (
+  -- Row 37, no verdict: a live `early` claim followed by a `sent` row, whose start's mark falls at
+  -- or after Thursday 11-05 07:00, the first pass that can send. The sleeping job sent early for a
+  -- start a patient moved to in the portal; claimIsLive and claimOfThisMark skip early claims, so
+  -- the sweep sends again at that start's mark: "today both go out" (reminder-claim.ts).
+  select count(*) as n
+    from public.reminder_claims c
+   where c.kind = 'claim'
+     and c.early = true
+     and c.due_at >= timestamptz '2026-11-05 07:00:00 Europe/Lisbon'
+     and not exists (select 1 from public.reminder_claims rl
+                      where rl.tenant_id = c.tenant_id and rl.appointment_id = c.appointment_id
+                        and rl.kind = 'release' and rl.claim_id = c.id)
+     and (select x.outcome from public.reminder_dispatches x
+           where x.tenant_id = c.tenant_id and x.appointment_id = c.appointment_id and x.channel = c.channel
+             and x.template_id like 'reminder.' || c.offset_id || '.%' and x.created_at >= c.created_at
+           order by x.created_at, x.id limit 1) = 'sent'
+),
 pre_t0 as (
   -- Row 23: marks due in the 24 hours before t0, the code before the deploy. Matched on the key
   -- only, with no label; no verdict reads them.
@@ -1251,6 +1269,10 @@ select n, "check", observed, expected, verdict from (
            || case when (select count(*) from swept) = 0 then ': 0 sweep-sent rows, as shadow sends nothing' else '' end,
          'information: the shadow sends nothing (verdict 6 FAILs on any sweep claim), so R34 has no subject in this read; the read after the switch asserts outside R34 = 0',
          'INFO'
+  union all
+  select 37, 'visits that would get an early copy then an on-time send after the switch: live, early, sent claims whose start''s mark falls at or after 2026-11-05 07:00',
+         n::text, 'information', 'INFO'
+    from early_to_come
   union all
   select 40, 'SHADOW_SUMMARY',
          'full days ' || coalesce(span, 'none') || ': both=' || matched::text

@@ -821,7 +821,23 @@ const TUE = "2026-11-03";
 const EMPTY_WANT = { 0: "OK", 1: "OK", 2: "VACUOUS", ...allDays(3, "FAIL"), ...Object.fromEntries(["6", "7", "8", "9", "10", "13", "15", "16"].map((k) => [k, "VACUOUS"])), ...allDays(11, "VACUOUS"), ...allDays(12, "VACUOUS") };
 const re = (s) => s.replace(/[()]/g, "\\$&");
 
+/** A claim of the sleeping job, created Monday, with its ledger row; its start's mark on the case's day. */
+const earlyClaim = (id, start, { early = true, sent = true, released = false } = {}) => `
+insert into public.reminder_claims (id, tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
+  values ('${id}', '${TENANT}', '${id}', 'claim', '24h', 'sms', ${at(start)}, ${at(dueOf(start, "24h"))}, 'run', ${early}, 1, ${at("2026-11-02 12:00")});
+${sent ? ledger(id, "24h", "2026-11-02 12:00:01") : ""}
+${released ? `insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, claim_id, created_at)
+  values ('${TENANT}', '${id}', 'release', '24h', 'sms', '${id}', ${at("2026-11-02 12:00:02")});` : ""}`;
+const EARLY_TO_COME = [
+  visit(appt(0xe5), "2026-11-06 07:05"), earlyClaim(appt(0xe5), "2026-11-06 07:05"),
+  visit(appt(0xe6), "2026-11-06 07:10"), earlyClaim(appt(0xe6), "2026-11-06 07:10", { early: false }),
+  visit(appt(0xe7), "2026-11-06 07:15"), earlyClaim(appt(0xe7), "2026-11-06 07:15", { released: true }),
+  visit(appt(0xe8), "2026-11-06 07:20"), earlyClaim(appt(0xe8), "2026-11-06 07:20", { sent: false }),
+  visit(appt(0xe9), "2026-11-06 06:55"), earlyClaim(appt(0xe9), "2026-11-06 06:55"),
+].join("\n");
+
 const CASES = [
+  { name: "row 37: of five sleeping-job claims, one is live, early, sent and marked at or after Thursday 07:00: counted, no verdict moves", seed: EARLY_TO_COME, want: only({}), info: [[37, /\| 1 \|/]] },
   {
     name: "clean",
     seed: "",
@@ -1172,6 +1188,10 @@ for (const [name, counts, args] of CLAUSE_CASES) {
  * (for R34, whose result is a row and not a verdict) must not print its row.
  */
 const MUTANTS = [
+  ["row 37 without early", "     and c.early = true\n", "", "row 37", null, [37, /\| 1 \|/]],
+  ["row 37 without the Thursday bound", "     and c.due_at >= timestamptz '2026-11-05 07:00:00 Europe/Lisbon'\n", "", "row 37", null, [37, /\| 1 \|/]],
+  ["row 37 counts a released claim", "Europe/Lisbon'\n     and not exists (select 1 from public.reminder_claims rl\n                      where rl.tenant_id = c.tenant_id and rl.appointment_id = c.appointment_id\n                        and rl.kind = 'release' and rl.claim_id = c.id)\n     and (select x.outcome", "Europe/Lisbon'\n     and (select x.outcome", "row 37", null, [37, /\| 1 \|/]],
+  ["row 37 counts a claim with no send", "order by x.created_at, x.id limit 1) = 'sent'\n),\npre_t0 as (", "order by x.created_at, x.id limit 1) is distinct from 'x'\n),\npre_t0 as (", "row 37", null, [37, /\| 1 \|/]],
   ["every move counts (the start-at-the-mark rule dead)", "and (r.clause <> 'moved' or m.start_at_mark is distinct from p.start_text)", "and true", "a move that keeps the start, after the mark and before the pass"],
   ["every move counts, on the run-only case: RK would name a kept start", "and (r.clause <> 'moved' or m.start_at_mark is distinct from p.start_text)", "and true", "a move that keeps the start, after the mark, and NO shadow row"],
   ["rule 1 reads the LATEST move after the mark", "order by n.created_at, n.id limit 1", "order by n.created_at desc, n.id desc limit 1", "moved away and back after the mark"],

@@ -1,7 +1,7 @@
 # SHADOW-COMPARE, 2026-11-04 (R47): the reminder sweep's shadow against the sleeping job over Monday 11-02 and Tuesday 11-03, under #1678's code
 
 **READ ONLY. One block. No apply, no write.**
-**Status: AUTHORED 2026-11-01 by SOLO's builder; R4 ROUND 1 ON `0472fea0` (#1691): SHIP AFTER FIXES, TEN FINDINGS, ALL ANSWERED; R4 ROUND 2 ON `b09a0b7a`: SHIP AFTER FIXES, SIX MINOR, ALL DOCUMENT OR DISPATCH TEXT, ALL ANSWERED ON THE BYTES BELOW, NOT RE-REVIEWED, THE SQL AND THE BLOCK UNCHANGED BY THAT ROUND; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below, on these same SQL bytes); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-shadow-compare-20261104.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED").** The block's four value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit, `PRNUM` its number, and `DEPLOYED_AT` the instant #1678 went live in production, all named by SOLO.
+**Status: AUTHORED 2026-11-01 by SOLO's builder; R4 ROUND 1 ON `0472fea0` (#1691): SHIP AFTER FIXES, TEN FINDINGS, ALL ANSWERED; R4 ROUND 2 ON `b09a0b7a`: SHIP AFTER FIXES, SIX MINOR, ALL DOCUMENT OR DISPATCH TEXT, ALL ANSWERED, THE SQL AND THE BLOCK UNCHANGED BY THAT ROUND; ROW 37 ADDED AFTER THAT ROUND (R4 ON #1692), AN INFO ROW AND NO VERDICT, NOT RE-REVIEWED; THE SQL REHEARSED ON THROWAWAY DATABASES ON THE LOCAL STACK (lane blue, synthetic rows, the cases below, on these same SQL bytes); THE BLOCK PROVEN BY ITS FAULT-INJECTION TEST (`scripts/read-shadow-compare-20261104.test.mjs`); THE BLOCK ITSELF NOT REHEARSED (it reads only production, see "NOT REHEARSED").** The block's four value lines read `PENDING` here; GREEN pastes its dispatch's filled copy, in which `PRHEAD` is the pull request's head commit, `PRNUM` its number, and `DEPLOYED_AT` the instant #1678 went live in production, all named by SOLO.
 
 ## Why this read exists
 
@@ -17,7 +17,7 @@ This read compares the two full days under the new code, asserts that R24 held (
 
 ## What it reads
 
-`scripts/db/read-shadow-compare-20261104.sql`, sha256 `e20f8cf0e357e6c72c38137ce8ec15b63582ffe252824cc6363dfe68427c0c2e`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, Lisbon times, the fixed labels of offsets (`48h`, `24h`), channels (`email`, `sms`), ledger outcomes, suppression reasons and label letters, and, in the mismatch list only, appointment ids (at most 500 a side, in the file only). No tenant id, patient id or staff id, no name, phone, email address, message text or note, and no audit metadata text: metadata is compared, never printed. This is exactly what the 2026-10-31 read printed, and nothing more.
+`scripts/db/read-shadow-compare-20261104.sql`, sha256 `ce3e137059b21f47765f779cabc885198f3de9735a6fb4544f4bd33cd9278cd4`. One result set, columns `n | check | observed | expected | verdict`. It prints counts, Lisbon times, the fixed labels of offsets (`48h`, `24h`), channels (`email`, `sms`), ledger outcomes, suppression reasons and label letters, and, in the mismatch list only, appointment ids (at most 500 a side, in the file only). No tenant id, patient id or staff id, no name, phone, email address, message text or note, and no audit metadata text: metadata is compared, never printed. This is exactly what the 2026-10-31 read printed, and nothing more.
 
 **One value from outside.** The deploy instant is read from the setting `osteojp.r47_deployed_at`, which the block sets with `set local` inside the read-only transaction from the dispatch's `DEPLOYED_AT` (UTC, `YYYY-MM-DDTHH:MM:SSZ`, checked by the block's first line). Unset, the read stops with an error and prints no table (a test case proves it).
 
@@ -114,6 +114,7 @@ The control of verdict 15 counts what the old code would have shown as S5. Under
 | 34 | shadow-only rows whose start the sleeping job claimed early (the withdrawn S1) |
 | 35 | R8 and RK marks per day of the mark and reminder |
 | 36 | **new:** R34, send mode only: sweep-sent rows since t0; of them after a re-arming save; of those R34 and outside R34. Reads `0, 0, 0, 0: 0 sweep-sent rows, as shadow sends nothing` |
+| 37 | **new:** visits that would get an early copy then an on-time send after the switch: live, early, `sent` claims whose start's mark falls at or after Thursday 11-05 07:00 (counts only; the first-send read, #1692, reads those pairs as REVIEW on its verdict 5) |
 | 40 | `SHADOW_SUMMARY`: the full days' totals, `run_r8` and `run_rk` included |
 | 50, 51, 52 | the mismatches, shadow only (50), run only (51) and sent with neither (52), with appointment id and label; at most 500 a side, unexplained first. In the file only: the block never prints them |
 
@@ -125,7 +126,7 @@ Any STOP line ends the block: nothing after it is pasted or run again, and GREEN
 
 | What | Pin |
 |---|---|
-| The read | `scripts/db/read-shadow-compare-20261104.sql`, sha256 `e20f8cf0e357e6c72c38137ce8ec15b63582ffe252824cc6363dfe68427c0c2e` |
+| The read | `scripts/db/read-shadow-compare-20261104.sql`, sha256 `ce3e137059b21f47765f779cabc885198f3de9735a6fb4544f4bd33cd9278cd4` |
 | The target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96` (the bytes the 2026-10-31 document pins) |
 | The guard's module | `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the same) |
 | This document | the dispatch names its sha256 in `DOCSHA`, and the sidecar `docs/read-shadow-compare-20261104.sha256` pins it |
@@ -153,7 +154,7 @@ PRHEAD=PENDING
 DOCSHA=PENDING
 PRNUM=PENDING
 DEPLOYED_AT=PENDING
-SHAREAD=e20f8cf0e357e6c72c38137ce8ec15b63582ffe252824cc6363dfe68427c0c2e
+SHAREAD=ce3e137059b21f47765f779cabc885198f3de9735a6fb4544f4bd33cd9278cd4
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 READFILE=scripts/db/read-shadow-compare-20261104.sql
@@ -222,7 +223,7 @@ If GREEN cannot run, the owner can run the same read by hand. It is read only ei
 1. Supabase dashboard, production project, SQL Editor, New query.
 2. Type this first line exactly, with the dispatch's DEPLOYED_AT between the quotes: `set transaction read only; set local statement_timeout = '120s'; set local osteojp.r47_deployed_at = '<DEPLOYED_AT>';`
 3. Below it, paste the whole of `scripts/db/read-shadow-compare-20261104.sql`. To copy it exactly from the pull request's head, type this in Claude Code with the dispatch's PRNUM in place of `<PRNUM>`. It fetches the pull request's head into the main clone's `FETCH_HEAD` only (no checkout, no branch moves), copies the file only if it is the reviewed one, and otherwise prints a STOP and copies nothing:
-   `! T=$(mktemp) && git -C /Users/ivan/Projects/GitHub/OsteoJP fetch -q origin refs/pull/<PRNUM>/head && git -C /Users/ivan/Projects/GitHub/OsteoJP show FETCH_HEAD:scripts/db/read-shadow-compare-20261104.sql > "${T}" && [ "$(shasum -a 256 "${T}" | cut -d' ' -f1)" = "e20f8cf0e357e6c72c38137ce8ec15b63582ffe252824cc6363dfe68427c0c2e" ] && pbcopy < "${T}" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
+   `! T=$(mktemp) && git -C /Users/ivan/Projects/GitHub/OsteoJP fetch -q origin refs/pull/<PRNUM>/head && git -C /Users/ivan/Projects/GitHub/OsteoJP show FETCH_HEAD:scripts/db/read-shadow-compare-20261104.sql > "${T}" && [ "$(shasum -a 256 "${T}" | cut -d' ' -f1)" = "ce3e137059b21f47765f779cabc885198f3de9735a6fb4544f4bd33cd9278cd4" ] && pbcopy < "${T}" && echo "COPIED: the reviewed read is on the clipboard" || echo "STOP: the file is not the reviewed read, or it could not be copied. Paste nothing"`
 4. Run, at or after Wednesday 2026-11-04 07:15 Lisbon. EXPECT one table. Row 0 must read `on` and `OK`: if it does not, stop and send a screenshot, nothing else. Rows 1, 2, 6 to 10 and 13 must read `OK`; the two rows 3 must read `OK`. Row 15 reads `OK`, or `VACUOUS`, which strategy answers before the switch. Rows 11, 12 and 16 read `OK` or `REVIEW`. The table goes to SOLO whole, before anything is decided.
 5. Send the whole table to SOLO privately (it holds counts, Lisbon times and, in rows 50 to 52, appointment ids; no name, phone or email). Do not post it anywhere public.
 
@@ -232,10 +233,11 @@ The editor runs the text as one transaction, so the first line makes the server 
 
 The `public` schema copied from lane blue's database (the local stack `OsteoJP-blue`, database on 127.0.0.1:54622) with `pg_dump --schema-only`, into a throwaway database per case, made from one seeded base. Two synthetic tenants (the second with no visit, heartbeating with nothing due); 10 synthetic visits Monday 11-02 to Friday 11-06 at 10:00 and 15:00 Lisbon, each with an `appointment.create` audit row dated 10-01 carrying its start; a shadow heartbeat every 15 minutes, 07:00 to 21:45, from Sunday 11-01 07:00 (before the rehearsal's deploy, Sunday 15:20, so t0 is the 15:30 pass) to Wednesday 07:45; for every mark due from Sunday 00:00 to Wednesday 07:45 a sleeping-job claim at the mark plus 2 seconds, a `sent` ledger row, and a shadow row in the transaction of the first pass at or after the mark; each heartbeat's counts equal its rows and record 5 visits left out. Monday and Tuesday each carry 2 matched marks of each reminder; Sunday's 4 marks fall before t0 (row 23 reads `4, 0, 0`). Three appointment foreign keys (patient, practitioner, location) are dropped in the throwaway so no synthetic person or clinic is made; the read reads none of those tables. The base's deploy is Sunday 15:20; a case names its own where it differs. The read ran as the block runs it (`begin read only`, 120 seconds, `set local osteojp.r47_deployed_at`, `rollback`), with ONE substitution: its single clock line `select now() as t1` replaced by Wednesday 2026-11-04 08:00 Lisbon (unless the case says otherwise). The test runs these cases whenever `SHADOW_COMPARE_1104_TEST_PGURL` names a local database, and refuses any other host; the throwaways are dropped by the test.
 
-**Run of 2026-11-02 01:23 Lisbon (lane blue, restarted from a clean checkout of `main`), on these SQL bytes: the deploy time unset, then 92 cases, the test's database part 1 of 1 passing.** Every case below met its expectation exactly (the test compares every verdict, and the named INFO rows); each MUTANT is also asserted not to meet its unmutated case's expectation (for R34's two, not to print its row 36). Verdict 15 reads VACUOUS wherever no mark had to be kept out by R24: that is its control. The base reads 16 OK and 15 VACUOUS.
+**Run of 2026-11-02 02:41 Lisbon (lane blue, restarted from a clean checkout of `main`), on these SQL bytes: the deploy time unset, then 97 cases, the test's database part 1 of 1 passing.** Every case below met its expectation exactly (the test compares every verdict, and the named INFO rows); each MUTANT is also asserted not to meet its unmutated case's expectation (for R34's two, not to print its row 36). Verdict 15 reads VACUOUS wherever no mark had to be kept out by R24: that is its control. The base reads 16 OK and 15 VACUOUS.
 
 | Case | Verdicts not OK |
 |---|---|
+| row 37: of five sleeping-job claims, one is live, early, sent and marked at or after Thursday 07:00: counted, no verdict moves | 15=VACUOUS |
 | clean | 15=VACUOUS |
 | empty: no heartbeat and no claim at all | 2=VACUOUS, 3 2026-11-02=FAIL, 3 2026-11-03=FAIL, 6=VACUOUS, 7=VACUOUS, 8=VACUOUS, 9=VACUOUS, 10=VACUOUS, 11 2026-11-02=VACUOUS, 11 2026-11-03=VACUOUS, 12 2026-11-02=VACUOUS, 12 2026-11-03=VACUOUS, 13=VACUOUS, 15=VACUOUS, 16=VACUOUS |
 | null window: every heartbeat removed, the claims and shadow rows left in place | 2=VACUOUS, 3 2026-11-02=FAIL, 3 2026-11-03=FAIL, 6=VACUOUS, 7=VACUOUS, 8=VACUOUS, 9=VACUOUS, 10=VACUOUS, 11 2026-11-02=VACUOUS, 11 2026-11-03=VACUOUS, 12 2026-11-02=VACUOUS, 12 2026-11-03=VACUOUS, 13=VACUOUS, 15=VACUOUS, 16=VACUOUS |
@@ -298,6 +300,10 @@ The `public` schema copied from lane blue's database (the local stack `OsteoJP-b
 | CLAUSE near miss: the patient's SMS confirmo on a booked visit: re-arms nothing, the shadow takes the mark | 15=VACUOUS |
 | CLAUSE near miss: the patient's SMS cancel on an online request: re-arms nothing, the shadow takes the mark | 15=VACUOUS |
 | CLAUSE near miss: a booking row written under another tenant: re-arms nothing, the shadow takes the mark | 15=VACUOUS |
+| MUTANT: row 37 without early, on "row 37" | 15=VACUOUS |
+| MUTANT: row 37 without the Thursday bound, on "row 37" | 15=VACUOUS |
+| MUTANT: row 37 counts a released claim, on "row 37" | 15=VACUOUS |
+| MUTANT: row 37 counts a claim with no send, on "row 37" | 15=VACUOUS |
 | MUTANT: every move counts (the start-at-the-mark rule dead), on "a move that keeps the start, after the mark and before the pass" | 15=FAIL |
 | MUTANT: every move counts, on the run-only case: RK would name a kept start, on "a move that keeps the start, after the mark, and NO shadow row" | 11 2026-11-02=REVIEW, 16=REVIEW |
 | MUTANT: rule 1 reads the LATEST move after the mark, on "moved away and back after the mark" | 15=FAIL |
@@ -331,7 +337,7 @@ The `public` schema copied from lane blue's database (the local stack `OsteoJP-b
 
 The deploy time unset: the read stops with `unrecognized configuration parameter "osteojp.r47_deployed_at"` and prints no table.
 
-**Mutation sweep of this read's own predicates: 30 mutants, 30 killed** (the MUTANT: rows above; R20's two are apart). Survivors by design, not run: `accepted_in_pedidos` and `booked` have no condition beyond their action; `c0.id <> s.id` (only an equal instant of a save and the send could reach it); the tenant filters of the start-at-the-mark subqueries (the save's own tenant filter is mutated); `swept`'s release and ledger conditions, `subj`'s created and status conditions, the S8 window's upper bound and row 23, which feed only a control, a boundary no seeded instant separates, or an INFO row.
+**Mutation sweep of this read's own predicates: 34 mutants, 34 killed** (the MUTANT: rows above; R20's two are apart). Survivors by design, not run: `accepted_in_pedidos` and `booked` have no condition beyond their action; `c0.id <> s.id` (only an equal instant of a save and the send could reach it); the tenant filters of the start-at-the-mark subqueries (the save's own tenant filter is mutated); `swept`'s release and ledger conditions, `subj`'s created and status conditions, the S8 window's upper bound and row 23, which feed only a control, a boundary no seeded instant separates, or an INFO row.
 
 ## Known limits
 
