@@ -48,3 +48,31 @@ describe("normalizePackInput", () => {
     expect(normalizePackInput({ ...base, priceCents: 0 }).priceCents).toBe(0);
   });
 });
+
+/**
+ * The inline price box on a "LISTA DE PACKS" row. Refusals happen BEFORE any
+ * database read: a role without services:write, a missing id, a negative or
+ * fractional amount of cents. (The write itself is covered by the DB-gated
+ * suite `pack-price-inline.db.test.ts`.)
+ */
+describe("updatePackPrice refuses before it reads", () => {
+  const admin = { tenantId: "t-1", role: "admin" as const, userId: "u-1" };
+
+  it("refuses reception and therapist (no services:write)", async () => {
+    const { updatePackPrice } = await import("./packs");
+    await expect(updatePackPrice({ ...admin, role: "reception" }, "p-1", 1000)).rejects.toThrow();
+    await expect(updatePackPrice({ ...admin, role: "therapist" }, "p-1", 1000)).rejects.toThrow();
+  });
+
+  it("refuses a missing id, a negative price and a fraction of a cent", async () => {
+    const { updatePackPrice } = await import("./packs");
+    for (const [id, cents] of [["", 1000], ["p-1", -1], ["p-1", 10.5]] as const) {
+      try {
+        await updatePackPrice(admin, id, cents);
+        expect.fail(`accepted ${id} ${cents}`);
+      } catch (e) {
+        expect(isAdminError(e) && e.code).toBe("invalid");
+      }
+    }
+  });
+});

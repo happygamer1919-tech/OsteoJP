@@ -16,6 +16,7 @@ import {
   setPackActive,
   setPackLocationPrices,
   updatePack,
+  updatePackPrice,
 } from "@/lib/admin/packs";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
 
@@ -177,6 +178,21 @@ export async function updatePackAction(formData: FormData): Promise<void> {
       priceCents: parsePriceToCents(String(formData.get("price") ?? "")) ?? 0,
     }),
   );
+}
+
+/**
+ * The inline price box on a "LISTA DE PACKS" row. Writes the price only
+ * (`updatePackPrice` says why). An empty box is refused rather than read as 0:
+ * a free pacote is typed as 0, never left blank by accident.
+ */
+export async function updatePackPriceAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  await runPack(async () => {
+    const cents = parsePriceToCents(String(formData.get("price") ?? ""));
+    if (cents === null) throw new AdminError("invalid", "price is required");
+    await updatePackPrice(actor, id, cents);
+  });
 }
 
 export async function setPackActiveAction(formData: FormData): Promise<void> {
