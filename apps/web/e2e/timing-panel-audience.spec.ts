@@ -59,7 +59,7 @@ import { scanSpanLabels, splitPayload } from "./helpers/flight-span-labels";
  * tail "de desempenho" is true of both encodings, so the negative arm cannot
  * pass merely because the accented form was spelled differently.
  *
- * THE THREE `db:` LABELS ARE THE ONES /patients EMITS ON EVERY LOAD. The
+ * THE TWO `db:` LABELS ARE THE ONES /patients EMITS ON EVERY LOAD. The
  * stat-strip MISS mark is deliberately NOT here: it appears only on a cache
  * miss, so requiring it in the positive control would make this file fail on a
  * warm cache for a reason that has nothing to do with who may read what.
@@ -119,6 +119,11 @@ test.describe("the timing panel is granted, not hidden", () => {
           scan.flightLabels,
           `the span scanner did not find "${label}" in an ADMIN's decoded flight payload. ` +
             "The reception arm's empty result means nothing until this passes.",
+        ).toContain(label);
+        // And in `labels`, the field the reception arm reads.
+        expect(
+          scan.labels,
+          `"${label}" is missing from scan.labels for an ADMIN, the field the reception arm reads`,
         ).toContain(label);
       }
 

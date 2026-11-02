@@ -107,6 +107,16 @@ describe("scanSpanLabels: the decoding, and what it never drops", () => {
     expect(scan.labels).toEqual(["db:Agenda"]);
   });
 
+  it("throws on a [3] chunk that is not base64, rather than decoding it lossily", () => {
+    for (const bad of ["ZGI6eA", "ZGI6eA=!", "ZG I6eA==", "ZGI6eA==="]) {
+      const page = `<script>self.__next_f.push(${JSON.stringify([3, bad])})</script>`;
+      expect(() => scanSpanLabels(page), bad).toThrow("flight [3] chunk is not base64");
+    }
+    // The control: the same bytes, valid, decode.
+    expect(scanSpanLabels(`<script>self.__next_f.push(${JSON.stringify([3, "ZGI6eA=="])})</script>`).labels)
+      .toEqual(["db:x"]);
+  });
+
   it("never drops a row-header-shaped match from the HTML, only from the flight text", () => {
     const scan = scanSpanLabels(`<pre>\ndb:Agenda</pre>${inline(`0:{}\n1db:I["x",[],"y"]\n`)}`);
     expect(scan.labels).toEqual(["db:Agenda"]);

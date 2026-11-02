@@ -11,7 +11,7 @@
  * ==========================================================================
  * Next.js writes the RSC flight payload into the page as a run of inline
  * scripts, each `self.__next_f.push([1,"<chunk>"])`, where `<chunk>` is a JSON
- * string with `<`, `>` and `&` further escaped as `<`, `>`, `&`.
+ * string with `<`, `>` and `&` further escaped as `\u003c`, `\u003e`, `\u0026`.
  * Searching those bytes as they stand fails both ways:
  *
  * - TOO MUCH. A flight ROW HEADER is a hex row id, a colon and an uppercase row
@@ -20,7 +20,7 @@
  * - TOO LITTLE. A pattern narrowed against that (lowercase first letter, no
  *   letter or digit before `db`) misses a label that starts uppercase, with a
  *   digit or an underscore, or that follows an escaped `>` or `&`
- *   (`>db:...` ends in `e`), or that is glued to a word. And no pattern
+ *   (`\u003edb:...` ends in `e`), or that is glued to a word. And no pattern
  *   over raw bytes sees a label the serialiser split across two push chunks.
  *
  * So the flight chunks are decoded and joined first, and the pattern runs on
@@ -36,13 +36,24 @@
  *
  * If no push() chunk is found, `flight` is empty and the whole page is searched
  * as plain HTML: a change in how Next writes the payload degrades this to the
- * raw-bytes search, which may go red on a row header, never to silence. The
- * spec's admin arm also asserts `flightChunks > 0`, so that degradation is
- * visible on the run it happens.
+ * raw-bytes search, which may go red on a row header, and never to silence on
+ * an unsplit label. A label split across chunks would be missed on that path;
+ * what covers it is the spec's admin arm, which asserts `flightChunks > 0`, so
+ * the degradation itself goes red on the run it happens.
  *
- * KNOWN LIMIT: a text row (`T`) whose content holds a newline, then a hex run,
- * then `db:` and an uppercase letter would be dropped too. No span label is
- * written that way today; it is recorded here rather than claimed impossible.
+ * KNOWN LIMIT, THE DROP: a text row (`T`) whose content holds a newline, then a
+ * hex run, then `db:` and an uppercase letter would be dropped too. No span
+ * label is written that way today; it is recorded here rather than claimed
+ * impossible.
+ *
+ * KNOWN LIMIT, FALSE POSITIVES. The drop is narrow on purpose, so some flight
+ * shapes that are not labels are still reported as labels:
+ * - a row id ending in "db" followed by a lowercase row tag;
+ * - a row whose value is a JSON primitive (`1db:null`, `1db:true`, `1db:42`);
+ * - a row header glued to the end of a `T` row's text, with no newline between.
+ * Every one of these goes RED, never silently passes. The drop is not widened to
+ * cover them; the real cure is a row walker that reads row lengths, carded
+ * separately.
  */
 
 /** Any `db:` label shape: letter, digit or underscore first, then those or `-`. */
@@ -76,6 +87,11 @@ export function splitPayload(page: string): SplitPayload {
     // JSON.parse throws on a malformed literal, and that is wanted: a payload
     // this cannot read must fail the test, not pass it.
     const chunk = JSON.parse(literal) as string;
+    // A [3] chunk is base64. Buffer.from(..., "base64") skips characters it does
+    // not know instead of failing, so a chunk that is not base64 is refused here.
+    if (kind === "3" && (chunk.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(chunk))) {
+      throw new Error("flight [3] chunk is not base64");
+    }
     flight += kind === "3" ? Buffer.from(chunk, "base64").toString("utf8") : chunk;
     flightChunks += 1;
     return " ";
