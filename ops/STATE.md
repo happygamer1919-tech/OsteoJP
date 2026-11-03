@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Tue 2026-11-03 23:30 Lisbon, by SOLO.
+**Last updated:** Tue 2026-11-03 23:45 Lisbon, by SOLO.
 
 ## How a new session resumes
 
@@ -85,7 +85,7 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 
 ## Running now
 - A local rehearsal of all 5 migration night documents (0109 to 0113) on the throwaway database. It must be down by 06:30 Lisbon. Transcripts go to `~/osteojp-handover/rh1104-transcripts/`.
-- A fresh R4 review of tonight's changes to those documents. Static, no database.
+- Done 11-03 ~23:40: a fresh R4 re-check of tonight's changes found no MAJOR. 0110, 0111 and 0112 plus four dispatches: SHIP. 0113 and #1682: SHIP AFTER FIXES (wording: the lock time, one NOT REHEARSED line, one gate line, a fault count). These fixes wait until the rehearsal reports, so no bytes change under it.
 
 ## Next steps, in order
 1. Read the rehearsal and R4 results. Fix what they find. Mark each night document READY only when its gates pass.
