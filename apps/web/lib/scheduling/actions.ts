@@ -50,7 +50,11 @@ import {
   isLocationBookable,
   resolveViewerLocationIds,
 } from "@/lib/auth/viewer-locations";
-import { sharedResourceLocationAllowed, type SharedResource } from "./shared-resource-guard";
+import {
+  practitionerForbiddenToActor,
+  sharedResourceLocationAllowed,
+  type SharedResource,
+} from "./shared-resource-guard";
 import { listSharedResources, listSharedResourcesTx } from "./shared-resources";
 import { secondParticipantCheck } from "./second-participant";
 import {
@@ -1369,7 +1373,16 @@ export async function cloneAppointment(
         // same place in the order as createAppointment; owner, admin and
         // reception are unchanged. Inside the transaction for the reason the
         // STAFF-02 guard above gives: the practitioner is the source's.
-        if (actor.role === "therapist" && source.practitionerId !== actor.userId && !shared.resource) {
+        // U6: the rule is one function, shared with the screen that hides the
+        // button (scheduleAgainForbidden), so the two cannot drift.
+        if (
+          practitionerForbiddenToActor({
+            role: actor.role,
+            actorId: actor.userId,
+            practitionerId: source.practitionerId,
+            isSharedResource: shared.resource !== null,
+          })
+        ) {
           return { ok: false, error: "forbidden" };
         }
         // SCHED-29: a clone COPIES the source's second participant, so a
