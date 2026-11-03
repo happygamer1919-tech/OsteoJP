@@ -5560,3 +5560,84 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   to 16 tests. `app-shell.resilience.test.tsx` renders the real shell with
   each best-effort read rejecting: the page still renders, and a failed
   identity read is logged once.
+
+## 2026-11-03 - U2: the insurer list and two ficha fields enter V1 (owner ruling, accepted by strategy)
+
+- **The ruling.** The owner ruled on Monday 2026-11-02, in Rodica's Fisiozero
+  batch, that the insurer list (Sistemas, SubSistemas) and the two ficha
+  fields enter V1. Strategy accepted it on Tuesday 2026-11-03 as ruling U2,
+  its words: "U2 SCOPE CHANGE accepted as the owner ruled: insurer list
+  (Sistemas, SubSistemas) and the two ficha fields enter V1. Comparticipação,
+  insurer pricing and insurer invoicing stay out of V1."
+- **What enters V1.** The clinic's list of Sistemas / SubSistemas (one name
+  per entry, per clinic: the table `health_systems`, held migration #1706),
+  and on the patient ficha the two fields "Sistema/SubSistema" (a choice from
+  that list, `patients.health_system_id`) and "Nº da Entidade / Subsistema"
+  (free text, `patients.health_system_number`). The screens are #1707 (draft,
+  stacked on #1706).
+- **What stays out of V1.** Comparticipação, insurer pricing (insurer and
+  protocol discounts included, deferred since 2026-07-03) and insurer
+  invoicing. The setting "Usa tabela de preços de Sistemas" (#1706) starts
+  OFF for every clinic and does nothing.
+- **Where the scope line changed.** CLAUDE.md, "Out of scope for V1": the
+  word "insurance" is struck and replaced by "comparticipação, insurer
+  pricing and insurer invoicing", with a dated note under the line.
+  `docs/design/DECISIONS.md`, the 2026-07-03 fiscal hold: a dated note says
+  that deferral is unchanged. `docs/design/BACKLOG.md`, the fiscal
+  integration candidate: the same note in its gate cell.
+- **Unchanged.** `health_insurance_numbers` (0051, PL-23) stays as it is; the
+  new fields are Fisiozero's single Sistema choice and nothing copies one into
+  the other (#1706). No migration, code or test changes in this entry.
+
+## 2026-11-03 - The patient record's age counts on the Lisbon date (U6)
+
+- **Ruling (strategy U6, 2026-11-03), card
+  `LE-patient-record-age-uses-the-server-date`.** The age on a patient's
+  record (`apps/web/app/patients/[id]/page.tsx`, the identity line under the
+  name) was counted by a local `ageFrom` from the server's own clock and zone.
+  On Vercel (UTC), between 00:00 and 01:00 Lisbon in summer a birthday still
+  showed the age before it; in a zone west of UTC the birth date, read as UTC
+  midnight, fell on the day before and the new age showed a day early. The
+  page now calls `ageInYears` (`apps/web/lib/statistics/kpi-transform.ts`),
+  the helper R52 (#1694) moved onto the Lisbon date; `ageFrom` is removed, so
+  there is one age rule, not two.
+- **Changed at the edges:** a date of birth in the future, or not in the
+  `YYYY-MM-DD` shape, now shows no age, where `ageFrom` showed a negative
+  number or parsed loosely. The column is a `date`, so the shape always holds.
+- **Proof.** `apps/web/app/patients/[id]/page-age-lisbon-date.test.tsx`
+  renders the real page with the server in UTC, America/Toronto and
+  Asia/Tokyo. Before the change: 6 failed, 12 passed (18). After: 18 of 18.
+
+## 2026-11-03 - Marcar novamente is hidden where the server refuses it (U6)
+
+- **Ruling (strategy U6, 2026-11-03), card
+  `LE-marcar-novamente-button-and-message-for-therapists`.** Since R52
+  (#1696) `cloneAppointment` refuses a therapist who copies a colleague's
+  visit (`forbidden`), but the "Marcar novamente" button was still drawn for
+  them. It is now hidden for exactly that case, on both entry points: the
+  ficha's Consultas list and the appointment panel (agenda, Marcacoes, the
+  ficha's Consultas and Notas).
+- **One rule, not two.** The server's condition was inline in
+  `cloneAppointment`. It is now `practitionerForbiddenToActor`
+  (`apps/web/lib/scheduling/shared-resource-guard.ts`, pure and client-safe);
+  `cloneAppointment` refuses with it, and the screen hides the button with
+  it through `scheduleAgainForbidden`
+  (`apps/web/lib/scheduling/schedule-again-core.ts`). The create and edit
+  paths keep their own inline copies of the same condition; they are not
+  touched here.
+- **What the screen needs:** the tenant's active shared resources (NESA), the
+  rule's one exception. `AgendaOptions.tenantSharedResourceIds`, set for a
+  therapist viewer by the agenda (from the read it already makes), Marcacoes
+  and the ficha (`tenantSharedResourceIdsFor`, one read, therapists only).
+- **Terapeuta 2 (SCHED-29), after R4.** `cloneAppointment` also answers
+  `forbidden` to a therapist when the visit's Terapeuta 2 is a person, or the
+  primary named twice (`secondParticipantCheck`). The button is hidden for that
+  too, through the `not_a_resource` answer of the server's own
+  `therapistSecondParticipantVerdict`; a NESA Terapeuta 2 keeps the button.
+  `actions.clone-therapist-guard.test.ts` runs the real action and the button
+  side by side over 4 roles, 3 primaries and 4 Terapeuta 2 values.
+- **Item 2 of the card:** a clone refused with `shared_resource_location` now
+  shows `appointment.sharedResourceLocation`, the sentence the create and edit
+  paths show, instead of the generic failure.
+- **Not hidden:** refusals that depend on the hour chosen in the drawer, and
+  the location refusals, which keep their own sentences.

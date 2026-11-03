@@ -139,3 +139,32 @@ export function therapistSecondParticipantVerdict(args: {
   if (!args.actorLocationIds.includes(args.targetLocationId)) return "resource_location";
   return "ok";
 }
+
+/**
+ * PL-10 / SCHED-17 - WHOSE NAME AN ACTOR MAY BOOK IN, as a yes or no.
+ *
+ * A therapist books in their own name only, or on a shared resource (NESA);
+ * owner, admin and reception book in anyone's name. True means refused, and
+ * the server answers `forbidden`.
+ *
+ * `isSharedResource` is whether `practitionerId` is one of the tenant's active
+ * shared resources, the list `listSharedResourcesTx` reads. Whether that
+ * machine may be booked at the clinic is a separate question, answered first
+ * by `sharedResourceLocationAllowed`.
+ *
+ * ONE FUNCTION FOR THE SERVER AND THE SCREEN (R52, then U6). `cloneAppointment`
+ * refuses "Marcar novamente" with it, and the button is hidden with it
+ * (`scheduleAgainForbidden` in schedule-again-core.ts), so on THIS rule the two
+ * cannot disagree. It is not the only refusal a clone can meet: SCHED-29's
+ * Terapeuta 2 rule (also hidden, through `therapistSecondParticipantVerdict`),
+ * the location rules and the hour chosen in the drawer are separate, and the
+ * last two still refuse after the button is pressed.
+ */
+export function practitionerForbiddenToActor(args: {
+  role: Role;
+  actorId: string;
+  practitionerId: string;
+  isSharedResource: boolean;
+}): boolean {
+  return args.role === "therapist" && args.practitionerId !== args.actorId && !args.isSharedResource;
+}
