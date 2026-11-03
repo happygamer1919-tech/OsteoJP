@@ -4,6 +4,18 @@ import { describe, it, expect, vi } from "vitest";
 // for the node runner. Only the pure validation is exercised here.
 vi.mock("server-only", () => ({}));
 
+// No database here. If a refusal below ever stops happening BEFORE the read,
+// the call reaches this stand-in, which throws an error that is neither a
+// ForbiddenError nor an AdminError, and the refusal tests fail.
+const runScopedReached = vi.fn();
+vi.mock("@/lib/auth/context", () => ({
+  runScoped: async () => {
+    runScopedReached();
+    throw new Error("runScoped reached: the refusal did not happen before the read");
+  },
+}));
+
+import { ForbiddenError } from "@osteojp/auth";
 import { normalizePackInput } from "./packs";
 import { isAdminError } from "./errors";
 
@@ -46,5 +58,41 @@ describe("normalizePackInput", () => {
 
   it("accepts a zero price (a free pack is a valid, non-negative amount)", () => {
     expect(normalizePackInput({ ...base, priceCents: 0 }).priceCents).toBe(0);
+  });
+});
+
+/**
+ * The inline price box on a "LISTA DE PACKS" row. Refusals happen BEFORE any
+ * database read: a role without services:write, a missing id, a negative or
+ * fractional amount of cents. (The write itself is covered by the DB-gated
+ * suite `pack-price-inline.db.test.ts`.)
+ */
+describe("updatePackPrice refuses before it reads", () => {
+  const admin = { tenantId: "t-1", role: "admin" as const, userId: "u-1" };
+
+  it("refuses reception and therapist (no services:write)", async () => {
+    const { updatePackPrice } = await import("./packs");
+    for (const role of ["reception", "therapist"] as const) {
+      const err = await updatePackPrice({ ...admin, role }, "p-1", 1000).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err, role).toBeInstanceOf(ForbiddenError);
+      expect((err as Error).message, role).toMatch(/services:write/);
+    }
+    expect(runScopedReached).not.toHaveBeenCalled();
+  });
+
+  it("refuses a missing id, a negative price and a fraction of a cent", async () => {
+    const { updatePackPrice } = await import("./packs");
+    for (const [id, cents] of [["", 1000], ["p-1", -1], ["p-1", 10.5]] as const) {
+      try {
+        await updatePackPrice(admin, id, cents);
+        expect.fail(`accepted ${id} ${cents}`);
+      } catch (e) {
+        expect(isAdminError(e) && e.code).toBe("invalid");
+      }
+    }
+    expect(runScopedReached).not.toHaveBeenCalled();
   });
 });
