@@ -81,7 +81,7 @@ const GATE_FILE = "scripts/migration-timeouts.test.mjs";
 const BRANCH = "origin/db/HOR-02-saturday-closing-time";
 const CHECK_NAME = "locations_saturday_hours_valid";
 /** The document's first line until SOLO's READY line removes it. */
-export const NOT_READY_LINE = "NOT READY: awaiting R4 review";
+export const NOT_READY_LINE = "NOT READY: awaiting the R4 re-check of the fixes from the R4 round of 2026-11-03";
 
 /** The pins of files this branch does not own, as they read on main when the document was written. */
 export const EXTERNAL_PINS = Object.freeze({
@@ -1139,7 +1139,7 @@ if [ "$HARNESS_FAIL" = "$id" ]; then
     node) case "$1" in
         scripts/assert-production-target.mjs) echo "REFUSE: harness fault, the target is not the production session pooler" >&2; exit 2;;
         packages/db/scripts/verified-migrate.mjs) echo "harness fault: verified-migrate exits \${HARNESS_FAIL_CODE:-3}"; exit "\${HARNESS_FAIL_CODE:-3}";;
-        --env-file=*) echo "REFUSE: harness fault, the reader refuses the target" >&2; exit 2;;
+        --env-file=*|packages/db/scripts/read-applied-migrations.mjs) echo "REFUSE: harness fault, the reader refuses the target" >&2; exit 2;;
         *) echo "Error: harness fault" >&2; exit 1;;
       esac;;
     tee) ${R("cat")}; echo "tee: harness fault: Permission denied" >&2; exit 1;;
@@ -1193,8 +1193,14 @@ case "$n" in
         [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || unexpected "the guard ran with a URL that is not the harness's";
         printf 'host: harness.invalid\\nport: 5432\\nref: harness\\ntarget verified: production, session pooler.\\n'; exit 0;;
       packages/db/scripts/verified-migrate.mjs) exec ${R("cat")} "$HARNESS_FIX/vm.out";;
-      --env-file=*) f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
-        [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
+      --env-file=*|packages/db/scripts/read-applied-migrations.mjs)
+        if [ "$1" = packages/db/scripts/read-applied-migrations.mjs ]; then
+          [ "$#" -eq 1 ] || unexpected "$@";
+          [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || unexpected "the reader ran without the sourced env file's URL";
+        else
+          f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
+          [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
+        fi
         st=APPLIED; pn=0; if [ "$HARNESS_ROWS" -lt 107 ]; then st="NOT APPLIED"; pn=1; fi
         if [ "$HARNESS_READER" = without-0109 ]; then st="NOT APPLIED"; pn=1; fi
         orph=0; if [ "$HARNESS_READER" = orphan-row ]; then orph=1; fi
@@ -1553,7 +1559,7 @@ export function harnessConfig(md, name, clock, shell, base, opts = {}) {
     setup: spec.setup(clock), initialHead: spec.initialHead, clock, mayContinue: mayContinue(name),
     extraFaults: (positive, wp) => {
       const out = [{ kind: "cd", label: "cd: the apply worktree is not there", noApply: true, pos: -1 }];
-      const guard = positive.calls.find((c) => c.id.startsWith("node#") && /assert-production-target|--env-file=/.test(c.args));
+      const guard = positive.calls.find((c) => c.id.startsWith("node#") && /assert-production-target|--env-file=|read-applied-migrations/.test(c.args));
       if (spec.sources) out.push({ kind: "env", label: ". or --env-file: the env file is not there", noEnv: true, pos: guard.args.startsWith("--env-file=") ? guard.pos : guard.pos - 1 });
       if (spec.redirect) out.push({ kind: "redirect", label: `> ${spec.redirect}: the path is a directory`, hookAfter: "rm#1", hookMkdir: spec.redirect, pos: Math.min(wp[spec.redirect], positive.calls.length - 1) });
       if (spec.vm) {
@@ -1682,7 +1688,7 @@ function assertStops(r, name, stop, tag) {
   assert.ok(!r.out.includes("TOOL-CHAIN-CONTINUED") && !HARNESS_BLOCKS[name].success.some((x) => r.out.includes(x)), tag);
   assert.equal(r.unexpected, "", tag);
 }
-const credentialCalls = (r) => r.calls.filter((c) => c.id.startsWith("psql#") || (c.id.startsWith("node#") && /^(packages\/db\/scripts\/verified-migrate|scripts\/assert-production-target|--env-file=)/.test(c.args)));
+const credentialCalls = (r) => r.calls.filter((c) => c.id.startsWith("psql#") || (c.id.startsWith("node#") && /^(packages\/db\/scripts\/verified-migrate|packages\/db\/scripts\/read-applied-migrations|scripts\/assert-production-target|--env-file=)/.test(c.args)));
 
 async function withHarness(fn, change = () => {}, docText = readyDoc) {
   const base = mkdtempSync(join(tmpdir(), "fault-0109-arm-"));
