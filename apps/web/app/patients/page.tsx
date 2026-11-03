@@ -1,5 +1,5 @@
 import { GlassPanel } from "@osteojp/ui";
-import { Plus } from "lucide-react";
+import { Package, Plus } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -108,6 +108,9 @@ function Stat({ label, value }: { label: string; value: number }) {
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition-colors duration-fast ease-standard hover:bg-v2-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
 
+const secondaryLink =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-v2 border border-v2-border bg-v2-surface px-4 text-sm font-medium text-v2-text-primary transition-colors duration-fast ease-standard hover:bg-v2-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2";
+
 export default async function PatientsPage({
   searchParams,
 }: {
@@ -172,10 +175,19 @@ export default async function PatientsPage({
           <h1 className="text-2xl font-semibold text-v2-text-primary">{s["patients.title"]}</h1>
           <p className="mt-1 text-sm text-v2-text-secondary">{s["patients.subtitle"]}</p>
         </div>
-        <Link href="/patients/new" className={primaryLink}>
-          <Plus aria-hidden="true" className="size-4" />
-          {s["patients.new"]}
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Fisiozero keeps "Packs em uso" under FICHA DE UTENTE; this is
+              OsteoJP's patient area, so the page lives at /patients/packs and
+              is reached from here. The sidebar's Pacientes entry stays lit. */}
+          <Link href="/patients/packs" className={secondaryLink}>
+            <Package aria-hidden="true" className="size-4" />
+            {s["packsInUse.title"]}
+          </Link>
+          <Link href="/patients/new" className={primaryLink}>
+            <Plus aria-hidden="true" className="size-4" />
+            {s["patients.new"]}
+          </Link>
+        </div>
       </div>
 
       {/* PLACED FIRST, DIRECTLY UNDER THE TITLE, AND THE REASON IS MEASURED.

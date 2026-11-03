@@ -7531,45 +7531,51 @@
                 "text": "Mais abaixo, em "
               },
               {
-                "strong": "Adicionar pacote"
+                "strong": "Gestão de Packs"
+              },
+              {
+                "text": ", na linha "
+              },
+              {
+                "strong": "Novo PACK"
               },
               {
                 "text": ", preencha "
               },
               {
-                "strong": "Nome"
+                "strong": "Nome Pack..."
               },
               {
                 "text": ", "
               },
               {
-                "strong": "Serviço base"
-              },
-              {
-                "text": ", "
-              },
-              {
-                "strong": "Nº de sessões"
+                "strong": "Número sessões..."
               },
               {
                 "text": " e "
               },
               {
-                "strong": "Preço (€)"
+                "strong": "Preço..."
               },
               {
-                "text": "."
+                "text": ". O preço é o total do pacote, para todas as sessões."
               }
             ],
             [
               {
-                "text": "Em "
+                "text": "Escolha o "
+              },
+              {
+                "strong": "Serviço base"
+              },
+              {
+                "text": " e, em "
               },
               {
                 "strong": "Local"
               },
               {
-                "text": ", escolha o local onde o pacote é oferecido, ou "
+                "text": ", o local onde o pacote é oferecido, ou "
               },
               {
                 "strong": "Todos os locais"
@@ -7583,7 +7589,7 @@
                 "text": "Clique em "
               },
               {
-                "strong": "Adicionar pacote"
+                "strong": "Inserir"
               },
               {
                 "text": ". Aparece "
@@ -7600,7 +7606,13 @@
         {
           "spans": [
             {
-              "text": "O pacote passa a aparecer no campo "
+              "text": "O pacote passa a aparecer na "
+            },
+            {
+              "strong": "LISTA DE PACKS"
+            },
+            {
+              "text": " e no campo "
             },
             {
               "strong": "Pacote"
@@ -7620,7 +7632,13 @@
         {
           "spans": [
             {
-              "text": "Para alterar um pacote, clique em "
+              "text": "Para mudar só o preço, altere-o na linha do pacote e clique em "
+            },
+            {
+              "strong": "Guardar preço"
+            },
+            {
+              "text": ". Para alterar o resto, clique em "
             },
             {
               "strong": "Gerir"
@@ -7632,7 +7650,13 @@
               "strong": "Preços por local"
             },
             {
-              "text": ", por baixo da linha do pacote."
+              "text": ", dentro de "
+            },
+            {
+              "strong": "Gerir"
+            },
+            {
+              "text": "."
             }
           ],
           "type": "para"
@@ -7640,13 +7664,25 @@
         {
           "spans": [
             {
-              "text": "Um pacote que já foi vendido não pode mudar o número de sessões: crie um pacote novo. Também não pode ser eliminado; use "
+              "text": "Um pacote que já foi vendido não pode mudar o número de sessões: crie um pacote novo. Também não pode ser apagado (a cruz "
+            },
+            {
+              "strong": "Apagar Pack"
+            },
+            {
+              "text": " fica inativa); use "
             },
             {
               "strong": "Arquivar"
             },
             {
-              "text": " para deixar de o oferecer."
+              "text": ", dentro de "
+            },
+            {
+              "strong": "Gerir"
+            },
+            {
+              "text": ", para deixar de o oferecer."
             }
           ],
           "type": "para"
@@ -7682,7 +7718,7 @@
       "see": [],
       "shots": null,
       "title": "Criar um pacote",
-      "words": 129
+      "words": 172
     },
     {
       "answers": [],

@@ -5410,3 +5410,234 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
 - **Unchanged:** read only, the output lines, the exit codes, and the frozen
   gate test `scripts/staff-11-jp-one-clinic-check.test.mjs` (not edited; it
   passes 18 of 18).
+
+## 2026-11-02 - R52: patient ages in Indicadores count on the Lisbon date
+
+- **Ruling (strategy R52).** The age distribution in Indicadores
+  (`apps/web/lib/statistics/kpi-transform.ts`, `ageInYears`) worked out
+  "today" from the UTC date. In summer time (UTC+1) a patient whose birthday
+  it was between 00:00 and 01:00 Lisbon still counted the age before it, and
+  could sit one age bucket too young for that hour. "Today" is now the Lisbon
+  calendar date, through the existing `todayInLisbon`
+  (`apps/web/lib/scheduling/time.ts`), the same helper R29's day bounds use.
+- **Unchanged:** the birth date, a plain `YYYY-MM-DD` read as text with no
+  zone; a 29 February birthday in a non-leap year still turns on 1 March;
+  winter dates, where Lisbon is UTC+0. `ageDistribution` works out the Lisbon
+  date once per call rather than once per patient.
+- **Out of scope:** `ageFrom` in `apps/web/app/patients/[id]/page.tsx` has the
+  same UTC fault and is carded separately; it is not touched here.
+- **Proof.** `kpi-transform.test.ts`: the summer birthday at 00:30 Lisbon,
+  both 2026 clock-change days on each side of Lisbon midnight, 29 February,
+  New Year's Eve, and `ageDistribution` against per-patient `ageInYears`.
+
+## 2026-11-02 - RODICA: edit the date, the hour and the heading before a ficha export (owner ruling)
+
+- **Owner ruling, 2026-11-02, verbatim:** "do it exactly as requested ... it's
+  a request from Rodica and I made her aware it will be her responsibility".
+- **The request (the owner's words, as relayed):** the ficha export downloads
+  the document right away; Rodica needs to edit some fields first, because the
+  export is not always needed with the data exactly as it was on the
+  appointment (example: the appointment was yesterday, she wants it exported
+  with today's date and an hour). After clicking export, ask whether the date,
+  the hour and the "Conteúdo importado" text should be changed or remain with
+  the appointment's details; she can change the date, the hour and the text
+  (add extra text, or remove the default "Conteúdo importado"); after
+  confirmation it exports.
+- **What was built.** "Exportar ficha" and both "PDF do episódio" buttons
+  (app episode, imported group) open a dialog before anything downloads:
+  "Manter os dados da consulta" (default, the export as before) or "Alterar"
+  (one row per registo in the file: Data, Hora, Texto, set to what the
+  registo prints; "Aplicar a todos" for one date and hour on every row when
+  there is more than one). The PDF now prints the appointment's hour next to
+  the date ("20/05/2026, 10:30").
+- **Export-only.** The values change the file, never the registo: no update is
+  issued (locked and signed registos are immutable by trigger anyway). The
+  server checks every value (real date 1900 to 2100, "HH:MM" 24h or none, one
+  line of at most 200 characters, each registo once) and that every registo
+  named is in the export's own selection; anything else refuses the export.
+- **Accountability trail.** The export's existing audit row gains
+  `overridesApplied: true` and `overrides` (per changed registo: id, original
+  date and hour from the stored record, exported date and hour, `textChanged`).
+  Structured values only; the text is never written. No new key in
+  `lib/audit/metadata-contract.ts` was needed: the contract is by value shape,
+  not by key, and these values pass it.
+- **Assumptions (flag to the owner if wrong).** (1) A registo with no
+  appointment has no default hour (its creation time is not a consultation
+  hour); the dialog shows "sem hora" and she may set one. (2) "Texto" replaces
+  the heading line only ("Conteúdo importado", or "Conteúdo do registo" for
+  other template-less registos); the read-only notice under it stays. For a
+  registo with a form there is no heading by default; a text she types is
+  printed above the body. (3) The per-registo "Transferir PDF" button was not
+  given the dialog (not one of the three named), but it prints the hour too,
+  being the same renderer.
+- **No migration.**
+
+## 2026-11-02 - Indicação de Aniversários, part 1: the setting and the top-bar icon (Fisiozero parity)
+
+- **Owner request (via the clinic):** copy Fisiozero's "Indicação de
+  Aniversários" exactly in structure and behaviour, in OsteoJP's own design.
+  Source: section 1 of the Fisiozero browser report of 2026-11-02. Part 1 only:
+  the setting and the header icon. The birthday SMS ("Envio de SMS de
+  Aniversários") is NOT built: it is a send path and a marketing message that
+  needs consent, and it waits.
+- **The setting.** Administração > Definições: a panel "Indicação de
+  Aniversários", placed FIRST as in Fisiozero, with one row: label
+  "Notificação de aniversariantes", grey sub-text "Ícone no topo da página", an
+  on/off switch. Default OFF. Stored at `tenants.settings.birthdayIndication =
+  { headerIcon: boolean }` in the existing jsonb blob: no migration. It is kept
+  out of `TenantConfig` (which the main form saves and the reminder pipeline
+  reads) and has its own form and save, like the delete password. Only the
+  JSON boolean `true` is ON. Owner and admin only (`settings:manage`, and
+  `tenants_manager_update` of 0094 underneath); audited as `tenant.update` with
+  `fields: ["birthdayIndication"]`.
+- **The switch saves when pressed** (a submit button with `role="switch"`, the
+  ficha's survey switch pattern, no client JavaScript). Whether Fisiozero's
+  switch saves at once was not observed.
+- **The date rule (chosen, stated here as asked):** today is the calendar day
+  IN LISBON (`Europe/Lisbon`), never the UTC day; just after midnight in summer
+  Lisbon is already on the next day while UTC is not, and the Lisbon day wins.
+  A birthday matches on month and day of `patients.date_of_birth`. **A
+  29 February birthday shows on 28 February in a non-leap year**, and only on
+  29 February in a leap year. The age shown is the age the patient turns: the
+  Lisbon year minus the birth year. A date of birth in the current year or
+  later is left out (a typing error, not a birthday).
+- **Who sees whom.** The read runs under the viewer's own claims
+  (`runScoped`, RLS on) with the /patients list's own app scope
+  (`scopeConditions`: a therapist's read scope, else a located viewer's
+  clinics, else the tenant). No admin client, no service-role read. Registered
+  in `scope-callers.test.ts` as a `read` and in `scope-call-sites.test.ts` as
+  covered by `birthdays.db.test.ts`. The setting itself is read by every staff
+  role (`tenants_tenant_select`, 0094), selecting only the one boolean, and it
+  rides on the shell's existing name read (`staffShellIdentity`: the viewer's
+  `users` row joined to their `tenants` row, one statement), so a tenant with
+  the switch OFF pays no extra transaction. The shell's identity read, the
+  bell's count and the birthday list run in parallel (`Promise.all`).
+- **The icon.** A cake glyph (lucide `Cake`, already a dependency) in the top
+  bar beside the notification bell, the same 44px round target, focus ring and
+  badge. It shows today's count; clicking opens a short list (name, "faz N
+  anos"), each a link to `/patients/<id>`. A native `<details>`/`<summary>`, so
+  it is keyboard reachable. One small client wrapper closes it: it is keyed on
+  the pathname (a navigation mounts it closed), and while it is open (from its
+  `toggle` event) two document-level listeners close it on Escape (returning
+  focus to the summary; listening on the element was not enough, Safari does
+  not focus a summary on click) and on a pointer press outside it. A long name
+  wraps (`min-w-0`) instead of widening the row. At zero the icon shows with no count and the list says
+  "Sem aniversariantes hoje.".
+- **PROVISIONAL until the owner's screenshot.** Fisiozero's icon was not seen
+  switched on, so its look, its zero state and what its click opens are
+  OsteoJP's guess. A screenshot from the owner is owed.
+- **Hidden below the `lg` breakpoint** (`max-lg:hidden`, R4 on #1701). It
+  shows only in the desktop top bar. Below `lg` the shell draws its mobile
+  header: at 360px its user area has about 18px to spare (AGENDA-MOBILE-WEEK),
+  and the 640 to 1023px header has never been seen with a second 44px icon in
+  it. With the setting OFF nothing changes at any width.
+- **Cost.** OFF (the default): no extra transaction, the switch is a column of
+  the shell's existing name read. ON: one or more scoped reads per staff page
+  render (today's birthdays, capped at 200 rows, plus the viewer's clinic list
+  for a located viewer and, for a therapist, the care-team helper probe that
+  the /patients list's scope makes too), in parallel with the bell's count. **That read is not cheap and is not measured.** `to_char` is not
+  leakproof, so Postgres applies `patients_select` (RLS) to every patient row
+  of the tenant before the birthday test, on each render. Measuring it on a
+  lane is owed before the owner switches it ON.
+- **Follow-up, not built (Tier C, needs a ruling):** if that measurement is
+  slow, a migration adding a stored generated `smallint` column
+  `month * 100 + day` of `date_of_birth` and an index on (`tenant_id`, that
+  column), so the birthday test is an indexed equality instead of a function
+  over every row.
+- **Tests:** `apps/web/lib/patients/birthday-rule.test.ts` (Lisbon day incl.
+  just after midnight in summer, 29 February), `birthdays.test.ts` (the read
+  goes through `runScoped` with the viewer's context, each role's scope, the
+  setting gates the read), `components/birthday-indicator.test.tsx`,
+  `lib/admin/settings.birthday.test.ts`, `settings-config.test.ts`,
+  `lib/auth/staff-identity.test.ts` (the merged read),
+  `app/admin/settings/page-birthday-switch.test.tsx` (the switch as drawn),
+  `app/admin/settings/actions.birthday.test.ts` (only "true" or "false" is
+  saved). `birthdays.db.test.ts` (real database, RLS, the four location
+  classes) is not run locally; its first version ran in the DB Tests workflow
+  13 of 13 green (run 41486248377). It was then extended after R4 (an assigned
+  receptionist, the owner, fixtures registered by a third user so the therapist
+  arm is treatment alone, and a birthday patient the therapist has no link to)
+  to 16 tests. `app-shell.resilience.test.tsx` renders the real shell with
+  each best-effort read rejecting: the page still renders, and a failed
+  identity read is logged once.
+
+## 2026-11-03 - U2: the insurer list and two ficha fields enter V1 (owner ruling, accepted by strategy)
+
+- **The ruling.** The owner ruled on Monday 2026-11-02, in Rodica's Fisiozero
+  batch, that the insurer list (Sistemas, SubSistemas) and the two ficha
+  fields enter V1. Strategy accepted it on Tuesday 2026-11-03 as ruling U2,
+  its words: "U2 SCOPE CHANGE accepted as the owner ruled: insurer list
+  (Sistemas, SubSistemas) and the two ficha fields enter V1. Comparticipação,
+  insurer pricing and insurer invoicing stay out of V1."
+- **What enters V1.** The clinic's list of Sistemas / SubSistemas (one name
+  per entry, per clinic: the table `health_systems`, held migration #1706),
+  and on the patient ficha the two fields "Sistema/SubSistema" (a choice from
+  that list, `patients.health_system_id`) and "Nº da Entidade / Subsistema"
+  (free text, `patients.health_system_number`). The screens are #1707 (draft,
+  stacked on #1706).
+- **What stays out of V1.** Comparticipação, insurer pricing (insurer and
+  protocol discounts included, deferred since 2026-07-03) and insurer
+  invoicing. The setting "Usa tabela de preços de Sistemas" (#1706) starts
+  OFF for every clinic and does nothing.
+- **Where the scope line changed.** CLAUDE.md, "Out of scope for V1": the
+  word "insurance" is struck and replaced by "comparticipação, insurer
+  pricing and insurer invoicing", with a dated note under the line.
+  `docs/design/DECISIONS.md`, the 2026-07-03 fiscal hold: a dated note says
+  that deferral is unchanged. `docs/design/BACKLOG.md`, the fiscal
+  integration candidate: the same note in its gate cell.
+- **Unchanged.** `health_insurance_numbers` (0051, PL-23) stays as it is; the
+  new fields are Fisiozero's single Sistema choice and nothing copies one into
+  the other (#1706). No migration, code or test changes in this entry.
+
+## 2026-11-03 - The patient record's age counts on the Lisbon date (U6)
+
+- **Ruling (strategy U6, 2026-11-03), card
+  `LE-patient-record-age-uses-the-server-date`.** The age on a patient's
+  record (`apps/web/app/patients/[id]/page.tsx`, the identity line under the
+  name) was counted by a local `ageFrom` from the server's own clock and zone.
+  On Vercel (UTC), between 00:00 and 01:00 Lisbon in summer a birthday still
+  showed the age before it; in a zone west of UTC the birth date, read as UTC
+  midnight, fell on the day before and the new age showed a day early. The
+  page now calls `ageInYears` (`apps/web/lib/statistics/kpi-transform.ts`),
+  the helper R52 (#1694) moved onto the Lisbon date; `ageFrom` is removed, so
+  there is one age rule, not two.
+- **Changed at the edges:** a date of birth in the future, or not in the
+  `YYYY-MM-DD` shape, now shows no age, where `ageFrom` showed a negative
+  number or parsed loosely. The column is a `date`, so the shape always holds.
+- **Proof.** `apps/web/app/patients/[id]/page-age-lisbon-date.test.tsx`
+  renders the real page with the server in UTC, America/Toronto and
+  Asia/Tokyo. Before the change: 6 failed, 12 passed (18). After: 18 of 18.
+
+## 2026-11-03 - Marcar novamente is hidden where the server refuses it (U6)
+
+- **Ruling (strategy U6, 2026-11-03), card
+  `LE-marcar-novamente-button-and-message-for-therapists`.** Since R52
+  (#1696) `cloneAppointment` refuses a therapist who copies a colleague's
+  visit (`forbidden`), but the "Marcar novamente" button was still drawn for
+  them. It is now hidden for exactly that case, on both entry points: the
+  ficha's Consultas list and the appointment panel (agenda, Marcacoes, the
+  ficha's Consultas and Notas).
+- **One rule, not two.** The server's condition was inline in
+  `cloneAppointment`. It is now `practitionerForbiddenToActor`
+  (`apps/web/lib/scheduling/shared-resource-guard.ts`, pure and client-safe);
+  `cloneAppointment` refuses with it, and the screen hides the button with
+  it through `scheduleAgainForbidden`
+  (`apps/web/lib/scheduling/schedule-again-core.ts`). The create and edit
+  paths keep their own inline copies of the same condition; they are not
+  touched here.
+- **What the screen needs:** the tenant's active shared resources (NESA), the
+  rule's one exception. `AgendaOptions.tenantSharedResourceIds`, set for a
+  therapist viewer by the agenda (from the read it already makes), Marcacoes
+  and the ficha (`tenantSharedResourceIdsFor`, one read, therapists only).
+- **Terapeuta 2 (SCHED-29), after R4.** `cloneAppointment` also answers
+  `forbidden` to a therapist when the visit's Terapeuta 2 is a person, or the
+  primary named twice (`secondParticipantCheck`). The button is hidden for that
+  too, through the `not_a_resource` answer of the server's own
+  `therapistSecondParticipantVerdict`; a NESA Terapeuta 2 keeps the button.
+  `actions.clone-therapist-guard.test.ts` runs the real action and the button
+  side by side over 4 roles, 3 primaries and 4 Terapeuta 2 values.
+- **Item 2 of the card:** a clone refused with `shared_resource_location` now
+  shows `appointment.sharedResourceLocation`, the sentence the create and edit
+  paths show, instead of the generic failure.
+- **Not hidden:** refusals that depend on the hour chosen in the drawer, and
+  the location refusals, which keep their own sentences.

@@ -174,6 +174,16 @@ export type AgendaOptions = {
    */
   sharedResources?: { id: string; label: string; locationIds: string[] }[];
   /**
+   * U6: the id of every active shared resource (NESA) in the tenant, the list
+   * the server's create rule counts as a machine (`listSharedResourcesTx`).
+   * Set for a THERAPIST viewer by the pages that offer "Marcar novamente" (the
+   * agenda, Marcacoes, and the ficha's Consultas and Notas tabs), so the button
+   * is hidden exactly where `cloneAppointment` answers `forbidden`
+   * (`scheduleAgainForbidden`). Not set for other roles: the rule never refuses
+   * them. NOT the offer: `sharedResources` above is what the drawer offers.
+   */
+  tenantSharedResourceIds?: string[];
+  /**
    * NESA-SCOPE - what a client surface needs to label a staff option it adds
    * itself (the booking drawer's kept current value) with the same collision
    * rule the server applied to the lists above (lib/scheduling/staff-options.ts).

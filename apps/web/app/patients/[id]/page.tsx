@@ -38,7 +38,9 @@ import { getLatestRgpdAcceptance } from "../../../lib/patients/rgpd-acceptance";
 import { listPatientDocuments } from "../../../lib/patients/documents";
 import type { Patient } from "../../../lib/patients/types";
 import { getAgendaOptions, listPatientAppointments } from "../../../lib/scheduling/data";
+import { tenantSharedResourceIdsFor } from "../../../lib/scheduling/shared-resources";
 import { addDays, lisbonMidnightUtc } from "../../../lib/scheduling/time";
+import { ageInYears } from "../../../lib/statistics/kpi-transform";
 import { offersTherapistChange } from "../../../lib/scheduling/therapist-change";
 import { BULK_ROLES } from "../../../lib/scheduling/bulk-reschedule-core";
 import type { AppointmentStatusValue } from "../../../lib/scheduling/types";
@@ -536,9 +538,14 @@ export default async function PatientProfilePage({
   // NESA-SCOPE: a therapist's Terapeuta list is narrowed to their own clinics,
   // so the id the URL is filtering by is kept in it, or the select would paint
   // its "all" option over a filtered list.
+  // U6: with the tenant's machines for a therapist, so "Marcar novamente" is
+  // hidden where the server's create rule refuses it (scheduleAgainForbidden).
   const consultasOptions =
     tab === "consultas"
-      ? await getAgendaOptions(ctx, null, { keepStaffId: marcacoesFilters.therapist || null })
+      ? await Promise.all([
+          getAgendaOptions(ctx, null, { keepStaffId: marcacoesFilters.therapist || null }),
+          tenantSharedResourceIdsFor(ctx),
+        ]).then(([options, tenantSharedResourceIds]) => ({ ...options, tenantSharedResourceIds }))
       : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again),
   // narrowed by whatever the URL asks for. No filter set = the whole history,
@@ -574,7 +581,9 @@ export default async function PatientProfilePage({
   // Fetched only for the Notas tab (it is a 60s-cached read).
   const agendaOptions =
     tab === "notas" && noteRevisions.length > 0
-      ? await getAgendaOptions(ctx)
+      ? await Promise.all([getAgendaOptions(ctx), tenantSharedResourceIdsFor(ctx)]).then(
+          ([options, tenantSharedResourceIds]) => ({ ...options, tenantSharedResourceIds }),
+        )
       : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Documentos tab: patient-level administrative documents (attachments with a
   // patient_id and no clinical_record_id). Tenant + role scoped in the query.
@@ -1304,7 +1313,10 @@ function initials(name: string): string {
 
 function identityLine(p: Patient, locationName?: string | null): string {
   const parts: string[] = [];
-  const age = ageFrom(p.dateOfBirth);
+  // The age on the Lisbon calendar date, through the helper Indicadores uses
+  // (R52, #1694). It used to count from the server's own clock and zone: UTC on
+  // Vercel, so between 00:00 and 01:00 Lisbon in summer a birthday was missed.
+  const age = ageInYears(p.dateOfBirth, new Date());
   if (age !== null) parts.push(`${age} ${s["patients.ageSuffix"]}`);
   if (p.sex) parts.push(formatSex(p.sex));
   if (p.nif) parts.push(`${s["patients.fieldNif"]} ${p.nif}`);
@@ -1314,14 +1326,4 @@ function identityLine(p: Patient, locationName?: string | null): string {
 }
 function contactLine(p: Patient): string {
   return [p.phone, p.email].filter(Boolean).join(" · ") || "—";
-}
-function ageFrom(dob: string | null): number | null {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (Number.isNaN(birth.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - birth.getFullYear();
-  const mo = now.getMonth() - birth.getMonth();
-  if (mo < 0 || (mo === 0 && now.getDate() < birth.getDate())) age--;
-  return age;
 }

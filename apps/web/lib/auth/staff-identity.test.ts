@@ -2,19 +2,37 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-let rows: Array<{ fullName: string | null }> = [];
+let rows: Array<{ fullName: string | null; birthdayIconOn?: unknown }> = [];
 let throwOnRead = false;
+let reads = 0;
+const selected: Array<Record<string, unknown>> = [];
+const joins: unknown[] = [];
 
 vi.mock("@/lib/auth/context", () => ({
   runScoped: async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => {
     if (throwOnRead) throw new Error("db down");
+    reads += 1;
+    const chain: Record<string, unknown> = {};
+    chain.from = () => chain;
+    chain.leftJoin = (t: unknown) => {
+      joins.push(t);
+      return chain;
+    };
+    chain.where = () => chain;
+    chain.limit = async () => rows;
     return fn({
-      select: () => ({ from: () => ({ where: () => ({ limit: async () => rows }) }) }),
+      select: (cols: Record<string, unknown>) => {
+        selected.push(cols);
+        return chain;
+      },
     });
   },
 }));
 
-import { staffDisplayName, initialsFor } from "./staff-identity";
+import { tenants } from "@osteojp/db";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { staffShellIdentity, initialsFor } from "./staff-identity";
 import type { RequestContext } from "@/lib/auth/context";
 
 const ctx: RequestContext = { tenantId: "t", role: "therapist", userId: "u1" };
@@ -22,6 +40,48 @@ const ctx: RequestContext = { tenantId: "t", role: "therapist", userId: "u1" };
 beforeEach(() => {
   rows = [];
   throwOnRead = false;
+  reads = 0;
+  selected.length = 0;
+  joins.length = 0;
+});
+
+/**
+ * Indicação de Aniversários: the tenant's switch rides on the shell's identity
+ * read, so an OFF tenant pays no extra transaction for the feature.
+ */
+describe("staffShellIdentity - the name and the birthday switch, in one read", () => {
+  it("is ONE scoped read: the users row joined to the tenants row", async () => {
+    rows = [{ fullName: "Ana Morais", birthdayIconOn: false }];
+    expect(await staffShellIdentity(ctx)).toEqual({ name: "Ana Morais", birthdayIconOn: false });
+    expect(reads).toBe(1);
+    expect(joins).toEqual([tenants]);
+  });
+
+  it("selects the switch with the JSON-boolean rule, not the whole settings blob", () => {
+    return staffShellIdentity(ctx).then(() => {
+      const q = new PgDialect().sqlToQuery(selected[0]!.birthdayIconOn as SQL);
+      expect(q.sql).toBe(
+        `coalesce(("tenants"."settings" -> 'birthdayIndication' -> 'headerIcon') = 'true'::jsonb, false)`,
+      );
+      expect(Object.keys(selected[0]!).sort()).toEqual(["birthdayIconOn", "fullName"]);
+    });
+  });
+
+  it("only a literal true is ON; no row is no name and no icon", async () => {
+    for (const on of [null, "true", 1, undefined]) {
+      rows = [{ fullName: "Ana Morais", birthdayIconOn: on }];
+      expect((await staffShellIdentity(ctx)).birthdayIconOn).toBe(false);
+    }
+    rows = [{ fullName: "  ", birthdayIconOn: true }];
+    expect(await staffShellIdentity(ctx)).toEqual({ name: null, birthdayIconOn: true });
+    rows = [];
+    expect(await staffShellIdentity(ctx)).toEqual({ name: null, birthdayIconOn: false });
+  });
+
+  it("lets a read failure surface to the shell, which catches it", async () => {
+    throwOnRead = true;
+    await expect(staffShellIdentity(ctx)).rejects.toThrow();
+  });
 });
 
 /**
@@ -36,21 +96,21 @@ beforeEach(() => {
  * ruling asks for already existed - `users.full_name`, required at invite and
  * editable in O meu perfil - so this reads it rather than adding one.
  */
-describe("staffDisplayName - the name the clinic typed", () => {
+describe("staffShellIdentity - the name the clinic typed", () => {
   it("returns the stored full name", async () => {
     rows = [{ fullName: "Ana Morais" }];
-    expect(await staffDisplayName(ctx)).toBe("Ana Morais");
+    expect((await staffShellIdentity(ctx)).name).toBe("Ana Morais");
   });
 
   it("returns null when the name is empty or whitespace, so the caller falls back", async () => {
     // NOT an empty string: the caller distinguishes "no name" from "a name that
     // happens to be blank", and `?? fallback` only works on null.
     rows = [{ fullName: "   " }];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
     rows = [{ fullName: "" }];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
     rows = [{ fullName: null }];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
   });
 
   it("returns null when there is no row at all", async () => {
@@ -59,19 +119,19 @@ describe("staffDisplayName - the name the clinic typed", () => {
     // render the platform over a cosmetic string would be wildly out of
     // proportion.
     rows = [];
-    expect(await staffDisplayName(ctx)).toBeNull();
+    expect((await staffShellIdentity(ctx)).name).toBeNull();
   });
 
   it("trims, so a stray space does not become the name", async () => {
     rows = [{ fullName: "  Ana Morais  " }];
-    expect(await staffDisplayName(ctx)).toBe("Ana Morais");
+    expect((await staffShellIdentity(ctx)).name).toBe("Ana Morais");
   });
 
   it("lets a read failure surface to the caller, which catches it", async () => {
     // The function does not swallow: the SHELL decides that a failure is
     // non-fatal, because the shell is what knows the consequence.
     throwOnRead = true;
-    await expect(staffDisplayName(ctx)).rejects.toThrow();
+    await expect(staffShellIdentity(ctx)).rejects.toThrow();
   });
 });
 

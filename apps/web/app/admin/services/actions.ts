@@ -20,16 +20,11 @@ import {
   setPackActive,
   setPackLocationPrices,
   updatePack,
+  updatePackPrice,
 } from "@/lib/admin/packs";
 import { AdminError, isAdminError } from "@/lib/admin/errors";
+import { locationPriceEntries, parsePriceToCents } from "@/lib/admin/price-input";
 
-function parsePriceToCents(raw: string): number | null {
-  const t = raw.trim();
-  if (!t) return null;
-  const n = Number(t.replace(",", "."));
-  if (!Number.isFinite(n) || n < 0) throw new AdminError("invalid", "invalid price");
-  return Math.round(n * 100);
-}
 
 function parseSessionCount(raw: string): number {
   const n = Number(raw.trim());
@@ -129,16 +124,12 @@ export async function setServiceLocationPricesAction(formData: FormData): Promis
   const actor = await requireRequestContext();
   const serviceId = String(formData.get("serviceId") ?? "");
   // One input per location, named `price__<locationId>`. Empty clears the
-  // override (the location falls back to the service base price).
-  const entries: { locationId: string; priceCents: number | null }[] = [];
-  for (const [key, value] of formData.entries()) {
-    if (!key.startsWith("price__")) continue;
-    entries.push({
-      locationId: key.slice("price__".length),
-      priceCents: parsePriceToCents(String(value)),
-    });
-  }
-  await run(() => setServiceLocationPrices(actor, serviceId, entries));
+  // override (the location falls back to the service base price). Parsed
+  // INSIDE run(): a refused price is then the page's banner, not an uncaught
+  // throw that lands on the global error page.
+  await run(() =>
+    setServiceLocationPrices(actor, serviceId, locationPriceEntries(formData.entries())),
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -173,6 +164,21 @@ export async function updatePackAction(formData: FormData): Promise<void> {
   );
 }
 
+/**
+ * The inline price box on a "LISTA DE PACKS" row. Writes the price only
+ * (`updatePackPrice` says why). An empty box is refused rather than read as 0:
+ * a free pacote is typed as 0, never left blank by accident.
+ */
+export async function updatePackPriceAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  const id = String(formData.get("id") ?? "");
+  await runPack(async () => {
+    const cents = parsePriceToCents(String(formData.get("price") ?? ""));
+    if (cents === null) throw new AdminError("invalid", "price is required");
+    await updatePackPrice(actor, id, cents);
+  });
+}
+
 export async function setPackActiveAction(formData: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const id = String(formData.get("id") ?? "");
@@ -193,13 +199,8 @@ export async function setPackLocationPricesAction(formData: FormData): Promise<v
   // grid). Empty clears the override (the location falls back to the pack base
   // price). Runs through runPack so the agenda reference cache is invalidated —
   // a pack's per-location price feeds booking display just like its base price.
-  const entries: { locationId: string; priceCents: number | null }[] = [];
-  for (const [key, value] of formData.entries()) {
-    if (!key.startsWith("price__")) continue;
-    entries.push({
-      locationId: key.slice("price__".length),
-      priceCents: parsePriceToCents(String(value)),
-    });
-  }
-  await runPack(() => setPackLocationPrices(actor, packId, entries));
+  // Parsed INSIDE runPack(), so a refused price is the banner, not a crash.
+  await runPack(() =>
+    setPackLocationPrices(actor, packId, locationPriceEntries(formData.entries())),
+  );
 }

@@ -50,7 +50,11 @@ import {
   isLocationBookable,
   resolveViewerLocationIds,
 } from "@/lib/auth/viewer-locations";
-import { sharedResourceLocationAllowed, type SharedResource } from "./shared-resource-guard";
+import {
+  practitionerForbiddenToActor,
+  sharedResourceLocationAllowed,
+  type SharedResource,
+} from "./shared-resource-guard";
 import { listSharedResources, listSharedResourcesTx } from "./shared-resources";
 import { secondParticipantCheck } from "./second-participant";
 import {
@@ -1361,6 +1365,26 @@ export async function cloneAppointment(
           tx,
         );
         if (!shared.ok) return { ok: false, error: "shared_resource_location" };
+        // R52 / PL-10: the clone is written in the SOURCE's practitioner's
+        // name, so a therapist's "Marcar novamente" is held to the create
+        // rule: their own visits only, or a shared resource (NESA) they may
+        // book. Without it a therapist could copy a colleague's visit and
+        // write a new row in the colleague's name. Same check, same error and
+        // same place in the order as createAppointment; owner, admin and
+        // reception are unchanged. Inside the transaction for the reason the
+        // STAFF-02 guard above gives: the practitioner is the source's.
+        // U6: the rule is one function, shared with the screen that hides the
+        // button (scheduleAgainForbidden), so the two cannot drift.
+        if (
+          practitionerForbiddenToActor({
+            role: actor.role,
+            actorId: actor.userId,
+            practitionerId: source.practitionerId,
+            isSharedResource: shared.resource !== null,
+          })
+        ) {
+          return { ok: false, error: "forbidden" };
+        }
         // SCHED-29: a clone COPIES the source's second participant, so a
         // therapist's "Marcar novamente" is held to the same rule as their
         // create - otherwise it would be the door that still writes a person.
