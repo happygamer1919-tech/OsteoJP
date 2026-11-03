@@ -1021,6 +1021,8 @@ test("every block that runs the guard or the reader compares it, and its module,
   for (const b of blocksOf(doc)) assert.deepEqual(compareFirstProblems(b), []);
   assert.equal(blocksOf(doc).filter((b) => b.includes("node scripts/assert-production-target.mjs")).length, 2);
   assert.equal(blocksOf(doc).filter((b) => b.includes("${READER} 2>&1")).length, 2);
+  assert.deepEqual(blocksOf(doc).filter((b) => b.includes("--env-file")).map((b) => b.slice(0, 80)), [], "a block loads the production environment file with node --env-file, which lets a variable already in the shell win over the file");
+  assert.equal(blocksOf(doc).filter((b) => b.includes("set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport ||")).length, 4, "BEFORE YOU START, stage 1, stage 2 and the closing read each load the environment file by allexport and .");
 });
 
 test("every carry stage 2 reads is a row the pre-check prints, and every -v the post-check requires is passed", () => {
@@ -1094,6 +1096,8 @@ const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const PROD_APPLY = "/Users/ivan/Projects/GitHub/osteojp-prod-apply";
 const PROD_ENV = "/Users/ivan/osteojp-secrets/new-prod.env";
 const FAKE_DB_URL = "postgresql://postgres.harness:x@harness.invalid:5432/postgres";
+/** A URL the shell exports before any block runs, as the owner's shell profile may; only a block that loads the env file by allexport and . replaces it. */
+const SHELL_DB_URL = "postgresql://postgres.shellprofile:x@shell-profile.invalid:5432/postgres";
 const FAKE_SHA = { MAIN: "1".repeat(40), BEFORE: "3".repeat(40) };
 const HARNESS_EPOCH = 1791315000;
 const HARNESS_HTTPDATE = new Date(HARNESS_EPOCH * 1000).toUTCString();
@@ -1200,6 +1204,7 @@ case "$n" in
         else
           f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
           [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
+          [ -z "$HARNESS_SHELL_DBURL" ] || [ "$DATABASE_URL_DIRECT" != "$HARNESS_SHELL_DBURL" ] || unexpected "node --env-file ran while the shell already exported DATABASE_URL_DIRECT: the shell's value wins over the file's";
         fi
         st=APPLIED; pn=0; if [ "$HARNESS_ROWS" -lt 107 ]; then st="NOT APPLIED"; pn=1; fi
         if [ "$HARNESS_READER" = without-0109 ]; then st="NOT APPLIED"; pn=1; fi
@@ -1358,6 +1363,7 @@ export async function runOnce(cfg, runId, fault) {
   const env = {
     PATH: `${join(cfg.base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
     HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL,
+    DATABASE_URL_DIRECT: SHELL_DB_URL, DATABASE_URL: SHELL_DB_URL, HARNESS_SHELL_DBURL: SHELL_DB_URL,
     HARNESS_MAIN: FAKE_SHA.MAIN, HARNESS_MARKERS: cfg.markers.join(" "),
     HARNESS_ROWS: String(cfg.rows ?? 107), HARNESS_CLINICS: cfg.clock.clinics,
     HARNESS_DHHMM: cfg.clock.dhhmm, HARNESS_DOW: cfg.clock.dow, HARNESS_STAMP: cfg.clock.stamp, HARNESS_ZONE: cfg.clock.zone ?? "WEST",
