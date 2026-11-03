@@ -5582,6 +5582,13 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   rule's one exception. `AgendaOptions.tenantSharedResourceIds`, set for a
   therapist viewer by the agenda (from the read it already makes), Marcacoes
   and the ficha (`tenantSharedResourceIdsFor`, one read, therapists only).
+- **Terapeuta 2 (SCHED-29), after R4.** `cloneAppointment` also answers
+  `forbidden` to a therapist when the visit's Terapeuta 2 is a person, or the
+  primary named twice (`secondParticipantCheck`). The button is hidden for that
+  too, through the `not_a_resource` answer of the server's own
+  `therapistSecondParticipantVerdict`; a NESA Terapeuta 2 keeps the button.
+  `actions.clone-therapist-guard.test.ts` runs the real action and the button
+  side by side over 4 roles, 3 primaries and 4 Terapeuta 2 values.
 - **Item 2 of the card:** a clone refused with `shared_resource_location` now
   shows `appointment.sharedResourceLocation`, the sentence the create and edit
   paths show, instead of the generic failure.

@@ -990,9 +990,9 @@ describe("AppointmentDrawer - Marcar novamente follows the server's create rule 
   const SELF = "therapist-1";
   const COLLEAGUE = "therapist-2";
   const NESA = "nesa-cb";
-  const shown = (role: Role, practitionerId: string, tenantSharedResourceIds?: string[]) => {
+  const shown = (role: Role, practitionerId: string, tenantSharedResourceIds?: string[], practitionerTwoId: string | null = null) => {
     const html = render(
-      { mode: "edit", appt: { ...editAppt, practitionerId } },
+      { mode: "edit", appt: { ...editAppt, practitionerId, practitionerTwoId } },
       false,
       { role, userId: SELF },
       { ...options, tenantSharedResourceIds },
@@ -1016,6 +1016,22 @@ describe("AppointmentDrawer - Marcar novamente follows the server's create rule 
 
   it.each(["reception", "admin", "owner"] as const)("%s is offered it on any visit", (role) => {
     for (const id of [SELF, COLLEAGUE, NESA]) expect(shown(role, id), id).toBe(true);
+  });
+
+  // SCHED-29: the server also answers `forbidden` to a therapist whose copy
+  // would carry a PERSON as Terapeuta 2, or the primary named twice.
+  it("a therapist is NOT offered it on their own visit whose Terapeuta 2 is a person or themselves", () => {
+    expect(shown("therapist", SELF, [NESA], COLLEAGUE)).toBe(false);
+    expect(shown("therapist", SELF, [NESA], SELF)).toBe(false);
+    expect(shown("therapist", NESA, [NESA], NESA)).toBe(false);
+  });
+
+  it("a therapist IS offered it on their own visit with NESA as Terapeuta 2", () => {
+    expect(shown("therapist", SELF, [NESA], NESA)).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it whoever Terapeuta 2 is", (role) => {
+    for (const two of [COLLEAGUE, SELF, NESA]) expect(shown(role, SELF, [NESA], two), two).toBe(true);
   });
 });
 

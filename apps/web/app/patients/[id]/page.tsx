@@ -541,10 +541,10 @@ export default async function PatientProfilePage({
   // hidden where the server's create rule refuses it (scheduleAgainForbidden).
   const consultasOptions =
     tab === "consultas"
-      ? {
-          ...(await getAgendaOptions(ctx, null, { keepStaffId: marcacoesFilters.therapist || null })),
-          tenantSharedResourceIds: await tenantSharedResourceIdsFor(ctx),
-        }
+      ? await Promise.all([
+          getAgendaOptions(ctx, null, { keepStaffId: marcacoesFilters.therapist || null }),
+          tenantSharedResourceIdsFor(ctx),
+        ]).then(([options, tenantSharedResourceIds]) => ({ ...options, tenantSharedResourceIds }))
       : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Consultas tab: this patient's appointment history (Row 3 — schedule-again),
   // narrowed by whatever the URL asks for. No filter set = the whole history,
@@ -580,7 +580,9 @@ export default async function PatientProfilePage({
   // Fetched only for the Notas tab (it is a 60s-cached read).
   const agendaOptions =
     tab === "notas" && noteRevisions.length > 0
-      ? { ...(await getAgendaOptions(ctx)), tenantSharedResourceIds: await tenantSharedResourceIdsFor(ctx) }
+      ? await Promise.all([getAgendaOptions(ctx), tenantSharedResourceIdsFor(ctx)]).then(
+          ([options, tenantSharedResourceIds]) => ({ ...options, tenantSharedResourceIds }),
+        )
       : { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
   // Documentos tab: patient-level administrative documents (attachments with a
   // patient_id and no clinical_record_id). Tenant + role scoped in the query.

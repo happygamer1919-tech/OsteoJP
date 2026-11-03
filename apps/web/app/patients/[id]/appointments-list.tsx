@@ -218,13 +218,14 @@ function AppointmentsListInner({
           canCancel={canCancel}
           canCancelRow={canCancel || ownCancelIds.includes(a.id)}
           therapistStaff={therapistStaff}
-          // U6: no "Marcar novamente" where the server would refuse it, a
-          // therapist on a colleague's visit (R52). The viewer and the tenant's
+          // U6: no "Marcar novamente" where the server would answer
+          // `forbidden`: a therapist on a colleague's visit (R52), or on one
+          // whose Terapeuta 2 is a person (SCHED-29). The viewer and the tenant's
           // machines come with the edit panel's data, which the ficha always
           // hands this list; without it the button shows as before.
           scheduleAgainHidden={
             editDrawer !== null &&
-            scheduleAgainForbidden(editDrawer.viewer, a.practitionerId, editDrawer.options.tenantSharedResourceIds)
+            scheduleAgainForbidden(editDrawer.viewer, a, editDrawer.options.tenantSharedResourceIds)
           }
           onOpenNotes={() => setNotesFor(a)}
           onScheduleAgain={() => setAction({ kind: "scheduleAgain", appt: a })}

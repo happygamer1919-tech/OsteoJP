@@ -154,8 +154,11 @@ export function therapistSecondParticipantVerdict(args: {
  *
  * ONE FUNCTION FOR THE SERVER AND THE SCREEN (R52, then U6). `cloneAppointment`
  * refuses "Marcar novamente" with it, and the button is hidden with it
- * (`scheduleAgainForbidden` in schedule-again-core.ts), so the button cannot be
- * offered where the server says no, or hidden where it says yes.
+ * (`scheduleAgainForbidden` in schedule-again-core.ts), so on THIS rule the two
+ * cannot disagree. It is not the only refusal a clone can meet: SCHED-29's
+ * Terapeuta 2 rule (also hidden, through `therapistSecondParticipantVerdict`),
+ * the location rules and the hour chosen in the drawer are separate, and the
+ * last two still refuse after the button is pressed.
  */
 export function practitionerForbiddenToActor(args: {
   role: Role;

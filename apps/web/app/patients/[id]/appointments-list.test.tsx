@@ -320,7 +320,11 @@ describe("AppointmentsList - Marcar novamente follows the server's create rule (
     options: { ...EDIT_DRAWER.options, tenantSharedResourceIds },
     viewer: { role, userId: SELF },
   });
-  const rowOf = (practitionerId: string) => ({ ...base, practitionerId });
+  const rowOf = (practitionerId: string, practitionerTwoId: string | null = null) => ({
+    ...base,
+    practitionerId,
+    practitionerTwoId,
+  });
   const offered = (html: string) => {
     // The row rendered: its notes button is on every row, whatever the rule.
     expect(html).toContain('data-testid="ficha-notes-button"');
@@ -344,6 +348,23 @@ describe("AppointmentsList - Marcar novamente follows the server's create rule (
   it.each(["reception", "admin", "owner"] as const)("%s is offered it on any visit, as before", (role) => {
     for (const id of [SELF, COLLEAGUE, NESA]) {
       expect(offered(render(rowOf(id), { editDrawer: drawerFor(role) })), id).toBe(true);
+    }
+  });
+
+  // SCHED-29: the server also answers `forbidden` to a therapist whose copy
+  // would carry a PERSON as Terapeuta 2, or the primary named twice.
+  it("a therapist is NOT offered it on their own visit whose Terapeuta 2 is a person or themselves", () => {
+    expect(offered(render(rowOf(SELF, COLLEAGUE), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(false);
+    expect(offered(render(rowOf(SELF, SELF), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(false);
+  });
+
+  it("a therapist IS offered it on their own visit with NESA as Terapeuta 2", () => {
+    expect(offered(render(rowOf(SELF, NESA), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it whoever Terapeuta 2 is", (role) => {
+    for (const two of [COLLEAGUE, SELF, NESA]) {
+      expect(offered(render(rowOf(SELF, two), { editDrawer: drawerFor(role, [NESA]) })), two).toBe(true);
     }
   });
 

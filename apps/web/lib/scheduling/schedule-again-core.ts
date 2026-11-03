@@ -14,7 +14,7 @@
 // the client never reaches the driver.
 
 import type { Role } from "@osteojp/auth";
-import { practitionerForbiddenToActor } from "./shared-resource-guard";
+import { practitionerForbiddenToActor, therapistSecondParticipantVerdict } from "./shared-resource-guard";
 import type { AppointmentStatusValue } from "./types";
 
 type EligibilityInput = { status: AppointmentStatusValue; startsAt: string };
@@ -67,33 +67,58 @@ export function isPastConsuming(_a: EligibilityInput, _now = Date.now()): boolea
  * U6 - WHO IS OFFERED "MARCAR NOVAMENTE" ON A GIVEN VISIT.
  *
  * The two gates above say the button is on every appointment, whatever its
- * estado and date. This one is about the VIEWER: since R52 `cloneAppointment`
- * refuses a therapist who copies a colleague's visit (`forbidden`), because the
- * copy is written in the colleague's name. The button was still drawn, so the
- * therapist pressed it, chose a time and was refused.
+ * estado and date. This one is about the VIEWER. `cloneAppointment` answers
+ * `forbidden` to a therapist in two places, and the button was drawn for both,
+ * so the therapist pressed it, chose a time and was refused:
  *
- * True means the server would refuse, so the button is hidden. It calls the
- * server's own rule, `practitionerForbiddenToActor`, and restates nothing.
+ *   1. R52 / PL-10: the visit is in a colleague's name (a person, not a shared
+ *      resource). The server's own rule, `practitionerForbiddenToActor`.
+ *   2. SCHED-29: the visit's Terapeuta 2 is a person, or the primary named
+ *      twice. The `not_a_resource` answer of the server's own
+ *      `therapistSecondParticipantVerdict`.
+ *
+ * True means the server would answer `forbidden`, so the button is hidden. Both
+ * answers come from the functions the server calls; nothing is restated.
  *
  * `tenantSharedResourceIds` is `AgendaOptions.tenantSharedResourceIds`: the
- * tenant's active shared resources (NESA), which the rule lets a therapist book.
- * The pages that offer the button set it for a therapist viewer; for the other
- * roles the rule never refuses, so it is not needed.
+ * tenant's active shared resources (NESA). The pages that offer the button set
+ * it for a therapist viewer; neither rule refuses the other roles.
  *
  * What this does NOT hide: refusals that depend on the hour picked in the
  * drawer (availability, conflicts, clinic hours), and the location refusals
- * (`location_not_assigned`, `shared_resource_location`), which the drawer
+ * (`location_not_assigned`, `shared_resource_location`, which includes a NESA
+ * Terapeuta 2 at a clinic where it is not installed), which the drawer
  * explains in their own sentences.
  */
 export function scheduleAgainForbidden(
   viewer: { role: Role; userId: string },
-  practitionerId: string,
+  source: { practitionerId: string; practitionerTwoId: string | null },
   tenantSharedResourceIds: readonly string[] | undefined,
 ): boolean {
-  return practitionerForbiddenToActor({
-    role: viewer.role,
-    actorId: viewer.userId,
-    practitionerId,
-    isSharedResource: (tenantSharedResourceIds ?? []).includes(practitionerId),
-  });
+  const ids = tenantSharedResourceIds ?? [];
+  if (
+    practitionerForbiddenToActor({
+      role: viewer.role,
+      actorId: viewer.userId,
+      practitionerId: source.practitionerId,
+      isSharedResource: ids.includes(source.practitionerId),
+    })
+  ) {
+    return true;
+  }
+  // SCHED-29, as secondParticipantCheck asks it: therapists only, and only
+  // when the visit has a Terapeuta 2. The verdict answers `not_a_resource`
+  // before it reads any location, so the locations passed here (none) cannot
+  // change that answer; they only decide `resource_location`, which is not
+  // `forbidden` and is not hidden.
+  if (viewer.role !== "therapist" || !source.practitionerTwoId) return false;
+  return (
+    therapistSecondParticipantVerdict({
+      practitionerTwoId: source.practitionerTwoId,
+      primaryId: source.practitionerId,
+      targetLocationId: "",
+      actorLocationIds: [],
+      resources: ids.map((id) => ({ id, label: "", locationIds: [] })),
+    }) === "not_a_resource"
+  );
 }

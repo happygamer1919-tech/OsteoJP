@@ -2110,12 +2110,13 @@ export function AppointmentDrawer({
             not offered here. `isPastConsuming` carries the reasoning and the one
             row the two gates disagree on.
 
-            U6: and not for a viewer the server would refuse, a therapist on a
-            colleague's visit (R52). scheduleAgainForbidden asks the server's
-            own rule. */}
+            U6: and not where the server would answer `forbidden`: a therapist
+            on a colleague's visit (R52), or on a visit whose Terapeuta 2 is a
+            person (SCHED-29). scheduleAgainForbidden asks the server's own
+            rules. */}
         {editing &&
           isPastConsuming(editing) &&
-          !scheduleAgainForbidden(viewer, editing.practitionerId, options.tenantSharedResourceIds) && (
+          !scheduleAgainForbidden(viewer, editing, options.tenantSharedResourceIds) && (
           <div className="mt-2 border-t border-border pt-4">
             <Button
               type="button"
