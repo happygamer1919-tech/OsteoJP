@@ -5,7 +5,7 @@
  * ==========================================================================
  * WHAT IS BEING PROVEN
  * ==========================================================================
- * The migration rewrites, in five read policies and one function, every
+ * The migration rewrites, in five read policies, every
  *     x = ANY (coalesce((SELECT public.f()), '{}'::uuid[]))
  * as
  *     x IN (SELECT unnest((SELECT public.f())))
@@ -26,9 +26,14 @@
  * THE INSTALLED SIDE, AND THE FILE
  * ==========================================================================
  * The file asks the database which side it is on and names it in the title:
- * each of the five policies' expressions and the function's body is read from
- * the catalogue and must hash to the OLD text or to the NEW one, all six on the
- * same side (the migration is one transaction). The INSTALLED expression is
+ * each of the five policies' expressions is read from the catalogue and must
+ * hash to the OLD text or to the NEW one, all five on the same side (the
+ * migration is one transaction). 0108's pack read function is NOT changed by
+ * the file, and its body must still hash to 0108's on both sides; that it
+ * returns rows exactly when the INSTALLED patients_select shows the patient is
+ * pack-instance-consuming-sessions.db.test.ts's own per-principal assertion,
+ * which therefore holds the 0108 function to the 0113 policy after the apply.
+ * The INSTALLED expression is
  * then compared with OLD as well, so on a database where the pending file is
  * applied (a rehearsal, and production after the sitting) the file's own text
  * is what is proven equal. On CI's database the file is not applied, and the
@@ -267,49 +272,8 @@ const POLICIES: PolicySpec[] = [
     oldMd5: "8383259e1cfa78fa7fed99fcd195e1bf", newMd5: "bd11707e7fbe5dc047b85e066cfe468b" },
 ];
 
-/** The pack function's patient term (0108), before and after. Its other terms do not change. */
-const PACK_OLD = `
-           p.created_by = (SELECT auth.uid())
-        OR (SELECT public.jwt_role()) = 'owner'
-        OR (
-             (SELECT public.jwt_role()) IN ('admin', 'reception')
-             AND (
-                   NOT (SELECT public.viewer_has_location_assignment())
-                OR p.id = ANY (coalesce((SELECT public.viewer_visible_patient_ids()), '{}'::uuid[]))
-             )
-           )
-        OR (
-             (SELECT public.jwt_role()) = 'therapist'
-             AND (
-                   p.id = ANY (coalesce((SELECT public.viewer_treated_patient_ids()), '{}'::uuid[]))
-                OR p.id = ANY (coalesce((SELECT public.viewer_care_team_patient_ids_at_my_clinics()), '{}'::uuid[]))
-             )
-           )`;
-const PACK_NEW = `
-           p.created_by = (SELECT auth.uid())
-        OR (SELECT public.jwt_role()) = 'owner'
-        OR (
-             (SELECT public.jwt_role()) IN ('admin', 'reception')
-             AND (
-                   NOT (SELECT public.viewer_has_location_assignment())
-                OR p.id IN (SELECT unnest((SELECT public.viewer_visible_patient_ids())))
-             )
-           )
-        OR (
-             (SELECT public.jwt_role()) = 'therapist'
-             AND (
-                   p.id IN (SELECT unnest((SELECT public.viewer_treated_patient_ids())))
-                OR p.id IN (SELECT unnest((SELECT public.viewer_care_team_patient_ids_at_my_clinics())))
-             )
-           )`;
-/** The rest of the function's WHERE (0108), the same on both sides. */
-const PACK_COMMON = `
-         i.tenant_id = (SELECT public.jwt_tenant_id())
-     AND (SELECT public.jwt_role()) IN ('owner', 'admin', 'reception', 'therapist')
-     AND a.status <> 'cancelled'`;
-/** md5(prosrc) of public.pack_instance_consuming_sessions(uuid), before (0108) and after. */
+/** md5(prosrc) of 0108's pack read function, which the file does not change. */
 const PACK_OLD_MD5 = "1f45d0f0b99392c7de28f6bbea8ae45f";
-const PACK_NEW_MD5 = "4de17a2e5cae73d0cedd6b3d35d5e326";
 
 /* ======================================================================== */
 /* THE FILE                                                                 */
@@ -369,15 +333,17 @@ async function sideOf(): Promise<string> {
       const m = md5(got.exprs[p.name] ?? "");
       return m === p.oldMd5 ? "old" : m === p.newMd5 ? "new" : `unknown(${p.name} ${m})`;
     });
-    sides.push(got.packMd5 === PACK_OLD_MD5 ? "old" : got.packMd5 === PACK_NEW_MD5 ? "new" : `unknown(pack ${got.packMd5})`);
     const distinct = [...new Set(sides)];
+    if (got.packMd5 !== PACK_OLD_MD5) {
+      throw new Error(`0108's pack read function is not 0108's text (md5 ${got.packMd5}); this file changes no function.`);
+    }
     if (distinct.length !== 1 || distinct[0]!.startsWith("unknown")) {
       throw new Error(
-        `THE SIX OBJECTS ARE NOT ALL ON ONE KNOWN SIDE: ${sides.join(", ")}. ` +
+        `THE FIVE POLICIES ARE NOT ALL ON ONE KNOWN SIDE: ${sides.join(", ")}. ` +
           "The migration is one transaction, so this database was built some other way. Nothing here was measured.",
       );
     }
-    return distinct[0] === "new" ? "0113 APPLIED" : "0113 PENDING (the 0096/0092/0102/0104/0108 texts)";
+    return distinct[0] === "new" ? "0113 APPLIED" : "0113 PENDING (the 0096/0092/0102/0104 texts)";
   } finally {
     await sql.end({ timeout: 5 });
   }
@@ -438,39 +404,6 @@ async function disagreements(
   };
 }
 
-/** The same for the pack function's patient term, over every (instance, linked appointment) pair. */
-async function packDisagreements(
-  tx: TransactionSql,
-  fixtureTenants: string[],
-  left: string,
-  right: string,
-): Promise<Comparison> {
-  const [r] = await tx.unsafe(
-    `SELECT row_security_active('public.patients') AS rls_applied,
-            count(*) FILTER (WHERE r_ok AND NOT l_ok)::int AS loosened,
-            count(*) FILTER (WHERE l_ok AND NOT r_ok)::int AS tightened,
-            count(*) FILTER (WHERE fixture)::int AS fixture_rows,
-            count(*) FILTER (WHERE fixture AND l_ok)::int AS fixture_visible
-       FROM (SELECT ((${PACK_COMMON}) AND (${left})) IS TRUE AS l_ok,
-                    ((${PACK_COMMON}) AND (${right})) IS TRUE AS r_ok,
-                    (i.tenant_id = ANY ($1::uuid[])) AS fixture
-               FROM public.patient_pack_instances i
-               JOIN public.patients p ON p.id = i.patient_id AND p.tenant_id = i.tenant_id
-               JOIN public.appointments a ON a.pack_instance_id = i.id AND a.tenant_id = i.tenant_id) t`,
-    [fixtureTenants as unknown as string],
-  );
-  const row = r as unknown as {
-    rls_applied: boolean; loosened: number; tightened: number; fixture_rows: number; fixture_visible: number;
-  };
-  return {
-    rlsApplied: row.rls_applied,
-    loosened: row.loosened,
-    tightened: row.tightened,
-    fixtureRows: row.fixture_rows,
-    fixtureVisible: row.fixture_visible,
-  };
-}
-
 /** Replaces exactly one occurrence of `term` in `expr`, and fails if there is not exactly one. */
 function mutate(expr: string, term: string, by: string): string {
   const parts = expr.split(term);
@@ -503,9 +436,6 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
     careL1: randomUUID(), careL2: randomUUID(), carePrim: randomUUID(), care2nd: randomUUID(),
     other: randomUUID(), other2: randomUUID(), foreign: randomUUID(),
   };
-  const service = randomUUID();
-  const pack = randomUUID();
-  const inst = { apptL1: randomUUID(), treated: randomUUID(), careL1: randomUUID(), primL2: randomUUID() };
 
   /** The principals: label, role, user id (null: the reminder jobs' principal, no user id). */
   const PRINCIPALS: [string, "owner" | "admin" | "reception" | "therapist", string | null][] = [
@@ -566,14 +496,6 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
         (${T}, ${p.carePrim}, ${u.ther}, ${u.recL1}),
         (${T}, ${p.care2nd}, ${u.ther}, ${u.recL1})`;
 
-      await tx`insert into services (id, tenant_id, name) values (${service}, ${T}, 'U3 servico')`;
-      await tx`insert into service_packs (id, tenant_id, base_service_id, name, session_count, price_cents)
-               values (${pack}, ${T}, ${service}, 'U3 pack', 5, 1000)`;
-      for (const [k, pid] of [["apptL1", p.apptL1], ["treated", p.treated], ["careL1", p.careL1], ["primL2", p.primL2]] as const) {
-        await tx`insert into patient_pack_instances (id, tenant_id, patient_id, pack_id, sessions_total, sessions_remaining)
-                 values (${inst[k]}, ${T}, ${pid}, ${pack}, 5, 5)`;
-      }
-
       /**
        * The appointments. Each line says which term it exists for.
        *   a1  apptL1 at L1 by ther2: the visible set (appointment at clinic 1).
@@ -585,26 +507,26 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
        *   a6  careL1 at L1 by ther2: care team at ther's clinic by appointment; history, first patient care team.
        *   a7  careL2 at L2 by ther2: care team, NOT at ther's clinic (excluded).
        *   a8  other2 at L1 by ther2, second patient care2nd: history, second patient care team.
-       *   a9  primL2 at L2 by ther2 (pack instance with a visit only clinic 2 sees).
+       *   a9  primL2 at L2 by ther2 (a patient only clinic 2 reaches by appointment).
        *   af  the foreign tenant's row.
        */
       const ap = (id: string, tenant: string, patient: string, loc: string, pr: string, day: number,
-        extra: { patient_2_id?: string; practitioner_2_id?: string; pack_instance_id?: string } = {}) => ({
+        extra: { patient_2_id?: string; practitioner_2_id?: string } = {}) => ({
         id, tenant_id: tenant, patient_id: patient, location_id: loc, practitioner_id: pr,
         starts_at: new Date(Date.UTC(2026, 5, day, 9)), ends_at: new Date(Date.UTC(2026, 5, day, 10)),
         status: "completed", patient_2_id: extra.patient_2_id ?? null,
-        practitioner_2_id: extra.practitioner_2_id ?? null, pack_instance_id: extra.pack_instance_id ?? null,
+        practitioner_2_id: extra.practitioner_2_id ?? null,
       });
       const A = {
-        a1: ap(randomUUID(), T, p.apptL1, L1, u.ther2, 1, { pack_instance_id: inst.apptL1 }),
-        a2: ap(randomUUID(), T, p.treated, L2, u.ther, 2, { pack_instance_id: inst.treated }),
+        a1: ap(randomUUID(), T, p.apptL1, L1, u.ther2, 1),
+        a2: ap(randomUUID(), T, p.treated, L2, u.ther, 2),
         a3: ap(randomUUID(), T, p.treated, L1, u.ther2, 3),
         a4: ap(randomUUID(), T, p.other, L2, u.ther2, 4, { patient_2_id: p.treated2nd, practitioner_2_id: u.ther }),
         a5: ap(randomUUID(), T, p.other2, L1, u.ther2, 5, { patient_2_id: p.treated2nd }),
-        a6: ap(randomUUID(), T, p.careL1, L1, u.ther2, 6, { pack_instance_id: inst.careL1 }),
+        a6: ap(randomUUID(), T, p.careL1, L1, u.ther2, 6),
         a7: ap(randomUUID(), T, p.careL2, L2, u.ther2, 7),
         a8: ap(randomUUID(), T, p.other2, L1, u.ther2, 8, { patient_2_id: p.care2nd }),
-        a9: ap(randomUUID(), T, p.primL2, L2, u.ther2, 9, { pack_instance_id: inst.primL2 }),
+        a9: ap(randomUUID(), T, p.primL2, L2, u.ther2, 9),
         af: ap(randomUUID(), F, p.foreign, LF, u.foreign, 10),
       };
       for (const r of Object.values(A)) await tx`insert into appointments ${tx(r)}`;
@@ -636,9 +558,6 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
       await tx`delete from clinical_episodes where tenant_id in (${T}, ${F})`;
       await tx`delete from patient_care_team where tenant_id in (${T}, ${F})`;
       await tx`delete from appointments where tenant_id in (${T}, ${F})`;
-      await tx`delete from patient_pack_instances where tenant_id in (${T}, ${F})`;
-      await tx`delete from service_packs where tenant_id in (${T}, ${F})`;
-      await tx`delete from services where tenant_id in (${T}, ${F})`;
       await tx`delete from patients where tenant_id in (${T}, ${F})`;
       await tx`delete from staff_locations where tenant_id in (${T}, ${F})`;
       await tx`delete from users where tenant_id in (${T}, ${F})`;
@@ -658,10 +577,12 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
     for (const spec of POLICIES) {
       expect(file, spec.name).toContain(collapse(`ALTER POLICY "${spec.name}" ON public.${spec.table} USING (${spec.new} );`));
     }
-    expect(file).toContain(collapse(PACK_NEW));
-    expect(file).toContain(collapse(PACK_COMMON));
-    // And no OLD form survives in the file's statements.
-    expect(file).not.toMatch(/= ANY \(coalesce\(\(\s*SELECT public\.viewer_(visible_patient|treated_patient|care_team_patient)_ids/);
+    // The statements, block comments removed: five ALTER POLICY, no function
+    // created or replaced, and no OLD form left.
+    const code = collapse(text.replace(/\/\*[\s\S]*?\*\//g, " "));
+    expect(code.match(/ALTER POLICY/g) ?? []).toHaveLength(POLICIES.length);
+    expect(code).not.toMatch(/\bFUNCTION\b/i);
+    expect(code).not.toMatch(/= ANY \(coalesce\(\(\s*SELECT public\.viewer_(visible_patient|treated_patient|care_team_patient)_ids/);
   });
 
   it("the installed expressions are the OLD or the NEW texts, all on one side (the title names it)", () => {
@@ -688,37 +609,6 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
         }
       });
     }
-  }
-
-  for (const [label, role, user] of PRINCIPALS) {
-    it(`pack_instance_consuming_sessions: ${label} gets exactly the same rows (NEW and INSTALLED against OLD)`, async () => {
-      const r = await asPrincipal(sql, claims(role, user), async (tx) => {
-        const byNew = await packDisagreements(tx, fixtureTenants, PACK_OLD, PACK_NEW);
-        // The installed function itself, per fixture instance, against OLD's pairs.
-        const want = (await tx.unsafe(
-          `SELECT i.id::text AS inst, a.id::text AS appt
-             FROM public.patient_pack_instances i
-             JOIN public.patients p ON p.id = i.patient_id AND p.tenant_id = i.tenant_id
-             JOIN public.appointments a ON a.pack_instance_id = i.id AND a.tenant_id = i.tenant_id
-            WHERE i.tenant_id = ANY ($1::uuid[]) AND (${PACK_COMMON}) AND (${PACK_OLD})
-            ORDER BY 1, 2`,
-          [fixtureTenants as unknown as string],
-        )) as unknown as { inst: string; appt: string }[];
-        const got = (await tx.unsafe(
-          `SELECT i.id::text AS inst, s.appointment_id::text AS appt
-             FROM public.patient_pack_instances i
-             CROSS JOIN LATERAL public.pack_instance_consuming_sessions(i.id) s
-            WHERE i.tenant_id = ANY ($1::uuid[])
-            ORDER BY 1, 2`,
-          [fixtureTenants as unknown as string],
-        )) as unknown as { inst: string; appt: string }[];
-        return { byNew, want, got };
-      });
-      expect(r.byNew.rlsApplied).toBe(false);
-      expect(r.byNew.fixtureRows).toBe(4);
-      expect({ loosened: r.byNew.loosened, tightened: r.byNew.tightened }).toEqual({ loosened: 0, tightened: 0 });
-      expect(r.got).toEqual(r.want);
-    });
   }
 
   /* ---------------------------------------------------------------------- */
@@ -796,14 +686,5 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
     );
     // Every clinic-1 appointment the four terms did not admit: a1.
     expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({ loosened: 1, tightened: 0 });
-  });
-
-  it("CONTROL: the pack function's visible-set term removed goes RED for reception with clinic 1", async () => {
-    const narrowed = mutate(PACK_NEW, "p.id IN (SELECT unnest((SELECT public.viewer_visible_patient_ids())))", "false");
-    const r = await asPrincipal(sql, claimsFor(T, "reception", u.recL1), (tx) =>
-      packDisagreements(tx, fixtureTenants, PACK_OLD, narrowed),
-    );
-    // a1 (apptL1), a2 (treated) and a6 (careL1): their patients are reached by the visible set only.
-    expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({ loosened: 0, tightened: 3 });
   });
 });

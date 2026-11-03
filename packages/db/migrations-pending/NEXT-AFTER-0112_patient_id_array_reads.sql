@@ -2,9 +2,8 @@
 /* PENDING, AND IT FOLLOWS 0112. The patient read rules test membership   */
 /* of a patient-id set with a hashed lookup instead of a linear search.   */
 /* ====================================================================== */
-/* WHAT THIS IS ABOUT. Five read rules (RLS policies) and one function    */
-/* ask "is this row's patient in the set of patients the caller may       */
-/* reach?" with                                                           */
+/* WHAT THIS IS ABOUT. Five read rules (RLS policies) ask "is this       */
+/* row's patient in the set of patients the caller may reach?" with       */
 /*     x = ANY (coalesce((SELECT public.f()), '{}'::uuid[]))              */
 /* The set is computed once per statement (an InitPlan), but ANY over an  */
 /* array is a linear search, run once per row the read examines. A read   */
@@ -54,15 +53,15 @@
 /* table holds care-team rows only: 6.0 -> 6.7 ms), patient_care_team_    */
 /* insert (one row per statement: 6.7 -> 9.8 ms), and the app-side term   */
 /* in apps/web/lib/patients/scope.ts (no difference at either size).      */
-/* pack_instance_consuming_sessions did not grow either (one patient per  */
-/* call) and IS changed, for the reason in section 3.                     */
+/* 0108's pack read function did not grow either (one patient per call)   */
+/* and is not changed, see section 3.                                     */
 /*                                                                        */
 /* ====================================================================== */
 /* 2. WHY THE ROWS ARE THE SAME, FOR EVERY CALLER                         */
 /* ====================================================================== */
 /* `x IN (SELECT ...)` is defined as `x = ANY (SELECT ...)`, so the two   */
 /* forms differ only in where the set comes from: an array, or the rows   */
-/* of unnest over the same array. They agree in every case, NULL         */
+/* of unnest over the same array. They agree in every case, NULL          */
 /* included, so they are equal as three-valued expressions and not only   */
 /* where a policy reads them:                                             */
 /*   - the array is NULL: coalesce gives '{}' and ANY is false; unnest of */
@@ -86,16 +85,8 @@
 /* read.                                                                  */
 /*                                                                        */
 /* ====================================================================== */
-/* 3. THE STATEMENTS, AND WHY THE PACK FUNCTION IS ONE OF THEM            */
+/* 3. THE STATEMENTS                                                      */
 /* ====================================================================== */
-/*   P0 pack_instance_consuming_sessions(uuid), CREATE OR REPLACE: the    */
-/*      body of 0108 with its three patient-set terms rewritten. 0108     */
-/*      states patients_select's USING term for term, and its test        */
-/*      (pack-instance-consuming-sessions.db.test.ts) pins that the two   */
-/*      move together. Same signature, same LANGUAGE, STABLE, SECURITY    */
-/*      DEFINER and search_path, so its owner (postgres), its EXECUTE     */
-/*      grant (authenticated only) and its comment are kept by the        */
-/*      REPLACE. The SECURITY DEFINER count does not move.                */
 /*   P1 patients_select (0096): the three patient-set terms.              */
 /*   P2 clinical_records_select (0096): the care-team term.               */
 /*   P3 clinical_episodes_select (0104): the care-team term.              */
@@ -107,22 +98,30 @@
 /* moves. Each is the policy as its last migration left it, verbatim,     */
 /* except the rewritten terms. The location terms                         */
 /* (location_id = ANY (viewer_location_ids())) are NOT rewritten: that    */
-/* set is the caller's one or two clinics and does not grow.              */
+/* set is the caller's one or two clinics and does not grow. No function  */
+/* is created, replaced or dropped, so the SECURITY DEFINER count does    */
+/* not move.                                                              */
+/*                                                                        */
+/* 0108'S PACK READ FUNCTION KEEPS ITS TEXT. It restates patients_select  */
+/* as 0096 left it; after this file its terms are the ANY form and the    */
+/* policy's are the IN form, which select the same patients (section 2).  */
+/* The DB test checks the function's rows against the INSTALLED policy,   */
+/* on both sides of this file. It reads one patient per call, so it did   */
+/* not grow, and rewriting it would change bytes for no measured gain.    */
 /*                                                                        */
 /* IDEMPOTENT: run twice, the catalogue reads as after the first run.     */
 /*                                                                        */
 /* ====================================================================== */
 /* 4. THE LOCKS, AND THE SITTING                                          */
 /* ====================================================================== */
-/* P0 takes no table lock. Each ALTER POLICY run as postgres takes ACCESS */
-/* EXCLUSIVE on its table (patients, clinical_records, clinical_episodes, */
-/* appointments, appointment_survey_sends) and on every table the        */
-/* platform's supautils.policy_grants setting names, until the COMMIT     */
-/* (0107, measured 2026-10-12). Every read of a patient and of the agenda */
-/* waits for the end of the transaction. So the policies come last, this  */
-/* file is closed hours only and never R9, and the two bounds below make  */
-/* a lock it cannot take in 5 seconds a clean failure with nothing        */
-/* applied.                                                               */
+/* Each ALTER POLICY run as postgres takes ACCESS EXCLUSIVE on its table  */
+/* (patients, clinical_records, clinical_episodes, appointments,          */
+/* appointment_survey_sends) and on every table the platform's            */
+/* supautils.policy_grants setting names, until the COMMIT (0107,         */
+/* measured 2026-10-12). Every read of a patient and of the agenda waits  */
+/* for the end of the transaction. So this file is closed hours only and  */
+/* never R9, and the two bounds below make a lock it cannot take in 5     */
+/* seconds a clean failure with nothing applied.                          */
 /*                                                                        */
 /* ====================================================================== */
 /* 5. THE REMINDER SWEEP AND THE SLEEPING JOB                             */
@@ -135,57 +134,12 @@
 /* before the rewritten term; the therapist arms (P2 to P5's rewritten    */
 /* terms) never apply to it; and the survey sends' admin arm is the       */
 /* location term, unchanged. Neither job reads clinical_records,          */
-/* clinical_episodes or the pack function. Same rows, so no change in     */
+/* clinical_episodes or 0108's pack function. Same rows, so no change in  */
 /* behaviour for either; the DB test carries this principal.              */
 /* ====================================================================== */
 
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 SET LOCAL statement_timeout = '60s';--> statement-breakpoint
-
-/* P0. 0108's function, its three patient-set terms rewritten (section 3). */
-CREATE OR REPLACE FUNCTION public.pack_instance_consuming_sessions(p_pack_instance_id uuid)
-  RETURNS TABLE (appointment_id uuid, starts_at timestamptz)
-  LANGUAGE plpgsql
-  STABLE
-  SECURITY DEFINER
-  SET search_path = public
-AS $fn$
-#variable_conflict use_column
-BEGIN
-  RETURN QUERY
-  SELECT a.id, a.starts_at
-    FROM public.patient_pack_instances i
-    JOIN public.patients p
-      ON p.id = i.patient_id
-     AND p.tenant_id = i.tenant_id
-    JOIN public.appointments a
-      ON a.pack_instance_id = i.id
-     AND a.tenant_id = i.tenant_id
-   WHERE i.id = p_pack_instance_id
-     AND i.tenant_id = (SELECT public.jwt_tenant_id())
-     AND (SELECT public.jwt_role()) IN ('owner', 'admin', 'reception', 'therapist')
-     AND a.status <> 'cancelled'
-     AND (
-           p.created_by = (SELECT auth.uid())
-        OR (SELECT public.jwt_role()) = 'owner'
-        OR (
-             (SELECT public.jwt_role()) IN ('admin', 'reception')
-             AND (
-                   NOT (SELECT public.viewer_has_location_assignment())
-                OR p.id IN (SELECT unnest((SELECT public.viewer_visible_patient_ids())))
-             )
-           )
-        OR (
-             (SELECT public.jwt_role()) = 'therapist'
-             AND (
-                   p.id IN (SELECT unnest((SELECT public.viewer_treated_patient_ids())))
-                OR p.id IN (SELECT unnest((SELECT public.viewer_care_team_patient_ids_at_my_clinics())))
-             )
-           )
-     )
-   ORDER BY a.starts_at, a.id;
-END
-$fn$;--> statement-breakpoint
 
 /* P1. 0096's patients_select USING, its three patient-set terms          */
 /* rewritten.                                                             */
