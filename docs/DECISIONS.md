@@ -5589,6 +5589,25 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   new fields are Fisiozero's single Sistema choice and nothing copies one into
   the other (#1706). No migration, code or test changes in this entry.
 
+## 2026-11-03 - The patient record's age counts on the Lisbon date (U6)
+
+- **Ruling (strategy U6, 2026-11-03), card
+  `LE-patient-record-age-uses-the-server-date`.** The age on a patient's
+  record (`apps/web/app/patients/[id]/page.tsx`, the identity line under the
+  name) was counted by a local `ageFrom` from the server's own clock and zone.
+  On Vercel (UTC), between 00:00 and 01:00 Lisbon in summer a birthday still
+  showed the age before it; in a zone west of UTC the birth date, read as UTC
+  midnight, fell on the day before and the new age showed a day early. The
+  page now calls `ageInYears` (`apps/web/lib/statistics/kpi-transform.ts`),
+  the helper R52 (#1694) moved onto the Lisbon date; `ageFrom` is removed, so
+  there is one age rule, not two.
+- **Changed at the edges:** a date of birth in the future, or not in the
+  `YYYY-MM-DD` shape, now shows no age, where `ageFrom` showed a negative
+  number or parsed loosely. The column is a `date`, so the shape always holds.
+- **Proof.** `apps/web/app/patients/[id]/page-age-lisbon-date.test.tsx`
+  renders the real page with the server in UTC, America/Toronto and
+  Asia/Tokyo. Before the change: 6 failed, 12 passed (18). After: 18 of 18.
+
 ## 2026-11-03 - Marcar novamente is hidden where the server refuses it (U6)
 
 - **Ruling (strategy U6, 2026-11-03), card
