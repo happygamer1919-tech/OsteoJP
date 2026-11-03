@@ -5607,3 +5607,37 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
 - **Proof.** `apps/web/app/patients/[id]/page-age-lisbon-date.test.tsx`
   renders the real page with the server in UTC, America/Toronto and
   Asia/Tokyo. Before the change: 6 failed, 12 passed (18). After: 18 of 18.
+
+## 2026-11-03 - Marcar novamente is hidden where the server refuses it (U6)
+
+- **Ruling (strategy U6, 2026-11-03), card
+  `LE-marcar-novamente-button-and-message-for-therapists`.** Since R52
+  (#1696) `cloneAppointment` refuses a therapist who copies a colleague's
+  visit (`forbidden`), but the "Marcar novamente" button was still drawn for
+  them. It is now hidden for exactly that case, on both entry points: the
+  ficha's Consultas list and the appointment panel (agenda, Marcacoes, the
+  ficha's Consultas and Notas).
+- **One rule, not two.** The server's condition was inline in
+  `cloneAppointment`. It is now `practitionerForbiddenToActor`
+  (`apps/web/lib/scheduling/shared-resource-guard.ts`, pure and client-safe);
+  `cloneAppointment` refuses with it, and the screen hides the button with
+  it through `scheduleAgainForbidden`
+  (`apps/web/lib/scheduling/schedule-again-core.ts`). The create and edit
+  paths keep their own inline copies of the same condition; they are not
+  touched here.
+- **What the screen needs:** the tenant's active shared resources (NESA), the
+  rule's one exception. `AgendaOptions.tenantSharedResourceIds`, set for a
+  therapist viewer by the agenda (from the read it already makes), Marcacoes
+  and the ficha (`tenantSharedResourceIdsFor`, one read, therapists only).
+- **Terapeuta 2 (SCHED-29), after R4.** `cloneAppointment` also answers
+  `forbidden` to a therapist when the visit's Terapeuta 2 is a person, or the
+  primary named twice (`secondParticipantCheck`). The button is hidden for that
+  too, through the `not_a_resource` answer of the server's own
+  `therapistSecondParticipantVerdict`; a NESA Terapeuta 2 keeps the button.
+  `actions.clone-therapist-guard.test.ts` runs the real action and the button
+  side by side over 4 roles, 3 primaries and 4 Terapeuta 2 values.
+- **Item 2 of the card:** a clone refused with `shared_resource_location` now
+  shows `appointment.sharedResourceLocation`, the sentence the create and edit
+  paths show, instead of the generic failure.
+- **Not hidden:** refusals that depend on the hour chosen in the drawer, and
+  the location refusals, which keep their own sentences.
