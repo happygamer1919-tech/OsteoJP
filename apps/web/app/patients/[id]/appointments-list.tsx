@@ -26,6 +26,7 @@ import { ConflictBanner } from "@/app/agenda/conflict-banner";
 import {
   ScheduleAgainDrawer,
   isEligibleForScheduleAgain,
+  scheduleAgainForbidden,
 } from "@/app/agenda/schedule-again-drawer";
 import { s } from "@/lib/i18n";
 import {
@@ -217,6 +218,14 @@ function AppointmentsListInner({
           canCancel={canCancel}
           canCancelRow={canCancel || ownCancelIds.includes(a.id)}
           therapistStaff={therapistStaff}
+          // U6: no "Marcar novamente" where the server would refuse it, a
+          // therapist on a colleague's visit (R52). The viewer and the tenant's
+          // machines come with the edit panel's data, which the ficha always
+          // hands this list; without it the button shows as before.
+          scheduleAgainHidden={
+            editDrawer !== null &&
+            scheduleAgainForbidden(editDrawer.viewer, a.practitionerId, editDrawer.options.tenantSharedResourceIds)
+          }
           onOpenNotes={() => setNotesFor(a)}
           onScheduleAgain={() => setAction({ kind: "scheduleAgain", appt: a })}
           onReschedule={() => setAction({ kind: "reschedule", appt: a })}
@@ -291,6 +300,7 @@ function AppointmentRow({
   canCancel,
   canCancelRow,
   therapistStaff,
+  scheduleAgainHidden,
   onOpenNotes,
   onScheduleAgain,
   onReschedule,
@@ -304,6 +314,8 @@ function AppointmentRow({
   /** SCHED-30: this viewer may cancel THIS row and bring it back. */
   canCancelRow: boolean;
   therapistStaff: TherapistChangeStaff | null;
+  /** U6: the server would refuse this viewer's "Marcar novamente" on this row. */
+  scheduleAgainHidden: boolean;
   onOpenNotes: () => void;
   onScheduleAgain: () => void;
   onReschedule: () => void;
@@ -391,7 +403,7 @@ function AppointmentRow({
             <FileText size={16} strokeWidth={1.75} aria-hidden="true" />
             {s["marcacoes.notes"]}
           </button>
-          {isEligibleForScheduleAgain(a) && (
+          {isEligibleForScheduleAgain(a) && !scheduleAgainHidden && (
             <button
               type="button"
               onClick={onScheduleAgain}

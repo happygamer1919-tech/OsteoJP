@@ -982,3 +982,48 @@ describe("AppointmentDrawer - the ficha's Terapeuta field offers this panel's li
     ).toContainEqual(EVA);
   });
 });
+
+// U6: the drawer's "Marcar novamente" is hidden exactly where cloneAppointment
+// would answer `forbidden` (R52): a therapist on a colleague's visit. Both
+// arms, for every role. Every hidden arm first proves the edit panel rendered.
+describe("AppointmentDrawer - Marcar novamente follows the server's create rule (U6)", () => {
+  const SELF = "therapist-1";
+  const COLLEAGUE = "therapist-2";
+  const NESA = "nesa-cb";
+  const shown = (role: Role, practitionerId: string, tenantSharedResourceIds?: string[]) => {
+    const html = render(
+      { mode: "edit", appt: { ...editAppt, practitionerId } },
+      false,
+      { role, userId: SELF },
+      { ...options, tenantSharedResourceIds },
+    );
+    expect(html).toContain("appt-1");
+    return html.includes("Marcar novamente");
+  };
+
+  it("a therapist is offered it on their own visit", () => {
+    expect(shown("therapist", SELF, [NESA])).toBe(true);
+  });
+
+  it("a therapist is NOT offered it on a colleague's visit", () => {
+    expect(shown("therapist", COLLEAGUE, [NESA])).toBe(false);
+    expect(shown("therapist", COLLEAGUE, [])).toBe(false);
+  });
+
+  it("a therapist is offered it on a shared resource's (NESA) visit", () => {
+    expect(shown("therapist", NESA, [NESA])).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it on any visit", (role) => {
+    for (const id of [SELF, COLLEAGUE, NESA]) expect(shown(role, id), id).toBe(true);
+  });
+});
+
+describe("ScheduleAgainDrawer - a shared-resource location refusal (U6)", () => {
+  it("shows the shared-resource sentence the create path shows, not the generic failure", () => {
+    const r = scheduleAgainRefusal({ ok: false, error: "shared_resource_location" });
+    expect(r).toEqual({ message: s["appointment.sharedResourceLocation"] });
+    expect(r).not.toEqual({ message: s["patients.scheduleAgainError"] });
+    expect("conflicts" in r).toBe(false);
+  });
+});

@@ -13,6 +13,8 @@
 // may import `@osteojp/db` freely. The two cannot drift without going red, and
 // the client never reaches the driver.
 
+import type { Role } from "@osteojp/auth";
+import { practitionerForbiddenToActor } from "./shared-resource-guard";
 import type { AppointmentStatusValue } from "./types";
 
 type EligibilityInput = { status: AppointmentStatusValue; startsAt: string };
@@ -59,4 +61,39 @@ export function isEligibleForScheduleAgain(_a: EligibilityInput, _now = Date.now
 /** AGENDA DRAWER gate: unconditional, and now identical to the profile's. */
 export function isPastConsuming(_a: EligibilityInput, _now = Date.now()): boolean {
   return true;
+}
+
+/**
+ * U6 - WHO IS OFFERED "MARCAR NOVAMENTE" ON A GIVEN VISIT.
+ *
+ * The two gates above say the button is on every appointment, whatever its
+ * estado and date. This one is about the VIEWER: since R52 `cloneAppointment`
+ * refuses a therapist who copies a colleague's visit (`forbidden`), because the
+ * copy is written in the colleague's name. The button was still drawn, so the
+ * therapist pressed it, chose a time and was refused.
+ *
+ * True means the server would refuse, so the button is hidden. It calls the
+ * server's own rule, `practitionerForbiddenToActor`, and restates nothing.
+ *
+ * `tenantSharedResourceIds` is `AgendaOptions.tenantSharedResourceIds`: the
+ * tenant's active shared resources (NESA), which the rule lets a therapist book.
+ * The pages that offer the button set it for a therapist viewer; for the other
+ * roles the rule never refuses, so it is not needed.
+ *
+ * What this does NOT hide: refusals that depend on the hour picked in the
+ * drawer (availability, conflicts, clinic hours), and the location refusals
+ * (`location_not_assigned`, `shared_resource_location`), which the drawer
+ * explains in their own sentences.
+ */
+export function scheduleAgainForbidden(
+  viewer: { role: Role; userId: string },
+  practitionerId: string,
+  tenantSharedResourceIds: readonly string[] | undefined,
+): boolean {
+  return practitionerForbiddenToActor({
+    role: viewer.role,
+    actorId: viewer.userId,
+    practitionerId,
+    isSharedResource: (tenantSharedResourceIds ?? []).includes(practitionerId),
+  });
 }

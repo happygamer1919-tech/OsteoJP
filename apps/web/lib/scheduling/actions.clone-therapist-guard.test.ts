@@ -75,6 +75,7 @@ vi.mock("@/lib/auth/viewer-locations", async (importOriginal) => ({
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import type { RequestContext, Role } from "@osteojp/auth";
 import { cloneAppointment } from "./actions";
+import { scheduleAgainForbidden } from "./schedule-again-core";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
@@ -233,4 +234,25 @@ describe("R52 - owner, admin and reception are unchanged", () => {
       expect(h.audit).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+// U6: the screen hides "Marcar novamente" with scheduleAgainForbidden, which
+// calls the same rule this action refuses with. Here the two are run side by
+// side over every role and every kind of visit: the button is hidden exactly
+// when the server answers `forbidden`, and each case also proves which way it
+// went, so the table cannot pass with every row agreeing on "allowed".
+describe("U6 - the button's answer is the server's answer", () => {
+  const cases = (["therapist", "reception", "admin", "owner"] as const).flatMap((role) =>
+    [SELF, COLLEAGUE, NESA].map((practitioner) => [role, practitioner] as const),
+  );
+  it.each(cases)("%s on a visit of %s", async (role, practitioner) => {
+    arrange(role, practitioner);
+    h.resources = [{ id: NESA, label: "NESA", locationIds: ["loc-1"] }];
+    const r = await cloneAppointment("src-1", INSIDE);
+    const serverRefused = r.ok === false && r.error === "forbidden";
+    const hidden = scheduleAgainForbidden({ role, userId: SELF }, practitioner, [NESA]);
+    expect(hidden).toBe(serverRefused);
+    expect(serverRefused).toBe(role === "therapist" && practitioner === COLLEAGUE);
+    if (!serverRefused) expect(r).toEqual({ ok: true, data: { id: "new-appt-1" } });
+  });
 });
