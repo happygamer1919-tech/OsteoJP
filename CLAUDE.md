@@ -314,7 +314,9 @@ Apply to every new Vercel project created under the OsteoJP platform.
 Healthcare data sensitivity (GDPR, clinical records). Defense in depth from project creation.
 
 ## Out of scope for V1 (do not build, ignore in PR reviews)
-Patient portal, WhatsApp, mobile app, telehealth, insurance, waitlist, loyalty, pilates module, Formação module, CID-10 mandatory enforcement, full historical archive migration.
+Patient portal, WhatsApp, mobile app, telehealth, ~~insurance~~ comparticipação, insurer pricing and insurer invoicing, waitlist, loyalty, pilates module, Formação module, CID-10 mandatory enforcement, full historical archive migration.
+
+- **Amended 2026-11-03: the insurer list and two ficha fields are IN V1.** The owner ruled on Monday 2026-11-02 (Rodica's Fisiozero batch) that the insurer list (Sistemas, SubSistemas) and the two ficha fields "Sistema/SubSistema" and "Nº da Entidade / Subsistema" enter V1; strategy accepted it on Tuesday 2026-11-03 (ruling U2). Comparticipação, insurer pricing and insurer invoicing stay out of V1. Until that date the line above read "insurance" with no qualifier; the struck word is kept so the change shows. Record: `docs/DECISIONS.md`, entry of 2026-11-03.
 
 ## Definition of done (gates, all must pass before any commit)
 Run from repo root, in this order:

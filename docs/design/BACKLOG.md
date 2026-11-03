@@ -59,7 +59,7 @@ When you return from other work, do not start mid-queue. Read this manifest top 
 | NESA contraindication warning (flags + booking-time warning) | DECISIONS 2026-07-03 entry A (JP) | soft warning at booking, no hard block; next-wave build |
 | note_present capture (PURPLE backend, migration-free) | DECISIONS/QUESTIONS 2026-07-03 (Q-ROW8-1) | prerequisite for row-8 no-note UI indicator (#440) |
 | finance KPI report (revenue per therapist/service) | DECISIONS 2026-07-02 (VAT: CIVA art. 9 exemption) | gate cleared; queued until scoped as its own loop |
-| fiscal integration (fatura-recibo, insurer/protocol discounts) | DECISIONS 2026-07-03 entry B (JP) | GATED: must be re-specced against the licensed-partner model first; InvoiceXpress relay lock possibly superseded |
+| fiscal integration (fatura-recibo, insurer/protocol discounts) | DECISIONS 2026-07-03 entry B (JP) | GATED: must be re-specced against the licensed-partner model first; InvoiceXpress relay lock possibly superseded. *2026-11-03 (ruling U2): the insurer list (Sistemas, SubSistemas) and the ficha fields "Sistema/SubSistema" and "Nº da Entidade / Subsistema" are V1 and outside this gate; insurer discounts and pricing, comparticipação and insurer invoicing stay here, out of V1.* |
 
 ## Wave 02 Loop Queue
 

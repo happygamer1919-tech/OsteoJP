@@ -124,6 +124,7 @@
 ## 2026-07-03 - Fiscal operations ON HOLD pending licensed-partner model (JP)
 - Ruling (JP, 2026-07-03): fiscal operations are ON HOLD. JP plans to operate through an already-licensed partner company with Portuguese banking — OsteoJP provides the interface, the partner provides the licensed fiscal services.
 - Consequence: fatura-recibo live timing and insurer/protocol discount handling are DEFERRED to the final real-client integration batch, and must be RE-SPECCED against the partner model before any further fiscal build. The existing InvoiceXpress relay lock stays on file but is FLAGGED as possibly superseded by the partner model. No fiscal build proceeds until that re-spec.
+- *Note 2026-11-03 (SOLO's record, not JP's text): this deferral is unchanged.* The owner ruled on Monday 2026-11-02 that the insurer list (Sistemas, SubSistemas) and the two ficha fields "Sistema/SubSistema" and "Nº da Entidade / Subsistema" enter V1; strategy accepted it on Tuesday 2026-11-03 (ruling U2). Insurer and protocol discounts, insurer pricing, comparticipação and insurer invoicing stay out of V1. See `docs/DECISIONS.md`, entry of 2026-11-03.
 
 ## 2026-07-03 - Preferred therapist at booking confirmed (JP)
 - Ruling (JP, 2026-07-03): a patient MAY indicate a preferred therapist when booking. The preference is a recommendation only — the clinic can always override. Confirms the recommended default.
