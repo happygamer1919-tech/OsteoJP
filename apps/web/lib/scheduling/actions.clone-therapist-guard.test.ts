@@ -75,6 +75,7 @@ vi.mock("@/lib/auth/viewer-locations", async (importOriginal) => ({
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import type { RequestContext, Role } from "@osteojp/auth";
 import { cloneAppointment } from "./actions";
+import { scheduleAgainForbidden } from "./schedule-again-core";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
@@ -99,14 +100,14 @@ const INSIDE = "2026-09-10T09:00:00.000Z";
 /** 10:00 Lisbon on Sunday 2026-09-13: no template covers a Sunday. */
 const OUTSIDE_SUNDAY = "2026-09-13T09:00:00.000Z";
 
-function sourceOf(practitionerId: string) {
+function sourceOf(practitionerId: string, practitionerTwoId: string | null = null) {
   return {
     patientId: "patient-1",
     practitionerId,
     locationId: "loc-1",
     serviceId: "svc-fisio",
     patientTwoId: null,
-    practitionerTwoId: null,
+    practitionerTwoId,
     startsAt: new Date("2026-09-03T09:00:00.000Z"),
     endsAt: new Date("2026-09-03T09:55:00.000Z"),
   };
@@ -145,7 +146,7 @@ function fakeTx(source: unknown) {
   };
 }
 
-function arrange(role: Role, sourcePractitionerId: string) {
+function arrange(role: Role, sourcePractitionerId: string, sourcePractitionerTwoId: string | null = null) {
   inserted = null;
   h.resources = [];
   h.audit.mockClear();
@@ -157,7 +158,7 @@ function arrange(role: Role, sourcePractitionerId: string) {
   mockRunScoped.mockReset();
   mockCtx.mockResolvedValue(actor);
   mockRunScoped.mockImplementation((_a, cb) =>
-    Promise.resolve(cb(fakeTx(sourceOf(sourcePractitionerId)) as never)),
+    Promise.resolve(cb(fakeTx(sourceOf(sourcePractitionerId, sourcePractitionerTwoId)) as never)),
   );
 }
 
@@ -233,4 +234,35 @@ describe("R52 - owner, admin and reception are unchanged", () => {
       expect(h.audit).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+// U6: the screen hides "Marcar novamente" with scheduleAgainForbidden, which
+// asks the same two rules this action refuses with: the primary's (R52, PL-10)
+// and Terapeuta 2's (SCHED-29). Here the two are run side by side over every
+// role, every kind of primary and every kind of Terapeuta 2 (none, a person,
+// NESA, the therapist themselves): the button is hidden exactly when the server
+// answers `forbidden`. Each case also states which way it must go, so the
+// table cannot pass with every row agreeing on "allowed".
+describe("U6 - the button's answer is the server's answer", () => {
+  const PERSON_TWO = "therapist-other";
+  const cases = (["therapist", "reception", "admin", "owner"] as const).flatMap((role) =>
+    [SELF, COLLEAGUE, NESA].flatMap((primary) =>
+      [null, PERSON_TWO, NESA, SELF].map((two) => [role, primary, two] as const),
+    ),
+  );
+  it.each(cases)("%s on a visit of %s with Terapeuta 2 %s", async (role, primary, two) => {
+    arrange(role, primary, two);
+    h.resources = [{ id: NESA, label: "NESA", locationIds: ["loc-1"] }];
+    const r = await cloneAppointment("src-1", INSIDE);
+    const serverRefused = r.ok === false && r.error === "forbidden";
+    const hidden = scheduleAgainForbidden(
+      { role, userId: SELF },
+      { practitionerId: primary, practitionerTwoId: two },
+      [NESA],
+    );
+    expect(hidden).toBe(serverRefused);
+    const twoRefused = two !== null && (two !== NESA || two === primary);
+    expect(serverRefused).toBe(role === "therapist" && (primary === COLLEAGUE || twoRefused));
+    if (!serverRefused) expect(r).toEqual({ ok: true, data: { id: "new-appt-1" } });
+  });
 });

@@ -306,3 +306,69 @@ describe("AppointmentsList - the Terapeuta field of Gerir marcação (MARC-THERA
     expect(count(html, 'data-testid="alterar-terapeuta"')).toBe(0);
   });
 });
+
+// U6: "Marcar novamente" is hidden on a row exactly where cloneAppointment
+// would answer `forbidden` (R52): a therapist on a colleague's visit. The rule
+// is the server's own (practitionerForbiddenToActor, through
+// scheduleAgainForbidden); this pins that the row asks it, for every role.
+describe("AppointmentsList - Marcar novamente follows the server's create rule (U6)", () => {
+  const SELF = "00000000-0000-0000-0000-0000000000e1";
+  const COLLEAGUE = "00000000-0000-0000-0000-0000000000e2";
+  const NESA = "00000000-0000-0000-0000-0000000000e3";
+  const drawerFor = (role: FichaEditDrawer["viewer"]["role"], tenantSharedResourceIds?: string[]): FichaEditDrawer => ({
+    ...EDIT_DRAWER,
+    options: { ...EDIT_DRAWER.options, tenantSharedResourceIds },
+    viewer: { role, userId: SELF },
+  });
+  const rowOf = (practitionerId: string, practitionerTwoId: string | null = null) => ({
+    ...base,
+    practitionerId,
+    practitionerTwoId,
+  });
+  const offered = (html: string) => {
+    // The row rendered: its notes button is on every row, whatever the rule.
+    expect(html).toContain('data-testid="ficha-notes-button"');
+    return html.includes("Marcar novamente");
+  };
+
+  it("a therapist is offered it on their own visit", () => {
+    expect(offered(render(rowOf(SELF), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(true);
+    expect(offered(render(rowOf(SELF), { editDrawer: drawerFor("therapist", []) }))).toBe(true);
+  });
+
+  it("a therapist is NOT offered it on a colleague's visit, which the server refuses", () => {
+    expect(offered(render(rowOf(COLLEAGUE), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(false);
+    expect(offered(render(rowOf(COLLEAGUE), { editDrawer: drawerFor("therapist", []) }))).toBe(false);
+  });
+
+  it("a therapist is offered it on a shared resource's (NESA) visit, the rule's one exception", () => {
+    expect(offered(render(rowOf(NESA), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it on any visit, as before", (role) => {
+    for (const id of [SELF, COLLEAGUE, NESA]) {
+      expect(offered(render(rowOf(id), { editDrawer: drawerFor(role) })), id).toBe(true);
+    }
+  });
+
+  // SCHED-29: the server also answers `forbidden` to a therapist whose copy
+  // would carry a PERSON as Terapeuta 2, or the primary named twice.
+  it("a therapist is NOT offered it on their own visit whose Terapeuta 2 is a person or themselves", () => {
+    expect(offered(render(rowOf(SELF, COLLEAGUE), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(false);
+    expect(offered(render(rowOf(SELF, SELF), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(false);
+  });
+
+  it("a therapist IS offered it on their own visit with NESA as Terapeuta 2", () => {
+    expect(offered(render(rowOf(SELF, NESA), { editDrawer: drawerFor("therapist", [NESA]) }))).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it whoever Terapeuta 2 is", (role) => {
+    for (const two of [COLLEAGUE, SELF, NESA]) {
+      expect(offered(render(rowOf(SELF, two), { editDrawer: drawerFor(role, [NESA]) })), two).toBe(true);
+    }
+  });
+
+  it("with no edit panel data the list cannot know the viewer, and shows it as before", () => {
+    expect(offered(render(rowOf(COLLEAGUE), { editDrawer: null }))).toBe(true);
+  });
+});

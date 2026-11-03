@@ -5,6 +5,7 @@ import { clinicalRecords, locations, patients, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { clientIp, writeClinicalAudit } from "./audit";
 import { ClinicalError } from "./errors";
+import { overrideAuditMetadata, type OverrideAuditEntry } from "./report/export-overrides";
 
 /**
  * EXPORT-01: THE AUDIT ROW OF A DOCUMENT EXPORT (CLAUDE.md rule 6). Every PDF
@@ -20,6 +21,15 @@ import { ClinicalError } from "./errors";
  *   "Exportar ficha"                   patient.export_pdf          the patient  document, patientId, recordIds, 3 counts, durationMs
  *   the RGPD form                      patient.export_pdf          the patient  document, patientId, recordId
  *   the Declaração de Presença         patient.export_pdf          the patient  document, patientId, locationId
+ *
+ * RODICA-export-edit-before-download (owner ruling 2026-11-02): when the
+ * export dialog changed the date, the hour or the heading a registo prints
+ * (the ficha, an app episode, an imported group), that export's single row
+ * also holds `overridesApplied: true` and `overrides`: per changed registo
+ * its id, `originalDate`/`originalTime` (the stored record's, read by the
+ * engine), `exportedDate`/`exportedTime`, and `textChanged`. ISO dates,
+ * "HH:MM" or null, and booleans: never the text itself. No change, no keys
+ * (`overrideAuditMetadata`, report/export-overrides.ts).
  *
  * `document` is one word from a closed list (`PatientExportDocument`): which
  * of the four files about a patient this row is for. An imported group is
@@ -65,7 +75,7 @@ async function writePatientExport(
   ip: string | null,
   document: PatientExportDocument,
   patientId: string,
-  rest: Record<string, string | number | string[]>,
+  rest: Record<string, unknown>,
 ): Promise<void> {
   await writeClinicalAudit(tx, {
     tenantId: ctx.tenantId,
@@ -127,7 +137,13 @@ export async function recordRgpdFormExport(ctx: RequestContext, recordId: string
  */
 export async function recordImportedGroupExport(
   ctx: RequestContext,
-  exported: { patientId: string; recordIds: readonly string[]; leftOut: number },
+  exported: {
+    patientId: string;
+    recordIds: readonly string[];
+    leftOut: number;
+    /** RODICA-export-edit-before-download: what the export changed, per registo. */
+    overridden?: readonly OverrideAuditEntry[];
+  },
 ): Promise<void> {
   const ip = await clientIp();
   await runScoped(
@@ -137,6 +153,7 @@ export async function recordImportedGroupExport(
         recordIds: [...exported.recordIds],
         recordsIncluded: exported.recordIds.length,
         recordsLeftOut: exported.leftOut,
+        ...overrideAuditMetadata(exported.overridden),
       }),
     "clinical:imported-group-export-audit",
   );
@@ -159,6 +176,8 @@ export async function recordPatientFichaExport(
     leftOut: number;
     /** Milliseconds from the action's start to the signed URL (batch item 11). */
     durationMs?: number;
+    /** RODICA-export-edit-before-download: what the export changed, per registo. */
+    overridden?: readonly OverrideAuditEntry[];
   },
 ): Promise<void> {
   const ip = await clientIp();
@@ -171,6 +190,7 @@ export async function recordPatientFichaExport(
         sectionsIncluded: exported.sections,
         recordsLeftOut: exported.leftOut,
         ...(exported.durationMs === undefined ? {} : { durationMs: wholeMs(exported.durationMs) }),
+        ...overrideAuditMetadata(exported.overridden),
       }),
     "clinical:ficha-export-audit",
   );

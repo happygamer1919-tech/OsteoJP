@@ -46,12 +46,20 @@ vi.mock("react", async (importOriginal) => {
 vi.mock("./episode-pdf-actions", () => ({
   downloadEpisodeReportUrlAction: vi.fn(),
   downloadImportedGroupReportUrlAction: vi.fn(),
+  readImportedGroupExportRowsAction: vi.fn(),
 }));
 
-import { downloadEpisodeReportUrlAction, downloadImportedGroupReportUrlAction } from "./episode-pdf-actions";
+import type { ExportOverride } from "@/lib/clinical/report/export-overrides";
+import { ExportEditDialog } from "./export-edit-dialog";
+import {
+  downloadEpisodeReportUrlAction,
+  downloadImportedGroupReportUrlAction,
+  readImportedGroupExportRowsAction,
+} from "./episode-pdf-actions";
 import { ImportedGroupPdfButton } from "./imported-group-pdf-button";
 
 const mockAction = vi.mocked(downloadImportedGroupReportUrlAction);
+const mockRows = vi.mocked(readImportedGroupExportRowsAction);
 
 const PATIENT = "4444aaaa-4444-4444-8444-44444444bbbb";
 const SIGNED = "https://storage.example/signed?token=opaque";
@@ -92,10 +100,21 @@ function button(node: ReactNode): El {
 }
 const alerts = (node: ReactNode): El[] => elements(node).filter((el) => el.props.role === "alert");
 
-async function press(): Promise<ReactNode> {
+async function press(overrides: ExportOverride[] | null = null): Promise<ReactNode> {
   (button(render()).props.onClick as () => void)();
+  answer(overrides);
   await Promise.all(hooks.transitions);
   return render();
+}
+
+/** The export dialog the button mounted (RODICA-export-edit-before-download), or none. */
+const dialogs = (node: ReactNode): El[] => elements(node).filter((el) => el.type === ExportEditDialog);
+
+/** Answer the open dialog: null is "Manter os dados da consulta". */
+function answer(overrides: ExportOverride[] | null) {
+  const open = dialogs(render());
+  expect(open).toHaveLength(1);
+  (open[0]!.props.onExport as (o: ExportOverride[] | null) => void)(overrides);
 }
 
 const assign = vi.fn();
@@ -106,6 +125,7 @@ beforeEach(() => {
   hooks.transitions = [];
   mockAction.mockReset();
   vi.mocked(downloadEpisodeReportUrlAction).mockReset();
+  mockRows.mockReset();
   assign.mockReset();
   vi.stubGlobal("window", { location: { assign } });
 });
@@ -151,5 +171,56 @@ describe("ImportedGroupPdfButton", () => {
     expect(shown[0]!.props.children).toBe(ERROR);
     expect(shown[0]!.props["data-testid"]).toBe("record-group-imported-pdf-error");
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe("ImportedGroupPdfButton: the export dialog asks first (RODICA-export-edit-before-download)", () => {
+  const OVERRIDES: ExportOverride[] = [
+    { recordId: "7777cccc-7777-4777-8777-77777777aaaa", date: "2026-11-02", time: "10:30", text: "" },
+  ];
+
+  it("a press opens the dialog and downloads nothing: no action, no rows asked, the browser goes nowhere", () => {
+    expect(dialogs(render())).toEqual([]);
+    (button(render()).props.onClick as () => void)();
+    const open = dialogs(render());
+    expect(open).toHaveLength(1);
+    expect(open[0]!.props.testId).toBe("record-group-imported-pdf-dialog");
+    expect(mockAction).not.toHaveBeenCalled();
+    expect(mockRows).not.toHaveBeenCalled();
+    expect(hooks.transitions).toEqual([]);
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("closing the dialog exports nothing, and takes the dialog away", () => {
+    (button(render()).props.onClick as () => void)();
+    (dialogs(render())[0]!.props.onClose as () => void)();
+    expect(dialogs(render())).toEqual([]);
+    expect(mockAction).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("the dialog's rows are the server's, asked for THIS export", async () => {
+    mockRows.mockResolvedValue({ rows: null });
+    (button(render()).props.onClick as () => void)();
+    const loadRows = dialogs(render())[0]!.props.loadRows as () => Promise<unknown>;
+    await loadRows();
+    expect(mockRows).toHaveBeenCalledTimes(1);
+    expect(mockRows).toHaveBeenCalledWith(PATIENT, "Osteopatia");
+  });
+
+  it("'Manter os dados da consulta': the action is asked exactly as before, with no overrides", async () => {
+    mockAction.mockResolvedValue({ url: SIGNED });
+    await press(null);
+    expect(mockAction).toHaveBeenCalledWith(PATIENT, "Osteopatia");
+    expect(mockAction.mock.calls[0]).toHaveLength(2);
+  });
+
+  it("'Alterar': the dialog's values are handed to the action, and the dialog closes", async () => {
+    mockAction.mockResolvedValue({ url: SIGNED });
+    const tree = await press(OVERRIDES);
+    expect(mockAction).toHaveBeenCalledTimes(1);
+    expect(mockAction).toHaveBeenCalledWith(PATIENT, "Osteopatia", OVERRIDES);
+    expect(dialogs(tree)).toEqual([]);
+    expect(assign).toHaveBeenCalledWith(SIGNED);
   });
 });

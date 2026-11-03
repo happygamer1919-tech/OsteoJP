@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  practitionerForbiddenToActor,
   sharedResourceLocationAllowed,
   sharedResourcesForViewer,
   withSharedResourceOptions,
@@ -116,5 +117,22 @@ describe("withSharedResourceOptions - SCHED-29.4, what owner, admin and receptio
 
   it("carries only id and label, never the location list, into an option", () => {
     expect(withSharedResourceOptions([], [NESA], CB)).toEqual([{ id: "nesa", label: "NESA" }]);
+  });
+});
+
+describe("practitionerForbiddenToActor - whose name an actor may book in (PL-10, SCHED-17)", () => {
+  const SELF = "u-self";
+  it.each([
+    // role, practitioner, isSharedResource, refused
+    ["therapist", SELF, false, false],
+    ["therapist", "u-colleague", false, true],
+    ["therapist", "nesa-1", true, false],
+    ["therapist", SELF, true, false],
+    ["reception", "u-colleague", false, false],
+    ["admin", "u-colleague", false, false],
+    ["owner", "u-colleague", false, false],
+    ["reception", "nesa-1", true, false],
+  ] as const)("%s booking %s (shared resource: %s) is refused: %s", (role, practitionerId, isSharedResource, refused) => {
+    expect(practitionerForbiddenToActor({ role, actorId: SELF, practitionerId, isSharedResource })).toBe(refused);
   });
 });
