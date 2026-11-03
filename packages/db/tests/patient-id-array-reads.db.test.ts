@@ -51,8 +51,13 @@
  * rows the creator and owner arms admit beside them. For each term a control
  * replaces it with `false` in NEW and asserts the comparison goes RED
  * (tightened > 0, with the exact count), and one control per policy replaces a
- * term with `true` and asserts loosened > 0. Those controls are what prove the
- * equalities above can fail at all.
+ * term with `true` and asserts loosened > 0, again with the exact count. Those
+ * controls are what prove the equalities above can fail at all. Every
+ * equality also asserts the exact number of the fixture's rows the policy
+ * admits for that principal (VISIBLE), so none passes on two empty sets where
+ * rows are expected. And a truth table checks the two forms against each other
+ * in plain SQL for a NULL array, an empty one, a NULL element, duplicates and a
+ * NULL x, and under NOT.
  *
  * The principals: owner; admin with clinic 1; admin with no clinic; reception
  * with clinic 1, with clinic 2, with both; therapist at clinic 1; therapist at
@@ -593,9 +598,29 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
   /* SAME ROWS, PER POLICY, PER PRINCIPAL                                   */
   /* ---------------------------------------------------------------------- */
 
+  /**
+   * THE VISIBLE PROFILE, per policy and per principal, in PRINCIPALS order: how
+   * many of this file's own rows the policy admits. Stated exactly, so no
+   * equality below can pass on two empty sets where rows are expected, and a
+   * fixture that stopped covering a principal turns red. A 0 is a principal the
+   * policy gives nothing by design (reception has no registo arm; the history
+   * policy is therapists only; an admin with no clinic, and the reminder jobs
+   * with no user id, reach no clinic in clinical_admin_sees_patient and no
+   * location in the survey sends' admin arm).
+   *   owner, adminL1, adminNone, recL1, recL2, recBoth, ther, ther2, jobs
+   */
+  const VISIBLE: Record<string, number[]> = {
+    patients_select: [14, 8, 14, 9, 8, 12, 6, 9, 14],
+    clinical_records_select: [10, 7, 0, 0, 0, 0, 5, 10, 0],
+    clinical_episodes_select: [14, 6, 0, 6, 7, 12, 6, 9, 0],
+    appointments_care_team_patient_history_select: [0, 0, 0, 0, 0, 0, 4, 4, 0],
+    appointment_survey_sends_select: [9, 5, 0, 5, 4, 9, 3, 9, 0],
+  };
+
   for (const spec of POLICIES) {
-    for (const [label, role, user] of PRINCIPALS) {
-      it(`${spec.name}: ${label} sees exactly the same rows (NEW and INSTALLED against OLD)`, async () => {
+    PRINCIPALS.forEach(([label, role, user], k) => {
+      const visible = VISIBLE[spec.name]![k]!;
+      it(`${spec.name}: ${label} sees exactly the same rows, ${visible} of the fixture's (NEW and INSTALLED against OLD)`, async () => {
         const [byNew, byInstalled] = await asPrincipal(sql, claims(role, user), async (tx) => {
           const n = await disagreements(tx, spec.table, fixtureTenants, spec.old, spec.new);
           const live = await installed(tx);
@@ -605,11 +630,46 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
         for (const r of [byNew, byInstalled]) {
           expect(r.rlsApplied).toBe(false);
           expect(r.fixtureRows).toBeGreaterThan(0);
+          expect(r.fixtureVisible).toBe(visible);
           expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({ loosened: 0, tightened: 0 });
         }
       });
-    }
+    });
   }
+
+  /* ---------------------------------------------------------------------- */
+  /* THE TWO FORMS, AS A TRUTH TABLE                                        */
+  /* ---------------------------------------------------------------------- */
+
+  it("x = ANY (coalesce(a, '{}')) and x IN (SELECT unnest(a)) agree in every three-valued case, and under NOT", async () => {
+    const m = randomUUID();
+    const o = randomUUID();
+    const rows = (await sql.unsafe(
+      `WITH a(al, arr) AS (VALUES ('null array', NULL::uuid[]), ('empty', '{}'::uuid[]), ('one', ARRAY[$1::uuid]),
+                               ('with a null element', ARRAY[$1::uuid, NULL]), ('duplicates', ARRAY[$1::uuid, $1::uuid])),
+            x(xl, v) AS (VALUES ('member', $1::uuid), ('not a member', $2::uuid), ('null x', NULL::uuid))
+       SELECT a.al, x.xl,
+              (x.v = ANY (coalesce((SELECT a.arr), '{}'::uuid[]))) AS any_form,
+              (x.v IN (SELECT unnest((SELECT a.arr))))             AS in_form,
+              (NOT (x.v = ANY (coalesce((SELECT a.arr), '{}'::uuid[])))) AS not_any,
+              (NOT (x.v IN (SELECT unnest((SELECT a.arr)))))             AS not_in
+         FROM a CROSS JOIN x ORDER BY 1, 2`,
+      [m, o],
+    )) as unknown as { al: string; xl: string; any_form: boolean | null; in_form: boolean | null; not_any: boolean | null; not_in: boolean | null }[];
+    expect(rows).toHaveLength(15);
+    for (const r of rows) {
+      expect({ case: `${r.al} / ${r.xl}`, v: r.in_form, not: r.not_in }).toEqual({ case: `${r.al} / ${r.xl}`, v: r.any_form, not: r.not_any });
+    }
+    // The table itself, so the agreement above is over the cases that matter (NULL included).
+    const table = Object.fromEntries(rows.map((r) => [`${r.al} / ${r.xl}`, r.any_form]));
+    expect(table).toEqual({
+      "duplicates / member": true, "duplicates / not a member": false, "duplicates / null x": null,
+      "empty / member": false, "empty / not a member": false, "empty / null x": false,
+      "null array / member": false, "null array / not a member": false, "null array / null x": false,
+      "one / member": true, "one / not a member": false, "one / null x": null,
+      "with a null element / member": true, "with a null element / not a member": null, "with a null element / null x": null,
+    });
+  });
 
   /* ---------------------------------------------------------------------- */
   /* COVERAGE AND THE POSITIVE CONTROLS (SR-60)                             */
@@ -678,6 +738,26 @@ d(`patient-id set reads: the rows are the same before and after the hashed rewri
     // Every patient of T the visible set and the creator arm do not reach: primL2, none, createdTher, careL2, other.
     expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({ loosened: 5, tightened: 0 });
   });
+
+  const LOOSENED: [string, string, number, string][] = [
+    ["clinical_records_select", "patient_id IN (SELECT unnest((SELECT public.viewer_care_team_patient_ids_at_my_clinics())))", 5,
+      "every registo of T the other therapist arms do not reach: a1, a5, a7, a8, a9"],
+    ["clinical_episodes_select", "patient_id IN (SELECT unnest((SELECT public.viewer_care_team_patient_ids_at_my_clinics())))", 8,
+      "every episode of T but the 6 the therapist reaches"],
+    ["appointment_survey_sends_select", "patient_id IN (SELECT unnest((SELECT public.viewer_treated_patient_ids())))", 6,
+      "every send of T but the 3 of treated patients"],
+  ];
+  for (const [name, term, rows, why] of LOOSENED) {
+    it(`CONTROL: a loosened ${name} (the term replaced by true) goes RED for the therapist, loosened ${rows} (${why})`, async () => {
+      const spec = POLICIES.find((s) => s.name === name)!;
+      const loosened = mutate(spec.new, term, "true");
+      const r = await asPrincipal(sql, claimsFor(T, "therapist", u.ther), (tx) =>
+        disagreements(tx, spec.table, fixtureTenants, spec.old, loosened),
+      );
+      expect(r.rlsApplied).toBe(false);
+      expect({ loosened: r.loosened, tightened: r.tightened }).toEqual({ loosened: rows, tightened: 0 });
+    });
+  }
 
   it("CONTROL: a loosened appointments history (the treated term replaced by true) goes RED for the therapist", async () => {
     const loosened = mutate(HISTORY_NEW, "(patient_id   IN (SELECT unnest((SELECT public.viewer_treated_patient_ids()))))", "true");
