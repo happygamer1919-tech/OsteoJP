@@ -85,7 +85,7 @@ import {
   type LoteRow,
 } from "@/lib/scheduling/lote";
 import { AppointmentNotesBoard } from "./appointment-notes-board";
-import { ScheduleAgainDrawer, isPastConsuming } from "./schedule-again-drawer";
+import { ScheduleAgainDrawer, isPastConsuming, scheduleAgainForbidden } from "./schedule-again-drawer";
 import { AvailabilityPanel } from "./availability-panel";
 
 import { ConfirmationIndicator } from "./confirmation-indicator";
@@ -2108,8 +2108,15 @@ export function AppointmentDrawer({
             THE GATE IS NARROWER THAN THE PROFILE'S, deliberately and by
             instruction: past AND in a consuming state, so a cancelled visit is
             not offered here. `isPastConsuming` carries the reasoning and the one
-            row the two gates disagree on. */}
-        {editing && isPastConsuming(editing) && (
+            row the two gates disagree on.
+
+            U6: and not where the server would answer `forbidden`: a therapist
+            on a colleague's visit (R52), or on a visit whose Terapeuta 2 is a
+            person (SCHED-29). scheduleAgainForbidden asks the server's own
+            rules. */}
+        {editing &&
+          isPastConsuming(editing) &&
+          !scheduleAgainForbidden(viewer, editing, options.tenantSharedResourceIds) && (
           <div className="mt-2 border-t border-border pt-4">
             <Button
               type="button"

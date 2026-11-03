@@ -358,7 +358,13 @@ export default async function AgendaPage({
       // self-lock (practitioner forced to self, Terapeuta selector hidden for
       // role "therapist"). Read-scope isolation stays on `lockTherapist` above.
       viewer={{ role: actor.role, userId: actor.userId }}
-      options={{ ...options, ...staff }}
+      // U6: a therapist's "Marcar novamente" follows the server's create rule;
+      // the tenant's machines are already read above for them.
+      options={{
+        ...options,
+        ...staff,
+        tenantSharedResourceIds: lockTherapist ? therapistTenantResources.map((r) => r.id) : undefined,
+      }}
       appointments={appointments}
       serviceChips={serviceChips}
       blocks={blockSpans}
