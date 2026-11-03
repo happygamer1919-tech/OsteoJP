@@ -467,17 +467,25 @@ d("0108: the consuming sessions of one pack instance", () => {
     });
   });
 
-  it("patients_select is the expression the function's patient term states (0096's)", async () => {
+  it("patients_select is the expression the function's patient term states (0096's, or 0113's with 0113's function)", async () => {
     // The function restates this policy's USING. If the policy changes, this
     // fails, and the function is changed with it in the same migration.
+    // 0113 (pending: NEXT-AFTER-0112_patient_id_array_reads.sql) rewrites both
+    // together, each array membership as a hashed IN; its same-rows proof is
+    // patient-id-array-reads.db.test.ts. So the pair is checked as a PAIR: the
+    // 0096 policy with the 0108 body, or the 0113 policy with the 0113 body.
     const [row] = await sql.begin(async (tx) => {
       await tx`set local search_path = public`;
       return tx`select p.polcmd::text || '/' || p.polpermissive::text || '/'
                        || array_to_string(array(select pg_get_userbyid(r) from unnest(p.polroles) r order by 1), ',')
-                       || ' ' || md5(pg_get_expr(p.polqual, p.polrelid)) as shape
+                       || ' ' || md5(pg_get_expr(p.polqual, p.polrelid)) as shape,
+                       (select md5(prosrc) from pg_proc where oid = to_regprocedure(${FN})) as body
                   from pg_policy p
                  where p.polrelid = 'public.patients'::regclass and p.polname = 'patients_select'`;
     });
-    expect(row!.shape).toBe("r/true/authenticated de612f10145303302884747fa10b6c66");
+    expect([
+      { shape: "r/true/authenticated de612f10145303302884747fa10b6c66", body: "1f45d0f0b99392c7de28f6bbea8ae45f" },
+      { shape: "r/true/authenticated f029fc6cf0e8372c39d13700bffbc3c7", body: "4de17a2e5cae73d0cedd6b3d35d5e326" },
+    ]).toContainEqual({ shape: row!.shape, body: row!.body });
   });
 });
