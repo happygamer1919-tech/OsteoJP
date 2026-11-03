@@ -5561,6 +5561,34 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   each best-effort read rejecting: the page still renders, and a failed
   identity read is logged once.
 
+## 2026-11-03 - U2: the insurer list and two ficha fields enter V1 (owner ruling, accepted by strategy)
+
+- **The ruling.** The owner ruled on Monday 2026-11-02, in Rodica's Fisiozero
+  batch, that the insurer list (Sistemas, SubSistemas) and the two ficha
+  fields enter V1. Strategy accepted it on Tuesday 2026-11-03 as ruling U2,
+  its words: "U2 SCOPE CHANGE accepted as the owner ruled: insurer list
+  (Sistemas, SubSistemas) and the two ficha fields enter V1. Comparticipação,
+  insurer pricing and insurer invoicing stay out of V1."
+- **What enters V1.** The clinic's list of Sistemas / SubSistemas (one name
+  per entry, per clinic: the table `health_systems`, held migration #1706),
+  and on the patient ficha the two fields "Sistema/SubSistema" (a choice from
+  that list, `patients.health_system_id`) and "Nº da Entidade / Subsistema"
+  (free text, `patients.health_system_number`). The screens are #1707 (draft,
+  stacked on #1706).
+- **What stays out of V1.** Comparticipação, insurer pricing (insurer and
+  protocol discounts included, deferred since 2026-07-03) and insurer
+  invoicing. The setting "Usa tabela de preços de Sistemas" (#1706) starts
+  OFF for every clinic and does nothing.
+- **Where the scope line changed.** CLAUDE.md, "Out of scope for V1": the
+  word "insurance" is struck and replaced by "comparticipação, insurer
+  pricing and insurer invoicing", with a dated note under the line.
+  `docs/design/DECISIONS.md`, the 2026-07-03 fiscal hold: a dated note says
+  that deferral is unchanged. `docs/design/BACKLOG.md`, the fiscal
+  integration candidate: the same note in its gate cell.
+- **Unchanged.** `health_insurance_numbers` (0051, PL-23) stays as it is; the
+  new fields are Fisiozero's single Sistema choice and nothing copies one into
+  the other (#1706). No migration, code or test changes in this entry.
+
 ## 2026-11-03 - Marcar novamente is hidden where the server refuses it (U6)
 
 - **Ruling (strategy U6, 2026-11-03), card
