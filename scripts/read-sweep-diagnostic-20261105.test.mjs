@@ -664,7 +664,9 @@ insert into public.reminder_dispatches (tenant_id, appointment_id, channel, temp
   for (const v of deleted) {
     sqlParts.push(`delete from public.appointments where id = '${v.id}';
 insert into public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-  values ('${TENANT}', '${STAFF}', 'appointment.hard_delete', 'appointment', '${v.id}', '{"startsAt":"${v.badStart ? "2026-11-05 at noon" : isoOf(`${v.start}:00`)}","status":"scheduled"}', ${ts(ms(v.deletedAt))});`);
+  values ('${TENANT}', '${STAFF}', 'appointment.hard_delete', 'appointment', '${v.id}', '{"startsAt":"${v.badStart ? "2026-11-05 at noon" : isoOf(`${v.movedTo ? v.movedTo.start : v.start}:00`)}","status":"scheduled"}', ${ts(ms(v.deletedAt))});${v.movedTo ? `
+insert into public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
+  values ('${TENANT}', '${STAFF}', 'appointment.reschedule', 'appointment', '${v.id}', '{"fromStartsAt":"${isoOf(`${v.start}:00`)}","startsAt":"${isoOf(`${v.movedTo.start}:00`)}"}', ${ts(ms(v.movedTo.at))});` : ""}`);
   }
   sqlParts.push(after);
   return sqlParts.join("\n");
@@ -755,7 +757,7 @@ const CASES = [
       [20, /counts that differ 2; rows short in all 2, rows over in all 0; of them on 2026-11-03 2; at 2026-11-03 12:15 tenant 1 short 1, 2026-11-03 16:30 tenant 1 short 1/],
       [22, new RegExp(`visit 1 \\(hard-deleted\\), 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05, deleted 2026-11-03 13:00:00; fits 1 heartbeat\\(s\\) whose count differs, given to the earliest; another heartbeat's row holds it: no \\(a visit's rows go with it\\)`)],
       [22, new RegExp(`visit 2 \\(hard-deleted\\), 48h email, start 2026-11-05 16:20, mark 2026-11-03 16:20, deleted 2026-11-03 17:00:00`)],
-      [32, /shadow heartbeats whose count differs 2, of them over \(more rows than recorded\) 0; with a hard-deleted candidate 2, short by exactly their candidates 2; candidates in all 2, fitting two or more heartbeats 0; hard-deleted visits from 11-02 2, of them with a start this read cannot place 0, marks of them due before 11-02 with the visit ahead then 0/],
+      [32, /shadow heartbeats whose count differs 2, of them over \(more rows than recorded\) 0; with a hard-deleted candidate 2, short by exactly their candidates 2; candidates in all 2, fitting two or more heartbeats 0; hard-deleted visits from 11-02 2, of them with a start this read cannot place 0, moved between 11-02 and their delete \(placed at the start at the delete\) 0, marks of them due before 11-02 with the visit ahead then 0/],
     ],
   },
   {
@@ -832,6 +834,19 @@ insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, loo
     info: [[32, /hard-deleted visits from 11-02 1, of them with a start this read cannot place 1,/]],
   },
   {
+    name: "a hard-deleted visit moved after its pass and before its delete: its mark at the delete's start fits no heartbeat, UNDECIDED, not REFUTED",
+    seed: buildSeed({ deleted: [{ ...DELETED[0], movedTo: { at: "2026-11-03 12:30:00", start: "2026-11-05 18:00" } }] }),
+    want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "UNDECIDED", "EVIDENCED") },
+    info: [[32, /with a hard-deleted candidate 0, .*moved between 11-02 and their delete \(placed at the start at the delete\) 1,/]],
+  },
+  {
+    name: "a mark taken before 11-02 and again on 11-03: a re-selection across the window's edge",
+    seed: buildSeed({ after: `insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, minutes_after_mark, saved_after_mark, pass_id, created_at)
+  values ('${TENANT}', '${appt(0x103)}', 'shadow', '48h', 'email', ${ts(ms("2026-11-05 10:05:00"))}, ${ts(ms("2026-11-03 10:05:00"))}, 0, false, null, ${ts(ms("2026-11-01 21:45:02"))});` }),
+    want: { ...V("OK", "OK"), ...F("NO_SUBJECT", "CONFIRMED", "NO_SUBJECT", "EVIDENCED") },
+    info: [[24, /visit 1, 48h email, start 2026-11-05 10:05; its heartbeats \(slots\) 2026-11-01 21:45 \(before 11-02, not read\), 2026-11-03 10:15/]],
+  },
+  {
     name: "the subject's approval SMS in the ledger, no claim: EVIDENCED",
     seed: buildSeed({ subjectRun: false, after: `insert into public.reminder_dispatches (tenant_id, appointment_id, channel, template_id, outcome, created_at)
   values ('${TENANT}', '${SUBJECT}', 'sms', 'booking_approved.sms', 'sent', ${ts(ms("2026-11-03 09:30:05"))});` }),
@@ -883,12 +898,14 @@ const MUTANTS = [
   ["CONSISTENT without the missing slot before", "and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.slot - interval '15 minutes')) as slot_fit", "and true) as slot_fit", "a late pass whose run's slot still has a heartbeat"],
   ["send heartbeats compared with shadow rows", "(h.mode = 'shadow' and h.rows_tx <> h.recorded_count) as f_differs", "(h.rows_tx <> h.recorded_count) as f_differs", "send heartbeats"],
   ["F3 needs a first-due mark (no catch-up)", "     and m.due_at >= k.since\n", "     and m.due_at > d.pass_at - interval '15 minutes'\n", "a catch-up"],
-  ["F3 refutes with a start it cannot place", "when f3.with_candidates = 0 and f3.unplaced = 0 and f3.early_marks = 0 then 'REFUTED'", "when f3.with_candidates = 0 and f3.early_marks = 0 then 'REFUTED'", "a hard-deleted visit whose start the read cannot place"],
+  ["F3 refutes with a start it cannot place", "when f3.with_candidates = 0 and f3.unplaced = 0 and f3.early_marks", "when f3.with_candidates = 0 and f3.early_marks", "a hard-deleted visit whose start the read cannot place"],
+  ["F3 refutes with a visit moved before its delete", "and f3.early_marks = 0 and f3.moved_deleted = 0 then 'REFUTED'", "and f3.early_marks = 0 then 'REFUTED'", "a hard-deleted visit moved after its pass"],
+  ["F2 reads rows from 11-02 only", "    from shadow_all s\n", "    from shadow s\n", "a mark taken before 11-02 and again"],
   ["F2 refutes with no shadow row", "              when (select count(*) from shadow) = 0 then 'NO_SUBJECT'\n", "              when false then 'NO_SUBJECT'\n", "no heartbeat at all"],
   ["F4 without the approval SMS", "in ('booking_approved.email', 'booking_approved.sms')) as confirmations", "in ('booking_approved.email')) as confirmations", "the subject's approval SMS"],
   ["F3 matches any shortfall", "where d.short > 0 and d.short = (select count(*) from cand_deleted c where c.hb_id = d.id)) as matched", "where d.short > 0) as matched", "a heartbeat short by 2 with one hard-deleted candidate"],
   ["a candidate deleted before the pass counts", "   where m.deleted_at > d.created_at\n", "   where true\n", "a heartbeat short by 2 with one hard-deleted candidate"],
-  ["F2 counts single rows", "  having count(*) > 1\n", "  having count(*) > 0\n", "CONTROL"],
+  ["F2 counts single rows", "  having count(*) > 1 and max(s.created_at)", "  having count(*) > 0 and max(s.created_at)", "CONTROL"],
   ["F4 evidenced by a door alone", "case when e.confirmations > 0 or e.run_claims > 0 then 'EVIDENCED'", "case when e.confirmations > 0 or e.run_claims > 0 or e.doors > 0 then 'EVIDENCED'", "the subject's door rows only"],
   ["row 40 never VACUOUS", "                   and (select count(*) from subj_ledger) = 0 then 'VACUOUS'", "                   and false then 'VACUOUS'", "an id that names nothing"],
   ["row 3 blind to a missing slot", "when s.beats = 60 and s.in_slots = 60 and s.doubled is null and s.missing is null and s.outside is null", "when s.doubled is null and s.outside is null", "a pass of 11-03 failed"],

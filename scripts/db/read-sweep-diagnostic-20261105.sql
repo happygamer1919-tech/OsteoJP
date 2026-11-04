@@ -52,8 +52,8 @@
 --      over shadow rows (0106: only one per claim ATTEMPT, `reminder_claims_claim_attempt_key`,
 --      WHERE kind = 'claim') and the sweep's insert has no conflict clause (sweep.ts,
 --      `tx.insert(reminderClaims).values(shadowRows)`), so a re-selected mark would leave TWO
---      shadow rows, never one row counted twice. CONFIRMED when a mark has two shadow rows from
---      2026-11-02 on; REFUTED when none has and there are shadow rows; NO_SUBJECT when there is no
+--      shadow rows, never one row counted twice. CONFIRMED when a mark has two shadow rows, one of
+--      them from 2026-11-02 on; REFUTED when none has and there are shadow rows; NO_SUBJECT when there is no
 --      shadow row (a zero is never a pass; named apart from VACUOUS so the block's verdict count
 --      does not take it). Row 25 prints the table's unique indexes.
 --   F3 (row 32) ROWS THAT WENT WITH A DELETED VISIT: a shadow row goes with its appointment
@@ -67,9 +67,10 @@
 --      is given to the EARLIEST of them (the pass that took it lost the row, so it differs too).
 --      CONFIRMED when every such heartbeat is short (never over) by exactly the marks given to it
 --      and no mark fits two of them; REFUTED only when no mark fits any of them, every hard-deleted
---      visit's start can be placed, and none has a mark due before 2026-11-02 (which a pass this
---      read does not read could have taken); UNDECIDED otherwise; NO_SUBJECT when no heartbeat's
---      count differs.
+--      visit's start can be placed, none has a mark due before 2026-11-02 (which a pass this read
+--      does not read could have taken), and none was moved between 11-02 and its delete (the
+--      delete records the start AT the delete); UNDECIDED otherwise; NO_SUBJECT when no
+--      heartbeat's count differs.
 --   F4 (row 33) A SCHEDULING EVENT FOR THE APPOINTMENT. The application sends
 --      `appointment/scheduled` after the save's commit (apps/web/lib/reminders/index.ts,
 --      enqueueAppointmentReminders, `inngest.send`), best-effort, and a failed send is only
@@ -139,6 +140,12 @@ shadow as (
     from public.reminder_claims c cross join k
    where c.kind = 'shadow' and c.created_at >= k.since
 ),
+shadow_all as (
+  -- Every shadow row, of any day: a mark taken before 11-02 and again from 11-02 on is a re-selection.
+  select c.tenant_id, c.appointment_id, c.offset_id, c.channel, c.starts_at, c.created_at
+    from public.reminder_claims c
+   where c.kind = 'shadow'
+),
 hb1 as (
   select h.*, t.tn,
          case when h.pass_id ~ '^[0-9A-HJKMNP-TV-Z]{26}$' then
@@ -150,8 +157,6 @@ hb1 as (
          count(*) over (partition by h.tenant_id, h.slot) as slot_beats,
          row_number() over (partition by h.tenant_id, h.slot order by h.pass_at, h.created_at) as slot_rank,
          count(*) over (partition by h.tenant_id, h.pass_id) as pid_beats,
-         lag(h.pass_at) over w as prev_pass_at,
-         lag(h.look_ahead_before) over w as prev_look,
          lag(h.created_at) over w as prev_created,
          lead(h.created_at) over w as next_created
     from hb0 h join tenant_n t on t.tenant_id = h.tenant_id
@@ -210,10 +215,18 @@ differ as (
 ),
 deleted as (
   -- Visits hard-deleted from 11-02 on whose row is gone. The start the delete wrote, as text,
-  -- exactly as toISOString() writes it; any other shape is left out rather than cast.
+  -- exactly as toISOString() writes it; any other shape is left out rather than cast. That start is
+  -- the start AT THE DELETE (actions.ts, hardDeleteAppointment), so a visit moved after a pass and
+  -- before its delete is placed at the wrong mark: `moved` flags a move written from 11-02 to the
+  -- delete. A move writes `appointment.reschedule` and nothing else (actions.ts, moveAppointment;
+  -- RE_ARMING_SAVES' `moved` clause in reminder-population.ts).
   select l.tenant_id, l.entity_id as appointment_id, l.created_at as deleted_at,
          case when l.metadata->>'startsAt' ~ '^20[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9][.][0-9]{3}Z$'
-              then (l.metadata->>'startsAt')::timestamptz end as starts_at
+              then (l.metadata->>'startsAt')::timestamptz end as starts_at,
+         exists (select 1 from public.audit_log mv
+                  where mv.entity_type = 'appointment' and mv.entity_id = l.entity_id
+                    and mv.tenant_id = l.tenant_id and mv.action = 'appointment.reschedule'
+                    and mv.created_at >= k.since and mv.created_at <= l.created_at) as moved
     from public.audit_log l cross join k
    where l.entity_type = 'appointment' and l.action = 'appointment.hard_delete'
      and l.created_at >= k.since
@@ -264,15 +277,18 @@ cand_neighbour as (
           or (d.look_ahead_before is not null and s.due_at < d.look_ahead_before))
 ),
 dup as (
-  -- Marks (appointment, offset, channel, start) with more than one shadow row from 11-02 on.
+  -- Marks (appointment, offset, channel, start) with more than one shadow row of any day, at least
+  -- one of them written from 11-02 on.
   select s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at, count(*) as n,
-         string_agg(coalesce((select to_char(x.slot, 'YYYY-MM-DD HH24:MI') from hbf x
-                                where x.tenant_id = s.tenant_id and x.created_at = s.created_at limit 1), 'no heartbeat'),
+         string_agg(case when s.created_at < (select since from k)
+                           then to_char(s.created_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' (before 11-02, not read)'
+                         else coalesce((select to_char(x.slot, 'YYYY-MM-DD HH24:MI') from hbf x
+                                          where x.tenant_id = s.tenant_id and x.created_at = s.created_at limit 1), 'no heartbeat') end,
                     ', ' order by s.created_at) as holders,
          bool_or((s.created_at at time zone 'Europe/Lisbon')::date = (select day from k)) as on_day
-    from shadow s
+    from shadow_all s
    group by s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at
-  having count(*) > 1
+  having count(*) > 1 and max(s.created_at) >= (select since from k)
 ),
 vis as (
   -- Rows 22 to 24 name visits by an ordinal of this read ("visit 1"), never by id, so one visit
@@ -296,6 +312,7 @@ f3 as (
          (select count(*) from differ d where exists (select 1 from cand_deleted c where c.hb_id = d.id)) as with_candidates,
          (select count(*) from deleted) as deleted_visits,
          (select count(*) from deleted where starts_at is null) as unplaced,
+         (select count(*) from deleted where moved) as moved_deleted,
          (select count(*) from del_mark m cross join k where m.due_at < k.since and m.starts_at > k.since) as early_marks
 ),
 f1 as (
@@ -564,7 +581,7 @@ select n, "check", observed, expected, verdict from (
     from f1
   union all
   select 31, 0,
-         'F2 a mark re-selected: a mark with two or more shadow rows from 2026-11-02 on (a re-selected mark leaves two rows; no row is ever counted by two heartbeats)',
+         'F2 a mark re-selected: a mark with two or more shadow rows of any day, one of them from 2026-11-02 on (a re-selected mark leaves two rows; no row is ever counted by two heartbeats)',
          'marks with more than one shadow row ' || (select count(*) from dup)::text
            || ', of them with a row written on 2026-11-03 ' || (select count(*) from dup where on_day)::text
            || '; shadow rows from 11-02 ' || (select count(*) from shadow)::text,
@@ -581,11 +598,12 @@ select n, "check", observed, expected, verdict from (
            || '; candidates in all ' || f3.candidates::text || ', fitting two or more heartbeats ' || f3.ambiguous::text
            || '; hard-deleted visits from 11-02 ' || f3.deleted_visits::text
            || ', of them with a start this read cannot place ' || f3.unplaced::text
+           || ', moved between 11-02 and their delete (placed at the start at the delete) ' || f3.moved_deleted::text
            || ', marks of them due before 11-02 with the visit ahead then ' || f3.early_marks::text,
          'CONFIRMED, REFUTED, UNDECIDED or NO_SUBJECT',
          case when f3.differing = 0 then 'NO_SUBJECT'
               when f3.over = 0 and f3.matched = f3.differing and f3.ambiguous = 0 then 'CONFIRMED'
-              when f3.with_candidates = 0 and f3.unplaced = 0 and f3.early_marks = 0 then 'REFUTED'
+              when f3.with_candidates = 0 and f3.unplaced = 0 and f3.early_marks = 0 and f3.moved_deleted = 0 then 'REFUTED'
               else 'UNDECIDED' end
     from f3
   union all
