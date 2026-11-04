@@ -38,6 +38,13 @@
 //     origin/main;
 //   * EVERY STOP THAT CAN FIRE AFTER THE COMMIT says 0109 is applied, that the write stands and that
 //     nothing is run again; the five whose own read can contradict that say the state is UNKNOWN;
+//   * STALE VARIABLES (fix round 3, 2026-11-04): each of the four loads of the env file follows, on the
+//     line before, `unset DATABASE_URL DATABASE_URL_DIRECT`, so a stale `.invalid` value the shell
+//     exported never reaches the guard, the reader, verified-migrate or psql, even when the file
+//     defines only DATABASE_URL;
+//   * CI ON HELD (fix round 3): BEFORE YOU START reads the check runs on HELD through `gh api` and
+//     STOPs unless the three required runs each appear once and concluded success; none, a missing,
+//     an unfinished, a failed, a renamed or a doubled run, or no answer, STOPs before the journal read;
 //   * the blocks carry no `#` line, no `!` but `test !`, no backslash continuation and NO `set -e`;
 //   * EVERY HALT IS EXPLICIT, and a fault-injection harness proves it: each block runs in GREEN's tool
 //     shape with every external command a stub, each call made to fail in turn, in bash with errexit
@@ -81,7 +88,7 @@ const GATE_FILE = "scripts/migration-timeouts.test.mjs";
 const BRANCH = "origin/db/HOR-02-saturday-closing-time";
 const CHECK_NAME = "locations_saturday_hours_valid";
 /** The document's first line until SOLO's READY line removes it. */
-export const NOT_READY_LINE = "NOT READY: awaiting the R4 re-check of the fixes from the R4 round of 2026-11-03";
+export const NOT_READY_LINE = "NOT READY: the R4 re-check (11-03, SHIP / SHIP AFTER FIXES) and the independent rehearsal of the final bytes (11-04 00:06, REHEARSED OK on BLUE, transcripts rh1104-transcripts/) are done; fix round 3 applied 11-04 (unset line, CI check); narrow re-check of those lines pending";
 
 /** The pins of files this branch does not own, as they read on main when the document was written. */
 export const EXTERNAL_PINS = Object.freeze({
@@ -1023,6 +1030,27 @@ test("every block that runs the guard or the reader compares it, and its module,
   assert.equal(blocksOf(doc).filter((b) => b.includes("${READER} 2>&1")).length, 2);
   assert.deepEqual(blocksOf(doc).filter((b) => b.includes("--env-file")).map((b) => b.slice(0, 80)), [], "a block loads the production environment file with node --env-file, which lets a variable already in the shell win over the file");
   assert.equal(blocksOf(doc).filter((b) => b.includes("set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env && set +o allexport ||")).length, 4, "BEFORE YOU START, stage 1, stage 2 and the closing read each load the environment file by allexport and .");
+  assert.deepEqual(unsetProblems(doc), [], "every load of the environment file is preceded, on the line before, by the unset of both database variables");
+  assert.equal(blocksOf(doc).join("\n").split("\n").filter((l) => l.startsWith("unset ")).length, 4);
+});
+
+/** Each line that loads the environment file must follow, directly, the unset of DATABASE_URL and DATABASE_URL_DIRECT (fix round 3, 2026-11-04). */
+export function unsetProblems(md) {
+  const out = [];
+  for (const b of blocksOf(md)) {
+    const lines = b.split("\n");
+    lines.forEach((l, i) => {
+      if (!l.startsWith("set -o allexport")) return;
+      if (!(lines[i - 1] ?? "").startsWith("unset DATABASE_URL DATABASE_URL_DIRECT || { echo \"STOP: ")) out.push(`${i + 1}: ${l.slice(0, 60)} is not preceded by the unset line`);
+    });
+  }
+  return out;
+}
+
+test("STALE VARIABLES, statically: a load of the environment file without the unset line before it is refused", () => {
+  const planted = doc.replace(/^unset DATABASE_URL DATABASE_URL_DIRECT \|\| .*\n(?=set -o allexport)/m, "");
+  assert.notEqual(planted, doc);
+  assert.equal(unsetProblems(planted).length, 1);
 });
 
 test("every carry stage 2 reads is a row the pre-check prints, and every -v the post-check requires is passed", () => {
@@ -1060,8 +1088,8 @@ test("THE HELD HEAD: every block that reads a head names origin/db/HOR-02-saturd
 /** A command a later step relies on: its failure must halt the block by an explicit guard. */
 const MUST_HALT = [
   /^cd /, /\bgit (fetch|checkout|status|grep|show|rev-parse origin\/)\b/, /^rm -f /, /^mv /, /^touch /, /\| tee /,
-  /^node (scripts|packages)\//, /^node --env-file=/, /^node -e /, /\bpsql /, />>? \/tmp\/0109-/, /^set -o allexport/,
-  /^(T108|W108|REC|START|NOWZ|DTZ|NOW|NEXT|PREV|HD|S2|TIP|WAS|DOC|BAN|SIDE|SM|SP|SPRE|SPOST|SV|SG|SC|RW|MW|WREAD|STRAY)=\$\(/,
+  /^node (scripts|packages)\//, /^node --env-file=/, /^node -e /, /\bpsql /, />>? \/tmp\/0109-/, /^set -o allexport/, /^unset /,
+  /^(T108|W108|REC|START|NOWZ|DTZ|NOW|NEXT|PREV|HD|S2|TIP|WAS|DOC|BAN|SIDE|SM|SP|SPRE|SPOST|SV|SG|SC|RW|MW|WREAD|STRAY|CIRUNS|CIN|CIS)=\$\(/,
   /^test /, /^\[ /, /^shasum -a 256 -c /, /^grep -q/, /^echo "[^"]*" \| grep -q/,
 ];
 export function unguardedLines(block) {
@@ -1081,7 +1109,7 @@ test("EVERY HALT IS EXPLICIT: each command a later step relies on carries its ow
     for (const s of sets.slice(1)) assert.match(s, /^\d+: set -o allexport && \. ENV && set \+o allexport$/);
     for (const line of b.split("\n")) if (line.includes('echo "STOP: ')) assert.match(line, /echo "STOP: [^"]+";( echo "\$\{STRAY\}";)? exit (1|\$\{RC\}); (\}|fi)$/, line.slice(0, 120));
   }
-  for (const planted of ["git fetch origin --prune", "touch /tmp/0109-applied.ok", "node scripts/assert-production-target.mjs", "test -f docs/x.sha256", '[ "${NOW}" = "${REC}" ]']) {
+  for (const planted of ["git fetch origin --prune", "touch /tmp/0109-applied.ok", "node scripts/assert-production-target.mjs", "test -f docs/x.sha256", '[ "${NOW}" = "${REC}" ]', "unset DATABASE_URL DATABASE_URL_DIRECT", 'CIRUNS=$(gh api "repos/x")']) {
     assert.equal(unguardedLines(planted).length, 1, planted);
   }
 });
@@ -1090,12 +1118,17 @@ test("EVERY HALT IS EXPLICIT: each command a later step relies on carries its ow
 // THE HARNESS. Nothing in it touches a real host, the secrets folder or a database.
 // =====================================================================================
 
-const STUBBED = ["git", "psql", "node", "pnpm", "sntp", "curl", "shasum", "tee", "mv", "rm", "touch", "cat", "find", "date", "grep", "cut", "awk", "sed", "head", "tail", "wc", "tr"];
-const FAKED = new Set(["git", "psql", "pnpm", "sntp", "curl"]);
+const STUBBED = ["git", "gh", "psql", "node", "pnpm", "sntp", "curl", "shasum", "tee", "mv", "rm", "touch", "cat", "find", "date", "grep", "cut", "awk", "sed", "head", "tail", "wc", "tr"];
+const FAKED = new Set(["git", "gh", "psql", "pnpm", "sntp", "curl"]);
+/** The three check runs BEFORE YOU START requires on HELD, named as #1682's green head efc0f161 names them (fix round 3, 2026-11-04). */
+export const REQUIRED_CHECK_RUNS = Object.freeze(["DB-gated tests (RLS isolation, seeded DB)", "Lint + typecheck + test", "Playwright E2E (seeded DB)"]);
+const CHECK_RUNS_PATH = (sha) => `repos/happygamer1919-tech/OsteoJP/commits/${sha}/check-runs?filter=latest&per_page=100`;
 const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const PROD_APPLY = "/Users/ivan/Projects/GitHub/osteojp-prod-apply";
 const PROD_ENV = "/Users/ivan/osteojp-secrets/new-prod.env";
 const FAKE_DB_URL = "postgresql://postgres.harness:x@harness.invalid:5432/postgres";
+/** A fake env file that defines DATABASE_URL only: a stale DATABASE_URL_DIRECT from the shell must not survive its load (fix round 3). */
+const URL_ONLY_ENV = "fake-prod-url-only.env";
 /** A URL the shell exports before any block runs, as the owner's shell profile may; only a block that loads the env file by allexport and . replaces it. */
 const SHELL_DB_URL = "postgresql://postgres.shellprofile:x@shell-profile.invalid:5432/postgres";
 const FAKE_SHA = { MAIN: "1".repeat(40), BEFORE: "3".repeat(40) };
@@ -1168,6 +1201,17 @@ case "$n" in
         exec ${R("cat")} "$path";;
     esac
     unexpected "$@";;
+  gh) [ "$#" -eq 4 ] && [ "$1" = api ] && [ "$2" = "repos/happygamer1919-tech/OsteoJP/commits/$HARNESS_MAIN/check-runs?filter=latest&per_page=100" ] && [ "$3" = --jq ] || unexpected "$@"
+    case "$HARNESS_GH" in
+      down) echo "gh: harness: HTTP 502: Bad Gateway" >&2; exit 1;;
+      none) exit 0;;
+      pending) printf '%s\\n' 'DB-gated tests (RLS isolation, seeded DB)|completed|success' 'Lint + typecheck + test|completed|success' 'Playwright E2E (seeded DB)|in_progress|none' 'held-for-apply-blocks-merge|completed|failure';;
+      failure) printf '%s\\n' 'DB-gated tests (RLS isolation, seeded DB)|completed|failure' 'Lint + typecheck + test|completed|success' 'Playwright E2E (seeded DB)|completed|success' 'held-for-apply-blocks-merge|completed|failure';;
+      missing) printf '%s\\n' 'DB-gated tests (RLS isolation, seeded DB)|completed|success' 'Playwright E2E (seeded DB)|completed|success' 'held-for-apply-blocks-merge|completed|failure';;
+      prefix) printf '%s\\n' 'DB-gated tests|completed|success' 'Lint + typecheck + test|completed|success' 'Playwright E2E|completed|success';;
+      twice) printf '%s\\n' 'DB-gated tests (RLS isolation, seeded DB)|completed|success' 'DB-gated tests (RLS isolation, seeded DB)|completed|success' 'Lint + typecheck + test|completed|success' 'Playwright E2E (seeded DB)|completed|success';;
+      *) printf '%s\\n' 'Playwright E2E (seeded DB)|completed|success' 'E2E shard (1)|completed|success' 'DB-gated tests (RLS isolation, seeded DB)|completed|success' 'Lint + typecheck + test|completed|success' 'held-for-apply-blocks-merge|completed|failure' 'sync|completed|success';;
+    esac; exit 0;;
   sntp) [ "$1" = time.apple.com ] || unexpected "$@"
     case "$HARNESS_SNTP" in
       far) echo "+42.000000 +/- 0.020000 time.apple.com 17.253.52.253"; exit 0;;
@@ -1178,7 +1222,8 @@ case "$n" in
       down) exit 28;;
       *) printf 'HTTP/2 200\\r\\ndate: %s\\r\\nserver: harness\\r\\n\\r\\n' "$HARNESS_HTTPDATE"; exit 0;;
     esac;;
-  psql) if [ -z "$1" ]; then echo "psql: error: connection to server on socket failed: No such file or directory" >&2; exit 2; fi
+  psql) if [ -n "$HARNESS_SHELL_DBURL" ] && [ "$1" = "$HARNESS_SHELL_DBURL" ]; then unexpected "STALE: psql was handed the shell's DATABASE_URL_DIRECT, not the env file's"; fi
+    if [ -z "$1" ]; then echo "psql: error: connection to server on socket failed: No such file or directory" >&2; exit 2; fi
     [ "$1" = "$HARNESS_DBURL" ] || unexpected "a database URL that is not the harness's";
     case "$*" in
       *precheck-0109-location-saturday-hours.sql*) ${R("cat")} "$HARNESS_FIX/\${HARNESS_PRE:-pre.out}"; exit "\${HARNESS_PRE_EXIT:-0}";;
@@ -1190,17 +1235,21 @@ case "$n" in
     esac
     unexpected "$@";;
   pnpm) unexpected "$@";;
-  node) case "$1" in
+  node) u="\${DATABASE_URL_DIRECT-$DATABASE_URL}"
+    case "$1" in scripts/assert-production-target.mjs|packages/db/scripts/verified-migrate.mjs|packages/db/scripts/read-applied-migrations.mjs)
+      if [ -n "$HARNESS_SHELL_DBURL" ] && [ "$u" = "$HARNESS_SHELL_DBURL" ]; then unexpected "STALE: $1 read the shell's DATABASE_URL_DIRECT or DATABASE_URL, not the env file's"; fi;;
+    esac
+    case "$1" in
       -e) exec ${R("node")} "$@";;
       scripts/check-journal.mjs) echo "check-journal: 107 .sql files match 107 journal entries in order (harness)"; exit 0;;
-      scripts/assert-production-target.mjs) if [ -z "$DATABASE_URL_DIRECT" ]; then echo "REFUSE: DATABASE_URL_DIRECT is not set" >&2; exit 2; fi
-        [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || unexpected "the guard ran with a URL that is not the harness's";
+      scripts/assert-production-target.mjs) if [ -z "$u" ]; then echo "REFUSE: neither DATABASE_URL_DIRECT nor DATABASE_URL is set" >&2; exit 2; fi
+        [ "$u" = "$HARNESS_DBURL" ] || unexpected "the guard ran with a URL that is not the harness's";
         printf 'host: harness.invalid\\nport: 5432\\nref: harness\\ntarget verified: production, session pooler.\\n'; exit 0;;
       packages/db/scripts/verified-migrate.mjs) exec ${R("cat")} "$HARNESS_FIX/vm.out";;
       --env-file=*|packages/db/scripts/read-applied-migrations.mjs)
         if [ "$1" = packages/db/scripts/read-applied-migrations.mjs ]; then
           [ "$#" -eq 1 ] || unexpected "$@";
-          [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || unexpected "the reader ran without the sourced env file's URL";
+          [ "$u" = "$HARNESS_DBURL" ] || unexpected "the reader ran without the sourced env file's URL";
         else
           f="\${1#--env-file=}"; [ -f "$f" ] || { echo "node: $f: not found" >&2; exit 9; }
           [ "$2" = packages/db/scripts/read-applied-migrations.mjs ] || unexpected "$@";
@@ -1307,6 +1356,7 @@ export function prepareHarness(base, docText) {
   }
   for (const [f, t] of Object.entries(harnessFixtures())) writeFileSync(join(base, "fix", f), t);
   writeFileSync(join(base, "fake-prod.env"), `DATABASE_URL_DIRECT=${FAKE_DB_URL}\nDATABASE_URL=${FAKE_DB_URL}\n`);
+  writeFileSync(join(base, URL_ONLY_ENV), `DATABASE_URL=${FAKE_DB_URL}\n`);
   for (const f of APPLY_FILES) {
     mkdirSync(dirname(join(base, "apply", f)), { recursive: true });
     copyFileSync(join(ROOT, f), join(base, "apply", f));
@@ -1359,7 +1409,7 @@ export async function runOnce(cfg, runId, fault) {
   const t0 = Date.now() - 30000;
   writeFileSync(join(run, "t0"), "");
   utimesSync(join(run, "t0"), new Date(t0), new Date(t0));
-  const text = localize(cfg.block, run, fault?.noEnv ? join(run, "no-such.env") : join(cfg.base, "fake-prod.env"));
+  const text = localize(cfg.block, run, fault?.noEnv ? join(run, "no-such.env") : join(cfg.base, fault?.envFile ?? "fake-prod.env"));
   const env = {
     PATH: `${join(cfg.base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
     HARNESS_RUN: run, HARNESS_FIX: join(cfg.base, "fix"), HARNESS_DBURL: FAKE_DB_URL,
@@ -1368,7 +1418,7 @@ export async function runOnce(cfg, runId, fault) {
     HARNESS_ROWS: String(cfg.rows ?? 107), HARNESS_CLINICS: cfg.clock.clinics,
     HARNESS_DHHMM: cfg.clock.dhhmm, HARNESS_DOW: cfg.clock.dow, HARNESS_STAMP: cfg.clock.stamp, HARNESS_ZONE: cfg.clock.zone ?? "WEST",
     HARNESS_NEXT: cfg.clock.next, HARNESS_PREV: cfg.clock.prev, HARNESS_EPOCH: String(HARNESS_EPOCH), HARNESS_HTTPDATE,
-    HARNESS_SNTP: cfg.net?.sntp ?? "", HARNESS_CURL: cfg.net?.curl ?? "",
+    HARNESS_SNTP: cfg.net?.sntp ?? "", HARNESS_CURL: cfg.net?.curl ?? "", HARNESS_GH: cfg.gh ?? "",
     HARNESS_FAIL: fault?.call ?? "", HARNESS_FAIL_CODE: String(fault?.code ?? 3), HARNESS_FAIL_MODE: fault?.mode ?? "",
     HARNESS_HASHN: cfg.db?.hashN ?? "1", HARNESS_PRE: cfg.db?.pre ?? "pre.out", HARNESS_POST: cfg.db?.post ?? "post.out",
     HARNESS_PRE_EXIT: String(cfg.db?.preExit ?? 0), HARNESS_POST_EXIT: String(cfg.db?.postExit ?? 0), HARNESS_READER: cfg.db?.reader ?? "",
@@ -1572,7 +1622,7 @@ export function harnessConfig(md, name, clock, shell, base, opts = {}) {
         const vm = positive.calls.find((c) => c.args.startsWith("packages/db/scripts/verified-migrate.mjs"));
         for (const code of [2, 4, 5]) out.push({ kind: `vm-exit-${code}`, label: `node verified-migrate exits ${code}`, call: vm.id, code, pos: vm.pos, at: null });
       }
-      for (const c of positive.calls.filter((x) => x.id.startsWith("date#") || (x.id.startsWith("cut#") && x.args.includes("0109-window.ok")))) {
+      for (const c of positive.calls.filter((x) => x.id.startsWith("date#") || x.id.startsWith("gh#") || (x.id.startsWith("cut#") && x.args.includes("0109-window.ok")))) {
         out.push({ kind: "empty", label: `${describeCall(c)}: exits 0 with empty output`, call: c.id, mode: "empty", pos: c.pos, at: c });
       }
       // An empty answer from psql: every read that decides something stops on it. The last three journal rows are printed for the report and decide nothing.
@@ -1790,6 +1840,50 @@ test("NETWORK TIME, both dispatch blocks whole: one source read is enough, a sou
         assert.equal(noSntp.code, 0, noSntp.out.slice(-600));
         assertStops(await run({ sntp: "far" }, "far"), name, /^STOP: the machine's clock disagrees with network time/, `${shell} ${name}, sntp far`);
         assertStops(await run({ sntp: "down", curl: "down" }, "none"), name, /^STOP: the machine's clock could not be held against network time/, `${shell} ${name}, nothing readable`);
+      }
+    }
+  });
+});
+
+test("CI ON HELD, BEFORE YOU START whole: the three required check runs must each conclude success on HELD; held-for-apply-blocks-merge is not read; none, a missing, an unfinished, a failed, a renamed or a doubled run, or no answer, STOPs before the journal read", async () => {
+  const b = blockWith(doc, BYS);
+  assert.equal(b.split("\n").filter((l) => l.startsWith("CIRUNS=$(gh api ")).length, 1);
+  assert.ok(b.includes(`CIRUNS=$(gh api "${CHECK_RUNS_PATH("${HELD}")}" --jq `), "the check runs are read for HELD, latest per name");
+  assert.ok(b.includes(`for CN in ${REQUIRED_CHECK_RUNS.map((n) => `'${n}'`).join(" ")}; do`), "the three names, exactly");
+  assert.ok(!b.includes("held-for-apply-blocks-merge'"), "held-for-apply-blocks-merge is never a required name");
+  assert.ok(b.indexOf("CIRUNS=$(gh api ") > b.indexOf("IS the commit this block names"), "the CI check runs after HELD is verified");
+  assert.ok(b.indexOf("CIRUNS=$(gh api ") < b.indexOf("${READER} 2>&1"), "the CI check runs before the journal read");
+  for (const blk of blocksOf(doc).filter((x) => x !== b)) assert.ok(!blk.includes("gh api"), "only BEFORE YOU START reads CI");
+  await withHarness(async (base) => {
+    for (const shell of shellsHere()) {
+      const run = (gh, id) => runOnce({ ...harnessConfig(doc, "bys", CLOSED, shell, base), gh }, `${shell}-ci-${id}`, null);
+      const green = await run("", "green");
+      assert.equal(green.code, 0, green.out.slice(-800));
+      for (const n of REQUIRED_CHECK_RUNS) assert.ok(green.out.includes(`CI on HELD:    ${n}: completed, success`), `${shell}: ${n}`);
+      assert.match(green.out, new RegExp(`^CI on HELD:    all three required check runs concluded success on ${FAKE_SHA.MAIN}$`, "m"));
+      for (const [gh, why] of [["none", "no runs at all"], ["missing", "a required run missing"], ["pending", "a run not finished"], ["failure", "a run that failed"], ["prefix", "a run named short"], ["twice", "a name twice"]]) {
+        const r = await run(gh, gh);
+        assertStops(r, "bys", /^STOP: CI on the held head is not shown green: the check run .+ is missing, not finished, or did not conclude success/, `${shell} CI ${why}`);
+        assert.deepEqual(credentialCalls(r), [], `${shell} CI ${why}: the journal read ran`);
+      }
+      const down = await run("down", "down");
+      assertStops(down, "bys", /^STOP: the check runs on the held head could not be read from GitHub/, `${shell} CI unreadable`);
+      assert.deepEqual(credentialCalls(down), [], `${shell} CI unreadable`);
+    }
+  });
+});
+
+test("STALE VARIABLES, the four blocks that load the env file, whole: a stale .invalid DATABASE_URL_DIRECT from the shell does not survive a file that defines only DATABASE_URL", async () => {
+  await withHarness(async (base) => {
+    for (const shell of shellsHere()) {
+      for (const name of ["bys", "stage1", "stage2", "closing"]) {
+        const tag = `${shell} ${name}, env file with DATABASE_URL only`;
+        const r = await runOnce(harnessConfig(doc, name, CLOSED, shell, base), `${shell}-stale-${name}`, { envFile: URL_ONLY_ENV });
+        assert.equal(r.unexpected, "", `${tag}: ${r.unexpected}`);
+        assert.ok(credentialCalls(r).length > 0, `${tag}: no program that reads the URL ran, so the run proves nothing: ${r.out.slice(-400)}`);
+        assert.ok(!r.calls.some((c) => c.args.includes("shell-profile.invalid")), `${tag}: a program was handed the shell's URL`);
+        if (r.code === 0) assert.ok(r.out.includes(HARNESS_BLOCKS[name].success.at(-1)), `${tag}: ${r.out.slice(-600)}`);
+        else assert.equal(r.out.split("\n").filter((l) => l.startsWith("STOP: ")).length, 1, `${tag}: ${r.out.slice(-600)}`);
       }
     }
   });
