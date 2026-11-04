@@ -94,7 +94,9 @@ test("the read writes nothing, controls no transaction, reads the clock once and
   assert.equal((sql.match(/current_setting\('osteojp\.diag_appointment_id'\)/g) || []).length, 1, "the appointment id is read other than once");
   assert.equal((code.match(/\bnow\(\)/g) || []).length, 1, "the read must read now() exactly once");
   assert.doesNotMatch(code, /\b(current_timestamp|clock_timestamp|statement_timestamp|transaction_timestamp|localtimestamp|current_date)\b/i, "a second clock");
-  assert.doesNotMatch(code, /pg_xact_commit_timestamp/, "a commit-time probe that can raise on production");
+  // The commit-time probe raises when the setting is off: it is called once, only behind that setting.
+  assert.equal((sql.match(/pg_xact_commit_timestamp\(/g) || []).length, 1, "the commit-time probe is called other than once");
+  assert.match(sql, /case when current_setting\('track_commit_timestamp'\) = 'on'\n\s+then pg_xact_commit_timestamp\(p\.xmin\) end as committed_at,/, "the commit-time probe is not guarded by its setting");
 });
 
 test("the read names no appointment, no column that holds a person, no tenant id and no metadata text", () => {
@@ -116,10 +118,14 @@ test("the read names no appointment, no column that holds a person, no tenant id
 test("the read's verdict rows, finding rows and the document's tables agree", () => {
   const nums = [...sql.matchAll(/^  select (\d+)(?: as n)?, /gm)].map((m) => Number(m[1]));
   assert.deepEqual(nums, [0, 1, 2, 3, 10, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 40, 41, 42, 43], "the read's rows moved");
+  // F1 is never REFUTED (its run time's meaning is NOT VERIFIED).
+  const f1 = sql.slice(sql.indexOf("  select 30, 0,"), sql.indexOf("  select 31, 0,"));
+  assert.doesNotMatch(f1, /then 'REFUTED'/, "F1 can read REFUTED");
+  assert.match(block, /F1 \(CONFIRMED\|CONSISTENT\|UNDECIDED\|NO_SUBJECT\) F2 \(CONFIRMED\|REFUTED\|NO_SUBJECT\) /, "the block accepts another F1 or F2 word");
   for (const n of ["| 0 |", "| 2 |", "| 3 |", "| 20 |", "| 40 |", "| 30 |", "| 31 |", "| 32 |", "| 33 |"]) {
     assert.ok(doc.includes(n), `the document's tables have no row ${n}`);
   }
-  for (const w of ["CONFIRMED", "REFUTED", "UNDECIDED", "NO_SUBJECT", "EVIDENCED", "DOOR_ONLY", "NO_EVIDENCE"]) {
+  for (const w of ["CONFIRMED", "CONSISTENT", "REFUTED", "UNDECIDED", "NO_SUBJECT", "EVIDENCED", "DOOR_ONLY", "NO_EVIDENCE"]) {
     assert.ok(sql.includes(`'${w}'`), `the read never prints ${w}`);
     assert.ok(block.includes(w), `the block does not accept ${w}`);
   }
@@ -222,8 +228,9 @@ const drop = (t, n) => t.split("\n").filter((l) => !l.startsWith(` ${String(n).p
 const twice = (t, n) => t.split("\n").flatMap((l) => (l.startsWith(` ${String(n).padStart(2)} | `) ? [l, l] : [l])).join("\n");
 const FIXTURES = {
   ok: TABLE_OK,
-  control: swapV(swapV(swapV(swapV(TABLE_OK, 3, "REVIEW", "OK"), 20, "REVIEW", "OK"), 30, "CONFIRMED", "REFUTED"), 32, "CONFIRMED", "NO_SUBJECT"),
+  control: swapV(swapV(swapV(swapV(TABLE_OK, 3, "REVIEW", "OK"), 20, "REVIEW", "OK"), 30, "CONFIRMED", "NO_SUBJECT"), 32, "CONFIRMED", "NO_SUBJECT"),
   undecided: swapV(swapV(TABLE_OK, 30, "CONFIRMED", "UNDECIDED"), 33, "EVIDENCED", "DOOR_ONLY"),
+  consistent: swapV(swapV(TABLE_OK, 30, "CONFIRMED", "CONSISTENT"), 31, "REFUTED", "NO_SUBJECT"),
   noevidence: swapV(TABLE_OK, 33, "EVIDENCED", "NO_EVIDENCE"),
   twotenants: TABLE_OK.replace(vrow(3, "3. tenant 1, slots on 2026-11-03", "heartbeats 60 (shadow 60), pass ids 60, slots 59; doubled 10:15; missing 10:00; outside none; counts that differ 2", "REVIEW"),
     `${vrow(3, "3. tenant 1, slots on 2026-11-03", "heartbeats 60 (shadow 60), pass ids 60, slots 59; doubled 10:15; missing 10:00; outside none; counts that differ 2", "REVIEW")}\n${vrow(3, "3. tenant 2, slots on 2026-11-03", "heartbeats 60 (shadow 60), pass ids 60, slots 60; doubled none; missing none; outside none; counts that differ 0", "OK")}`),
@@ -241,7 +248,8 @@ const FIXTURES = {
   no30: drop(TABLE_OK, 30), no33: drop(TABLE_OK, 33), double31: twice(TABLE_OK, 31),
   bad30: swapV(TABLE_OK, 30, "CONFIRMED", "MAYBE"),
   bad33: swapV(TABLE_OK, 33, "EVIDENCED", "CONFIRMED"),
-  bad31: swapV(TABLE_OK, 31, "REFUTED", "NO_SUBJECT"),
+  bad31: swapV(TABLE_OK, 31, "REFUTED", "UNDECIDED"),
+  refuted30: swapV(TABLE_OK, 30, "CONFIRMED", "REFUTED"),
 };
 for (const [k, v] of Object.entries(FIXTURES)) if (k !== "ok") assert.notEqual(v, TABLE_OK, `the fixture ${k} changed nothing`);
 
@@ -272,8 +280,11 @@ case "${name}" in
     esac;;
   node)
     [ "$1" = "scripts/assert-production-target.mjs" ] || { echo "harness: unexpected node $*" >&2; exit 97; }
-    [ "$DATABASE_URL_DIRECT" = "$HARNESS_DBURL" ] || { echo "harness: the guard ran without the env file's URL" >&2; exit 97; }
-    [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "$HARNESS_POOLURL" ] || { echo "harness: a URL from before the env file reached the guard" >&2; exit 97; }
+    printf 'DIRECT=%s POOL=%s\n' "$DATABASE_URL_DIRECT" "$DATABASE_URL" >> "$d/guard.seen"
+    # As scripts/assert-production-target.mjs:49 reads it: DATABASE_URL_DIRECT, else DATABASE_URL.
+    seen="\${DATABASE_URL_DIRECT:-$DATABASE_URL}"
+    [ -n "$seen" ] || { echo "REFUSING: neither DATABASE_URL_DIRECT nor DATABASE_URL is set." >&2; exit 2; }
+    [ "$seen" = "$HARNESS_DBURL" ] || { echo "REFUSING: not the production session pooler." >&2; exit 2; }
     printf 'host: harness.invalid\\nport: 5432\\nref:  harness\\ntarget verified: production, session pooler.\\n'; exit 0;;
   psql)
     [ "$1" = "$HARNESS_DBURL" ] || { echo "harness: psql got a URL that is not the harness's" >&2; exit 97; }
@@ -326,6 +337,7 @@ function filled(base, { docsha, appt, prnum } = {}) {
 
 function runOnce(shell, base, text, env = {}) {
   rmSync(join(base, "calls"), { force: true });
+  rmSync(join(base, "guard.seen"), { force: true });
   for (const n of STUBBED) rmSync(join(base, `count.${n}`), { force: true });
   const tail = `true && eval '${text.replaceAll("'", `'\\''`)}' < /dev/null && echo TOOL-CHAIN-CONTINUED`;
   const args = shell === "zsh" ? ["-f", "-c", tail] : ["--noprofile", "--norc", "-c", tail];
@@ -350,7 +362,9 @@ function runOnce(shell, base, text, env = {}) {
   });
   let calls = "";
   try { calls = readFileSync(join(base, "calls"), "utf8"); } catch { /* no call made */ }
-  return { ...r, out: `${r.stdout}${r.stderr}`, calls };
+  let seen = "";
+  try { seen = readFileSync(join(base, "guard.seen"), "utf8"); } catch { /* the guard never ran */ }
+  return { ...r, out: `${r.stdout}${r.stderr}`, calls, seen };
 }
 
 function assertNoIds(r, label) {
@@ -427,7 +441,8 @@ for (const shell of shells) {
     const base = makeBase();
     try {
       const text = filled(base);
-      assertRead(runOnce(shell, base, text, { HARNESS_TABLE: "control" }), "F1 REFUTED F2 REFUTED F3 NO_SUBJECT F4 EVIDENCED", "5 OK / 0 REVIEW / 0 VACUOUS / 0 FAIL");
+      assertRead(runOnce(shell, base, text, { HARNESS_TABLE: "control" }), "F1 NO_SUBJECT F2 REFUTED F3 NO_SUBJECT F4 EVIDENCED", "5 OK / 0 REVIEW / 0 VACUOUS / 0 FAIL");
+      assertRead(runOnce(shell, base, text, { HARNESS_TABLE: "consistent" }), "F1 CONSISTENT F2 NO_SUBJECT F3 CONFIRMED F4 EVIDENCED", OK_COUNTS);
       assertRead(runOnce(shell, base, text, { HARNESS_TABLE: "undecided" }), "F1 UNDECIDED F2 REFUTED F3 CONFIRMED F4 DOOR_ONLY", OK_COUNTS);
       assertRead(runOnce(shell, base, text, { HARNESS_TABLE: "noevidence" }), "F1 CONFIRMED F2 REFUTED F3 CONFIRMED F4 NO_EVIDENCE", OK_COUNTS);
       assertRead(runOnce(shell, base, text, { HARNESS_TABLE: "twotenants" }), OK_FINDINGS, "4 OK / 2 REVIEW / 0 VACUOUS / 0 FAIL");
@@ -435,7 +450,7 @@ for (const shell of shells) {
       for (const t of ["fail0", "vac2", "vac20", "vac40", "review2", "review40", "fail3", "no0", "no2", "no3", "no20", "no40", "double2", "double20", "double40", "stray"]) {
         assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), shape, t);
       }
-      for (const t of ["no30", "no33", "double31", "bad30", "bad33", "bad31"]) {
+      for (const t of ["no30", "no33", "double31", "bad30", "bad33", "bad31", "refuted30"]) {
         assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), /the findings \(rows 30 to 33\) are missing, doubled or not one of their words/, t);
       }
       assertStop(runOnce(shell, base, text, { HARNESS_TABLE: "notreadonly" }), /READ ONLY/, "not read only");
@@ -458,16 +473,33 @@ for (const shell of shells) {
         writeFileSync(f, keep);
       }
       // A URL already in the shell (a profile that exports one) never reaches the guard or psql:
-      // both are unset before the env file, and an env file without DATABASE_URL_DIRECT stops the
-      // guard instead of letting the old value through.
+      // both are unset before the env file. The proof is behavioural: the guard stub records what
+      // it saw, and the same runs with the two unset lines removed show the stale URL reaching it.
       const stale = "postgresql://postgres.stale:x@stale.invalid:5432/postgres";
-      assertRead(runOnce(shell, base, text, { DATABASE_URL: stale, DATABASE_URL_DIRECT: stale }), OK_FINDINGS, OK_COUNTS);
-      const noDirect = makeBase({ envFile: "DATABASE_URL=postgresql://postgres.harness:x@harness.invalid:6543/postgres\n" });
-      try {
-        const r = runOnce(shell, noDirect, filled(noDirect), { DATABASE_URL_DIRECT: stale });
-        assertStop(r, /the target guard refused or failed/, "an env file without DATABASE_URL_DIRECT");
-        assert.ok(!/^psql:/m.test(r.calls), `psql ran without the env file's URL: ${r.calls}`);
-      } finally { rmSync(noDirect, { recursive: true, force: true }); }
+      const staleEnv = { DATABASE_URL: stale, DATABASE_URL_DIRECT: stale };
+      const unsetLines = /^unset DATABASE_URL(_DIRECT)? \|\| [^\n]*\n/gm;
+      const r0 = runOnce(shell, base, text, staleEnv);
+      assertRead(r0, OK_FINDINGS, OK_COUNTS);
+      assert.ok(r0.seen && !r0.seen.includes("stale"), `a stale URL reached the guard: ${r0.seen}`);
+      for (const [envFile, label] of [
+        ["DATABASE_URL=postgresql://postgres.harness:x@harness.invalid:6543/postgres\n", "an env file with only the transaction pooler"],
+        ["SOMETHING_ELSE=1\n", "an env file with neither URL"],
+      ]) {
+        const b2 = makeBase({ envFile });
+        try {
+          // The guard falls back to DATABASE_URL (6543) or finds neither, and refuses: the stale
+          // DATABASE_URL_DIRECT never reaches it, and psql never runs.
+          const r = runOnce(shell, b2, filled(b2), staleEnv);
+          assertStop(r, /the target guard refused or failed/, label);
+          assert.ok(!r.seen.includes("stale"), `${label}: a stale URL reached the guard: ${r.seen}`);
+          assert.ok(!/^psql:/m.test(r.calls), `${label}: psql ran: ${r.calls}`);
+          // The kill: without the two unset lines the stale URL reaches the guard.
+          const removed = filled(b2).replace(unsetLines, "");
+          assert.notEqual(removed, filled(b2), "the unset lines were not found");
+          const m = runOnce(shell, b2, removed, staleEnv);
+          assert.ok(m.seen.includes("stale"), `${label}: with the unset lines removed the stale URL did not reach the guard, so the test proves nothing: ${m.seen}`);
+        } finally { rmSync(b2, { recursive: true, force: true }); }
+      }
       const r1 = runOnce(shell, base, text.replaceAll(join(base, "apply"), join(base, "no-such-apply-dir")));
       assertStop(r1, /the apply worktree is not there/, "missing apply directory");
       assert.ok(!/^(git|node|psql|shasum|rm|awk|cut):/m.test(r1.calls), `a command ran after the cd failed: ${r1.calls}`);
@@ -581,7 +613,7 @@ insert into public.users (id, tenant_id, role_id, email, full_name) values ('${S
   for (const v of visits) {
     for (const [offset, channel, minutes] of OFFSETS) {
       const due = ms(v.start) - minutes * MIN;
-      const by = sorted.find((b) => b.passAt >= due);
+      const by = v.takenAt && offset === "48h" ? at(tBeats, v.takenAt) : sorted.find((b) => b.passAt >= due);
       if (!by) continue;
       const skipRun = (v.subject && offset === "48h") || (v.subject && !subjectRun);
       if (!skipRun) {
@@ -632,7 +664,7 @@ insert into public.reminder_dispatches (tenant_id, appointment_id, channel, temp
   for (const v of deleted) {
     sqlParts.push(`delete from public.appointments where id = '${v.id}';
 insert into public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata, created_at)
-  values ('${TENANT}', '${STAFF}', 'appointment.hard_delete', 'appointment', '${v.id}', '{"startsAt":"${isoOf(`${v.start}:00`)}","status":"scheduled"}', ${ts(ms(v.deletedAt))});`);
+  values ('${TENANT}', '${STAFF}', 'appointment.hard_delete', 'appointment', '${v.id}', '{"startsAt":"${v.badStart ? "2026-11-05 at noon" : isoOf(`${v.start}:00`)}","status":"scheduled"}', ${ts(ms(v.deletedAt))});`);
   }
   sqlParts.push(after);
   return sqlParts.join("\n");
@@ -662,12 +694,18 @@ const F = (f1, f2, f3, f4) => ({ 30: f1, 31: f2, 32: f3, 33: f4 });
 const V = (v3, v20, v40 = "OK", v2 = "OK") => ({ 0: "OK", 2: v2, "3:1": v3, "3:2": "OK", 20: v20, 40: v40 });
 const keyOf = (r) => (r[0] === "3" ? `3:${r[1].match(/tenant (\d+)/)[1]}` : r[0]);
 
+const PGURL = process.env.SWEEP_DIAG_1105_TEST_PGURL;
+/** Whether the local server records commit times (a server setting, read once). */
+const COMMIT_TS = PGURL ? /^on$/m.test(spawnSync("psql", [PGURL, "-X", "-A", "-t", "-c", "show track_commit_timestamp"], { encoding: "utf8" }).stdout) : false;
+
 const CASES = [
   {
     name: "CONTROL: nothing late, every count equal, the subject's mark shadow only",
     seed: buildSeed(),
-    want: { ...V("OK", "OK"), ...F("REFUTED", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+    want: { ...V("OK", "OK"), ...F("NO_SUBJECT", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
     info: [
+      [10, new RegExp(`slot 07:00 \\| .*; commit ${COMMIT_TS ? "\\d\\d:\\d\\d:\\d\\d\\.\\d{3} \\(" : "not recorded \\(track_commit_timestamp off; the next heartbeat's start is an upper bound only\\)"}`)],
+      [1, new RegExp(`; track_commit_timestamp ${COMMIT_TS ? "on" : "off"}; read at`)],
       [3, /^3\. tenant 1, .* \| heartbeats 60 \(shadow 60\), pass ids 60, slots 60; doubled none; missing none; outside none; counts that differ 0 \|/],
       [20, /counts that differ 0;/],
       [40, /status scheduled; starts 2026-11-05 10:00; origin staff; .*48h mark 2026-11-03 10:00, 24h mark 2026-11-04 10:00; audit rows 3, claim store rows 5, ledger rows 2/],
@@ -690,14 +728,14 @@ const CASES = [
     want: { ...V("REVIEW", "REVIEW"), ...F("CONFIRMED", "REFUTED", "REFUTED", "EVIDENCED") },
     info: [
       [3, /^3\. tenant 1, .* \| heartbeats 60 \(shadow 60\), pass ids 60, slots 59; doubled 10:15; missing 10:00; outside none; counts that differ 1 \|/],
-      [10, /slot 10:15 \| pass_at 10:16:30\.000 \(90\.0 s into its slot\); .*run created 10:00:00\.500 \(slot 10:00\).*due 3, recorded 3, shadow rows of its transaction 3, .* \| flags: slot doubled \(1 of 2\), late: run created in slot 10:00 \| INFO$/],
-      [10, /slot 10:15 \| pass_at 10:17:10\.000 .*run created 10:15:00\.500 \(slot 10:15\).*due 3, recorded 3, shadow rows of its transaction 1, .* \| flags: slot doubled \(2 of 2\), count differs \| INFO$/],
+      [10, /slot 10:15 \| pass_at 10:16:30\.000 \(90\.0 s into its slot\); .*run time \(pass id as a ULID, NOT VERIFIED as the cron tick\) 10:00:00\.500 \(slot 10:00\).*due 3, recorded 3, shadow rows of its transaction 3, .* \| flags: slot doubled \(1 of 2\), late: run time in slot 10:00 \| INFO$/],
+      [10, /slot 10:15 \| pass_at 10:17:10\.000 .*run time \(pass id as a ULID, NOT VERIFIED as the cron tick\) 10:15:00\.500 \(slot 10:15\).*due 3, recorded 3, shadow rows of its transaction 1, .* \| flags: slot doubled \(2 of 2\), count differs \| INFO$/],
       [20, /counts that differ 1; rows short in all 2, rows over in all 0; of them on 2026-11-03 1; at 2026-11-03 10:15 tenant 1 short 2/],
-      [21, /count differs: 2026-11-03 10:15, tenant 1 \| recorded 3, .*shadow rows of its transaction 1, naming its pass id 1; short by 2; .*hard-deleted visits first due at this pass 0, marks a neighbouring heartbeat's row holds 3/],
+      [21, /count differs: 2026-11-03 10:15, tenant 1 \| mode shadow; recorded 3, .*shadow rows of its transaction 1, naming its pass id 1; short by 2; .*hard-deleted visits given to this pass 0, marks a neighbouring heartbeat's row holds 3/],
       [23, new RegExp(`${appt(0x103)}, 48h email, start 2026-11-05 10:05, mark 2026-11-03 10:05; held by the previous heartbeat \\(slot 2026-11-03 10:15\\); rows of this mark from 11-02 1`)],
       [23, new RegExp(`${appt(0x104)}, 48h email, start 2026-11-05 10:10, mark 2026-11-03 10:10; held by the previous heartbeat`)],
       [23, /the appointment passed in, 48h email, start 2026-11-05 10:00, mark 2026-11-03 10:00; held by the previous heartbeat/],
-      [30, /late 1, of them in a doubled slot or outside from a missing one 1/],
+      [30, /heartbeats in a doubled slot or after 21:45 2, of them with the slot before missing 2; late by their run time 1, of them from a missing slot 1/],
       [42, /shadow, 48h email \| written 2026-11-03 10:16:30\.150; start 2026-11-05 10:00; .*its heartbeat \(by transaction\) 2026-11-03 10:15, pass id matches yes/],
     ],
     count10: 60 * 2,
@@ -715,12 +753,12 @@ const CASES = [
   {
     name: "rows that went with two hard-deleted visits: the 12:15 and 16:30 passes each short by one, nothing late",
     seed: buildSeed({ deleted: DELETED }),
-    want: { ...V("OK", "REVIEW"), ...F("REFUTED", "REFUTED", "CONFIRMED", "EVIDENCED") },
+    want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "CONFIRMED", "EVIDENCED") },
     info: [
       [20, /counts that differ 2; rows short in all 2, rows over in all 0; of them on 2026-11-03 2; at 2026-11-03 12:15 tenant 1 short 1, 2026-11-03 16:30 tenant 1 short 1/],
-      [22, new RegExp(`${appt(0x201)}, 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05, deleted 2026-11-03 13:00:00; another heartbeat's row holds it: no \\(a visit's rows go with it\\)`)],
+      [22, new RegExp(`${appt(0x201)}, 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05, deleted 2026-11-03 13:00:00; fits 1 heartbeat\\(s\\) whose count differs, given to the earliest; another heartbeat's row holds it: no \\(a visit's rows go with it\\)`)],
       [22, new RegExp(`${appt(0x202)}, 48h email, start 2026-11-05 16:20, mark 2026-11-03 16:20, deleted 2026-11-03 17:00:00`)],
-      [32, /heartbeats whose count differs 2, of them over \(more rows than recorded\) 0; with a hard-deleted candidate 2, short by exactly their candidates 2; candidates in all 2; hard-deleted visits from 11-02 2, of them with a start this read can place 2/],
+      [32, /shadow heartbeats whose count differs 2, of them over \(more rows than recorded\) 0; with a hard-deleted candidate 2, short by exactly their candidates 2; candidates in all 2, fitting two or more heartbeats 0; hard-deleted visits from 11-02 2, of them with a start this read cannot place 0, marks of them due before 11-02 with the visit ahead then 0/],
     ],
   },
   {
@@ -736,8 +774,8 @@ const CASES = [
       after: `update public.reminder_sweep_passes set recorded_count = recorded_count + 1, due_count = due_count + 1
  where tenant_id = '${TENANT}' and pass_at = ${ts(ms("2026-11-03 12:15:02"))};`,
     }),
-    want: { ...V("OK", "REVIEW"), ...F("REFUTED", "REFUTED", "UNDECIDED", "EVIDENCED") },
-    info: [[21, /short by 2; .*hard-deleted visits first due at this pass 1,/]],
+    want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "UNDECIDED", "EVIDENCED") },
+    info: [[21, /short by 2; .*hard-deleted visits given to this pass 1,/]],
   },
   {
     name: "the 21:45 pass of 11-03 late past 22:00: 21:45 missing, a slot outside",
@@ -758,19 +796,60 @@ const CASES = [
   {
     name: "a pass of 11-03 failed (no heartbeat at 13:00): a missing slot, nothing late",
     seed: buildSeed({ after: `delete from public.reminder_sweep_passes where tenant_id = '${TENANT}' and pass_at = ${ts(ms("2026-11-03 13:00:02"))};` }),
-    want: { ...V("REVIEW", "OK"), ...F("REFUTED", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+    want: { ...V("REVIEW", "OK"), ...F("UNDECIDED", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
     info: [[3, /heartbeats 59 \(shadow 59\), pass ids 59, slots 59; doubled none; missing 13:00; outside none;/]],
   },
   {
-    name: "pass ids that are not ULIDs: F1 cannot decide",
+    name: "the 10:00 pass late into 10:15, its run time stamped late too (10:16:29): the slots fit, the run time does not confirm, CONSISTENT",
+    seed: buildSeed({ beats: (b) => { LATE(b); const l = at(b, "2026-11-03 10:00:00"); l.runAt = l.passAt - 1000; l.passId = ulid(l.runAt, 88_888); } }),
+    want: { ...V("REVIEW", "OK"), ...F("CONSISTENT", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+    info: [[30, /of them with the slot before missing 2; late by their run time 0, of them from a missing slot 0/]],
+  },
+  {
+    name: "the 10:00 pass late into 10:15 with pass ids that are not ULIDs: CONSISTENT",
+    seed: buildSeed({ beats: LATE, ulids: false }),
+    want: { ...V("REVIEW", "OK"), ...F("CONSISTENT", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+  },
+  {
+    name: "send heartbeats (11-02 and 11-03 12:07, recorded 2, no shadow row): not compared, no count differs",
+    seed: buildSeed({ after: ["2026-11-02 12:07:00", "2026-11-03 12:07:00"].map((t, i) => `
+insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, look_ahead_before, due_count, recorded_count, over_ceiling, excluded_count, created_at)
+  values ('${TENANT}', '${ulid(ms(t) - 1000, 77_000 + i)}', 'send', ${ts(ms(t))}, null, 2, 2, false, 0, ${ts(ms(t) + 5000)});`).join("") }),
+    want: { ...V("REVIEW", "OK"), ...F("UNDECIDED", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+    info: [
+      [20, /heartbeats 250, shadow 248, send 2 \(not compared: a send heartbeat records claims, not shadow rows\); .*counts that differ 0;/],
+      [10, /slot 12:00 \| pass_at 12:07:00\.000 .*mode send; .*due 2, recorded 2, shadow rows of its transaction 0, shadow rows naming its pass id 0 \(a send heartbeat: its recorded count is claims taken, not compared\), .* \| flags: slot doubled \(2 of 2\) \| INFO$/],
+      [3, /doubled 12:00; missing none; outside none; counts that differ 0 \|/],
+    ],
+  },
+  {
+    name: "a catch-up: a hard-deleted visit's 11-03 12:05 mark taken by the 14:15 pass, deleted at 15:00: CONFIRMED",
+    seed: buildSeed({ deleted: [{ id: appt(0x204), start: "2026-11-05 12:05", takenAt: "2026-11-03 14:15:00", deletedAt: "2026-11-03 15:00:00" }] }),
+    want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "CONFIRMED", "EVIDENCED") },
+    info: [[22, new RegExp(`counted, no row \\(a hard-deleted visit\\): 2026-11-03 14:15, tenant 1 \\| ${appt(0x204)}, 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05`)]],
+  },
+  {
+    name: "a hard-deleted visit whose start the read cannot place, its pass short by one: UNDECIDED, not REFUTED",
+    seed: buildSeed({ deleted: [{ ...DELETED[0], badStart: true }] }),
+    want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "UNDECIDED", "EVIDENCED") },
+    info: [[32, /hard-deleted visits from 11-02 1, of them with a start this read cannot place 1,/]],
+  },
+  {
+    name: "the subject's approval SMS in the ledger, no claim: EVIDENCED",
+    seed: buildSeed({ subjectRun: false, after: `insert into public.reminder_dispatches (tenant_id, appointment_id, channel, template_id, outcome, created_at)
+  values ('${TENANT}', '${SUBJECT}', 'sms', 'booking_approved.sms', 'sent', ${ts(ms("2026-11-03 09:30:05"))});` }),
+    want: { ...V("OK", "OK"), ...F("NO_SUBJECT", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+  },
+  {
+    name: "pass ids that are not ULIDs, nothing late: no slot anomaly, NO_SUBJECT",
     seed: buildSeed({ ulids: false }),
-    want: { ...V("OK", "OK"), ...F("UNDECIDED", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
-    info: [[10, /run created not decoded \(not a ULID\)/]],
+    want: { ...V("OK", "OK"), ...F("NO_SUBJECT", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+    info: [[10, /run time \(pass id as a ULID, NOT VERIFIED as the cron tick\) not decoded \(not a ULID\)/]],
   },
   {
     name: "the subject's door rows only (no claim, no confirmation): DOOR_ONLY",
     seed: buildSeed({ subjectRun: false }),
-    want: { ...V("OK", "OK"), ...F("REFUTED", "REFUTED", "NO_SUBJECT", "DOOR_ONLY") },
+    want: { ...V("OK", "OK"), ...F("NO_SUBJECT", "REFUTED", "NO_SUBJECT", "DOOR_ONLY") },
   },
   {
     name: "the subject hard-deleted: no row, its audit rows remain",
@@ -779,7 +858,7 @@ insert into public.audit_log (tenant_id, actor_user_id, action, entity_type, ent
   values ('${TENANT}', '${STAFF}', 'appointment.hard_delete', 'appointment', '${SUBJECT}', '{"startsAt":"${isoOf("2026-11-05 10:00:00")}"}', ${ts(ms("2026-11-04 07:50:00"))});` }),
     // Its rows went with it: the 10:00 pass (its new start's mark, placed by the delete's start) and
     // the 09:00 pass (its old start's mark, which the delete's start cannot place) are short by one.
-    want: { ...V("OK", "REVIEW"), ...F("REFUTED", "REFUTED", "UNDECIDED", "DOOR_ONLY") },
+    want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "UNDECIDED", "DOOR_ONLY") },
     info: [
       [40, /no row; hard-delete audit rows 1; audit rows 4, claim store rows 0, ledger rows 0/],
       [22, /the appointment passed in, 48h email, start 2026-11-05 10:00, mark 2026-11-03 10:00, deleted 2026-11-04 07:50:00/],
@@ -789,21 +868,27 @@ insert into public.audit_log (tenant_id, actor_user_id, action, entity_type, ent
     name: "an id that names nothing: row 40 VACUOUS",
     seed: buildSeed(),
     subject: appt(0x999),
-    want: { ...V("OK", "OK", "VACUOUS"), ...F("REFUTED", "REFUTED", "NO_SUBJECT", "NO_EVIDENCE") },
+    want: { ...V("OK", "OK", "VACUOUS"), ...F("NO_SUBJECT", "REFUTED", "NO_SUBJECT", "NO_EVIDENCE") },
   },
   {
     name: "no heartbeat at all: rows 2 and 20 VACUOUS, no row 3",
     seed: buildSeed({ after: "delete from public.reminder_claims where kind = 'shadow';\ndelete from public.reminder_sweep_passes;" }),
-    want: { 0: "OK", 2: "VACUOUS", 20: "VACUOUS", 40: "OK", ...F("UNDECIDED", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
+    want: { 0: "OK", 2: "VACUOUS", 20: "VACUOUS", 40: "OK", ...F("NO_SUBJECT", "NO_SUBJECT", "NO_SUBJECT", "EVIDENCED") },
   },
 ];
 
 /** Each mutant is killed by its case: the mutated read does not meet that case's expectation. */
 const MUTANTS = [
   ["the late flag reversed", "(h.run_slot is not null and h.run_slot < h.slot) as f_late", "(h.run_slot is not null and h.run_slot > h.slot) as f_late", "SOLO's hypothesis"],
-  ["F1 confirms a late pass without a missing run slot", "and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.run_slot)) as late_into_doubled_from_missing", "and true) as late_into_doubled_from_missing", "a late pass whose run's slot still has a heartbeat"],
-  ["F1 without the outside arm", "where h.f_late and (h.f_doubled or h.f_outside)", "where h.f_late and h.f_doubled", "the 21:45 pass of 11-03 late past 22:00"],
-  ["F1 refutes with an undecoded pass id", "when f1.beats > 0 and f1.undecoded = 0 and f1.late = 0 then 'REFUTED'", "when f1.beats > 0 and f1.late = 0 then 'REFUTED'", "pass ids that are not ULIDs"],
+  ["F1 confirms a late pass without a missing run slot", "and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.run_slot)) as late_from_missing", "and true) as late_from_missing", "a late pass whose run's slot still has a heartbeat"],
+  ["F1 without the outside arm", "where (h.f_doubled or h.f_outside) and h.f_late", "where h.f_doubled and h.f_late", "the 21:45 pass of 11-03 late past 22:00"],
+  ["F1 confirms on the slots alone", "when f1.late_from_missing > 0 then 'CONFIRMED'", "when f1.late_from_missing > 0 or f1.slot_fit > 0 then 'CONFIRMED'", "the 10:00 pass late into 10:15, its run time stamped late too"],
+  ["CONSISTENT without the missing slot before", "and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.slot - interval '15 minutes')) as slot_fit", "and true) as slot_fit", "a late pass whose run's slot still has a heartbeat"],
+  ["send heartbeats compared with shadow rows", "(h.mode = 'shadow' and h.rows_tx <> h.recorded_count) as f_differs", "(h.rows_tx <> h.recorded_count) as f_differs", "send heartbeats"],
+  ["F3 needs a first-due mark (no catch-up)", "     and m.due_at >= k.since\n", "     and m.due_at > d.pass_at - interval '15 minutes'\n", "a catch-up"],
+  ["F3 refutes with a start it cannot place", "when f3.with_candidates = 0 and f3.unplaced = 0 and f3.early_marks = 0 then 'REFUTED'", "when f3.with_candidates = 0 and f3.early_marks = 0 then 'REFUTED'", "a hard-deleted visit whose start the read cannot place"],
+  ["F2 refutes with no shadow row", "              when (select count(*) from shadow) = 0 then 'NO_SUBJECT'\n", "              when false then 'NO_SUBJECT'\n", "no heartbeat at all"],
+  ["F4 without the approval SMS", "in ('booking_approved.email', 'booking_approved.sms')) as confirmations", "in ('booking_approved.email')) as confirmations", "the subject's approval SMS"],
   ["F3 matches any shortfall", "where d.short > 0 and d.short = (select count(*) from cand_deleted c where c.hb_id = d.id)) as matched", "where d.short > 0) as matched", "a heartbeat short by 2 with one hard-deleted candidate"],
   ["a candidate deleted before the pass counts", "   where m.deleted_at > d.created_at\n", "   where true\n", "a heartbeat short by 2 with one hard-deleted candidate"],
   ["F2 counts single rows", "  having count(*) > 1\n", "  having count(*) > 0\n", "CONTROL"],
@@ -829,7 +914,6 @@ for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
   });
 }
 
-const PGURL = process.env.SWEEP_DIAG_1105_TEST_PGURL;
 
 test("the read on a local database: each seeded shape is reported exactly, and every mutant dies", { skip: PGURL ? false : "SWEEP_DIAG_1105_TEST_PGURL is not set" }, () => {
   const url = new URL(PGURL);
@@ -868,7 +952,7 @@ test("the read on a local database: each seeded shape is reported exactly, and e
       const out = ok(runRead(BASE, sql, SUBJECT));
       const rows = out.split("\n").filter(Boolean).map((l) => l.split("\u001f")).filter((r) => r.length === 5);
       const v = Object.fromEntries(rows.filter((r) => r[4] !== "INFO").map((r) => [keyOf(r), r[4]]));
-      assert.deepEqual(v, { 0: "OK", 2: "VACUOUS", 20: "VACUOUS", 40: "VACUOUS", ...F("UNDECIDED", "REFUTED", "NO_SUBJECT", "NO_EVIDENCE") }, out);
+      assert.deepEqual(v, { 0: "OK", 2: "VACUOUS", 20: "VACUOUS", 40: "VACUOUS", ...F("NO_SUBJECT", "NO_SUBJECT", "NO_SUBJECT", "NO_EVIDENCE") }, out);
       results.push(`the empty schema: ${Object.entries(v).map(([k, x]) => `${k}=${x}`).join(", ")}`);
     }
     for (const c of CASES) {

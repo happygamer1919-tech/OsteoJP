@@ -25,39 +25,59 @@
 --   created_at  the column default now(): the START of the tenant's transaction. Every shadow row
 --               of the pass carries the same created_at, which is how the compare's verdict 8
 --               ties rows to their heartbeat, and how this read does.
--- NO COLUMN RECORDS WHEN A PASS ENDED. This read prints the next heartbeat's transaction start
--- beside each heartbeat, which bounds the end from above only when passes do not overlap.
+-- NO COLUMN RECORDS WHEN A PASS ENDED. When the server's track_commit_timestamp is on, this read
+-- prints the commit time of each heartbeat's transaction (pg_xact_commit_timestamp of its xmin),
+-- which is when that tenant's pass ended. When it is off (the default), it says so, and the next
+-- heartbeat's transaction start is an upper bound only when passes do not overlap. The scheduler's
+-- own run start and end times are the owner's look in its dashboard (the document).
 -- `pass_id` is the scheduler's run id (`runId`, apps/web/lib/reminders/inngest/sweep.ts). When it
--- reads as a ULID, its first 10 characters are a millisecond time, decoded here as "run created";
--- that this is the instant the scheduler created the run is NOT VERIFIED from the scheduler's
--- documentation, and the read prints whether each id decodes.
+-- reads as a ULID, its first 10 characters are a millisecond time, decoded here as "run time".
+-- WHAT THAT TIME IS, IS NOT VERIFIED: it may be the cron tick, the run's creation or its start,
+-- and the scheduler may create a run late. So the run time can CONFIRM a late pass the slots
+-- already show, and can never refute one.
+-- ONLY SHADOW HEARTBEATS ARE COMPARED WITH ROWS. A send heartbeat (apps/web/lib/reminders/
+-- sweep-send.ts, runReminderSweepSend) records the claims its pass took, in a transaction of its
+-- own after them, and has no shadow row: rows 20 to 22 and F3 read shadow heartbeats only, and
+-- row 20 counts the send heartbeats apart.
 --
 -- THE FOUR FINDINGS:
---   F1 (row 30) A LATE PASS: a run created in one 15-minute slot whose pass clock fell in a later
---      one, so its heartbeat sits in the next slot. CONFIRMED when such a heartbeat on 11-03 sits
---      in a doubled slot (or after 21:45) and its run's slot has no heartbeat; REFUTED when every
---      heartbeat of 11-03 decodes and none is late; UNDECIDED otherwise.
+--   F1 (row 30) A LATE PASS: a run of one 15-minute slot whose pass clock fell in a later one, so
+--      its heartbeat sits in the next slot (or after 21:45). Never REFUTED. CONFIRMED only when the
+--      slots and the run time agree: on 11-03 a heartbeat sits in a doubled slot (or after 21:45),
+--      its pass id decodes to an earlier slot, and that slot has no heartbeat. CONSISTENT when the
+--      slots alone fit (a doubled slot, or one after 21:45, with the slot before it missing) and
+--      the run time does not confirm it. UNDECIDED when the day has a doubled, missing or outside
+--      slot that fits neither. NO_SUBJECT when it has none.
 --   F2 (row 31) A MARK RE-SELECTED: a mark taken by two heartbeats. The table has no unique key
 --      over shadow rows (0106: only one per claim ATTEMPT, `reminder_claims_claim_attempt_key`,
 --      WHERE kind = 'claim') and the sweep's insert has no conflict clause (sweep.ts,
 --      `tx.insert(reminderClaims).values(shadowRows)`), so a re-selected mark would leave TWO
 --      shadow rows, never one row counted twice. CONFIRMED when a mark has two shadow rows from
---      2026-11-02 on; REFUTED when none has. Row 25 prints the table's unique indexes.
+--      2026-11-02 on; REFUTED when none has and there are shadow rows; NO_SUBJECT when there is no
+--      shadow row (a zero is never a pass; named apart from VACUOUS so the block's verdict count
+--      does not take it). Row 25 prints the table's unique indexes.
 --   F3 (row 32) ROWS THAT WENT WITH A DELETED VISIT: a shadow row goes with its appointment
 --      (0106, `reminder_claims_appointment_id_fkey` ON DELETE CASCADE), and the hard delete
 --      (apps/web/lib/scheduling/actions.ts, hardDeleteAppointment) writes the audit row
 --      `appointment.hard_delete` with the start it deleted. So a heartbeat counted a row that is
---      gone when a visit whose mark that pass took was hard-deleted afterwards. CONFIRMED when
---      every heartbeat whose count differs is short by exactly the marks of such visits that fell
---      due first at its pass; REFUTED when none of them has such a mark; UNDECIDED otherwise;
---      NO_SUBJECT when no heartbeat's count differs.
+--      gone when a visit whose mark that pass took was hard-deleted afterwards. The sweep has no
+--      lower bound on a mark (`dueVisits`, sweep.ts), so a mark can be taken by a later pass than
+--      the first that had it due (catch-up): a mark is a candidate of every shadow heartbeat whose
+--      count differs, that had it due with the visit still ahead and began before the delete, and
+--      is given to the EARLIEST of them (the pass that took it lost the row, so it differs too).
+--      CONFIRMED when every such heartbeat is short (never over) by exactly the marks given to it
+--      and no mark fits two of them; REFUTED only when no mark fits any of them, every hard-deleted
+--      visit's start can be placed, and none has a mark due before 2026-11-02 (which a pass this
+--      read does not read could have taken); UNDECIDED otherwise; NO_SUBJECT when no heartbeat's
+--      count differs.
 --   F4 (row 33) A SCHEDULING EVENT FOR THE APPOINTMENT. The application sends
 --      `appointment/scheduled` after the save's commit (apps/web/lib/reminders/index.ts,
 --      enqueueAppointmentReminders, `inngest.send`), best-effort, and a failed send is only
 --      logged (apps/web/lib/scheduling/reminders.ts, enqueueRemindersAfterCommit). NO TABLE
 --      RECORDS THE SEND. What the database holds is: the door's audit row (RE_ARMING_SAVES,
 --      apps/web/lib/reminders/reminder-population.ts), which says a send was attempted; a
---      confirmation in the ledger (template `confirmation.*` or `booking_approved.email`), written
+--      confirmation in the ledger (template `confirmation.*`, `booking_approved.email` or
+--      `booking_approved.sms`), written
 --      only by send-appointment-confirmation, which runs on that event; and a claim of taker `run`,
 --      written only by send-appointment-reminder, which runs on the reminder event that
 --      schedule-appointment-reminders fans out from that event. EVIDENCED when a confirmation or a
@@ -102,6 +122,10 @@ hb0 as (
   -- 15-minute slot, both from pass_at (the compare's own rule).
   select p.id, p.tenant_id, p.pass_id, p.mode, p.pass_at, p.look_ahead_before, p.due_count,
          p.recorded_count, p.over_ceiling, p.excluded_count, p.created_at,
+         -- The commit of the heartbeat's transaction, only when the server records it: with the
+         -- setting off the function raises, so it is never called then.
+         case when current_setting('track_commit_timestamp') = 'on'
+              then pg_xact_commit_timestamp(p.xmin) end as committed_at,
          (p.pass_at at time zone 'Europe/Lisbon')::date as day,
          date_trunc('hour', p.pass_at at time zone 'Europe/Lisbon')
            + floor(extract(minute from p.pass_at at time zone 'Europe/Lisbon') / 15) * interval '15 minutes' as slot
@@ -134,7 +158,7 @@ hb1 as (
          lag(h.created_at) over w as prev_created,
          lead(h.created_at) over w as next_created
     from hb0 h join tenant_n t on t.tenant_id = h.tenant_id
-  window w as (partition by h.tenant_id order by h.pass_at, h.created_at)
+  window w as (partition by h.tenant_id, h.mode order by h.pass_at, h.created_at)
 ),
 hb as (
   select h.*,
@@ -142,9 +166,9 @@ hb as (
            + floor(extract(minute from h.run_at at time zone 'Europe/Lisbon') / 15) * interval '15 minutes' as run_slot,
          (h.slot_beats > 1) as f_doubled,
          (h.slot::time < time '07:00' or h.slot::time > time '21:45') as f_outside,
-         (h.rows_tx <> h.recorded_count) as f_differs,
+         (h.mode = 'shadow' and h.rows_tx <> h.recorded_count) as f_differs,
          (h.pass_id is not null and h.pid_beats > 1) as f_pid_shared,
-         (h.pass_id is not null and h.rows_pid <> h.rows_tx) as f_pid_rows
+         (h.mode = 'shadow' and h.pass_id is not null and h.rows_pid <> h.rows_tx) as f_pid_rows
     from hb1 h
 ),
 hbf as (
@@ -154,7 +178,7 @@ hbf as (
            case when h.f_doubled then 'slot doubled (' || h.slot_rank::text || ' of ' || h.slot_beats::text || ')' end,
            case when h.f_outside then 'slot outside 07:00 to 21:45' end,
            case when h.f_differs then 'count differs' end,
-           case when h.run_slot is not null and h.run_slot < h.slot then 'late: run created in slot ' || to_char(h.run_slot, 'HH24:MI') end,
+           case when h.run_slot is not null and h.run_slot < h.slot then 'late: run time in slot ' || to_char(h.run_slot, 'HH24:MI') end,
            case when h.f_pid_shared then 'pass id on ' || h.pid_beats::text || ' heartbeats' end,
            case when h.f_pid_rows then 'rows by pass id differ from rows by transaction' end) as flags
     from hb h
@@ -183,11 +207,8 @@ day_hb as (
 ),
 -- ---- The heartbeats whose counts differ (any day from 11-02), and the marks they may have counted.
 differ as (
-  select h.*, h.recorded_count - h.rows_tx as short,
-         -- The first instant whose mark this pass was the first to have due: the previous pass took
-         -- the marks at or before its clock, or before its look-ahead limit when it had one.
-         coalesce(h.prev_look, h.prev_pass_at) as prev_limit,
-         (h.prev_look is not null) as prev_limit_exclusive
+  -- Shadow heartbeats only (f_differs is false on a send heartbeat).
+  select h.*, h.recorded_count - h.rows_tx as short
     from hbf h where h.f_differs
 ),
 deleted as (
@@ -207,21 +228,30 @@ del_mark as (
     from deleted d cross join reminder rm
    where d.starts_at is not null
 ),
-cand_deleted as (
-  -- A mark of a hard-deleted visit that was due at this pass, first due at it, with the visit still
-  -- ahead, and deleted after this pass's transaction began. A candidate, not a proof: the visit's
+cand_fit as (
+  -- A mark of a hard-deleted visit that this heartbeat's pass could have taken: due at it (no
+  -- lower bound, as `dueVisits` has none: a catch-up counts), the visit still ahead, deleted after
+  -- the pass's transaction began, and due from 11-02 on. A candidate, not a proof: the visit's
   -- other predicates at the pass (status, a scheduling save, created before its mark) cannot be
   -- read once its row is gone.
-  select d.id as hb_id, m.*
+  select d.id as hb_id, d.pass_at as hb_pass_at, m.*
     from differ d
     join del_mark m on m.tenant_id = d.tenant_id
+    cross join k
    where m.deleted_at > d.created_at
      and m.starts_at > d.pass_at
+     and m.due_at >= k.since
      and ((d.look_ahead_before is null and m.due_at <= d.pass_at)
           or (d.look_ahead_before is not null and m.due_at < d.look_ahead_before))
-     and (d.prev_limit is null
-          or (d.prev_limit_exclusive and m.due_at >= d.prev_limit)
-          or (not d.prev_limit_exclusive and m.due_at > d.prev_limit))
+),
+cand_deleted as (
+  -- Each mark given to the earliest heartbeat it fits: the pass that took it lost the row.
+  select z.* from (
+    select c.*,
+           count(*) over (partition by c.tenant_id, c.appointment_id, c.offset_id) as fits,
+           row_number() over (partition by c.tenant_id, c.appointment_id, c.offset_id order by c.hb_pass_at, c.hb_id) as pick
+      from cand_fit c
+  ) z where z.pick = 1
 ),
 cand_neighbour as (
   -- A mark this pass could have selected (due at it, the visit still ahead) that a shadow row of
@@ -251,17 +281,32 @@ f3 as (
   select (select count(*) from differ) as differing,
          (select count(*) from differ where short < 0) as over,
          (select count(*) from cand_deleted) as candidates,
+         (select count(*) from cand_deleted where fits > 1) as ambiguous,
          (select count(*) from differ d
            where d.short > 0 and d.short = (select count(*) from cand_deleted c where c.hb_id = d.id)) as matched,
-         (select count(*) from differ d where exists (select 1 from cand_deleted c where c.hb_id = d.id)) as with_candidates
+         (select count(*) from differ d where exists (select 1 from cand_deleted c where c.hb_id = d.id)) as with_candidates,
+         (select count(*) from deleted) as deleted_visits,
+         (select count(*) from deleted where starts_at is null) as unplaced,
+         (select count(*) from del_mark m cross join k where m.due_at < k.since and m.starts_at > k.since) as early_marks
 ),
 f1 as (
   select (select count(*) from day_hb) as beats,
          (select count(*) from day_hb where run_at is null) as undecoded,
-         (select count(*) from day_hb where f_late) as late,
+         (select count(*) from slots where doubled is not null or missing is not null or outside is not null) as anomalous_tenants,
+         (select count(*) from day_hb where f_doubled or f_outside) as displaced,
+         -- The slots alone: a heartbeat in a doubled slot (or after 21:45) whose slot before it, a
+         -- slot of the day, has no heartbeat of the tenant.
          (select count(*) from day_hb h
-           where h.f_late and (h.f_doubled or h.f_outside)
-             and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.run_slot)) as late_into_doubled_from_missing,
+           where (h.f_doubled or h.f_outside)
+             and exists (select 1 from day_slot d where d.slot = h.slot - interval '15 minutes')
+             and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.slot - interval '15 minutes')) as slot_fit,
+         (select count(*) from day_hb where f_late) as late,
+         -- The slots and the run time agree: the run time decodes to an earlier slot of the day,
+         -- which has no heartbeat of the tenant.
+         (select count(*) from day_hb h
+           where (h.f_doubled or h.f_outside) and h.f_late
+             and exists (select 1 from day_slot d where d.slot = h.run_slot)
+             and not exists (select 1 from hbf x where x.tenant_id = h.tenant_id and x.slot = h.run_slot)) as late_from_missing,
          (select count(*) from day_hb where extract(epoch from (pass_at at time zone 'Europe/Lisbon') - slot) > 60) as over_a_minute
 ),
 -- ---- The subject: the appointment the dispatch names.
@@ -333,7 +378,7 @@ emit as (
          (select max(created_at) from subj_audit where clause is not null) as last_door,
          (select count(*) from subj_audit where scheduling) as scheduling_saves,
          (select count(*) from subj_ledger
-           where template_id like 'confirmation.%' or template_id = 'booking_approved.email') as confirmations,
+           where template_id like 'confirmation.%' or template_id in ('booking_approved.email', 'booking_approved.sms')) as confirmations,
          (select count(*) from subj_claim where kind = 'claim' and taker = 'run') as run_claims,
          (select count(*) from subj_claim c where c.kind = 'claim' and c.taker = 'run'
             and c.starts_at = (select date_trunc('milliseconds', s.starts_at) from subj s)) as run_claims_now,
@@ -352,7 +397,7 @@ select n, "check", observed, expected, verdict from (
          case when current_setting('transaction_read_only') = 'on' then 'OK' else 'FAIL' end as verdict
   union all
   select 1, 0,
-         'the heartbeat table reminder_sweep_passes, its columns in order (pass_at is the pass''s clock before its transaction, created_at its transaction''s start; no column records a pass''s end); track_commit_timestamp; read at (Lisbon)',
+         'the heartbeat table reminder_sweep_passes, its columns in order (pass_at is the pass''s clock before its transaction, created_at its transaction''s start; no column records a pass''s end, so rows 10 and 21 print the commit time when track_commit_timestamp is on, and say it is not recorded when it is off); track_commit_timestamp; read at (Lisbon)',
          (select string_agg(c.column_name::text, ', ' order by c.ordinal_position)
             from information_schema.columns c
            where c.table_schema = 'public' and c.table_name = 'reminder_sweep_passes')
@@ -390,14 +435,18 @@ select n, "check", observed, expected, verdict from (
            || ' (' || round(extract(epoch from (h.pass_at at time zone 'Europe/Lisbon') - h.slot)::numeric, 1)::text || ' s into its slot)'
            || '; transaction start ' || to_char(h.created_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS')
            || ' (' || round(extract(epoch from h.created_at - h.pass_at)::numeric, 3)::text || ' s after pass_at)'
+           || '; commit ' || coalesce(to_char(h.committed_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS')
+                                       || ' (' || round(extract(epoch from h.committed_at - h.created_at)::numeric, 3)::text || ' s after its start)',
+                                       'not recorded (track_commit_timestamp off; the next heartbeat''s start is an upper bound only)')
            || '; previous heartbeat''s transaction start ' || coalesce(round(extract(epoch from h.created_at - h.prev_created)::numeric / 60, 2)::text || ' min before', 'none')
            || '; next heartbeat''s transaction start ' || coalesce(round(extract(epoch from h.next_created - h.created_at)::numeric / 60, 2)::text || ' min after', 'none')
            || '; pass id ' || coalesce(h.pass_id, 'none')
-           || '; run created ' || coalesce(to_char(h.run_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS') || ' (slot ' || to_char(h.run_slot, 'HH24:MI') || ')', 'not decoded (not a ULID)')
+           || '; run time (pass id as a ULID, NOT VERIFIED as the cron tick) ' || coalesce(to_char(h.run_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS') || ' (slot ' || to_char(h.run_slot, 'HH24:MI') || ')', 'not decoded (not a ULID)')
            || '; mode ' || h.mode || '; look-ahead ' || coalesce(to_char(h.look_ahead_before at time zone 'Europe/Lisbon', 'HH24:MI'), 'none')
            || '; due ' || h.due_count::text || ', recorded ' || h.recorded_count::text
            || ', shadow rows of its transaction ' || h.rows_tx::text
            || ', shadow rows naming its pass id ' || h.rows_pid::text
+           || case when h.mode = 'shadow' then '' else ' (a send heartbeat: its recorded count is claims taken, not compared)' end
            || ', over the ceiling ' || case when h.over_ceiling then 'yes' else 'no' end
            || ', left out ' || h.excluded_count::text,
          'flags: ' || coalesce(nullif(h.flags, ''), 'none'),
@@ -405,28 +454,33 @@ select n, "check", observed, expected, verdict from (
     from day_hb h
   union all
   select 20, 0,
-         '20. heartbeats whose recorded count is not the number of shadow rows of their transaction, from 2026-11-02 00:00 Lisbon to the read (the compare''s verdict 8 tie)',
+         '20. shadow heartbeats whose recorded count is not the number of shadow rows of their transaction, from 2026-11-02 00:00 Lisbon to the read (the compare''s verdict 8 tie)',
          'heartbeats ' || (select count(*) from hbf)::text
+           || ', shadow ' || (select count(*) from hbf where mode = 'shadow')::text
+           || ', send ' || (select count(*) from hbf where mode = 'send')::text || ' (not compared: a send heartbeat records claims, not shadow rows)'
+           || '; shadow rows ' || (select count(*) from shadow)::text
+           || ', recorded by shadow heartbeats ' || coalesce((select sum(recorded_count) from hbf where mode = 'shadow'), 0)::text
            || '; counts that differ ' || f3.differing::text
            || '; rows short in all ' || coalesce((select sum(short) from differ where short > 0), 0)::text
            || ', rows over in all ' || coalesce((select -sum(short) from differ where short < 0), 0)::text
            || '; of them on 2026-11-03 ' || (select count(*) from differ d cross join k where d.day = k.day)::text
            || '; at ' || coalesce((select string_agg(to_char(d.slot, 'YYYY-MM-DD HH24:MI') || ' tenant ' || d.tn::text || ' short ' || d.short::text, ', ' order by d.pass_at) from differ d), 'none'),
          'the compare read 2 (shadow rows 222, recorded 224)',
-         case when (select count(*) from hbf) = 0 then 'VACUOUS'
+         case when (select count(*) from hbf where mode = 'shadow') = 0 then 'VACUOUS'
               when f3.differing > 0 then 'REVIEW'
               else 'OK' end
     from f3
   union all
   select 21, row_number() over (order by d.pass_at, d.tn),
          'count differs: ' || to_char(d.slot, 'YYYY-MM-DD HH24:MI') || ', tenant ' || d.tn::text,
-         'recorded ' || d.recorded_count::text || ', due ' || d.due_count::text
+         'mode ' || d.mode || '; recorded ' || d.recorded_count::text || ', due ' || d.due_count::text
            || '; shadow rows of its transaction ' || d.rows_tx::text || ', naming its pass id ' || d.rows_pid::text
            || '; short by ' || d.short::text
            || '; pass_at ' || to_char(d.pass_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS.MS')
            || ', transaction start ' || to_char(d.created_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS')
+           || ', commit ' || coalesce(to_char(d.committed_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS'), 'not recorded')
            || '; pass id ' || coalesce(d.pass_id, 'none')
-           || '; candidates: hard-deleted visits first due at this pass ' || (select count(*) from cand_deleted c where c.hb_id = d.id)::text
+           || '; candidates: hard-deleted visits given to this pass ' || (select count(*) from cand_deleted c where c.hb_id = d.id)::text
            || ', marks a neighbouring heartbeat''s row holds ' || (select count(*) from cand_neighbour c where c.hb_id = d.id)::text,
          'flags: ' || coalesce(nullif(d.flags, ''), 'none'),
          'INFO'
@@ -439,6 +493,7 @@ select n, "check", observed, expected, verdict from (
              || ', start ' || to_char(c.starts_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || ', mark ' || to_char(c.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || ', deleted ' || to_char(c.deleted_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS')
+             || '; fits ' || c.fits::text || ' heartbeat(s) whose count differs, given to the earliest'
              || '; another heartbeat''s row holds it: '
              || case when exists (select 1 from public.reminder_claims s
                                    where s.kind = 'shadow' and s.appointment_id = c.appointment_id
@@ -480,14 +535,18 @@ select n, "check", observed, expected, verdict from (
          'information', 'INFO'
   union all
   select 30, 0,
-         'F1 a late pass on 2026-11-03: a run created in one slot whose pass clock fell in a later slot (CONFIRMED: such a heartbeat sits in a doubled slot or outside 07:00 to 21:45, and its run''s slot has no heartbeat)',
+         'F1 a late pass on 2026-11-03, never REFUTED (the run time''s meaning is NOT VERIFIED): CONFIRMED when a heartbeat in a doubled slot (or after 21:45) decodes to an earlier slot that has no heartbeat; CONSISTENT when the slots alone fit (the slot before it missing); UNDECIDED when the day has a slot anomaly that fits neither; NO_SUBJECT when it has none',
          'heartbeats ' || f1.beats::text || ', pass id not decoded ' || f1.undecoded::text
-           || '; late ' || f1.late::text || ', of them in a doubled slot or outside from a missing one ' || f1.late_into_doubled_from_missing::text
+           || '; tenants with a doubled, missing or outside slot ' || f1.anomalous_tenants::text
+           || '; heartbeats in a doubled slot or after 21:45 ' || f1.displaced::text
+           || ', of them with the slot before missing ' || f1.slot_fit::text
+           || '; late by their run time ' || f1.late::text || ', of them from a missing slot ' || f1.late_from_missing::text
            || '; pass clocks more than 60 s into their slot ' || f1.over_a_minute::text,
-         'CONFIRMED, REFUTED or UNDECIDED',
-         case when f1.late_into_doubled_from_missing > 0 then 'CONFIRMED'
-              when f1.beats > 0 and f1.undecoded = 0 and f1.late = 0 then 'REFUTED'
-              else 'UNDECIDED' end
+         'CONFIRMED, CONSISTENT, UNDECIDED or NO_SUBJECT',
+         case when f1.late_from_missing > 0 then 'CONFIRMED'
+              when f1.slot_fit > 0 then 'CONSISTENT'
+              when f1.anomalous_tenants > 0 then 'UNDECIDED'
+              else 'NO_SUBJECT' end
     from f1
   union all
   select 31, 0,
@@ -495,21 +554,24 @@ select n, "check", observed, expected, verdict from (
          'marks with more than one shadow row ' || (select count(*) from dup)::text
            || ', of them with a row written on 2026-11-03 ' || (select count(*) from dup where on_day)::text
            || '; shadow rows from 11-02 ' || (select count(*) from shadow)::text,
-         'CONFIRMED or REFUTED',
-         case when (select count(*) from dup) > 0 then 'CONFIRMED' else 'REFUTED' end
+         'CONFIRMED, REFUTED or NO_SUBJECT (no shadow row: a zero is never a pass)',
+         case when (select count(*) from dup) > 0 then 'CONFIRMED'
+              when (select count(*) from shadow) = 0 then 'NO_SUBJECT'
+              else 'REFUTED' end
   union all
   select 32, 0,
-         'F3 rows that went with a hard-deleted visit: every heartbeat whose count differs is short by exactly the marks of hard-deleted visits first due at its pass',
-         'heartbeats whose count differs ' || f3.differing::text || ', of them over (more rows than recorded) ' || f3.over::text
+         'F3 rows that went with a hard-deleted visit: every shadow heartbeat whose count differs is short by exactly the marks of hard-deleted visits given to it (each mark to the earliest such heartbeat it fits, catch-up included)',
+         'shadow heartbeats whose count differs ' || f3.differing::text || ', of them over (more rows than recorded) ' || f3.over::text
            || '; with a hard-deleted candidate ' || f3.with_candidates::text
            || ', short by exactly their candidates ' || f3.matched::text
-           || '; candidates in all ' || f3.candidates::text
-           || '; hard-deleted visits from 11-02 ' || (select count(*) from deleted)::text
-           || ', of them with a start this read can place ' || (select count(*) from deleted where starts_at is not null)::text,
+           || '; candidates in all ' || f3.candidates::text || ', fitting two or more heartbeats ' || f3.ambiguous::text
+           || '; hard-deleted visits from 11-02 ' || f3.deleted_visits::text
+           || ', of them with a start this read cannot place ' || f3.unplaced::text
+           || ', marks of them due before 11-02 with the visit ahead then ' || f3.early_marks::text,
          'CONFIRMED, REFUTED, UNDECIDED or NO_SUBJECT',
          case when f3.differing = 0 then 'NO_SUBJECT'
-              when f3.over = 0 and f3.matched = f3.differing then 'CONFIRMED'
-              when f3.with_candidates = 0 then 'REFUTED'
+              when f3.over = 0 and f3.matched = f3.differing and f3.ambiguous = 0 then 'CONFIRMED'
+              when f3.with_candidates = 0 and f3.unplaced = 0 and f3.early_marks = 0 then 'REFUTED'
               else 'UNDECIDED' end
     from f3
   union all
