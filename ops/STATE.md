@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Wed 2026-11-04 00:57 Lisbon, by SOLO (clock read).
+**Last updated:** Wed 2026-11-04 11:24 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -39,17 +39,22 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - **GREEN:** the owner's separate session. It runs production sittings from a dispatch file.
 - **Strategy:** rules on Tier C items and the calendar. SOLO reports to strategy through the owner.
 
-## Calendar (Lisbon time)
+## Calendar
+
+**Owner steps are windows in Toronto time first, Lisbon in brackets (strategy Q3, 11-04).** Lisbon is Toronto plus 5 hours until 2027-03-08. Never give the owner a single early Lisbon minute.
 
 | When | What | State |
 |---|---|---|
-| Wed 11-04 07:15 | GREEN: read-only comparison run (PR #1691) | ready |
-| Wed 11-04 18:00 | Merge freeze starts. No merge to main until Thursday's read reports. | |
-| Wed 11-04 after 21:50 | GREEN: reminder switch, or the fallback (PR #1690) | the Tue dry run was clean |
-| Thu 11-05 | GREEN: read of the first sending (PR #1692), then SOLO's 13:00 report to strategy | |
+| Wed 11-04 11:18 Lisbon | GREEN: read-only comparison (PR #1691) | DONE: STOPPED, 4 FAIL (V3, V8, V11, V13). No switch. |
+| Wed 11-04 18:00 Lisbon | Merge freeze starts. No merge to main until strategy lifts it. | |
+| Wed 11-04, after 16:00 before 01:29 Toronto (21:00 to 06:29 Lisbon) | GREEN: the fallback re-arm (PR #1690, held 415bd0e9). Owner at the keyboard, 60 to 90 min. Dispatch `~/osteojp-handover/green-dispatch-r36-fallback-1104.txt` | dispatch written, block diff-proven; independent check running |
+| Thu 11-05, by 11:00 Toronto (16:00 Lisbon) | SOLO's report to strategy (Q2) | |
+| Thu 11-05 night, 25h or more after Wednesday's "canary began", before 01:29 Toronto | GREEN: the fallback's second pass (Q-R36-F5). Dispatch after Wednesday's report (WEDOK) | |
+| Thu or Fri | GREEN: a read-only diagnostic of the 4 FAILs | asked of strategy (A1) |
+| ~~Thu 11-05~~ | ~~read of the first sending (#1692)~~ | void: no switch |
 | Thu 11-05 and after | Board freeze, RULINGS.md, GitHub Issues tracker, CLAUDE.md slim (owner approved 11-01) | not started |
-| Sat 11-07 | Every open PR merged or closed before the repo maintenance | needs a strategy ruling (see "Waiting on others") |
-| Sun 11-08 | Repo maintenance (history rewrite). No apply. | |
+| Sat 11-07 | Close the open PRs before the repo maintenance (strategy Q1(a)) | likely void: Q1(f), the R31 condition fails with no switch, so the rewrite moves to Sun 11-22 and nothing closes. SOLO asked strategy to confirm (A3). |
+| Sun 11-08 | Repo maintenance (history rewrite). No apply. | likely moves to Sun 11-22 (Q1(f)) |
 | Mon 11-09 | Migration 0109 (#1682) | apply doc NOT READY |
 | Tue 11-10 | Migration 0110 (#1704), then #1705. Montemor launch-ready. | NOT READY |
 | Wed 11-11 | Migration 0111 (#1706), then #1707 | NOT READY |
@@ -67,7 +72,7 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 
 | PR | What | State |
 |---|---|---|
-| #1682 | 0109 Saturday hours per clinic | held, head efc0f161, all checks green except the held block (by design) |
+| #1682 | 0109 Saturday hours per clinic | held, head 0668e845, all checks green except the held block (by design) |
 | #1704 + #1705 | 0110 appointment types, prices, VAT, and the screen | held |
 | #1706 + #1707 | 0111 Sistemas / SubSistemas, and the screen | held |
 | #1708 + #1709 | 0112 weekly blocks, and the screen | held |
@@ -95,10 +100,11 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - Done 11-03 ~23:40: a fresh R4 re-check of tonight's changes found no MAJOR. 0110, 0111 and 0112 plus four dispatches: SHIP. 0113 and #1682: SHIP AFTER FIXES (wording: the lock time, one NOT REHEARSED line, one gate line, a fault count). These fixes wait until the rehearsal reports, so no bytes change under it.
 
 ## Next steps, in order
-1. Read the rehearsal and R4 results. Fix what they find. Mark each night document READY only when its gates pass.
-2. Wed 07:15: GREEN's comparison run. SOLO reads the results.
-3. Wed after 21:50: switch or fallback. SOLO reads the results.
-4. Thu: #1692 read, then the 13:00 report to strategy. It must include:
+1. Wed: the independent check of the fallback dispatch. Then hand it to the owner. Strategy note sent: `~/osteojp-handover/solo-to-strategy-20261104-shadow-fail.md` (asks A1 to A4).
+2. Wed night: GREEN runs the fallback. SOLO reads the report and writes Thursday's second-pass dispatch (WEDOK only if G2 passed and the closing dry run ended clean).
+3. Thu: write the diagnostic read for the 4 FAILs (if A1 is approved), R4 it.
+4. Thu, by 16:00 Lisbon: the report to strategy. It must include:
+   - the shadow compare result and the fallback;
    - the 444 ms line;
    - the Fisiozero defaults taken;
    - the tight-day promotion issue;
@@ -114,9 +120,8 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 7. Patient duplicates cleanup (see below).
 
 ## Waiting on others
-- **Strategy, before Sat 11-07:** how the held migration PRs cross Sunday's repo maintenance. That plan requires zero open PRs.
-  - SOLO recommends: close them Saturday, carry them over by patch, re-open them Monday, and add an old-history check to every night document.
-  - The alternative is to move the maintenance to after 11-18.
+- **Strategy (asked Wed 11-04):** A1 the diagnostic read; A2 the switch's new terms; A3 confirm the rewrite moves to 11-22 under Q1(f); A4 the weekly fallback sitting on Fri 11-13 rather than the 0111 night.
+- **Strategy ruled Q1 (11-04):** the rewrite keeps Sun 11-08 only if the R31 condition holds (sending clean since the switch). Otherwise it moves to Sun 11-22, nothing is closed Saturday, and the nights go ahead on the current history. With the switch, the plan is: patches in `~/osteojp-handover/`, sha256 per migration file, re-clone everything fresh, an old-history check in every night document, and new READY pins.
 - **Owner, before Mon 11-09:** widen the wording of GREEN's apply-settings rule. It allows only "a file checked out from origin/main", but every night next week applies from a held PR.
 - **Owner and Rodica:**
   - 15 open questions on the Fisiozero batch;
