@@ -25,11 +25,11 @@
 --   created_at  the column default now(): the START of the tenant's transaction. Every shadow row
 --               of the pass carries the same created_at, which is how the compare's verdict 8
 --               ties rows to their heartbeat, and how this read does.
--- NO COLUMN RECORDS WHEN A PASS ENDED. When the server's track_commit_timestamp is on, this read
--- prints the commit time of each heartbeat's transaction (pg_xact_commit_timestamp of its xmin),
--- which is when that tenant's pass ended. When it is off (the default), it says so, and the next
--- heartbeat's transaction start is an upper bound only when passes do not overlap. The scheduler's
--- own run start and end times are the owner's look in its dashboard (the document).
+-- NO COLUMN RECORDS WHEN A PASS ENDED: the end is not recorded in the database. Rows 10 and 21 say
+-- so, and print the one upper bound the data gives: the next heartbeat's transaction start (same
+-- mode), an upper bound only when passes do not overlap. No commit time is read: a commit-time
+-- function is checked for EXECUTE when the plan starts, even in a branch that never runs, so a role
+-- without it would lose the whole read.
 -- `pass_id` is the scheduler's run id (`runId`, apps/web/lib/reminders/inngest/sweep.ts). When it
 -- reads as a ULID, its first 10 characters are a millisecond time, decoded here as "run time".
 -- WHAT THAT TIME IS, IS NOT VERIFIED: it may be the cron tick, the run's creation or its start,
@@ -90,8 +90,9 @@
 -- carry a finding word; every other row reads INFO. It prints counts, Lisbon times, a tenant's
 -- ordinal (never its id), pass ids, the fixed labels of offsets, channels, kinds, takers,
 -- template ids, ledger outcomes, reason and provider codes, audit actions and the clause names of
--- RE_ARMING_SAVES, staff role slugs, and appointment ids: only in rows 22 to 24, at most 100 each,
--- and never the subject's (it reads "the appointment passed in" there). No patient field, no name, phone, email address,
+-- RE_ARMING_SAVES and staff role slugs. NO APPOINTMENT ID: rows 22 to 24 name other visits by an
+-- ordinal of this read ("visit 1", the same visit the same in all three, at most 100 rows each), and
+-- the subject as "the appointment passed in". No patient field, no name, phone, email address,
 -- note, message text, free text or audit metadata beyond the action and the clause name: the one
 -- metadata value it reads into a printed row is a hard-deleted visit's start, as a time.
 --
@@ -122,10 +123,6 @@ hb0 as (
   -- 15-minute slot, both from pass_at (the compare's own rule).
   select p.id, p.tenant_id, p.pass_id, p.mode, p.pass_at, p.look_ahead_before, p.due_count,
          p.recorded_count, p.over_ceiling, p.excluded_count, p.created_at,
-         -- The commit of the heartbeat's transaction, only when the server records it: with the
-         -- setting off the function raises, so it is never called then.
-         case when current_setting('track_commit_timestamp') = 'on'
-              then pg_xact_commit_timestamp(p.xmin) end as committed_at,
          (p.pass_at at time zone 'Europe/Lisbon')::date as day,
          date_trunc('hour', p.pass_at at time zone 'Europe/Lisbon')
            + floor(extract(minute from p.pass_at at time zone 'Europe/Lisbon') / 15) * interval '15 minutes' as slot
@@ -277,6 +274,18 @@ dup as (
    group by s.tenant_id, s.appointment_id, s.offset_id, s.channel, s.starts_at
   having count(*) > 1
 ),
+vis as (
+  -- Rows 22 to 24 name visits by an ordinal of this read ("visit 1"), never by id, so one visit
+  -- reads the same in all three rows; the appointment passed in reads as itself.
+  select z.appointment_id, row_number() over (order by z.first_mark, z.appointment_id) as vn
+    from (select u.appointment_id, min(u.mark) as first_mark
+            from (select appointment_id, due_at as mark from cand_deleted
+                  union all select appointment_id, due_at from cand_neighbour
+                  union all select appointment_id, starts_at from dup) u
+           cross join k
+           where u.appointment_id <> k.subject
+           group by u.appointment_id) z
+),
 f3 as (
   select (select count(*) from differ) as differing,
          (select count(*) from differ where short < 0) as over,
@@ -397,11 +406,10 @@ select n, "check", observed, expected, verdict from (
          case when current_setting('transaction_read_only') = 'on' then 'OK' else 'FAIL' end as verdict
   union all
   select 1, 0,
-         'the heartbeat table reminder_sweep_passes, its columns in order (pass_at is the pass''s clock before its transaction, created_at its transaction''s start; no column records a pass''s end, so rows 10 and 21 print the commit time when track_commit_timestamp is on, and say it is not recorded when it is off); track_commit_timestamp; read at (Lisbon)',
+         'the heartbeat table reminder_sweep_passes, its columns in order (pass_at is the pass''s clock before its transaction, created_at its transaction''s start; no column records a pass''s end: rows 10 and 21 say it is not recorded in the database and print an upper bound); read at (Lisbon)',
          (select string_agg(c.column_name::text, ', ' order by c.ordinal_position)
             from information_schema.columns c
            where c.table_schema = 'public' and c.table_name = 'reminder_sweep_passes')
-           || '; track_commit_timestamp ' || current_setting('track_commit_timestamp')
            || '; read at ' || (select t1 from lis),
          'information', 'INFO'
   union all
@@ -435,9 +443,8 @@ select n, "check", observed, expected, verdict from (
            || ' (' || round(extract(epoch from (h.pass_at at time zone 'Europe/Lisbon') - h.slot)::numeric, 1)::text || ' s into its slot)'
            || '; transaction start ' || to_char(h.created_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS')
            || ' (' || round(extract(epoch from h.created_at - h.pass_at)::numeric, 3)::text || ' s after pass_at)'
-           || '; commit ' || coalesce(to_char(h.committed_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS')
-                                       || ' (' || round(extract(epoch from h.committed_at - h.created_at)::numeric, 3)::text || ' s after its start)',
-                                       'not recorded (track_commit_timestamp off; the next heartbeat''s start is an upper bound only)')
+           || '; end not recorded in the database, upper bound (only when passes do not overlap) the next heartbeat''s transaction start '
+           || coalesce(to_char(h.next_created at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS'), 'none')
            || '; previous heartbeat''s transaction start ' || coalesce(round(extract(epoch from h.created_at - h.prev_created)::numeric / 60, 2)::text || ' min before', 'none')
            || '; next heartbeat''s transaction start ' || coalesce(round(extract(epoch from h.next_created - h.created_at)::numeric / 60, 2)::text || ' min after', 'none')
            || '; pass id ' || coalesce(h.pass_id, 'none')
@@ -478,7 +485,8 @@ select n, "check", observed, expected, verdict from (
            || '; short by ' || d.short::text
            || '; pass_at ' || to_char(d.pass_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS.MS')
            || ', transaction start ' || to_char(d.created_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS')
-           || ', commit ' || coalesce(to_char(d.committed_at at time zone 'Europe/Lisbon', 'HH24:MI:SS.MS'), 'not recorded')
+           || ', end not recorded in the database, upper bound (only when passes do not overlap) the next heartbeat''s transaction start '
+           || coalesce(to_char(d.next_created at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS.MS'), 'none')
            || '; pass id ' || coalesce(d.pass_id, 'none')
            || '; candidates: hard-deleted visits given to this pass ' || (select count(*) from cand_deleted c where c.hb_id = d.id)::text
            || ', marks a neighbouring heartbeat''s row holds ' || (select count(*) from cand_neighbour c where c.hb_id = d.id)::text,
@@ -489,7 +497,9 @@ select n, "check", observed, expected, verdict from (
   select 22, z.rk, z."check", z.observed, 'a candidate mark this pass counted that no row of its holds', 'INFO' from (
     select row_number() over (order by d.pass_at, c.due_at, c.appointment_id, c.offset_id) as rk,
            'counted, no row (a hard-deleted visit): ' || to_char(d.slot, 'YYYY-MM-DD HH24:MI') || ', tenant ' || d.tn::text as "check",
-           case when c.appointment_id = k.subject then 'the appointment passed in' else c.appointment_id::text end || ', ' || c.offset_id || ' ' || c.channel
+           case when c.appointment_id = k.subject then 'the appointment passed in'
+                else 'visit ' || (select v.vn from vis v where v.appointment_id = c.appointment_id)::text || ' (hard-deleted)' end
+             || ', ' || c.offset_id || ' ' || c.channel
              || ', start ' || to_char(c.starts_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || ', mark ' || to_char(c.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || ', deleted ' || to_char(c.deleted_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS')
@@ -505,7 +515,9 @@ select n, "check", observed, expected, verdict from (
   select 23, z.rk, z."check", z.observed, 'a mark this pass could have selected that another heartbeat''s row holds', 'INFO' from (
     select row_number() over (order by d.pass_at, c.due_at, c.appointment_id, c.offset_id) as rk,
            'held by a neighbour: ' || to_char(d.slot, 'YYYY-MM-DD HH24:MI') || ', tenant ' || d.tn::text as "check",
-           case when c.appointment_id = k.subject then 'the appointment passed in' else c.appointment_id::text end || ', ' || c.offset_id || ' ' || c.channel
+           case when c.appointment_id = k.subject then 'the appointment passed in'
+                else 'visit ' || (select v.vn from vis v where v.appointment_id = c.appointment_id)::text end
+             || ', ' || c.offset_id || ' ' || c.channel
              || ', start ' || to_char(c.starts_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || ', mark ' || to_char(c.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || '; held by ' || c.holder || ' (slot ' || coalesce(c.holder_slot, 'none') || ')'
@@ -518,7 +530,9 @@ select n, "check", observed, expected, verdict from (
   select 24, z.rk, z."check", z.observed, 'a mark taken by more than one heartbeat', 'INFO' from (
     select row_number() over (order by u.starts_at, u.appointment_id, u.offset_id) as rk,
            'a mark with ' || u.n::text || ' shadow rows' as "check",
-           case when u.appointment_id = k.subject then 'the appointment passed in' else u.appointment_id::text end || ', ' || u.offset_id || ' ' || u.channel
+           case when u.appointment_id = k.subject then 'the appointment passed in'
+                else 'visit ' || (select v.vn from vis v where v.appointment_id = u.appointment_id)::text end
+             || ', ' || u.offset_id || ' ' || u.channel
              || ', start ' || to_char(u.starts_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI')
              || '; its heartbeats (slots) ' || u.holders as observed
       from dup u cross join k

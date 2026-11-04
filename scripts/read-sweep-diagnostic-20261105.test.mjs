@@ -94,9 +94,8 @@ test("the read writes nothing, controls no transaction, reads the clock once and
   assert.equal((sql.match(/current_setting\('osteojp\.diag_appointment_id'\)/g) || []).length, 1, "the appointment id is read other than once");
   assert.equal((code.match(/\bnow\(\)/g) || []).length, 1, "the read must read now() exactly once");
   assert.doesNotMatch(code, /\b(current_timestamp|clock_timestamp|statement_timestamp|transaction_timestamp|localtimestamp|current_date)\b/i, "a second clock");
-  // The commit-time probe raises when the setting is off: it is called once, only behind that setting.
-  assert.equal((sql.match(/pg_xact_commit_timestamp\(/g) || []).length, 1, "the commit-time probe is called other than once");
-  assert.match(sql, /case when current_setting\('track_commit_timestamp'\) = 'on'\n\s+then pg_xact_commit_timestamp\(p\.xmin\) end as committed_at,/, "the commit-time probe is not guarded by its setting");
+  // No commit-time probe: EXECUTE is checked when the plan starts, even in a branch that never runs.
+  assert.doesNotMatch(sql, /pg_xact_commit_timestamp|track_commit_timestamp|\bxmin\b/, "a commit-time probe or its setting");
 });
 
 test("the read names no appointment, no column that holds a person, no tenant id and no metadata text", () => {
@@ -110,8 +109,9 @@ test("the read names no appointment, no column that holds a person, no tenant id
   assert.doesNotMatch(sql, /\|\|\s*l\.metadata|metadata->>'[a-zA-Z]+'\s*\|\||\|\|\s*\(?l\.metadata/, "metadata text is printed");
   // The subject's id is passed in and compared, never printed.
   assert.doesNotMatch(code, /subject::text|k\.subject\s*\|\||\bs\.id::text|\bsj\.id::text/, "the subject's id is printed");
-  const ids = [...sql.matchAll(/([a-z]+)\.appointment_id::text/g)].map((m) => m[1]);
-  assert.deepEqual(ids, ["c", "c", "u"], "appointment ids are printed outside rows 22 to 24");
+  // No appointment id is printed at all: rows 22 to 24 name visits by an ordinal of the read.
+  assert.doesNotMatch(code, /appointment_id::text|appointment_id\s*\|\||\|\|\s*[a-z]+\.appointment_id/, "an appointment id is printed");
+  assert.equal((sql.match(/else 'visit ' \|\| \(select v\.vn from vis v where v\.appointment_id = [cu]\.appointment_id\)::text/g) || []).length, 3, "rows 22 to 24 do not name visits by ordinal");
   assert.equal((sql.match(/\) z where z\.rk <= 100\n/g) || []).length, 3, "the id lists are not capped at 100 each");
 });
 
@@ -204,7 +204,7 @@ const TABLE_OK = [
   vrow(2, "2. heartbeats on 2026-11-03", "heartbeats 60, tenants 1, shadow 60, send 0, distinct pass ids 60, with no pass id 0", "OK"),
   vrow(3, "3. tenant 1, slots on 2026-11-03", "heartbeats 60 (shadow 60), pass ids 60, slots 59; doubled 10:15; missing 10:00; outside none; counts that differ 2", "REVIEW"),
   ` 10 | heartbeat on 2026-11-03, tenant 1, slot 10:15 | pass id ${PASS_ID}; run created 10:00:00.500 | flags: slot doubled | INFO`,
-  vrow(20, "20. heartbeats whose recorded count is not", "heartbeats 180; counts that differ 2; rows short in all 2, rows over in all 0; of them on 2026-11-03 2; at 2026-11-03 12:15 tenant 1 short 1, 2026-11-03 16:30 tenant 1 short 1", "REVIEW"),
+  vrow(20, "20. shadow heartbeats whose recorded count is not", "heartbeats 180; counts that differ 2; rows short in all 2, rows over in all 0; of them on 2026-11-03 2; at 2026-11-03 12:15 tenant 1 short 1, 2026-11-03 16:30 tenant 1 short 1", "REVIEW"),
   ` 21 | count differs: 2026-11-03 12:15, tenant 1 | pass id ${PASS_ID} | flags: count differs | INFO`,
   ` 22 | counted, no row (a hard-deleted visit) | ${OTHER_ID}, 48h email | a candidate | INFO`,
   vrow(30, "F1 a late pass", "late 1", "CONFIRMED"),
@@ -386,7 +386,7 @@ function assertRead(r, findings, counts) {
   // Rows 2, 3 and 20 are echoed whole (counts and times only); no INFO row is.
   assert.match(r.stdout, /^ {2}2 \| 2\. heartbeats on 2026-11-03/m);
   assert.match(r.stdout, /^ {2}3 \| 3\. tenant 1, slots on 2026-11-03/m);
-  assert.match(r.stdout, /^ 20 \| 20\. heartbeats whose recorded count/m);
+  assert.match(r.stdout, /^ 20 \| 20\. shadow heartbeats whose recorded count/m);
   assert.doesNotMatch(r.stdout, /\| INFO$|read only: on|audit row|F[1-4] a /m, "a row other than 2, 3 and 20 reached the terminal");
 }
 function assertStop(r, re, label) {
@@ -695,8 +695,6 @@ const V = (v3, v20, v40 = "OK", v2 = "OK") => ({ 0: "OK", 2: v2, "3:1": v3, "3:2
 const keyOf = (r) => (r[0] === "3" ? `3:${r[1].match(/tenant (\d+)/)[1]}` : r[0]);
 
 const PGURL = process.env.SWEEP_DIAG_1105_TEST_PGURL;
-/** Whether the local server records commit times (a server setting, read once). */
-const COMMIT_TS = PGURL ? /^on$/m.test(spawnSync("psql", [PGURL, "-X", "-A", "-t", "-c", "show track_commit_timestamp"], { encoding: "utf8" }).stdout) : false;
 
 const CASES = [
   {
@@ -704,8 +702,7 @@ const CASES = [
     seed: buildSeed(),
     want: { ...V("OK", "OK"), ...F("NO_SUBJECT", "REFUTED", "NO_SUBJECT", "EVIDENCED") },
     info: [
-      [10, new RegExp(`slot 07:00 \\| .*; commit ${COMMIT_TS ? "\\d\\d:\\d\\d:\\d\\d\\.\\d{3} \\(" : "not recorded \\(track_commit_timestamp off; the next heartbeat's start is an upper bound only\\)"}`)],
-      [1, new RegExp(`; track_commit_timestamp ${COMMIT_TS ? "on" : "off"}; read at`)],
+      [10, /slot 07:00 \| .*; end not recorded in the database, upper bound \(only when passes do not overlap\) the next heartbeat's transaction start 07:15:02\.150;/],
       [3, /^3\. tenant 1, .* \| heartbeats 60 \(shadow 60\), pass ids 60, slots 60; doubled none; missing none; outside none; counts that differ 0 \|/],
       [20, /counts that differ 0;/],
       [40, /status scheduled; starts 2026-11-05 10:00; origin staff; .*48h mark 2026-11-03 10:00, 24h mark 2026-11-04 10:00; audit rows 3, claim store rows 5, ledger rows 2/],
@@ -732,8 +729,8 @@ const CASES = [
       [10, /slot 10:15 \| pass_at 10:17:10\.000 .*run time \(pass id as a ULID, NOT VERIFIED as the cron tick\) 10:15:00\.500 \(slot 10:15\).*due 3, recorded 3, shadow rows of its transaction 1, .* \| flags: slot doubled \(2 of 2\), count differs \| INFO$/],
       [20, /counts that differ 1; rows short in all 2, rows over in all 0; of them on 2026-11-03 1; at 2026-11-03 10:15 tenant 1 short 2/],
       [21, /count differs: 2026-11-03 10:15, tenant 1 \| mode shadow; recorded 3, .*shadow rows of its transaction 1, naming its pass id 1; short by 2; .*hard-deleted visits given to this pass 0, marks a neighbouring heartbeat's row holds 3/],
-      [23, new RegExp(`${appt(0x103)}, 48h email, start 2026-11-05 10:05, mark 2026-11-03 10:05; held by the previous heartbeat \\(slot 2026-11-03 10:15\\); rows of this mark from 11-02 1`)],
-      [23, new RegExp(`${appt(0x104)}, 48h email, start 2026-11-05 10:10, mark 2026-11-03 10:10; held by the previous heartbeat`)],
+      [23, new RegExp(`visit 1, 48h email, start 2026-11-05 10:05, mark 2026-11-03 10:05; held by the previous heartbeat \\(slot 2026-11-03 10:15\\); rows of this mark from 11-02 1`)],
+      [23, new RegExp(`visit 2, 48h email, start 2026-11-05 10:10, mark 2026-11-03 10:10; held by the previous heartbeat`)],
       [23, /the appointment passed in, 48h email, start 2026-11-05 10:00, mark 2026-11-03 10:00; held by the previous heartbeat/],
       [30, /heartbeats in a doubled slot or after 21:45 2, of them with the slot before missing 2; late by their run time 1, of them from a missing slot 1/],
       [42, /shadow, 48h email \| written 2026-11-03 10:16:30\.150; start 2026-11-05 10:00; .*its heartbeat \(by transaction\) 2026-11-03 10:15, pass id matches yes/],
@@ -745,8 +742,8 @@ const CASES = [
     seed: buildSeed({ beats: LATE, extraVisits: RESELECTED }),
     want: { ...V("REVIEW", "OK"), ...F("CONFIRMED", "CONFIRMED", "NO_SUBJECT", "EVIDENCED") },
     info: [
-      [24, new RegExp(`${appt(0x103)}, 48h email, start 2026-11-05 10:05; its heartbeats \\(slots\\) 2026-11-03 10:15, 2026-11-03 10:15`)],
-      [24, new RegExp(`${appt(0x104)}, 48h email, start 2026-11-05 10:10;`)],
+      [24, new RegExp(`visit 1, 48h email, start 2026-11-05 10:05; its heartbeats \\(slots\\) 2026-11-03 10:15, 2026-11-03 10:15`)],
+      [24, new RegExp(`visit 2, 48h email, start 2026-11-05 10:10;`)],
       [31, /marks with more than one shadow row 2, of them with a row written on 2026-11-03 2/],
     ],
   },
@@ -756,8 +753,8 @@ const CASES = [
     want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "CONFIRMED", "EVIDENCED") },
     info: [
       [20, /counts that differ 2; rows short in all 2, rows over in all 0; of them on 2026-11-03 2; at 2026-11-03 12:15 tenant 1 short 1, 2026-11-03 16:30 tenant 1 short 1/],
-      [22, new RegExp(`${appt(0x201)}, 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05, deleted 2026-11-03 13:00:00; fits 1 heartbeat\\(s\\) whose count differs, given to the earliest; another heartbeat's row holds it: no \\(a visit's rows go with it\\)`)],
-      [22, new RegExp(`${appt(0x202)}, 48h email, start 2026-11-05 16:20, mark 2026-11-03 16:20, deleted 2026-11-03 17:00:00`)],
+      [22, new RegExp(`visit 1 \\(hard-deleted\\), 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05, deleted 2026-11-03 13:00:00; fits 1 heartbeat\\(s\\) whose count differs, given to the earliest; another heartbeat's row holds it: no \\(a visit's rows go with it\\)`)],
+      [22, new RegExp(`visit 2 \\(hard-deleted\\), 48h email, start 2026-11-05 16:20, mark 2026-11-03 16:20, deleted 2026-11-03 17:00:00`)],
       [32, /shadow heartbeats whose count differs 2, of them over \(more rows than recorded\) 0; with a hard-deleted candidate 2, short by exactly their candidates 2; candidates in all 2, fitting two or more heartbeats 0; hard-deleted visits from 11-02 2, of them with a start this read cannot place 0, marks of them due before 11-02 with the visit ahead then 0/],
     ],
   },
@@ -826,7 +823,7 @@ insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, loo
     name: "a catch-up: a hard-deleted visit's 11-03 12:05 mark taken by the 14:15 pass, deleted at 15:00: CONFIRMED",
     seed: buildSeed({ deleted: [{ id: appt(0x204), start: "2026-11-05 12:05", takenAt: "2026-11-03 14:15:00", deletedAt: "2026-11-03 15:00:00" }] }),
     want: { ...V("OK", "REVIEW"), ...F("NO_SUBJECT", "REFUTED", "CONFIRMED", "EVIDENCED") },
-    info: [[22, new RegExp(`counted, no row \\(a hard-deleted visit\\): 2026-11-03 14:15, tenant 1 \\| ${appt(0x204)}, 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05`)]],
+    info: [[22, new RegExp(`counted, no row \\(a hard-deleted visit\\): 2026-11-03 14:15, tenant 1 \\| visit 1 \\(hard-deleted\\), 48h email, start 2026-11-05 12:05, mark 2026-11-03 12:05`)]],
   },
   {
     name: "a hard-deleted visit whose start the read cannot place, its pass short by one: UNDECIDED, not REFUTED",
@@ -895,7 +892,7 @@ const MUTANTS = [
   ["F4 evidenced by a door alone", "case when e.confirmations > 0 or e.run_claims > 0 then 'EVIDENCED'", "case when e.confirmations > 0 or e.run_claims > 0 or e.doors > 0 then 'EVIDENCED'", "the subject's door rows only"],
   ["row 40 never VACUOUS", "                   and (select count(*) from subj_ledger) = 0 then 'VACUOUS'", "                   and false then 'VACUOUS'", "an id that names nothing"],
   ["row 3 blind to a missing slot", "when s.beats = 60 and s.in_slots = 60 and s.doubled is null and s.missing is null and s.outside is null", "when s.doubled is null and s.outside is null", "a pass of 11-03 failed"],
-  ["neighbours: the next heartbeat only", "and (s.created_at = d.prev_created or s.created_at = d.next_created)", "and (s.created_at = d.next_created)", "SOLO's hypothesis", null, [23, new RegExp(appt(0x103))]],
+  ["neighbours: the next heartbeat only", "and (s.created_at = d.prev_created or s.created_at = d.next_created)", "and (s.created_at = d.next_created)", "SOLO's hypothesis", null, [23, /visit 1, 48h email, start 2026-11-05 10:05/]],
 ];
 for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
   const base = CASES.find((c) => c.name.startsWith(caseName) && !c.mutate);
@@ -969,6 +966,7 @@ test("the read on a local database: each seeded shape is reported exactly, and e
       assert.ok(!out.includes(c.subject ?? SUBJECT), `${c.name}: the subject's id was printed`);
       assert.ok(!out.includes("MUST-NOT-PRINT") && !out.includes("synthetic@example.invalid") && !out.includes("Synthetic"), `${c.name}: metadata or a person's field was printed`);
       for (const t of [TENANT, OTHER_TENANT, STAFF, ROLE]) assert.ok(!out.includes(t), `${c.name}: a tenant, user or role id was printed`);
+      assert.doesNotMatch(out, /00000000-0000-4000-[89]000-[0-9a-f]{12}/, `${c.name}: an appointment or claim id was printed`);
       const rows = out.split("\n").filter(Boolean).map((l) => l.split("\u001f")).filter((r) => r.length === 5);
       assert.equal(rows.length, out.split("\n").filter(Boolean).length, `${c.name}: a printed value holds the field separator or a newline`);
       const verdictRows = rows.filter((r) => r[4] !== "INFO");
