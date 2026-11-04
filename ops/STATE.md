@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Wed 2026-11-04 12:20 Lisbon, by SOLO (clock read).
+**Last updated:** Wed 2026-11-04 18:33 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -89,7 +89,7 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - A GATE-CHANGE PR is never armed; it is merged by hand on all green.
 
 ## Running now (nothing running as of the time above; the rows below are a record)
-- **PAUSED by the owner, Wed 11-04 2026-11-04 12:20 Lisbon.** On resume, in order:
+- **Paused Wed 11-04 12:20 Lisbon, RESUMED 18:33 Lisbon.** The A1 builder is finishing its fix round (BLUE down by 20:30 Lisbon). Steps:
   1. Read the builder's pause report (A1 diagnostic read, worktree `~/Projects/GitHub/osteojp-solo-wt/diag-1105`, branch `data/R47-sweep-diagnostic-20261105`, local only; paused at WIP e264e9a4: all 7 fixes written in SQL and test but NOT RUN; doc wording, the owner look at the 11-03 sweep-due-reminders runs, the guard sentence, rehearsal and sidecar still to do; pins do not match yet; BLUE down). R4 round 1 was NOT PASS (2 MAJOR: filter heartbeats by mode; F1 never REFUTED from run-id decoding alone; 4 MINOR, 1 NIT). Finish the fix round, then R4 round 2. Check BLUE is down.
   2. Tonight, owner window 16:00 to 01:29 Toronto (21:00 to 06:29 Lisbon): the owner says "starting the fallback"; SOLO re-checks no PR is armed and replies "freeze confirmed, none armed" with the Lisbon time. Then GREEN runs `~/osteojp-handover/green-dispatch-r36-fallback-1104.txt` (R4 SHIP AFTER FIXES, fixed, sha256 93e26661).
   3. After GREEN reports: R53 ends; write Thursday's second-pass dispatch (WEDOK rule); push the A1 branch and open its PR held.
