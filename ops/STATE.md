@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Tue 2026-11-03 23:45 Lisbon, by SOLO.
+**Last updated:** Wed 2026-11-04 00:07 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -84,7 +84,8 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - A GATE-CHANGE PR is never armed; it is merged by hand on all green.
 
 ## Running now
-- A local rehearsal of all 5 migration night documents (0109 to 0113) on the throwaway database. It must be down by 06:30 Lisbon. Transcripts go to `~/osteojp-handover/rh1104-transcripts/`.
+- Done Wed 00:06: an independent rehearsal of all 5 night documents (0109 to 0113) on the final bytes. All REHEARSED OK, no MAJOR. Transcripts in `~/osteojp-handover/rh1104-transcripts/`. NOT REHEARSED: the target guard, the journal reader, block A's MERGED check, the pushes, CI on HELD, production's env contents.
+- Running: fix round 3. It adds a stale-variable unset before every credential load, a machine check of CI on the held head, and the R4 wording fixes. A narrow re-check of the changed lines follows. #1682 gets the same push.
 - Done 11-03 ~23:40: a fresh R4 re-check of tonight's changes found no MAJOR. 0110, 0111 and 0112 plus four dispatches: SHIP. 0113 and #1682: SHIP AFTER FIXES (wording: the lock time, one NOT REHEARSED line, one gate line, a fault count). These fixes wait until the rehearsal reports, so no bytes change under it.
 
 ## Next steps, in order
