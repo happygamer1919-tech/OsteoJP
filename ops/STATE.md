@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Wed 2026-11-04 11:24 Lisbon, by SOLO (clock read).
+**Last updated:** Wed 2026-11-04 11:43 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -50,11 +50,11 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 | Wed 11-04, after 16:00 before 01:29 Toronto (21:00 to 06:29 Lisbon) | GREEN: the fallback re-arm (PR #1690, held 415bd0e9). Owner at the keyboard, 60 to 90 min. Dispatch `~/osteojp-handover/green-dispatch-r36-fallback-1104.txt` | dispatch written, block diff-proven; independent check running |
 | Thu 11-05, by 11:00 Toronto (16:00 Lisbon) | SOLO's report to strategy (Q2) | |
 | Thu 11-05 night, 25h or more after Wednesday's "canary began", before 01:29 Toronto | GREEN: the fallback's second pass (Q-R36-F5). Dispatch after Wednesday's report (WEDOK) | |
-| Thu or Fri | GREEN: a read-only diagnostic of the 4 FAILs | asked of strategy (A1) |
+| Thu 11-05 written and R4-reviewed; GREEN runs Thu or Fri, any hour | A1 diagnostic read of the 4 FAILs (approved). Then A2: the send-mode no-double-send DB test, the compare read's late-pass label and V8 reconciliation, the clean re-run. All four hold: switch the next night after the re-run, earliest Fri 11-06 after 21:50 Lisbon. Any fails: a new two-day shadow window. | builder authoring locally (no push until tonight's report) |
 | ~~Thu 11-05~~ | ~~read of the first sending (#1692)~~ | void: no switch |
 | Thu 11-05 and after | Board freeze, RULINGS.md, GitHub Issues tracker, CLAUDE.md slim (owner approved 11-01) | not started |
-| Sat 11-07 | Close the open PRs before the repo maintenance (strategy Q1(a)) | likely void: Q1(f), the R31 condition fails with no switch, so the rewrite moves to Sun 11-22 and nothing closes. SOLO asked strategy to confirm (A3). |
-| Sun 11-08 | Repo maintenance (history rewrite). No apply. | likely moves to Sun 11-22 (Q1(f)) |
+| Sat 11-07 | nothing closes (A3) | |
+| Sun 11-08 | no repo maintenance (A3): it moved to **Sun 11-22**, with Sat 11-21 the close-and-export day under Q1 (a) to (f) | |
 | Mon 11-09 | Migration 0109 (#1682) | apply doc NOT READY |
 | Tue 11-10 | Migration 0110 (#1704), then #1705. Montemor launch-ready. | NOT READY |
 | Wed 11-11 | Migration 0111 (#1706), then #1707 | NOT READY |
@@ -120,7 +120,7 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 7. Patient duplicates cleanup (see below).
 
 ## Waiting on others
-- **Strategy (asked Wed 11-04):** A1 the diagnostic read; A2 the switch's new terms; A3 confirm the rewrite moves to 11-22 under Q1(f); A4 the weekly fallback sitting on Fri 11-13 rather than the 0111 night.
+- **Strategy ruled A1 to A4 (11-04, record `~/osteojp-handover/strategy-rulings-shadow-stop-20261104.md`):** A1 approved; A2 conditional (four conditions); A3 rewrite to 11-22; A4 weekly fallback on Fridays 11-13, 11-20, 11-27 if still no switch. R9 still binds: a migration night that cannot show it touches nothing the sweep or the sleeping job reads waits for a clean verdict (0110 likely; an audit of all five nights is running). R53 ends when GREEN reports tonight.
 - **Strategy ruled Q1 (11-04):** the rewrite keeps Sun 11-08 only if the R31 condition holds (sending clean since the switch). Otherwise it moves to Sun 11-22, nothing is closed Saturday, and the nights go ahead on the current history. With the switch, the plan is: patches in `~/osteojp-handover/`, sha256 per migration file, re-clone everything fresh, an old-history check in every night document, and new READY pins.
 - **Owner, before Mon 11-09:** widen the wording of GREEN's apply-settings rule. It allows only "a file checked out from origin/main", but every night next week applies from a held PR.
 - **Owner and Rodica:**
