@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Wed 2026-11-04 00:07 Lisbon, by SOLO (clock read).
+**Last updated:** Wed 2026-11-04 00:57 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -83,9 +83,15 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - Never push to an armed PR: disarm, push, wait for green, re-arm.
 - A GATE-CHANGE PR is never armed; it is merged by hand on all green.
 
-## Running now
+## Running now (nothing running as of the time above; the rows below are a record)
 - Done Wed 00:06: an independent rehearsal of all 5 night documents (0109 to 0113) on the final bytes. All REHEARSED OK, no MAJOR. Transcripts in `~/osteojp-handover/rh1104-transcripts/`. NOT REHEARSED: the target guard, the journal reader, block A's MERGED check, the pushes, CI on HELD, production's env contents.
-- Running: fix round 3. It adds a stale-variable unset before every credential load, a machine check of CI on the held head, and the R4 wording fixes. A narrow re-check of the changed lines follows. #1682 gets the same push.
+- Done Wed ~00:45: fix round 3, then a narrow re-check (run, not just read). All 10 files and #1682 (head 0668e845): SHIP.
+  - It added a stale-variable unset before every credential load, and a machine check that the held head's 3 main CI checks are green.
+  - Polish queued for the READY pass, before each night:
+    - psql uses `${DATABASE_URL_DIRECT:?}`;
+    - two test hardenings;
+    - wording.
+  - Before Mon 11-09: GREEN tries the new `gh api` CI step once under its classifier.
 - Done 11-03 ~23:40: a fresh R4 re-check of tonight's changes found no MAJOR. 0110, 0111 and 0112 plus four dispatches: SHIP. 0113 and #1682: SHIP AFTER FIXES (wording: the lock time, one NOT REHEARSED line, one gate line, a fault count). These fixes wait until the rehearsal reports, so no bytes change under it.
 
 ## Next steps, in order
