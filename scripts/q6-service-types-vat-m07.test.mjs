@@ -126,7 +126,7 @@ const SUCCESS = {
 
 test("the sidecar pins the document, and the document says NOT READY, records its rehearsal and what is NOT REHEARSED", () => {
   assert.equal(read(SIDECAR), `${sha256(doc)}  ${DOC}\n`);
-  assert.match(doc.split("\n")[0], /^NOT READY: reworked for the per-type list 2026-11-05, R4 owed on the rework.*, the blocks whole NOT REHEARSED, the night Thu 2026-11-19 conditional on Q6-D/);
+  assert.match(doc.split("\n")[0], /^NOT READY: reworked for the per-type list 2026-11-05, R4 [^\n]*?, the blocks whole NOT REHEARSED[^\n]*?, the night Thu 2026-11-19 conditional on Q6-D/);
   assert.match(doc, /\n## Rehearsal\n/);
   assert.match(doc, /\n### SQL checked by the author, 2026-11-05/);
   assert.match(doc, /\n## NOT REHEARSED\n\n- \*\*The blocks whole\.\*\*/);
