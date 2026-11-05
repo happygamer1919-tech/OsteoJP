@@ -5,24 +5,50 @@
  * The name rules MIRROR the database, which is the authority:
  *   - health_systems_name_not_blank / health_systems_name_length (120);
  *   - health_systems_tenant_name_key, a unique index on
- *     lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g'))).
+ *       translate(lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g'))),
+ *                 HEALTH_SYSTEM_ACCENTS_FROM, HEALTH_SYSTEM_ACCENTS_TO)
+ *     so case, whitespace AND ACCENTS fold (ruling Q12, 2026-11-04: "Medis"
+ *     with or without an accent, in any case, is one name).
  * The application normalizes before it writes, so a stored name never carries
  * leading, trailing or doubled whitespace, and it compares by `nameKey` so the
  * panel can say "already exists" (or reactivate a switched-off entry) instead of
- * surfacing a unique-index refusal.
+ * surfacing a unique-index refusal. The accent map below is the migration's,
+ * character for character: health-systems-core.test.ts reads the two literals
+ * out of the migration file and compares them, and health-systems.db.test.ts
+ * runs the index expression from the catalogue over a table of names and
+ * compares every key with `healthSystemNameKey`.
  */
 
 export const HEALTH_SYSTEM_NAME_MAX = 120;
 export const HEALTH_SYSTEM_NUMBER_MAX = 64;
+
+/**
+ * The accent map of the unique index, position for position: a, e, i, o and u
+ * with acute, grave, circumflex, tilde or diaeresis, c with cedilla and n with
+ * tilde, lower case then upper case, each onto its bare lower-case letter.
+ */
+export const HEALTH_SYSTEM_ACCENTS_FROM = "áàâãäéèêëẽíìîïĩóòôõöúùûüũçñÁÀÂÃÄÉÈÊËẼÍÌÎÏĨÓÒÔÕÖÚÙÛÜŨÇÑ";
+export const HEALTH_SYSTEM_ACCENTS_TO = "aaaaaeeeeeiiiiiooooouuuuucnaaaaaeeeeeiiiiiooooouuuuucn";
+
+const ACCENT_FOLD: ReadonlyMap<string, string> = new Map(
+  [...HEALTH_SYSTEM_ACCENTS_FROM].map((c, i) => [c, HEALTH_SYSTEM_ACCENTS_TO[i]!]),
+);
+
+/** Postgres translate() with the map above: every listed letter onto its bare one, the rest unchanged. */
+export function foldHealthSystemAccents(text: string): string {
+  let out = "";
+  for (const c of text) out += ACCENT_FOLD.get(c) ?? c;
+  return out;
+}
 
 /** Trim and collapse every run of whitespace to one space. "" when nothing is left. */
 export function normalizeHealthSystemName(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
 
-/** The comparison key the unique index uses: the normalized name, lower case. */
+/** The comparison key the unique index uses: the normalized name, lower case, accents folded. */
 export function healthSystemNameKey(raw: string): string {
-  return normalizeHealthSystemName(raw).toLowerCase();
+  return foldHealthSystemAccents(normalizeHealthSystemName(raw).toLowerCase());
 }
 
 /** Why a name typed into the panel cannot be saved, or null when it can. */

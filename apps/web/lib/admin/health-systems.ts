@@ -71,7 +71,7 @@ export async function listHealthSystemOptions(
 
 /**
  * Add a Sistema. The name is normalized first. When the clinic already has the
- * same name (case and whitespace aside): an active one is refused (`name_taken`),
+ * same name (case, whitespace and accents aside): an active one is refused (`name_taken`),
  * a switched-off one is switched back on, and nothing new is inserted.
  */
 export async function createHealthSystem(

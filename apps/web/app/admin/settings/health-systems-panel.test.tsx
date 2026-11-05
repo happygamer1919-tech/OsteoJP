@@ -26,7 +26,7 @@ describe("Sistemas / SubSistemas panel: Fisiozero's structure", () => {
       'placeholder="Novo Sistema Sub/Sistema..."',
       'title="Adicionar novo Sistema / SubSistema"',
       "border-dotted",
-      "Usa tabela de preços de Sistemas",
+      "Usa tabela de preços de Sistemas (ainda sem efeito)",
       "Ao cruzar Tipos de Marcações com Sistemas/Subsistemas o preço será automaticamente atualizado nas marcações.",
       'role="switch"',
     ];
@@ -83,5 +83,15 @@ describe("Sistemas / SubSistemas panel: messages", () => {
     expect(healthSystemsBanner("hs-err:invalid")?.ok).toBe(false);
     expect(healthSystemsBanner("hs-err:forbidden")?.ok).toBe(false);
     expect(healthSystemsBanner("hs-reactivated")?.ok).toBe(true);
+  });
+
+  it("the duplicate message says accents do not count (ruling Q12)", () => {
+    expect(healthSystemsBanner("hs-err:name_taken")?.text).toBe(
+      "Já existe um Sistema / SubSistema com esse nome (maiúsculas, espaços e acentos não contam: Médis e Medis são o mesmo nome).",
+    );
+  });
+
+  it("the price switch says it is not in effect yet (ruling Q13)", () => {
+    expect(render()).toContain("Usa tabela de preços de Sistemas (ainda sem efeito)");
   });
 });

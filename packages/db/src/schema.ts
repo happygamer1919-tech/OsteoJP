@@ -744,7 +744,8 @@ export const therapistServices = pgTable(
 // free-text name (Fisiozero's "Sistemas / SubSistemas" panel, owner request
 // 2026-11-02). From the PENDING migration
 // migrations-pending/NEXT-AFTER-0109_sistemas_subsistemas.sql. One name per
-// tenant after normalizing case and whitespace (the expression index below).
+// tenant after normalizing case, whitespace and accents (the expression index
+// below; the accent map is HEALTH_SYSTEM_ACCENTS_FROM/TO in apps/web).
 // Deactivated, never deleted: no role but the table's owner holds DELETE.
 // RLS: every staff role reads its tenant's rows; owner and admin insert (naming
 // themselves as created_by) and update name and active. A LABEL ONLY: no price,
@@ -766,7 +767,7 @@ export const healthSystems = pgTable(
     unique("health_systems_id_tenant_key").on(t.id, t.tenantId),
     uniqueIndex("health_systems_tenant_name_key").on(
       t.tenantId,
-      sql`lower(btrim(regexp_replace(${t.name}, '[[:space:]]+', ' ', 'g')))`,
+      sql`translate(lower(btrim(regexp_replace(${t.name}, '[[:space:]]+', ' ', 'g'))), 'áàâãäéèêëẽíìîïĩóòôõöúùûüũçñÁÀÂÃÄÉÈÊËẼÍÌÎÏĨÓÒÔÕÖÚÙÛÜŨÇÑ', 'aaaaaeeeeeiiiiiooooouuuuucnaaaaaeeeeeiiiiiooooouuuuucn')`,
     ),
     check("health_systems_name_not_blank", sql`${t.name} ~ '[^[:space:]]'`),
     check("health_systems_name_length", sql`char_length(${t.name}) <= 120`),

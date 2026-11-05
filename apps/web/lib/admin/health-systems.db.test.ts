@@ -20,7 +20,10 @@
  *   - the price-table switch reads OFF by default, keeps every other key of
  *     tenants.settings when saved, and is audited;
  *   - the patient write's check (healthSystemSelectable): active yes, another
- *     tenant's no, switched-off only when it is the patient's current value.
+ *     tenant's no, switched-off only when it is the patient's current value;
+ *   - ACCENTS FOLD (ruling Q12): the application's key equals the unique
+ *     index's expression read from the catalogue on a table of names, and
+ *     "Medis" after "Médis" is name_taken, or reactivates it when switched off.
  */
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
@@ -219,4 +222,59 @@ d(`Sistemas / SubSistemas server functions [${SIDE}]`, () => {
     }));
     expect(verdicts).toEqual({ active: true, foreign: false, offNew: false, offCurrent: true, unknown: false });
   });
+
+  /* Ruling Q12 (2026-11-04): accents fold, in the index and in the pre-check. */
+
+  it("the application's key equals the unique index's own expression, read from the catalogue, on a table of names", async () => {
+    const { healthSystemNameKey } = await import("./health-systems-core");
+    const [def] = (await db.execute(
+      raw`select pg_get_indexdef('public.health_systems_tenant_name_key'::regclass, 2, false) as e`,
+    )) as unknown as { e: string }[];
+    const names = [
+      "Médis",
+      "Medis",
+      "MEDIS",
+      " médis ",
+      "MÉDIS",
+      "Saúde",
+      "Saude",
+      "Ç",
+      "C",
+      "Açoreana  Saúde",
+      "ÀÁÂÃÄ èéêëẽ ìíîïĩ òóôõö ùúûüũ ñ",
+      "Sub \t Sistema\nX",
+      "Medis Plus",
+      "Fidelidade Saúde",
+    ];
+    // The column is called name, so the catalogue's text runs unchanged.
+    const rows = (await db.execute(
+      raw`select name, ${raw.raw(def!.e)} as key
+            from jsonb_array_elements_text(${JSON.stringify(names)}::jsonb) with ordinality as u(name, ord)
+           order by ord`,
+    )) as unknown as { name: string; key: string }[];
+    expect(rows.map((r) => [r.name, r.key])).toEqual(names.map((n) => [n, healthSystemNameKey(n)]));
+    // And the table is not vacuous: the accent pairs share a key, the near names do not.
+    const key = new Map(rows.map((r) => [r.name, r.key]));
+    expect(key.get("Médis")).toBe(key.get("Medis"));
+    expect(key.get("Saúde")).toBe(key.get("Saude"));
+    expect(key.get("Ç")).toBe(key.get("C"));
+    expect(key.get("Médis")).not.toBe(key.get("Medis Plus"));
+  });
+
+  it("'Medis' after an ACTIVE 'Médis' is name_taken; once switched off, 'MEDIS' switches it back on", async () => {
+    expect(await lib.createHealthSystem(adminA, "Médis")).toBe("created");
+    const medis = (await lib.listHealthSystems(adminA)).find((h) => h.name === "Médis")!;
+    expect(await errCode(lib.createHealthSystem(adminA, "Medis"))).toBe("name_taken");
+    expect(await errCode(lib.createHealthSystem(adminA, " médis "))).toBe("name_taken");
+    await lib.setHealthSystemActive(adminA, medis.id, false);
+    expect(await lib.createHealthSystem(adminA, "MEDIS")).toBe("reactivated");
+    const after = (await lib.listHealthSystems(adminA)).filter((h) => healthKeyIsMedis(h.name));
+    expect(after.map((h) => [h.id, h.name, h.active])).toEqual([[medis.id, "Médis", true]]);
+    // Another clinic may hold the same name.
+    expect(await lib.createHealthSystem(adminB, "Medis")).toBe("created");
+  });
 });
+
+function healthKeyIsMedis(name: string): boolean {
+  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase() === "medis";
+}
