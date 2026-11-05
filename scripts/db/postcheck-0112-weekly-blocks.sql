@@ -1,14 +1,16 @@
 -- 0112 POST-CHECK: the weekly block table, therapist_weekly_blocks.
 -- READ ONLY. It writes nothing and cannot. Catalogue facts and counts only.
+-- 2026-11-05: the missing-variable guards came after every rehearsal; no rehearsal has
+-- run these final bytes. The C3 chain rehearsal runs them.
 --
--- RUN ON THE INDEPENDENT REHEARSAL OF 2026-11-03 (BLUE, 14:55 TO 15:12 LISBON),
--- where it read 20 OK / 0 VACUOUS / 0 FAIL. Never run on production. Authored 2026-11-03 from 0109's and
+-- AN EARLIER VERSION RAN ON THE INDEPENDENT REHEARSAL OF 2026-11-03 (BLUE, 14:55 TO 15:12
+-- LISBON), where it read 20 OK / 0 VACUOUS / 0 FAIL. Never run on production. Authored 2026-11-03 from 0109's and
 -- 0106's post-checks. It becomes scripts/db/postcheck-0112-weekly-blocks.sql in
 -- the apply document set; its sha256 is pinned only after a rehearsal ran it.
 -- CONFIRMED BY THE INDEPENDENT REHEARSAL OF 2026-11-03 (BLUE, 14:55 TO 15:12 LISBON):
 -- verdict 6's three definitions, first pinned without a database, are exactly
 -- what the server printed; verdict 9's three policy-expression md5s were read
--- there (0106's way) and are written in below; this post-check read 20 OK
+-- there (0106's way) and are written in below; this post-check (before the guards) read 20 OK
 -- there. A later difference is a fix to this file, never a loosened verdict.
 --
 -- The caller asserts the PROFILE: 20 OK / 0 VACUOUS / 0 FAIL, and no other.
