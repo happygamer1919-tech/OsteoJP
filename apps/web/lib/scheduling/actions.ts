@@ -28,6 +28,7 @@ import { PATIENT_STATS_TAG } from "@/lib/patients/cache-tags";
 import { clientIp } from "./actor";
 import {
   batchSchedule,
+  ClinicClosedRefused,
   ClinicHoursRefused,
   PackBatchRefused,
   type BatchGuestLink,
@@ -39,7 +40,7 @@ import { writeAppointmentAudit } from "./audit";
 import { buildClonedAppointment } from "./clone-core";
 import { blockingConflicts, findConflicts, findConflictsForWindow } from "./conflict";
 import { checkAvailability } from "./availability-enforcement";
-import { checkClinicClosure, checkClinicWindow } from "./clinic-closure-enforcement";
+import { checkClinicClosure, checkClinicWindow, clinicClosurePayload } from "./clinic-closure-enforcement";
 import { isLegalEstadoTransition } from "./estado-transitions";
 import { correctionAsksSurvey, correctionEntersBlockingSet, isLegalEstadoCorrection } from "./estado-correction";
 import { isUncancel } from "./uncancel";
@@ -852,7 +853,7 @@ export async function createAppointment(
             return {
               ok: false,
               error: "clinic_closed",
-              clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+              clinicClosure: clinicClosurePayload(cl),
             };
           }
 
@@ -1249,6 +1250,11 @@ export async function batchScheduleAppointments(
     if (e instanceof ClinicHoursRefused) {
       return { ok: false, error: "outside_clinic_hours", clinicWindow: e.window };
     }
+    // TIER C 0114: a slot inside the clinic's closure (lunch or a dated
+    // closure). Mapped by instance, never overridable.
+    if (e instanceof ClinicClosedRefused) {
+      return { ok: false, error: "clinic_closed", clinicClosure: e.closure };
+    }
     if (e instanceof PackBatchRefused) return { ok: false, error: e.kind };
     return fail("batchSchedule", e);
   }
@@ -1453,7 +1459,7 @@ export async function cloneAppointment(
           return {
             ok: false,
             error: "clinic_closed",
-            clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+            clinicClosure: clinicClosurePayload(cl),
           };
         }
 
@@ -1734,7 +1740,7 @@ export async function updateAppointment(
               return {
                 ok: false,
                 error: "clinic_closed",
-                clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+                clinicClosure: clinicClosurePayload(cl),
               };
             }
 
@@ -1967,6 +1973,22 @@ export async function updateAppointment(
         if (patch.status === "confirmed" && affected.some((a) => a.status === "scheduled")) {
           const pedidoIds = await unconfirmedPedidoIds();
           acceptedPedidos = affected.filter((a) => a.status === "scheduled" && pedidoIds.has(a.id));
+        }
+
+        // TIER C 0114 - ACCEPTING A PEDIDO FROM THE DRAWER IS ACCEPTING IT, SO
+        // IT REFUSES A CLOSURE EXACTLY AS confirmAppointmentRequest DOES. A
+        // pedido made before a closure was entered must not become a confirmed
+        // visit inside it through this door either. Outside the allowConflict
+        // gate: "Guardar mesmo assim" never reaches a closure (owner, C1).
+        for (const a of acceptedPedidos) {
+          const cl = await checkClinicClosure(tx, {
+            locationId: a.locationId,
+            startsAt: a.startsAt,
+            endsAt: a.endsAt,
+          });
+          if (!cl.ok) {
+            return { ok: false, error: "clinic_closed", clinicClosure: clinicClosurePayload(cl) };
+          }
         }
 
         // Only run the column update when there is a column to change; a
@@ -2397,7 +2419,7 @@ async function moveAppointment(
             return {
               ok: false,
               error: "clinic_closed",
-              clinicClosure: { locationName: cl.locationName, from: cl.from, to: cl.to },
+              clinicClosure: clinicClosurePayload(cl),
             };
           }
 
@@ -2977,6 +2999,21 @@ export async function confirmAppointmentRequest(
         await tx.execute(
           acquireSlotLocks(actor.tenantId, pedido.practitionerId, pedido.startsAt, pedido.endsAt),
         );
+
+        // TIER C 0114 - A PEDIDO MADE BEFORE A CLOSURE WAS ENTERED MUST NOT
+        // BE ACCEPTED INTO IT. The portal stops offering a closed day once the
+        // closure is saved, but a pedido already waiting for reception was
+        // made before that. The same function every other door refuses with
+        // (lunch closure included), outside any override: there is none here,
+        // and a closure is never overridable.
+        const cl = await checkClinicClosure(tx, {
+          locationId: pedido.locationId,
+          startsAt: pedido.startsAt,
+          endsAt: pedido.endsAt,
+        });
+        if (!cl.ok) {
+          return { ok: false, error: "clinic_closed", clinicClosure: clinicClosurePayload(cl) };
+        }
 
         // excludeIds is the pedido itself: its own row occupies this window and
         // would otherwise be reported as the conflict that blocks its own

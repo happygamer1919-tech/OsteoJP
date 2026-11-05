@@ -1,5 +1,6 @@
 "use client";
 
+import type { AgendaClosedDays } from "@/lib/scheduling/closed-days-core";
 import { GUEST_REQUEST_PARAM } from "@/lib/scheduling/guest-convert-handoff";
 import { DatePicker, Select, SegmentedControl, ToastProvider } from "@osteojp/ui";
 import { Ban, ChevronLeft, ChevronRight, MapPin, Plus, RotateCw } from "lucide-react";
@@ -78,6 +79,7 @@ export function AgendaView({
   dayWindow,
   clinicWindow,
   closure,
+  closedDays,
   lockedPatient,
   prefill,
   guestRequestId,
@@ -117,6 +119,8 @@ export function AgendaView({
   clinicWindow?: { startMin: number; endMin: number };
   /** 0085: the selected clinic's daily closure, or null under "Todas". */
   closure: { startMin: number; endMin: number; locationName: string } | null;
+  /** TIER C 0114: the selected clinic's dated closures per displayed date; empty under "Todas". */
+  closedDays?: AgendaClosedDays;
   /** W6-03: when deep-linked from a patient profile, the create drawer opens
    *  with this patient preselected + locked. Null on a normal agenda visit. */
   lockedPatient: { value: string; label: string } | null;
@@ -816,6 +820,7 @@ export function AgendaView({
         dayWindow={dayWindow}
         clinicWindow={clinicWindow}
         closure={closure}
+        closedDays={closedDays}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
         /* SCHED-22 - THE BAND OPENS THE BLOCK THAT MADE IT.
@@ -857,6 +862,7 @@ export function AgendaView({
         appointments={shownAppointments}
         blocks={blocks}
         closure={closure}
+        closedDays={closedDays}
         dayWindow={dayWindow}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
         onOpenBlock={
@@ -883,6 +889,7 @@ export function AgendaView({
           appointments={shownAppointments}
           blocks={blocks}
           closure={closure}
+        closedDays={closedDays}
           sharedResourceIds={new Set((options.sharedResources ?? []).map((r) => r.id))}
           onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
           onSelectDay={(date) => navigate({ view: "day", date })}

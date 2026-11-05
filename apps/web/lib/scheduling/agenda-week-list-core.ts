@@ -43,6 +43,7 @@ import {
   type AgendaView,
 } from "./time";
 import { placeBlocksOnDate, type BlockSpan } from "./blocked-time-core";
+import { agendaClosuresOn, type AgendaClosedDays } from "./closed-days-core";
 import { deriveEstado, type Estado } from "./estado";
 import type { AgendaAppointment, AppointmentStatusValue } from "./types";
 
@@ -93,6 +94,8 @@ export type WeekListRow =
       startMin: number;
       endMin: number;
       locationName: string;
+      /** Tier C 0114: a dated closure's reason (label or kind); absent for the lunch closure. */
+      reason?: string | null;
     };
 
 export type WeekListDay = {
@@ -118,6 +121,8 @@ export type BuildWeekListInput = {
   appointments: readonly AgendaAppointment[];
   blocks?: readonly BlockSpan[];
   closure?: ClosureWindow | null;
+  /** TIER C 0114: the selected clinic's dated closures, per date. */
+  closedDays?: AgendaClosedDays;
   /**
    * The visible window, as the GRID is drawn with it. Blocks are clipped to it
    * so the list and the grid can never disagree about how far an absence runs.
@@ -135,7 +140,7 @@ const KIND_ORDER: Record<WeekListRow["kind"], number> = {
 };
 
 export function buildWeekListDays(input: BuildWeekListInput): WeekListDay[] {
-  const { view, anchor, appointments, blocks = [], closure = null } = input;
+  const { view, anchor, appointments, blocks = [], closure = null, closedDays } = input;
   const win = input.dayWindow ?? {
     startMin: DAY_START_HOUR * 60,
     endMin: DAY_END_HOUR * 60,
@@ -189,12 +194,21 @@ export function buildWeekListDays(input: BuildWeekListInput): WeekListDay[] {
         clippedEnd: p.clippedEnd,
       });
     }
-    if (closure) {
+    // The lunch closure and this date's dated closures (Tier C 0114), through
+    // the one function the grid and the phone week use. Clipped to the drawn
+    // window: a whole closed day reads as the hours the grid shows, never as
+    // 00:00 to 24:00. The lunch closure sits inside the clinic's hours by the
+    // database's own check, so the clip never changes it.
+    for (const c of agendaClosuresOn(date, closure, closedDays)) {
+      const startMin = Math.max(c.startMin, win.startMin);
+      const endMin = Math.min(c.endMin, win.endMin);
+      if (endMin <= startMin) continue;
       bucket.push({
         kind: "closure",
-        startMin: closure.startMin,
-        endMin: closure.endMin,
-        locationName: closure.locationName,
+        startMin,
+        endMin,
+        locationName: c.locationName,
+        ...(c.reason ? { reason: c.reason } : {}),
       });
     }
   }

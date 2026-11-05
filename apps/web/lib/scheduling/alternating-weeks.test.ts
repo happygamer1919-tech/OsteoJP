@@ -6,7 +6,18 @@ import {
 } from "./alternating-weeks";
 import { coverageViolations, locationsOnDate, type CoverageRow } from "./schedule-coverage";
 import { invertedRows } from "./schedule-window";
-import { buildDay } from "./day-availability-core";
+import { buildDay as buildDayWithClosures } from "./day-availability-core";
+
+/** Tier C 0114: buildDay now REQUIRES the clinic's dated closures. These
+ *  cases are about other rules, so they say "no dated closures" explicitly. */
+type BuildDayArgs = Parameters<typeof buildDayWithClosures>;
+const buildDay = (
+  date: BuildDayArgs[0],
+  templates: BuildDayArgs[1],
+  booked: BuildDayArgs[2],
+  blocks: BuildDayArgs[3] = [],
+  clinicHours: BuildDayArgs[4] = null,
+) => buildDayWithClosures(date, templates, booked, blocks, clinicHours, []);
 
 /**
  * ITEM 5 - THE TWO DoD TESTS THE RULING NAMED AS THE CORE:

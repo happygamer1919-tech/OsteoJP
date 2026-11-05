@@ -10,6 +10,13 @@ import {
   type StartVerdict,
 } from "./clinic-hours";
 import { lisbonMinutesFromMidnight, lisbonParts, slotLabel } from "./time";
+import {
+  closedDayOverlap,
+  closedDayPayload,
+  lisbonDatesTouched,
+  type ClinicClosurePayload,
+} from "./closed-days-core";
+import { readClosedDays } from "./closed-days";
 
 /**
  * 0085 — THE CLINIC IS SHUT, AND NOBODY MAY PRESS PAST IT.
@@ -43,8 +50,22 @@ export type ClosureVerdict =
   /** No closure at this clinic, or the window does not touch it. */
   | { ok: true }
   /** Inside the clinic's closure. `from`/`to` are Lisbon "HH:MM" so the refusal
-   *  can quote the hour the building is shut rather than say "closed". */
-  | { ok: false; locationName: string; from: string; to: string };
+   *  can quote the hour the building is shut rather than say "closed".
+   *  `closedDay` is set when a DATED closure (Tier C 0114) refused: its kind,
+   *  its label and whether it is the whole day, so the sentence says "closed
+   *  on this day" and not "closed every day". */
+  | ({ ok: false } & ClinicClosurePayload);
+
+/**
+ * The refusal payload of a closed verdict, for an ActionResult's
+ * `clinicClosure`. Every caller builds it HERE, so a dated closure's kind and
+ * label cannot be dropped at one door and kept at another.
+ */
+export function clinicClosurePayload(v: Extract<ClosureVerdict, { ok: false }>): ClinicClosurePayload {
+  const payload: ClinicClosurePayload = { locationName: v.locationName, from: v.from, to: v.to };
+  if (v.closedDay) payload.closedDay = v.closedDay;
+  return payload;
+}
 
 /** One clinic's hours + name, or null when the id names nothing this tenant has. */
 async function readClinic(
@@ -84,14 +105,31 @@ export async function checkClinicClosure(
   if (!clinic) return { ok: true };
 
   const date = lisbonParts(args.startsAt).date;
-  if (!overlapsClosure(args.startsAt, args.endsAt, date, clinic)) return { ok: true };
+  if (overlapsClosure(args.startsAt, args.endsAt, date, clinic)) {
+    return {
+      ok: false,
+      locationName: clinic.name,
+      from: (clinic.middayClosedFrom ?? "").slice(0, 5),
+      to: (clinic.middayClosedTo ?? "").slice(0, 5),
+    };
+  }
 
-  return {
-    ok: false,
-    locationName: clinic.name,
-    from: (clinic.middayClosedFrom ?? "").slice(0, 5),
-    to: (clinic.middayClosedTo ?? "").slice(0, 5),
-  };
+  // TIER C 0114 - THE DATED CLOSURES, READ BY THE SAME FUNCTION, so every door
+  // that refuses the lunch closure refuses a closed day too and none can honour
+  // one and miss the other. Same position as the lunch closure: outside the
+  // allowConflict gate at every caller, so "Guardar mesmo assim" never reaches
+  // it (owner, C1). Every Lisbon date the window touches is read, as the
+  // portal's fragment reads them. Inert until the table exists.
+  const touched = lisbonDatesTouched(args.startsAt, args.endsAt);
+  const closedDays = await readClosedDays(tx, {
+    locationId: args.locationId,
+    fromDate: touched[0]!,
+    toDate: touched[touched.length - 1]!,
+  });
+  const hit = closedDayOverlap(closedDays, args.startsAt, args.endsAt);
+  if (hit) return { ok: false, ...closedDayPayload(clinic.name, hit) };
+
+  return { ok: true };
 }
 
 /**

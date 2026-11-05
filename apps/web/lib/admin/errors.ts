@@ -54,6 +54,15 @@ export type AdminErrorCode =
   // dialog has had its own distinct `note_required` since SCHED-18 for exactly
   // this reason; this is the same refusal reaching the Equipa modal.
   | "note_required"
+  // TIER C 0114: the same closure (clinic, dates and hours) already exists
+  // (the table's unique key). Its own code so the page can say so.
+  | "duplicate"
+  // TIER C 0114: the closure table is not on this database yet (its migration
+  // is pending). The write is refused rather than lost.
+  | "unavailable"
+  // TIER C 0114: a closure whose first day is today or earlier cannot be
+  // removed; it is history for the capacity figures.
+  | "already_started"
   | "invalid";
 
 export class AdminError extends Error {

@@ -212,7 +212,18 @@ export type Capability =
   // carries a patient's comment, and neither of those says who may read one.
   // Sending a survey by hand is a separate capability that arrives with the
   // send button.
-  | "surveys:read";
+  | "surveys:read"
+  // TIER C 0114 (strategy 2026-11-05, owner answer C2): add and remove a
+  // clinic's DATED closures (holidays, closed days), the Encerramentos page.
+  // Owner, admin and reception; NOT the therapist, who reads closures (every
+  // booking does) but does not shut the building.
+  //
+  // ITS OWN CAPABILITY, NOT `schedule:manage`, which a therapist holds for
+  // their own blocks: riding it would hand every therapist the power to close
+  // a clinic. The grant is location-blind like every row here; a located
+  // receptionist or admin is limited to their own clinics by the action
+  // (lib/admin/closed-days.ts), and the table's RLS repeats the role list.
+  | "closures:manage";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -256,6 +267,7 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   // capability owner lacks.
   "care_team:manage",
   "surveys:read",
+  "closures:manage",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -318,6 +330,8 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // SAT-01 (S7): the survey list. Location-blind grant; 0102's policies scope
     // sends and answers to appointments at this admin's clinics.
     "surveys:read",
+    // TIER C 0114 (C2): dated clinic closures, at this admin's clinics.
+    "closures:manage",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -433,6 +447,8 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // SAT-01 (S7): the survey list, for appointments at reception's clinics
     // (0102's policies).
     "surveys:read",
+    // TIER C 0114 (C2): dated clinic closures, at reception's clinics.
+    "closures:manage",
   ]),
 };
 

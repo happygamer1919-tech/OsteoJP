@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 import { assertPiiFreeAuditMetadata, AuditMetadataError } from "@/lib/audit/metadata-contract";
 import { planAlternatingWeeks } from "./alternating-weeks";
 import { scheduleRuleFor } from "./availability";
-import { buildDay } from "./day-availability-core";
+import { buildDay as buildDayWithClosures } from "./day-availability-core";
 import { planDayByDay, type DayByDayPlan } from "./day-by-day";
 import {
   carveShape,
@@ -18,6 +18,17 @@ import {
 import { dayEditPlan } from "./inspector-edit";
 import { coverageViolations, type CoverageRow } from "./schedule-coverage";
 import { isSingleDayRow, projectedRows, type SchedulePlan } from "./schedule-window";
+
+/** Tier C 0114: buildDay now REQUIRES the clinic's dated closures. These
+ *  cases are about other rules, so they say "no dated closures" explicitly. */
+type BuildDayArgs = Parameters<typeof buildDayWithClosures>;
+const buildDay = (
+  date: BuildDayArgs[0],
+  templates: BuildDayArgs[1],
+  booked: BuildDayArgs[2],
+  blocks: BuildDayArgs[3] = [],
+  clinicHours: BuildDayArgs[4] = null,
+) => buildDayWithClosures(date, templates, booked, blocks, clinicHours, []);
 
 /**
  * SR-62 PU-3 - Eliminar on a Dia definido, driven through the REAL planners.

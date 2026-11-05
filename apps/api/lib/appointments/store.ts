@@ -7,6 +7,7 @@ import {
   services,
   users,
   getDbAdmin,
+  locationClosedDaysSchemaPresent,
   sharedResourceSchemaPresent,
 } from "@osteojp/db";
 import type { PatientPrincipal } from "@osteojp/auth";
@@ -230,8 +231,32 @@ function timeOffOverlapExists(
  * A LOCATION WITH NO CLOSURE MATCHES NOTHING - `midday_closed_from is not null`
  * is the first term, so every clinic but CB pays one index-free boolean and
  * behaves exactly as before.
+ *
+ * TIER C 0114 - AND THE CLINIC'S DATED CLOSURES, IN THE SAME FRAGMENT. A
+ * holiday or a closed day is the same building fact on a date, so every query
+ * that refuses the lunch closure refuses a closed day through this one call:
+ * the slot grid offers no slot on it (C9: no slots, no patient-facing note),
+ * the therapist list offers nobody, and the booking and reschedule guards
+ * refuse with `clinic_closed`. `closedDays` IS REQUIRED, NOT DEFAULTED, and
+ * that is the guard against a missed reader: every caller must say whether
+ * the table exists (`closedDaysOn()` below), so a call added later cannot
+ * compile without deciding, and none can read the lunch closure alone.
  */
-function closureOverlapExists(tenantId: string, locationId: SQL | string, startsAt: Instant, endsAt: Instant): SQL {
+function closureOverlapExists(
+  tenantId: string,
+  locationId: SQL | string,
+  startsAt: Instant,
+  endsAt: Instant,
+  closedDays: boolean,
+): SQL {
+  const lunch = middayClosureOverlapExists(tenantId, locationId, startsAt, endsAt);
+  return closedDays
+    ? sql`(${lunch} or ${closedDayOverlapExists(tenantId, locationId, startsAt, endsAt)})`
+    : lunch;
+}
+
+/** 0085's lunch closure, anchored on the window's start date (unchanged). */
+function middayClosureOverlapExists(tenantId: string, locationId: SQL | string, startsAt: Instant, endsAt: Instant): SQL {
   return sql`exists (
     select 1 from locations l
     where l.tenant_id = ${tenantId}
@@ -246,6 +271,62 @@ function closureOverlapExists(tenantId: string, locationId: SQL | string, starts
           + l.midday_closed_to
       ) at time zone 'Europe/Lisbon' > ${iref(startsAt)}
   )`;
+}
+
+/**
+ * TIER C 0114 - a dated closure covers part of the window.
+ *
+ * A closure is "this clinic, every Lisbon date from starts_on to ends_on, the
+ * whole day or from closed_from to closed_to on each date" (pending migration
+ * NEXT-AFTER-0113_location_closed_days.sql). For every Lisbon calendar date the
+ * window touches, the closed span ON THAT DATE is built from the date and the
+ * wall clock and converted AT TIME ZONE 'Europe/Lisbon' inside Postgres, as
+ * the lunch closure and availabilityCoversExists do it: a whole day runs from
+ * Lisbon midnight to the next Lisbon midnight (23 or 25 hours on the two
+ * clock-change Sundays). Half-open overlap with the window, like every other
+ * predicate here, so a visit ending exactly at closed_from is allowed.
+ *
+ * The staff app's twin is closedDayOverlap
+ * (apps/web/lib/scheduling/closed-days-core.ts); both read every date the
+ * window touches, and the DB-gated parity test holds them to one case table.
+ */
+function closedDayOverlapExists(
+  tenantId: string,
+  locationId: SQL | string,
+  startsAt: Instant,
+  endsAt: Instant,
+): SQL {
+  const s = iref(startsAt);
+  const e = iref(endsAt);
+  return sql`exists (
+    select 1 from location_closed_days c
+    cross join lateral generate_series(
+      ((${s}) at time zone ${LISBON})::date,
+      ((${e}) at time zone ${LISBON})::date,
+      interval '1 day'
+    ) as cd(day)
+    where c.tenant_id = ${tenantId}
+      and c.location_id = ${locationId}
+      and cd.day::date between c.starts_on and c.ends_on
+      and (case when c.closed_from is null
+                then (cd.day::date)::timestamp
+                else cd.day::date + c.closed_from
+           end) at time zone ${LISBON} < (${e})
+      and (case when c.closed_from is null
+                then (cd.day::date + 1)::timestamp
+                else cd.day::date + c.closed_to
+           end) at time zone ${LISBON} > (${s})
+  )`;
+}
+
+/**
+ * Whether the dated closure table exists on this database. Until the pending
+ * migration is applied it does not, and naming it would fail every portal
+ * booking query with 42P01; the probe keeps the fragment out until it can be
+ * true, the way sharedResourceExclusion keeps `is_shared_resource` out.
+ */
+async function closedDaysOn(): Promise<boolean> {
+  return locationClosedDaysSchemaPresent(getDbAdmin());
 }
 
 /**
@@ -620,6 +701,8 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     const endExpr = sql`(s.starts_at + make_interval(mins => ${durationMin}::int))`;
     const nowIso = now.toISOString();
     const notShared = await sharedResourceExclusion();
+    // Tier C 0114: whether the dated closure table exists (see closureOverlapExists).
+    const closedDays = await closedDaysOn();
     // Q-M (2026-10-20): when the sweep is for a SERVICE, only therapists mapped
     // to it count, in BOTH halves below for the same reason the A2 therapist
     // filter is in both. Null (the reschedule options, which keep the already
@@ -701,7 +784,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             -- contract is that a slot it returns can only be rejected at
             -- confirm by a genuine race, never by disagreement, so every
             -- predicate the confirm guard runs has to run here too.
-            and not ${closureOverlapExists(principal.tenantId, locationId, startExpr, endExpr)}
+            and not ${closureOverlapExists(principal.tenantId, locationId, startExpr, endExpr, closedDays)}
             -- AGENDA-2100: and inside the clinic's own opening hours. Same
             -- contract as the line above - every predicate the confirm guard
             -- runs has to run here too, or the grid advertises a start the
@@ -757,6 +840,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // the roster and the slot grid use. The staff agenda is unchanged: there,
     // PL-06a still holds and the mapping only preselects.
     const notShared = await sharedResourceExclusion();
+    const closedDays = await closedDaysOn();
     const rows = (await getDbAdmin().execute(sql`
       select distinct u.id as practitioner_id, u.full_name as full_name
       from users u
@@ -770,7 +854,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         and not ${timeOffOverlapExists(principal.tenantId, sql`u.id`, startsAt, endsAt)}
         -- 0085: nobody is available at a clinic that is shut, whatever their
         -- own hours say.
-        and not ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
+        and not ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt, closedDays)}
       order by u.full_name
     `)) as unknown as ReadonlyArray<{ practitioner_id: string; full_name: string }>;
 
@@ -962,6 +1046,8 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
   },
 
   async createBooking(principal, args): Promise<string> {
+    // Tier C 0114: asked BEFORE the transaction; the probe runs on its own connection.
+    const closedDays = await closedDaysOn();
     // Insert under an explicit tenant_id + patient_id from the principal (never
     // payload). Final in-tx conflict re-check on the chosen therapist closes the
     // check-then-write race; createdBy is null (patient is not a staff users row
@@ -988,11 +1074,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         select (
           ${apptOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt, [])}
           or ${timeOffOverlapExists(principal.tenantId, args.practitionerId, args.startsAt, args.endsAt)}
-          or ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)}
+          or ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt, closedDays)}
           or not ${availabilityCoversExists(principal.tenantId, args.practitionerId, args.locationId, args.startsAt, args.endsAt)}
           or not ${withinClinicHoursExists(principal.tenantId, args.locationId, args.startsAt)}
         ) as conflict,
-        ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt)} as clinic_closed
+        ${closureOverlapExists(principal.tenantId, args.locationId, args.startsAt, args.endsAt, closedDays)} as clinic_closed
       `)) as unknown as ReadonlyArray<{ conflict: boolean; clinic_closed: boolean }>;
       if (guard[0]?.clinic_closed) throw new AppointmentError("clinic_closed");
       if (guard[0]?.conflict) throw new AppointmentError("no_slot");
@@ -1129,15 +1215,16 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     principal,
     { practitionerId, locationId, startsAt, endsAt, excludeIds },
   ): Promise<WindowConflict> {
+    const closedDays = await closedDaysOn();
     const rows = (await getDbAdmin().execute(sql`
       select (
         ${apptOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt, excludeIds ?? [])}
         or ${timeOffOverlapExists(principal.tenantId, practitionerId, startsAt, endsAt)}
-        or ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)}
+        or ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt, closedDays)}
         or not ${availabilityCoversExists(principal.tenantId, practitionerId, locationId, startsAt, endsAt)}
         or not ${withinClinicHoursExists(principal.tenantId, locationId, startsAt)}
       ) as conflict,
-      ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt)} as clinic_closed
+      ${closureOverlapExists(principal.tenantId, locationId, startsAt, endsAt, closedDays)} as clinic_closed
     `)) as unknown as ReadonlyArray<{ conflict: boolean; clinic_closed: boolean }>;
     return {
       conflict: Boolean(rows[0]?.conflict),

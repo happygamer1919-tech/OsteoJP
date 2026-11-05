@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { evaluateAvailability, type AvailabilityTemplate } from "./availability";
-import { buildDay } from "./day-availability-core";
+import { buildDay as buildDayWithClosures } from "./day-availability-core";
 import {
   clinicDefaultSwitchVerdict,
   clinicDefaultTemplates,
@@ -11,6 +11,17 @@ import {
   type ClinicDefaultEligibility,
   type MemberClinic,
 } from "./effective-availability-core";
+
+/** Tier C 0114: buildDay now REQUIRES the clinic's dated closures. These
+ *  cases are about other rules, so they say "no dated closures" explicitly. */
+type BuildDayArgs = Parameters<typeof buildDayWithClosures>;
+const buildDay = (
+  date: BuildDayArgs[0],
+  templates: BuildDayArgs[1],
+  booked: BuildDayArgs[2],
+  blocks: BuildDayArgs[3] = [],
+  clinicHours: BuildDayArgs[4] = null,
+) => buildDayWithClosures(date, templates, booked, blocks, clinicHours, []);
 
 /**
  * HOR-01 - the resolver, pure. Every date below is in November 2026, when

@@ -229,6 +229,15 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("reception", "clinical_records:read")).toBe(false);
   });
 
+  it("Tier C 0114 (C2): owner, admin and reception manage clinic closures; a therapist does not", () => {
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "closures:manage"), role).toBe(true);
+    }
+    expect(can("therapist", "closures:manage")).toBe(false);
+    // The therapist keeps their own schedule, which is a different grant.
+    expect(can("therapist", "schedule:manage")).toBe(true);
+  });
+
   it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {
     // Reception OWNS scheduling for their location (schedule:*), decoupled from
     // settings:* — it must never gain tenant settings by that grant.

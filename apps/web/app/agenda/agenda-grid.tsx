@@ -1,5 +1,6 @@
 "use client";
 
+import { agendaClosuresOn, type AgendaClosedDays } from "@/lib/scheduling/closed-days-core";
 import { useState } from "react";
 
 import { locale, s } from "@/lib/i18n";
@@ -350,6 +351,7 @@ export function AgendaGrid({
   dayWindow,
   clinicWindow,
   closure,
+  closedDays,
 }: {
   view: AgendaView;
   anchor: string;
@@ -405,6 +407,12 @@ export function AgendaGrid({
    * therapist block band off the unfiltered agenda.
    */
   closure?: { startMin: number; endMin: number; locationName: string } | null;
+  /**
+   * TIER C 0114 - the selected clinic's DATED closures (holidays, closed days),
+   * per displayed Lisbon date. Set only when one clinic is selected, for the
+   * reason `closure` is. Drawn and disabled per COLUMN, never per today.
+   */
+  closedDays?: AgendaClosedDays;
 }) {
   const dates = viewDates(view, anchor);
   const win = dayWindow ?? { startMin: DAY_START_HOUR * 60, endMin: DAY_END_HOUR * 60 };
@@ -422,8 +430,10 @@ export function AgendaGrid({
    * hole CB QA item 3 found in the block band. The real enforcement is the
    * refusal on the write path; this only stops the click.
    */
-  const closedAt = (m: number): boolean =>
-    closure != null && closure.startMin < m + SLOT_MINUTES && closure.endMin > m;
+  const closedAt = (d: string, m: number): boolean =>
+    agendaClosuresOn(d, closure, closedDays).some(
+      (c) => c.startMin < m + SLOT_MINUTES && c.endMin > m,
+    );
   /**
    * AGENDA-NEVER-HIDES - is this slot OUTSIDE the clinics' own hours?
    *
@@ -481,16 +491,15 @@ export function AgendaGrid({
    * which nobody on this screen can change. Same colour for both would make the
    * first thing reception tries the thing that cannot work.
    */
-  const closureBand =
-    closure && closure.endMin > win.startMin && closure.startMin < win.endMin
-      ? {
-          top: minToPx(Math.max(closure.startMin, win.startMin)),
-          height:
-            minToPx(Math.min(closure.endMin, win.endMin)) -
-            minToPx(Math.max(closure.startMin, win.startMin)),
-          label: closure.locationName,
-        }
-      : null;
+  const closureBandsOn = (d: string) =>
+    agendaClosuresOn(d, closure, closedDays)
+      .filter((c) => c.endMin > win.startMin && c.startMin < win.endMin)
+      .map((c) => ({
+        top: minToPx(Math.max(c.startMin, win.startMin)),
+        height: minToPx(Math.min(c.endMin, win.endMin)) - minToPx(Math.max(c.startMin, win.startMin)),
+        label: c.locationName,
+        reason: c.reason ?? null,
+      }));
 
   const gridCols = { gridTemplateColumns: `${GUTTER}px repeat(${dates.length}, minmax(0, 1fr))` };
 
@@ -690,7 +699,7 @@ export function AgendaGrid({
           const offHoursAt = (m: number): boolean =>
             isSlotInSpans(m, dayOffHours) &&
             !isSlotBlocked(m, dayBlocks) &&
-            !closedAt(m) &&
+            !closedAt(d, m) &&
             !outsideHours(m);
           const offHoursBands = spansOfSlots(slots, offHoursAt);
           return (
@@ -758,7 +767,7 @@ export function AgendaGrid({
                     // slot (agenda-never-hides.spec.ts counts it); this one is
                     // the therapist's hours on a slot that stays enabled.
                     data-therapist-off-hours={offHoursSlot ? "true" : undefined}
-                    disabled={blocked || closedAt(m) || outsideHours(m)}
+                    disabled={blocked || closedAt(d, m) || outsideHours(m)}
                     // 0085: the two reasons are NAMED SEPARATELY, and a screen
                     // reader gets the same distinction the band gives a sighted
                     // reader. "Tempo bloqueado" sends somebody to a therapist's
@@ -775,7 +784,7 @@ export function AgendaGrid({
                     aria-label={
                       outsideHours(m)
                         ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.outsideClinicHours"]}`
-                        : closedAt(m)
+                        : closedAt(d, m)
                           ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.clinicClosed"]}`
                           : blocked
                             ? `${formatDayHeader(d, locale)} ${slotLabel(m)} - ${s["agenda.blockedTime"]}`
@@ -784,12 +793,12 @@ export function AgendaGrid({
                               : `${formatDayHeader(d, locale)} ${slotLabel(m)}`
                     }
                     onClick={
-                      blocked || closedAt(m) || outsideHours(m)
+                      blocked || closedAt(d, m) || outsideHours(m)
                         ? undefined
                         : () => onSelectSlot(d, slotLabel(m))
                     }
                     className={`absolute inset-x-0 transition duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring ${
-                      blocked || closedAt(m) || outsideHours(m)
+                      blocked || closedAt(d, m) || outsideHours(m)
                         ? "cursor-not-allowed"
                         : offHoursSlot
                           ? // The tint is on the SLOT, not on the band over it:
@@ -854,18 +863,19 @@ export function AgendaGrid({
                   rule and no affordance at all, because nobody on this screen
                   can open the building. Text carries the difference as well as
                   colour: it names the clinic and says Clínica encerrada. */}
-              {closureBand && (
+              {closureBandsOn(d).map((band, bi) => (
                 <div
+                  key={`closure-${bi}`}
                   data-testid="agenda-closure-band"
                   aria-hidden="true"
                   className="pointer-events-none absolute inset-x-0 z-10 overflow-hidden border-y-2 border-v2-border bg-v2-text-primary/[0.07]"
-                  style={{ top: closureBand.top, height: closureBand.height }}
+                  style={{ top: band.top, height: band.height }}
                 >
                   <span className="block truncate px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-v2-text-secondary">
-                    {s["agenda.clinicClosed"]}
+                    {band.reason ? `${s["agenda.clinicClosed"]}: ${band.reason}` : s["agenda.clinicClosed"]}
                   </span>
                 </div>
-              )}
+              ))}
 
               {/* W11-00 v3: appointment names as a Fisiozero-style vertical list.
                   Each start slot is a full-width column; same-slot appointments

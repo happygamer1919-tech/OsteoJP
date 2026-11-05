@@ -12,6 +12,7 @@ import { reconcileAgendaStaff } from "@/lib/scheduling/staff-options";
 import { listTherapistBlocksAndHours } from "@/lib/scheduling/day-availability";
 import { agendaOffHours } from "@/lib/scheduling/off-hours-core";
 import {
+  addDays,
   formatTimeOfDay,
   lisbonMinutesFromMidnight,
   lisbonParts,
@@ -21,6 +22,9 @@ import {
   type AgendaView,
 } from "@/lib/scheduling/time";
 import { closureFor, gridWindow, toMinutes } from "@/lib/scheduling/clinic-hours";
+import { readClosedDayBands } from "@/lib/scheduling/closed-days";
+import type { AgendaClosedDays } from "@/lib/scheduling/closed-days-core";
+import { closedDayReason } from "@/lib/scheduling/closed-day-labels";
 import { s } from "@/lib/i18n";
 import { AgendaView as AgendaViewClient } from "./agenda-view";
 
@@ -214,6 +218,35 @@ export default async function AgendaPage({
       : null;
 
   /* ==================================================================== */
+  /* TIER C 0114 - THE CLINIC'S DATED CLOSURES, PER DISPLAYED DATE.        */
+  /* ==================================================================== */
+  /* The lunch band above is one fact for every date. A holiday or a       */
+  /* closed day is a fact about ONE date, so it is read for the dates this */
+  /* view draws (the week's Sunday included, for the phone week) and drawn */
+  /* per column, never per today. Same one-clinic rule as the lunch band:  */
+  /* under "Todas as localizações" nothing is drawn. Read on every request */
+  /* through the one staff reader, which reads nothing until the table     */
+  /* exists.                                                               */
+  const closedDays: AgendaClosedDays = selectedLocation
+    ? await (async () => {
+        const shown = viewDates(view, anchor);
+        const dates = view === "week" ? [...shown, addDays(shown[0]!, 6)] : shown;
+        const bands = await readClosedDayBands(actor, { locationId: selectedLocation.id, dates });
+        return Object.fromEntries(
+          Object.entries(bands).map(([date, list]) => [
+            date,
+            list.map((b) => ({
+              startMin: b.startMin,
+              endMin: b.endMin,
+              locationName: selectedLocation.label,
+              reason: closedDayReason(b.kind, b.label),
+            })),
+          ]),
+        );
+      })()
+    : {};
+
+  /* ==================================================================== */
   /* AGENDA-OFF-HOURS - THE HOURS THE SELECTED THERAPIST DOES NOT WORK.    */
   /* ==================================================================== */
   /* Reception reads free time off this grid, and an hour outside the      */
@@ -372,6 +405,7 @@ export default async function AgendaPage({
       dayWindow={dayWindow}
       clinicWindow={clinicWindow}
       closure={closure}
+      closedDays={closedDays}
       lockedPatient={lockedPatient}
       prefill={prefill}
       guestRequestId={guestRequestId}

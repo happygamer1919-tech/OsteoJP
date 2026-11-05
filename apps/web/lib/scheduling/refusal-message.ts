@@ -2,6 +2,7 @@ import { s } from "@/lib/i18n";
 
 import { clinicClosedMessage } from "./clinic-closed-message";
 import { outsideClinicHoursMessage, type ClinicWindowRefusal } from "./clinic-hours-message";
+import type { ClinicClosurePayload } from "./closed-days-core";
 
 /**
  * MARC-THERAPIST-01 - THE ONE SENTENCE FOR A REFUSED APPOINTMENT SAVE.
@@ -23,7 +24,7 @@ export type AppointmentRefusal = {
   availabilityWindows?: { startTime: string; endTime: string }[];
   // 0085. Set only with error "clinic_closed"; carries the clinic's own name
   // and shut hour so the sentence can name the building, not a person.
-  clinicClosure?: { locationName: string; from: string; to: string };
+  clinicClosure?: ClinicClosurePayload;
   // AGENDA-2100. Set only with error "outside_clinic_hours"; carries the
   // clinic's hours and the last start it accepts.
   clinicWindow?: ClinicWindowRefusal;

@@ -5,6 +5,7 @@ import { appointments, locations, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { listSharedResourcesTx } from "./shared-resources";
 import { readEffectiveTemplates } from "./effective-availability";
+import { readClosedDays } from "./closed-days";
 import { type AvailabilityTemplate } from "./availability";
 import { addDays, lisbonMidnightUtc } from "./time";
 import type { AppointmentStatusValue } from "./types";
@@ -72,7 +73,7 @@ export async function getTherapistAvailability(
   const rangeEnd = lisbonMidnightUtc(addDays(to, 1));
 
   return runScoped(ctx, async (tx) => {
-    const [bookedRows, templateRows, blockRows, clinicHours] = await Promise.all([
+    const [bookedRows, templateRows, blockRows, clinicHours, closedDays] = await Promise.all([
       readBookedRows(tx, { therapistId, rangeStart, rangeEnd, locationId }),
       readTemplateRows(tx, { therapistId, locationId }),
       // time_off is therapist-wide (not per location), so it is NOT filtered by
@@ -86,6 +87,13 @@ export async function getTherapistAvailability(
       // LV's afternoon vanish from a screen nobody asked a CB question on. The
       // owner ruled this directly: the union of hours, and no closure band.
       locationId ? readClinicHours(tx, locationId) : Promise.resolve(null),
+      // TIER C 0114 - THE CLINIC'S DATED CLOSURES, under the same one-clinic
+      // rule as the lunch closure above and for the same reason. Through the
+      // one staff reader (closed-days.ts), which reads [] until the table
+      // exists.
+      locationId
+        ? readClosedDays(tx, { locationId, fromDate: from, toDate: to })
+        : Promise.resolve([]),
     ]);
 
     // Own rows are read with is_active = true; generated rows are active by
@@ -93,7 +101,7 @@ export async function getTherapistAvailability(
     const templates: AvailabilityTemplate[] = templateRows;
 
     return datesInRange(from, to).map((date) =>
-      buildDay(date, templates, bookedRows, blockRows, clinicHours),
+      buildDay(date, templates, bookedRows, blockRows, clinicHours, closedDays),
     );
   });
 }

@@ -341,6 +341,60 @@ export const locations = pgTable(
   ],
 );
 
+// DATED CLINIC CLOSURES (Tier C 0114, ruled 2026-11-05): the clinic is shut on
+// every Lisbon date from `starts_on` to `ends_on` inclusive, the whole day when
+// `closed_from`/`closed_to` are null, else between them on EACH date. From the
+// PENDING migration migrations-pending/NEXT-AFTER-0113_location_closed_days.sql,
+// so the table exists only on a database that file was applied to: every
+// reader asks `locationClosedDaysSchemaPresent` (./closed-days-schema.ts)
+// first. NOT the `location_closures` table the 2026-09-10 ruling turned down:
+// that one was a lunch closure varying by weekday; this is a calendar of
+// closed DATES. No update path: a closure is deleted and added again.
+export const locationClosedDays = pgTable(
+  "location_closed_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    startsOn: date("starts_on").notNull(),
+    endsOn: date("ends_on").notNull(),
+    closedFrom: time("closed_from"),
+    closedTo: time("closed_to"),
+    kind: text("kind").notNull(),
+    label: text("label"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    index("location_closed_days_lookup_idx").on(t.tenantId, t.locationId, t.startsOn),
+    unique("location_closed_days_dedupe_uq")
+      .on(t.tenantId, t.locationId, t.startsOn, t.endsOn, t.closedFrom, t.closedTo)
+      .nullsNotDistinct(),
+    check(
+      "location_closed_days_kind_check",
+      sql`${t.kind} in ('feriado_nacional', 'feriado_municipal', 'encerramento', 'outro')`,
+    ),
+    check(
+      "location_closed_days_label_check",
+      sql`${t.label} is null or (btrim(${t.label}) <> '' and char_length(${t.label}) <= 80)`,
+    ),
+    check("location_closed_days_range_order", sql`${t.startsOn} <= ${t.endsOn}`),
+    check("location_closed_days_range_length", sql`${t.endsOn} - ${t.startsOn} <= 92`),
+    check(
+      "location_closed_days_hours_pair",
+      sql`(${t.closedFrom} is null) = (${t.closedTo} is null)`,
+    ),
+    check(
+      "location_closed_days_hours_order",
+      sql`${t.closedFrom} is null or ${t.closedFrom} < ${t.closedTo}`,
+    ),
+  ],
+);
+
 export const services = pgTable(
   "services",
   {

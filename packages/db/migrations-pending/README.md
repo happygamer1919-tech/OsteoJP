@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0113_location_closed_days.sql` | `0113` (the patient read rules, held on #1717). Ruled `0114` by strategy (Tier C, 2026-11-05: "clinic-wide closures (0114), then pack payments (0115)"); depends on nothing in `0109` to `0113` | 2026-11-05, branch `db/LOC-CLOSED-0114-clinic-closures` | this branch's pull request, held; promoted as `0114` after `0113` is applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES

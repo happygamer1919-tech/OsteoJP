@@ -1,4 +1,6 @@
 import { s } from "@/lib/i18n";
+import { closedDayReason } from "./closed-day-labels";
+import type { ClinicClosurePayload } from "./closed-days-core";
 
 /**
  * 0085 - THE ONE SENTENCE FOR A `clinic_closed` REFUSAL.
@@ -15,11 +17,23 @@ import { s } from "@/lib/i18n";
  *
  * `c` is absent only if a caller received `clinic_closed` without the payload
  * the server always attaches; the title alone is still true in that case.
+ *
+ * TIER C 0114: a DATED closure (a holiday, a closed day) carries `closedDay`,
+ * and gets its own sentence. The lunch sentence says "todos os dias", which is
+ * false of a closed date; the dated one names the reason (its label, or its
+ * kind) and still says there is no block to remove.
  */
-export function clinicClosedMessage(
-  c: { locationName: string; from: string; to: string } | undefined,
-): string {
+export function clinicClosedMessage(c: ClinicClosurePayload | undefined): string {
   if (!c) return s["appointment.clinicClosedTitle"];
+  if (c.closedDay) {
+    const reason = closedDayReason(c.closedDay.kind, c.closedDay.label);
+    const dayBody = (c.closedDay.wholeDay ? s["appointment.clinicClosedDayBody"] : s["appointment.clinicClosedDayPartBody"])
+      .replace("{clinica}", c.locationName)
+      .replace("{motivo}", reason)
+      .replace("{de}", c.from)
+      .replace("{ate}", c.to);
+    return `${s["appointment.clinicClosedTitle"]} ${dayBody}`;
+  }
   const body = s["appointment.clinicClosedBody"]
     .replace("{clinica}", c.locationName)
     .replace("{de}", c.from)
