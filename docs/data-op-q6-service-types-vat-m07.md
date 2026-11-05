@@ -1,8 +1,8 @@
-NOT READY: authored 2026-11-04, NOT YET REHEARSED, no R4 round yet, five questions open for strategy (Q6-A to Q6-E), the night not ruled, 0110 not applied.
+NOT READY: authored 2026-11-04, R4 round 1 answered (not re-reviewed), NOT YET REHEARSED, five questions open for strategy (Q6-A to Q6-E), the night not ruled, 0110 not applied.
 
 # Q6: the existing appointment types take 0% VAT and the exemption code M07
 
-**Status: AUTHORED 2026-11-04 BY SOLO. NOT YET REHEARSED (see "NOT YET REHEARSED"). NOT REVIEWED (no R4 round). NOT RUN.** Nothing in this document may be pasted until its first line reads READY. THE PRE-CHECK and THE ROLLBACK carry `PENDING` in the three lines GREEN's dispatch fills, and STOP at their first check while they do.
+**Status: AUTHORED 2026-11-04 BY SOLO. NOT YET REHEARSED (see "NOT YET REHEARSED"). R4 ROUND 1 (NOT PASS, 1 MAJOR, 3 MINOR, 2 NIT) ANSWERED 2026-11-04, ROUND 2 PENDING (see "Review history"). NOT RUN.** Nothing in this document may be pasted until its first line reads READY. THE PRE-CHECK carries `PENDING` in the four lines GREEN's dispatch fills and THE ROLLBACK in three, and STOP at their first check while they do.
 
 **In plain words.** Migration 0110 (held pull request #1704) adds two empty fields to every appointment type: the VAT rate and the VAT exemption reason. Strategy ruled that the types the clinic already has take the values Fisiozero used for them: a rate of 0% and the exemption code M07. This operation fills those two fields, once, on every appointment type of the clinic where both are still empty. It changes nothing else: not the price, not the name, not any appointment, invoice or patient. A type where staff already chose a rate or a code after 0110 is left exactly as staff left it.
 
@@ -15,13 +15,13 @@ NOT READY: authored 2026-11-04, NOT YET REHEARSED, no R4 round yet, five questio
 | Stage 1 | `scripts/data/q6-vat-m07-1-precheck.sql`, READ ONLY, sha256 `f083d835009f056786238b233d8fcd461c4e9e64fdd91053222d535497529d8f` |
 | Stage 2 | `scripts/data/q6-vat-m07-2-write.sql`, ONE transaction, sha256 `f8ce2bf1b1585a92d3f9518a0292533c958adcb74b46943b6bbcc297db741f97` |
 | Stage 3 | `scripts/data/q6-vat-m07-3-postcheck.sql`, READ ONLY, sha256 `0a6ff1138605e2c7d045afb23cad5daa9a5a63d816a8554269534d1cc18718fa` |
-| Rollback | `scripts/data/q6-vat-m07-4-rollback.sql`, ONE transaction, run only on the lead's word, sha256 `a9c81f2462c55a40feed1ec4b5ece19c846d4221fe317fab828dc6188d805e8e` |
+| Rollback | `scripts/data/q6-vat-m07-4-rollback.sql`, ONE transaction, run only on the lead's word, sha256 `cec11f5a7b827da3c75700a00ce560ae8419591708e2e55c974ba6c43c0edc61` |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`, and its module `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the bytes R14-PROFILE and R36 pin) |
 | This document | `docs/data-op-q6-service-types-vat-m07.md`, pinned by `docs/data-op-q6-service-types-vat-m07.sha256`; GREEN's dispatch names its sha256 in `DOCSHA` |
 | Test | `scripts/q6-service-types-vat-m07.test.mjs`: the pins, the SQL's shape, and every block under fault injection in bash and zsh |
 | Who runs it | GREEN, an apply-only session, on the owner's dispatch naming the four stage files above by filename (`CLAUDE.md`, "Who applies migrations"). SOLO wrote it and never runs it |
-| Run from | The HELD head of this branch's pull request, `origin/data/Q6-service-types-vat-m07`, checked out detached in `/Users/ivan/Projects/GitHub/osteojp-prod-apply`. The pull request stays held, unmerged, until GREEN reports |
-| When | One closed-hours night of its own, after the night 0110 is applied: from 21:00 Lisbon on RUNDAY until 06:29 Lisbon the next morning, and closed by the weekday table. Proposed: Monday 2026-11-16 (NOT ruled by strategy) |
+| Run from | The HELD head of this branch's pull request #1724, fetched explicitly as `refs/pull/1724/head` (never the branch name), pinned to `HELD` and checked out detached in `/Users/ivan/Projects/GitHub/osteojp-prod-apply`. GitHub keeps that ref after a merge and after the branch is deleted, so the blocks work before and after the pull request merges, the rollback included. The pull request stays held, unmerged, until GREEN reports |
+| When | One closed-hours night of its own, after the night 0110 is applied: from 21:00 Lisbon on RUNDAY until 06:29 Lisbon the next morning, and closed by the weekday table. THE PRE-CHECK refuses unless RUNDAY is later than MIGNIGHT, the night 0110 was applied, which the dispatch carries (D18). Proposed: Monday 2026-11-16 (NOT ruled by strategy) |
 | What it writes | `services.vat_rate` := 0 and `services.vat_exemption_code` := `M07` on the target set (below); one `audit_log` row per written service, action `service.vat_default_q6` |
 | What it records locally | The written ids, one per line, in `/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt` (written by psql before the COMMIT, never printed), and THE WRITE's transcript beside it. Counts-only transcripts and the sitting's records under `/tmp/q6-` |
 | What it prints | Counts, column types, the words on and off, sha256 pins and commit shas. Never a service name, an id, a price or any other column |
@@ -42,15 +42,18 @@ Each is what the files do today. A different ruling changes the files, their pin
 | D4 | Internal-only types (staff-bookable, never in the portal)? | Included, as any other type of the tenant. THE PRE-CHECK prints how many. Asked of strategy as Q6-B |
 | D5 | The values | `vat_rate = 0`, `vat_exemption_code = 'M07'`, both in one UPDATE, so every written row carries the pair. Both values are inside 0110's CHECK constraints (`services_vat_rate_allowed`: 0, 6, 13, 23; `services_vat_exemption_code_allowed`: 33 codes, M07 among them). A value outside them would abort the transaction with nothing written |
 | D6 | The server rule "0% requires a Motivo" | It lives in the application's save path (the types screen), not in the database, so SQL does not meet it. It is irrelevant to this op's SQL, and every row this op writes satisfies it anyway: the rate 0 and the code M07 are written together. A partial row (D2) is not written, so this op never creates a 0% row without a code. 0110 itself deliberately carries no CHECK pairing the two (its section 1: a fiscal rule, for the owner and his accountant) |
-| D7 | The audit | One `audit_log` row per written service, the shape the app's own service actions write (`apps/web/lib/admin/services.ts`: entity_type `service`, entity_id the service), with actor NULL (a data op has no actor, as in DUR-01 and the clinic-hours op) and a distinct action, `service.vat_default_q6`, so the trail tells this op from a staff edit (`service.update`) without diffing rows. Metadata is slugs and values only: `card` Q6, `source` psql_data_op, `ruling` strategy-q6-2026-11-04, and the before and after of the two fields. Asked of strategy as Q6-C (the action name) |
+| D7 | The audit | One `audit_log` row per written service, the shape the app's own service actions write (`apps/web/lib/admin/services.ts`: entity_type `service`, entity_id the service), with actor NULL (a data op has no actor, as in DUR-01 and the clinic-hours op) and a distinct action, `service.vat_default_q6`, so the trail tells this op from a staff edit (`service.update`) without diffing rows. Metadata is slugs and values only: `card` Q6, `source` psql_data_op, `ruling` strategy-q6-2026-11-04, and the before and after of the two fields (numbers, a code and nulls). That is fiscal codes and slugs only, no personal data, and it fits the audit metadata contract (`apps/web/lib/audit/metadata-contract.ts`: no string over 64 characters or with whitespace; numbers and nulls pass). Asked of strategy as Q6-C (the action name) |
 | D8 | The expected count | THE PRE-CHECK prints the target count N and the md5 of the target ids, and records both. THE WRITE receives them from that record (`-v expect`, `-v target_md5`), and under its lock counts and hashes the set again, then checks the UPDATE's row count and the audit insert's row count, each against N, all BEFORE the COMMIT. Any difference aborts the transaction: nothing is written |
 | D9 | Nothing else moves | Inside THE WRITE's transaction, before the COMMIT: an md5 of every `services` row outside the written set (every tenant), whole, before and after; and an md5 of the written rows with the two VAT fields left out, before and after. Either differing aborts it |
 | D10 | The ceiling | 60 rows. 0110's own header counts about twenty rows in `services`; a target above 60 is a STOP and strategy rules |
 | D11 | Locks and timeouts | `SET LOCAL lock_timeout = '5s'` and `SET LOCAL statement_timeout = '60s'` are THE WRITE's first two statements after `BEGIN`, as for every migration from 0100. Then `LOCK TABLE public.services IN SHARE ROW EXCLUSIVE MODE`: reads go on (every booking reads `services`), and no other write to `services` can land between the count and the COMMIT. A write already in flight makes it wait 5 seconds and STOP cleanly |
 | D12 | A second run | Refused three ways: the ids file exists (THE PRE-CHECK and THE WRITE refuse, by the shell), and an audit row of this op or of its undo exists in the tenant (both SQL stages refuse). After a rollback, running it again is a new decision, and the lead rules |
 | D13 | The rollback | Keyed on the ids THE WRITE recorded, never on a broad WHERE (section "Rollback") |
-| D14 | Which commit it runs from | The HELD head of this branch's pull request, the way R36 runs: THE PRE-CHECK checks the branch tip against `HELD` (filled in the dispatch), checks it out detached and records it; every later block runs only on that recorded head. The pull request changes no code, so nothing on `main` needs it first |
+| D14 | Which commit it runs from | The HELD head of pull request #1724. THE PRE-CHECK and THE ROLLBACK run `git fetch origin refs/pull/1724/head` and read `FETCH_HEAD`, never `origin/data/...`: the repository deletes a branch when its pull request merges, and a block that named the branch would then STOP and could only be passed by editing it. The fetched head must equal `HELD` (filled in the dispatch); it is checked out detached and recorded. THE WRITE and THE POST-CHECK fetch nothing: they run only on the head THE PRE-CHECK recorded and checked out (`git rev-parse HEAD`). The pull request changes no code, so nothing on `main` needs it first |
 | D15 | Network time | THE PRE-CHECK holds the machine's clock against `sntp time.apple.com` (one source; any failure, or an offset above 5 seconds, is a STOP, and nothing has been read). THE WRITE runs within 30 minutes of THE PRE-CHECK (it refuses an older record) and reads the Lisbon clock again. THE ROLLBACK holds the clock against network time itself. Stricter than R36's three sources, on purpose: a block that stops here has read nothing and may be pasted again |
+| D16 | `updated_at` | **Not bumped.** `services.updated_at` is set by the application (Drizzle's `$onUpdate`), not by a trigger, and this op leaves it alone, for three reasons: THE WRITE's md5 control then proves every column other than the two VAT fields unchanged, `updated_at` included; THE ROLLBACK returns each row to exactly its bytes before the op; and a staff save after the op moves `updated_at` past THE WRITE's audit row, which THE ROLLBACK reads as a refusal (D17). The audit row is the record of when and by what |
+| D17 | A staff re-save before a rollback | A type staff saved again with 0% and M07 after THE WRITE still reads 0% and M07, so "still 0 and M07" does not prove it untouched. THE ROLLBACK refuses the whole rollback, and writes nothing, when any recorded service carries a `service.*` audit row of another action from 10 minutes before THE WRITE's own audit row on (the margin covers a staff transaction that started before THE WRITE and waited for its lock, whose audit row keeps its earlier start time), or an `updated_at` later than THE WRITE's audit row. It never rolls back part of the set; the lead rules |
+| D18 | "Its own night after 0110" | No reliable apply-time signal exists in production: the drizzle journal's `created_at` is the repository's constant `when`, not the moment of the apply, and nothing in the catalogue dates an `ALTER TABLE ... ADD COLUMN`. So the dispatch carries `MIGNIGHT`, the Lisbon date of the night 0110 was applied, taken from 0110's GREEN report, and THE PRE-CHECK refuses unless `RUNDAY` is later than it. THE LIMIT: the block trusts the date the dispatch states; what it proves from production is only that 0110 is applied (the two columns and their two CHECK constraints) |
 
 ## Questions for strategy
 
@@ -88,13 +91,14 @@ set -o pipefail
 HELD='PENDING: set at the READY line'
 DOCSHA='PENDING: set at the READY line'
 RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'
+MIGNIGHT='PENDING: the Lisbon date of the night 0110 was applied, YYYYMMDD, from its GREEN report'
 SHAPRE=f083d835009f056786238b233d8fcd461c4e9e64fdd91053222d535497529d8f
 SHAWRITE=f8ce2bf1b1585a92d3f9518a0292533c958adcb74b46943b6bbcc297db741f97
 SHAPOST=0a6ff1138605e2c7d045afb23cad5daa9a5a63d816a8554269534d1cc18718fa
-SHAUNDO=a9c81f2462c55a40feed1ec4b5ece19c846d4221fe317fab828dc6188d805e8e
+SHAUNDO=cec11f5a7b827da3c75700a00ce560ae8419591708e2e55c974ba6c43c0edc61
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
-BR=origin/data/Q6-service-types-vat-m07
+PRREF=refs/pull/1724/head
 DOCF=docs/data-op-q6-service-types-vat-m07.md
 DOCPIN=docs/data-op-q6-service-types-vat-m07.sha256
 PRE=scripts/data/q6-vat-m07-1-precheck.sql
@@ -108,6 +112,9 @@ IDS=/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt
 echo "${HELD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: HELD is not a filled-in sha, so this block is NOT READY: GREEN pastes the copy in its dispatch, where SOLO filled it. Nothing was read from production"; exit 1; }
 echo "${DOCSHA}" | grep -qxE '[0-9a-f]{64}' || { echo "STOP: DOCSHA is still PENDING, so this block is NOT READY. Nothing was read from production"; exit 1; }
 echo "${RUNDAY}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9]' || { echo "STOP: RUNDAY is still PENDING, or is not a Lisbon date YYYYMMDD, so this block is NOT READY. Nothing was read from production"; exit 1; }
+echo "${MIGNIGHT}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9]' || { echo "STOP: MIGNIGHT is still PENDING, or is not a Lisbon date YYYYMMDD, so this block is NOT READY. Nothing was read from production"; exit 1; }
+[ "${RUNDAY}" -gt "${MIGNIGHT}" ] || { echo "STOP: RUNDAY ${RUNDAY} is not a night after the night 0110 was applied (${MIGNIGHT}). This operation runs on a closed night of its own after 0110. Nothing was read from production"; exit 1; }
+echo "after 0110:    RUNDAY ${RUNDAY} is after the night 0110 was applied, ${MIGNIGHT}, as the dispatch states it"
 test ! -e ${IDS} || { echo "STOP: the ids file of THE WRITE already exists, so the write has run or began. Never paste THE PRE-CHECK or THE WRITE again. The lead rules. Nothing was read from production"; exit 1; }
 rm -f /tmp/q6-head.sha /tmp/q6-night.ok /tmp/q6-pre.ok /tmp/q6-pre.out /tmp/q6-target-a.out || { echo "STOP: the previous sitting's records could not be cleared. Nothing was read from production"; exit 1; }
 cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was read from production"; exit 1; }
@@ -133,11 +140,11 @@ if [ "${DAY}" = "${RUNDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) >= 2100) 
 if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) exit 0; exit 1 }'; then WIN=yes; fi
 echo "the night:     RUNDAY ${RUNDAY}; the window runs from ${RUNDAY} 21:00 to ${NEXTDAY} 06:29, Lisbon; Lisbon now ${NOWL}; inside: ${WIN}"
 [ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the window of the night this block names (${RUNDAY} from 21:00 to ${NEXTDAY} at 06:29). Nothing was read from production"; exit 1; }
-git fetch origin --prune || { echo "STOP: the fetch failed, so the held head may be stale. Nothing was read from production"; exit 1; }
-TIP=$(git rev-parse ${BR}) || { echo "STOP: the held head, ${BR}, could not be read. Nothing was read from production"; exit 1; }
+git fetch origin ${PRREF} || { echo "STOP: the fetch of ${PRREF} failed, so the held head is not known. Nothing was read from production"; exit 1; }
+TIP=$(git rev-parse FETCH_HEAD) || { echo "STOP: the held head, ${PRREF} as fetched, could not be read. Nothing was read from production"; exit 1; }
 echo "${TIP}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: the held head did not read as a full 40-character sha [${TIP}]. Nothing was read from production"; exit 1; }
 echo "held head now: ${TIP}"
-[ "${TIP}" = "${HELD}" ] || { echo "STOP: the held head is not the commit this block names (${HELD}): the branch was pushed to since the READY line, or it is gone. Nothing was read from production"; exit 1; }
+[ "${TIP}" = "${HELD}" ] || { echo "STOP: the held head is not the commit this block names (${HELD}): the pull request was pushed to since the READY line. Nothing was read from production"; exit 1; }
 STRAY=$(git status --short) || { echo "STOP: git status failed in the apply worktree. Nothing was read from production"; exit 1; }
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean. Do not clean it. Nothing was read from production"; exit 1; }
 git checkout -q --detach ${TIP} || { echo "STOP: the checkout of the held head failed. Nothing was read from production"; exit 1; }
@@ -187,7 +194,7 @@ echo "PRE-CHECK PASSED: ${N} services of the tenant osteojp have both VAT fields
 )
 ```
 
-**EXPECT**, each line checked by the block itself, which stops on any difference: `network time: ... within 5 seconds`; `Lisbon now: ... closed by the weekday table`; `the night: ... inside: yes`; `held head now:`; `checked out:`; `document:` (the dispatch's DOCSHA); `first line:` (not NOT READY); `pins:`; the target guard's lines with `target verified: production, session pooler.`; then the thirteen count lines, from `Q6PRE services_total <n>` to `Q6PRE other_tenants_services_untouched <n>`, among them `target_active`, `target_archived`, `target_internal_only` and `partial_left_alone`, plus the six fact lines (`read_only on`, `tenant_slug_osteojp 1`, `column_vat_rate smallint`, `column_vat_exemption_code text`, `constraint_vat_rate 1`, `constraint_vat_exemption_code 1`); then `PRE-CHECK PASSED: <N> services ...`. Exit 0. It reads production and writes nothing.
+**EXPECT**, each line checked by the block itself, which stops on any difference: `after 0110: RUNDAY ... is after the night 0110 was applied, ...`; `network time: ... within 5 seconds`; `Lisbon now: ... closed by the weekday table`; `the night: ... inside: yes`; `held head now:`; `checked out:`; `document:` (the dispatch's DOCSHA); `first line:` (not NOT READY); `pins:`; the target guard's lines with `target verified: production, session pooler.`; then the thirteen count lines, from `Q6PRE services_total <n>` to `Q6PRE other_tenants_services_untouched <n>`, among them `target_active`, `target_archived`, `target_internal_only` and `partial_left_alone`, plus the six fact lines (`read_only on`, `tenant_slug_osteojp 1`, `column_vat_rate smallint`, `column_vat_exemption_code text`, `constraint_vat_rate 1`, `constraint_vat_exemption_code 1`); then `PRE-CHECK PASSED: <N> services ...`. Exit 0. It reads production and writes nothing.
 
 ### THE WRITE: one transaction, the count checked before the COMMIT, the ids recorded
 
@@ -327,7 +334,7 @@ echo "POST-CHECK PASSED: the ${IC} recorded services of the tenant osteojp read 
 
 **Run only on the lead's word,** in a dispatch of its own naming `scripts/data/q6-vat-m07-4-rollback.sql`, in a closed-hours night like the write. It is not part of the sitting, and nobody runs it to "tidy up" after a STOP.
 
-It sets `vat_rate` and `vat_exemption_code` back to NULL on exactly the services THE WRITE recorded in `/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt`, never by a broad WHERE: a service that reads 0% and M07 because staff chose it is not in the file and is never touched. Before any write, in one transaction under the same lock and timeouts, it refuses when: the ids are not a list of distinct lower-case uuids of the expected length; the tenant does not hold exactly one `service.vat_default_q6` audit row per recorded id, and no other (the file and the trail disagree); any recorded service no longer reads 0% and M07 (staff changed it since: the rollback never overwrites a staff change, and the lead rules); or an undo audit row already exists. It checks its UPDATE's row count and its undo audit rows' row count against the number of ids before the COMMIT, and an md5 of every other `services` row before and after. One audit row per service, action `service.vat_default_q6_undone`. It leaves a local marker, `/Users/ivan/.osteojp-q6-vat-m07/undone.ok`, and refuses to run while it exists.
+It sets `vat_rate` and `vat_exemption_code` back to NULL on exactly the services THE WRITE recorded in `/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt`, never by a broad WHERE: a service that reads 0% and M07 because staff chose it is not in the file and is never touched. Before any write, in one transaction under the same lock and timeouts, it refuses when: the ids are not a list of distinct lower-case uuids of the expected length; the tenant does not hold exactly one `service.vat_default_q6` audit row per recorded id, and no other (the file and the trail disagree); any recorded service no longer reads 0% and M07 (staff changed it since: the rollback never overwrites a staff change, and the lead rules); any recorded service carries a `service.*` audit row of another action, or an `updated_at`, from THE WRITE on (staff may have re-saved it with the same values, D17); or an undo audit row already exists. It never rolls back part of the set. It checks its UPDATE's row count and its undo audit rows' row count against the number of ids before the COMMIT, and an md5 of every other `services` row before and after. One audit row per service, action `service.vat_default_q6_undone`. It leaves a local marker, `/Users/ivan/.osteojp-q6-vat-m07/undone.ok`, and refuses to run while it exists.
 
 If the ids file is lost after a committed write, the audit rows of `service.vat_default_q6` (entity_id) name the same services; rebuilding the file from them is a new step the lead rules, and this document does not author it.
 
@@ -339,10 +346,10 @@ set -o pipefail
 HELD='PENDING: set in the rollback dispatch'
 DOCSHA='PENDING: set in the rollback dispatch'
 RUNDAY='PENDING: the Lisbon date of the night the rollback dispatch names, YYYYMMDD'
-SHAUNDO=a9c81f2462c55a40feed1ec4b5ece19c846d4221fe317fab828dc6188d805e8e
+SHAUNDO=cec11f5a7b827da3c75700a00ce560ae8419591708e2e55c974ba6c43c0edc61
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
-BR=origin/data/Q6-service-types-vat-m07
+PRREF=refs/pull/1724/head
 DOCF=docs/data-op-q6-service-types-vat-m07.md
 DOCPIN=docs/data-op-q6-service-types-vat-m07.sha256
 UNDO=scripts/data/q6-vat-m07-4-rollback.sql
@@ -379,8 +386,8 @@ if [ "${DAY}" = "${NEXTDAY}" ] && awk -v t="${LT}" 'BEGIN { if ((t + 0) <= 629) 
 echo "Lisbon now:    ${NOWL}, weekday ${DOW}: ${CLOCK} by the weekday table; the night: ${RUNDAY} 21:00 to ${NEXTDAY} 06:29; inside: ${WIN}"
 [ "${CLOCK}" = closed ] || { echo "STOP: Lisbon ${NOWL} is inside clinic hours by the weekday table. Nothing was read from production"; exit 1; }
 [ "${WIN}" = yes ] || { echo "STOP: Lisbon ${NOWL} is outside the window of the night this block names. Nothing was read from production"; exit 1; }
-git fetch origin --prune || { echo "STOP: the fetch failed, so the held head may be stale. Nothing was read from production"; exit 1; }
-TIP=$(git rev-parse ${BR}) || { echo "STOP: the held head, ${BR}, could not be read. Nothing was read from production"; exit 1; }
+git fetch origin ${PRREF} || { echo "STOP: the fetch of ${PRREF} failed, so the held head is not known. Nothing was read from production"; exit 1; }
+TIP=$(git rev-parse FETCH_HEAD) || { echo "STOP: the held head, ${PRREF} as fetched, could not be read. Nothing was read from production"; exit 1; }
 [ "${TIP}" = "${HELD}" ] || { echo "STOP: the held head is not the commit this block names (${HELD}). Nothing was read from production"; exit 1; }
 STRAY=$(git status --short) || { echo "STOP: git status failed in the apply worktree. Nothing was read from production"; exit 1; }
 [ -z "${STRAY}" ] || { echo "STOP: the apply worktree is not clean. Do not clean it. Nothing was read from production"; exit 1; }
@@ -425,7 +432,8 @@ echo "THE ROLLBACK: COMMITTED. The ${IC} recorded services of the tenant osteojp
 - **NOT YET REHEARSED, to be done on a throwaway database by a session that did not write this, before the READY line:**
   - the four SQL files against a schema built from `main` plus 0110 at the head of #1704, with synthetic services rows: the clean case (both VAT fields empty on active, archived and internal-only rows, plus a partial row, a row at other values and a row of a second tenant), and each refusal (no tenant, two tenants, 0110 absent, a prior audit row, an empty target, a target above 60, a moved target between THE PRE-CHECK and THE WRITE by count and by md5, a mismatched `expect`);
   - the psql details the blocks rely on and that only a real psql shows: that `-q -A -t` prints only the `Q6` lines (THE PRE-CHECK and THE POST-CHECK STOP on any other line); that `\o :idsfile` writes the ids before the COMMIT, and whether a failed `\o` stops psql under `ON_ERROR_STOP=1`; that a `RAISE` inside the DO blocks exits psql with a non-zero code and rolls the transaction back;
-  - the rollback, after a rehearsed write, including its refusal when staff changed one row after the write;
+  - the rollback, after a rehearsed write, including its refusals when staff changed one row after the write, and when staff re-saved one with the same 0% and M07 (a later `service.update` audit row; a later `updated_at`);
+  - `git fetch origin refs/pull/1724/head` and `FETCH_HEAD` in the apply worktree, before and after the pull request merges (the fault-injection test stubs git);
   - the blocks themselves against the throwaway: THE PRE-CHECK, THE WRITE, THE POST-CHECK and THE ROLLBACK read only production, because the target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway. "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so." So each block's production path (the environment file, the guard, the connection) stays NOT REHEARSED; the rehearsal runs the SQL files with exactly the blocks' psql arguments.
 - **No R4 round yet.** The review runs after the rehearsal, on the bytes the rehearsal ran.
 
@@ -435,4 +443,13 @@ echo "THE ROLLBACK: COMMITTED. The ${IC} recorded services of the tenant osteojp
 2. 0110 is applied to production in its own sitting, and GREEN reports.
 3. The rehearsal above, by a session that did not write this, recorded in this document.
 4. R4 rounds on the document, the four SQL files and the test, under the review-loop cap.
-5. SOLO sets the first line to READY, recomputes the sidecar, and fills `HELD`, `DOCSHA` and `RUNDAY` in GREEN's dispatch copy only (this document keeps `PENDING`).
+5. SOLO sets the first line to READY, recomputes the sidecar, and fills `HELD`, `DOCSHA`, `RUNDAY` and `MIGNIGHT` in GREEN's dispatch copy only (this document keeps `PENDING`).
+
+## Review history
+
+- **R4 round 1, 2026-11-04, on `d265a23a`: NOT PASS, 1 MAJOR, 3 MINOR, 2 NIT. All answered the same night; round 2 pending.**
+  - MAJOR: the rollback named `origin/data/Q6-service-types-vat-m07` after `git fetch --prune`, so once the pull request merged and its branch was deleted it would STOP and could be passed only by editing the block. Now THE PRE-CHECK and THE ROLLBACK fetch `refs/pull/1724/head` explicitly and read `FETCH_HEAD`, pinned to `HELD` (D14).
+  - MINOR 1: the test proved the SQL's shape, not its guards; a mutation sweep left 11 of 12 mutants alive. The test now holds the list of every refusal in each SQL file with its exact condition, and the key queries' predicates, so turning any one off fails it.
+  - MINOR 2: the rollback read "still 0 and M07" as untouched. It now refuses on a later `service.*` audit row or a later `updated_at` (D17).
+  - MINOR 3: "its own night after 0110" was not checked by machine. The dispatch now carries `MIGNIGHT` and THE PRE-CHECK refuses unless RUNDAY is later (D18, with its limit).
+  - NITs: `updated_at` (D16) and the audit metadata (D7) are stated.

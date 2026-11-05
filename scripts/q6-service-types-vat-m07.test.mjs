@@ -13,7 +13,11 @@
 //     fields NULL and its values are 0 and M07; every expected-count check sits before the COMMIT,
 //     and so does the record of the ids; the rollback is keyed on the recorded ids; the two reads
 //     write nothing and print only their own Q6 lines; no file names a uuid or a person's column.
-//     Each shape rule is shown to catch its own seeded fault;
+//     Each shape rule is shown to catch its own seeded fault. Every refusal (IF ... THEN RAISE) of each
+//     file is listed with its condition and message, and every WHERE and ON clause is listed, so a guard
+//     turned off or a predicate widened fails the test;
+//   * the blocks resolve the held head from refs/pull/1724/head, fetched explicitly, never from the
+//     branch, which is deleted when the pull request merges;
 //   * THE BLOCKS: line 2 is `set -o pipefail`, no `set -e`, no `#` line, no continuation, one psql
 //     call each, its output to a file and never through tee, every halt one STOP and exit 1;
 //   * EVERY HALT IS EXPLICIT: each block runs in GREEN's tool shape (`true && eval '<block>' <
@@ -53,7 +57,7 @@ const UNDO = "scripts/data/q6-vat-m07-4-rollback.sql";
 const GUARD = "scripts/assert-production-target.mjs";
 const PTM = "scripts/production-target.mjs";
 const SELF = "scripts/q6-service-types-vat-m07.test.mjs";
-const BRANCH = "origin/data/Q6-service-types-vat-m07";
+const PRREF = "refs/pull/1724/head";
 
 const PROD_APPLY = "/Users/ivan/Projects/GitHub/osteojp-prod-apply";
 const PROD_ENV = "/Users/ivan/osteojp-secrets/new-prod.env";
@@ -214,6 +218,159 @@ function readFindings(text, tag) {
   return f;
 }
 
+/* ---- Every guard and every predicate, listed. A guard turned off (IF false), a condition loosened, a
+   message moved to another check, or a WHERE / ON clause widened changes one of these lists. The
+   lists are the review's statement of what each file refuses and which rows each query reads. ---- */
+
+const sqlGuards = (t) => [...stripComments(t).matchAll(/\n\s*IF (.+?) THEN\n\s+RAISE EXCEPTION '((?:[^']|'')*)'/g)].map((m) => `IF ${m[1]} => ${m[2]}`);
+const sqlPredicates = (t) => [...stripComments(t).matchAll(/\b(WHERE|ON)\b([\s\S]*?)(?=;|\bGROUP\b|\bORDER\b|\bRETURNING\b|\bUNION\b|\bJOIN\b)/g)]
+  .map((m) => `${m[1]}${m[2]}`.replace(/\s+/g, " ").trim()).filter((x) => x !== "ON COMMIT DROP");
+
+const EXPECTED_GUARDS = {
+  pre: [
+    "IF v_tenants <> 1 => Q6STOP: the slug osteojp names % tenants, not exactly 1",
+    "IF v_cols <> 2 => Q6STOP: services carries % of the 2 columns of 0110 with their types: 0110 is not applied",
+    "IF v_cons <> 2 => Q6STOP: services carries % of the 2 CHECK constraints of 0110: 0110 is not applied as reviewed",
+    "IF v_audit <> 0 => Q6STOP: % audit rows of this op are already in the tenant: it ran before, or was undone. The lead rules",
+    "IF v_target = 0 => Q6STOP: no service of the tenant has both VAT fields empty: there is nothing to write",
+    "IF v_target > 60 => Q6STOP: % target rows, more than the ceiling of 60 the document names. Strategy rules",
+  ],
+  write: [
+    "IF s_expect !~ '^[1-9][0-9]?$' => Q6STOP: -v expect must be a whole number from 1 to 60; received %",
+    "IF v_expect > 60 => Q6STOP: -v expect % is above the ceiling of 60",
+    "IF s_md5 !~ '^[0-9a-f]{32}$' => Q6STOP: -v target_md5 must be 32 lower-case hex characters",
+    "IF v_tenants <> 1 => Q6STOP: the slug osteojp names % tenants, not exactly 1",
+    "IF v_cols <> 2 => Q6STOP: services carries % of the 2 columns of 0110 with their types: 0110 is not applied",
+    "IF v_prior <> 0 => Q6STOP: % audit rows of this op are already in the tenant: it ran before, or was undone. The lead rules",
+    "IF v_target <> v_expect => Q6STOP: % target rows now, but THE PRE-CHECK counted %: the table moved. Paste THE PRE-CHECK again",
+    "IF v_md5 <> s_md5 => Q6STOP: the target set is not the one THE PRE-CHECK read (same count, other rows). Paste THE PRE-CHECK again",
+    "IF v_upd <> v_expect => Q6STOP: the UPDATE wrote % rows, expected exactly %",
+    "IF v_aud <> v_expect => Q6STOP: wrote % audit rows, expected exactly %",
+    "IF v_ok <> v_expect => Q6STOP: % written rows read 0 and M07, expected exactly %",
+    "IF v_left <> 0 => Q6STOP: % rows of the tenant still have both VAT fields empty after the write",
+    "IF v_other_a IS DISTINCT FROM v_other_b => Q6STOP: a services row outside the written set changed, and none may",
+    "IF v_rest_a IS DISTINCT FROM v_rest_b => Q6STOP: a column other than the two VAT fields changed on a written row, and none may",
+  ],
+  post: [
+    "IF s_expect !~ '^[1-9][0-9]?$' => Q6STOP: -v expect must be a whole number from 1 to 60; received %",
+    "IF s_ids !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(,[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})*$' => Q6STOP: -v ids is not a comma separated list of lower-case uuids",
+    "IF cardinality(v_ids) <> v_expect => Q6STOP: % ids recorded, expected %",
+    "IF v_n <> v_expect => Q6STOP: the recorded ids hold a duplicate (% distinct of %)",
+    "IF v_tenants <> 1 => Q6STOP: the slug osteojp names % tenants, not exactly 1",
+    "IF v_n <> v_expect => Q6STOP: % of the % recorded services read 0 and M07 in the tenant",
+    "IF v_n <> v_expect => Q6STOP: the tenant holds % audit rows of this op, expected exactly %",
+    "IF v_n <> v_expect => Q6STOP: % of the % recorded services have their audit row",
+    "IF v_n <> 0 => Q6STOP: % undo audit rows exist: the op was rolled back",
+  ],
+  undo: [
+    "IF s_expect !~ '^[1-9][0-9]?$' => Q6STOP: -v expect must be a whole number from 1 to 60; received %",
+    "IF s_ids !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(,[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})*$' => Q6STOP: -v ids is not a comma separated list of lower-case uuids",
+    "IF cardinality(v_ids) <> v_expect => Q6STOP: % ids recorded, expected %",
+    "IF v_n <> v_expect => Q6STOP: the recorded ids hold a duplicate (% distinct of %)",
+    "IF v_tenants <> 1 => Q6STOP: the slug osteojp names % tenants, not exactly 1",
+    "IF v_n <> 0 => Q6STOP: % undo audit rows already exist: the rollback ran before",
+    "IF v_n <> v_expect => Q6STOP: the tenant holds % audit rows of THE WRITE, but % ids are recorded: the file and the trail disagree. The lead rules",
+    "IF v_n <> v_expect => Q6STOP: % of the % recorded ids have an audit row of THE WRITE: the file and the trail disagree. The lead rules",
+    "IF v_n <> v_expect => Q6STOP: % of the % recorded services still read 0 and M07: staff changed the others since THE WRITE. Nothing is written; the lead rules",
+    "IF v_n <> 0 => Q6STOP: % service audit rows of another action sit on the recorded services from THE WRITE on: staff may have re-saved them. Nothing is written; the lead rules",
+    "IF v_n <> 0 => Q6STOP: % recorded services were updated after THE WRITE: staff may have re-saved them. Nothing is written; the lead rules",
+    "IF v_upd <> v_expect => Q6STOP: the UPDATE reset % rows, expected exactly %",
+    "IF v_aud <> v_expect => Q6STOP: wrote % undo audit rows, expected exactly %",
+    "IF v_other_a IS DISTINCT FROM v_other_b => Q6STOP: a services row outside the recorded ids changed, and none may",
+  ],
+};
+const EXPECTED_PREDICATES = {
+  pre: [
+    "WHERE slug = 'osteojp'",
+    "WHERE c.table_schema = 'public' AND c.table_name = 'services' AND c.column_name = 'vat_rate'), 'absent')",
+    "WHERE c.table_schema = 'public' AND c.table_name = 'services' AND c.column_name = 'vat_exemption_code'), 'absent')",
+    "WHERE k.conrelid = 'public.services'::regclass AND k.contype = 'c' AND k.conname = 'services_vat_rate_allowed'",
+    "WHERE k.conrelid = 'public.services'::regclass AND k.contype = 'c' AND k.conname = 'services_vat_exemption_code_allowed'",
+    "WHERE slug = 'osteojp'",
+    "WHERE c.table_schema = 'public' AND c.table_name = 'services' AND ((c.column_name = 'vat_rate' AND c.data_type = 'smallint') OR (c.column_name = 'vat_exemption_code' AND c.data_type = 'text'))",
+    "WHERE k.conrelid = 'public.services'::regclass AND k.contype = 'c' AND k.conname IN ('services_vat_rate_allowed', 'services_vat_exemption_code_allowed')",
+    "WHERE slug = 'osteojp' ), s AS ( SELECT sv.is_active, sv.internal_only, sv.vat_rate, sv.vat_exemption_code FROM public.services sv",
+    "ON t.id = sv.tenant_id ), a AS ( SELECT al.action FROM public.audit_log al",
+    "ON t.id = al.tenant_id WHERE al.action IN ('service.vat_default_q6', 'service.vat_default_q6_undone') ) SELECT line FROM ( SELECT 1 AS k, 'Q6PRE services_total ' || count(*) AS line FROM s",
+    "WHERE is_active) FROM s",
+    "WHERE NOT is_active) FROM s",
+    "WHERE vat_rate IS NULL AND vat_exemption_code IS NULL) FROM s",
+    "WHERE vat_rate IS NULL AND vat_exemption_code IS NULL AND is_active) FROM s",
+    "WHERE vat_rate IS NULL AND vat_exemption_code IS NULL AND NOT is_active) FROM s",
+    "WHERE vat_rate IS NULL AND vat_exemption_code IS NULL AND internal_only) FROM s",
+    "WHERE (vat_rate IS NULL) <> (vat_exemption_code IS NULL)) FROM s",
+    "WHERE vat_rate = 0 AND vat_exemption_code = 'M07') FROM s",
+    "WHERE vat_rate IS NOT NULL AND vat_exemption_code IS NOT NULL AND NOT (vat_rate = 0 AND vat_exemption_code = 'M07')) FROM s",
+    "WHERE action = 'service.vat_default_q6') FROM a",
+    "WHERE action = 'service.vat_default_q6_undone') FROM a",
+    "WHERE sv.tenant_id NOT IN (SELECT id FROM t) ) x",
+    "WHERE slug = 'osteojp'",
+    "WHERE tenant_id = v_tenant AND action IN ('service.vat_default_q6', 'service.vat_default_q6_undone')",
+    "WHERE tenant_id = v_tenant AND vat_rate IS NULL AND vat_exemption_code IS NULL",
+    "ON t.id = s.tenant_id WHERE t.slug = 'osteojp' AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
+  ],
+  write: [
+    "WHERE slug = 'osteojp'",
+    "WHERE slug = 'osteojp'",
+    "WHERE c.table_schema = 'public' AND c.table_name = 'services' AND ((c.column_name = 'vat_rate' AND c.data_type = 'smallint') OR (c.column_name = 'vat_exemption_code' AND c.data_type = 'text'))",
+    "WHERE tenant_id = v_tenant AND action IN ('service.vat_default_q6', 'service.vat_default_q6_undone')",
+    "WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
+    "WHERE NOT (s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL)",
+    "WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
+    "WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
+    "ON w.id = s.id WHERE s.tenant_id = v_tenant AND s.vat_rate = c_rate AND s.vat_exemption_code = c_code",
+    "WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
+    "WHERE s.id NOT IN (SELECT w.id FROM q6_written w)",
+    "ON w.id = s.id",
+    "ON t.id = al.tenant_id WHERE t.slug = 'osteojp' AND al.action = 'service.vat_default_q6'",
+  ],
+  post: [
+    "WHERE slug = 'osteojp'",
+    "WHERE slug = 'osteojp'",
+    "WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = 0 AND s.vat_exemption_code = 'M07'",
+    "WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6'",
+    "WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6' AND al.entity_type = 'service' AND al.entity_id = ANY (v_ids)",
+    "WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6_undone'",
+    "WHERE slug = 'osteojp' ), s AS ( SELECT sv.is_active, sv.vat_rate, sv.vat_exemption_code FROM public.services sv",
+    "ON t.id = sv.tenant_id ) SELECT line FROM ( SELECT 1 AS k, 'Q6POST services_total ' || count(*) AS line FROM s",
+    "WHERE vat_rate = 0 AND vat_exemption_code = 'M07') FROM s",
+    "WHERE vat_rate = 0 AND vat_exemption_code = 'M07' AND is_active) FROM s",
+    "WHERE vat_rate = 0 AND vat_exemption_code = 'M07' AND NOT is_active) FROM s",
+    "WHERE vat_rate IS NULL AND vat_exemption_code IS NULL) FROM s",
+    "WHERE (vat_rate IS NULL) <> (vat_exemption_code IS NULL)) FROM s",
+    "WHERE vat_rate IS NOT NULL AND vat_exemption_code IS NOT NULL AND NOT (vat_rate = 0 AND vat_exemption_code = 'M07')) FROM s ) x",
+  ],
+  undo: [
+    "WHERE slug = 'osteojp'",
+    "WHERE slug = 'osteojp'",
+    "WHERE al.tenant_id = v_tenant AND al.action = c_action",
+    "WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6'",
+    "WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6' AND al.entity_type = 'service' AND al.entity_id = ANY (v_ids)",
+    "WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = 0 AND s.vat_exemption_code = 'M07'",
+    "ON mine.tenant_id = later.tenant_id AND mine.entity_id = later.entity_id AND mine.entity_type = 'service' AND mine.action = 'service.vat_default_q6' WHERE later.tenant_id = v_tenant AND later.entity_type = 'service' AND later.entity_id = ANY (v_ids) AND later.action LIKE 'service.%' AND later.action <> 'service.vat_default_q6' AND later.created_at > mine.created_at - interval '10 minutes'",
+    "ON mine.tenant_id = s.tenant_id AND mine.entity_id = s.id AND mine.entity_type = 'service' AND mine.action = 'service.vat_default_q6' WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.updated_at > mine.created_at",
+    "WHERE NOT (s.id = ANY (v_ids))",
+    "WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = 0 AND s.vat_exemption_code = 'M07'",
+    "WHERE NOT (s.id = ANY (v_ids))",
+    "ON t.id = al.tenant_id WHERE t.slug = 'osteojp' AND al.action = 'service.vat_default_q6_undone'",
+  ],
+};
+
+test("every guard of the SQL is present with its condition and message: the shape the document claims", () => {
+  for (const [k, t] of Object.entries(sql)) {
+    assert.deepEqual(sqlGuards(t), EXPECTED_GUARDS[k], `${k}: the guards are not the reviewed list`);
+    const raises = (stripComments(t).match(/RAISE EXCEPTION/g) || []).length;
+    const missing = (t.match(/DO \$missing\$ BEGIN/g) || []).length;
+    assert.equal(raises, EXPECTED_GUARDS[k].length + missing, `${k}: a RAISE that is not one of the listed guards`);
+  }
+});
+
+test("every WHERE and ON clause of the SQL is the reviewed one: the shape the document claims", () => {
+  for (const [k, t] of Object.entries(sql)) {
+    assert.deepEqual(sqlPredicates(t), EXPECTED_PREDICATES[k], `${k}: the predicates are not the reviewed list`);
+  }
+});
+
 test("the write has the shape the document claims", () => {
   assert.deepEqual(writeFindings(sql.write), []);
 });
@@ -291,10 +448,19 @@ test("every block: pipefail on line 2, no set -e, no # line, no continuation, on
       assert.doesNotMatch(l, /^(echo|printf)\b.*\$\{?DATABASE_URL/, `${name}: a line prints the connection string`);
     }
     assert.doesNotMatch(b, /\b(cat|head|tail|less|more)\b[^\n]*(write|undo)\.out/, `${name}: a line prints a write transcript`);
+    assert.doesNotMatch(b, /origin\/data\/|--prune/, `${name}: a block names the branch, which is deleted when the pull request merges`);
+    if (name === "pre" || name === "undo") {
+      assert.ok(lines.includes(`PRREF=${PRREF}`), `${name}: the head is not resolved from ${PRREF}`);
+      assert.ok(b.includes("git fetch origin ${PRREF} || {") && b.includes("TIP=$(git rev-parse FETCH_HEAD) || {"), `${name}: the head is not fetched explicitly and read from FETCH_HEAD`);
+      assert.ok(b.includes('[ "${TIP}" = "${HELD}" ] || {'), `${name}: the fetched head is not pinned to HELD`);
+      assert.match(doc, new RegExp(`#${PRREF.split("/")[2]}\\b`), "the document does not name the pull request its blocks fetch");
+    } else {
+      assert.doesNotMatch(b, /git fetch/, `${name}: a block after THE PRE-CHECK fetches a head`);
+    }
     const pending = lines.filter((l) => /='PENDING/.test(l));
     if (name === "pre" || name === "undo") {
-      assert.deepEqual(pending.map((l) => l.split("=")[0]), ["HELD", "DOCSHA", "RUNDAY"], name);
-      assert.deepEqual(lines.slice(2, 5), pending, `${name}: the PENDING lines are not lines 3 to 5`);
+      assert.deepEqual(pending.map((l) => l.split("=")[0]), name === "pre" ? ["HELD", "DOCSHA", "RUNDAY", "MIGNIGHT"] : ["HELD", "DOCSHA", "RUNDAY"], name);
+      assert.deepEqual(lines.slice(2, 2 + pending.length), pending, `${name}: the PENDING lines are not the first value lines`);
     } else {
       assert.equal(pending.length, 0, name);
     }
@@ -346,10 +512,10 @@ if [ "$HARNESS_FAIL" = "$id" ]; then
 fi
 case "$n" in
   git) case "$1" in
-      fetch) exit 0;;
+      fetch) [ "$2" = origin ] && [ "$3" = refs/pull/1724/head ] && [ "$#" = 3 ] || unexpected "$@"; exit 0;;
       status) if [ -n "$HARNESS_STRAY" ]; then echo "$HARNESS_STRAY"; fi; exit 0;;
       rev-parse) if [ "$2" = HEAD ]; then read -r h < "$d/head"; echo "$h"; exit 0; fi
-        if [ "$2" = ${BRANCH} ]; then echo "$HARNESS_TIP"; exit 0; fi;;
+        if [ "$2" = FETCH_HEAD ]; then echo "$HARNESS_TIP"; exit 0; fi;;
       checkout) for a in "$@"; do last="$a"; done; echo "$last" > "$d/head"; exit 0;;
       show) spec="$2"; sha="\${spec%%:*}"; path="\${spec#*:}"
         [ "$sha" = "$HARNESS_TIP" ] || { echo "fatal: bad revision" >&2; exit 128; }
@@ -434,12 +600,13 @@ function makeBase({ firstLine = "READY: the harness's copy" } = {}) {
 }
 
 /** The block as GREEN pastes it: PENDING lines filled (pre and undo), real paths moved into the run. */
-function localize(name, run, base, { docsha, envFile, fill = true, held = TIP, runday = "20261116" } = {}) {
+function localize(name, run, base, { docsha, envFile, fill = true, held = TIP, runday = "20261116", mignight = "20261111" } = {}) {
   let b = BLOCKS[name];
   if (fill && (name === "pre" || name === "undo")) {
     b = b.replace(/^HELD='PENDING[^\n]*$/m, `HELD='${held}'`)
       .replace(/^DOCSHA='PENDING[^\n]*$/m, `DOCSHA='${docsha}'`)
-      .replace(/^RUNDAY='PENDING[^\n]*$/m, `RUNDAY='${runday}'`);
+      .replace(/^RUNDAY='PENDING[^\n]*$/m, `RUNDAY='${runday}'`)
+      .replace(/^MIGNIGHT='PENDING[^\n]*$/m, `MIGNIGHT='${mignight}'`);
   }
   b = b.replaceAll(PROD_APPLY, join(base, "apply"))
     .replaceAll(PROD_ENV, envFile ?? join(base, "fake-prod.env"))
@@ -510,6 +677,7 @@ async function runOnce(cfg, s = {}) {
     fill: s.fill ?? true,
     held: s.held,
     runday: s.runday,
+    mignight: s.mignight,
   });
   const env = {
     PATH: `${join(cfg.base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
@@ -565,6 +733,9 @@ else if (!process.env.GITHUB_ACTIONS) test("zsh is installed here", () => assert
 const SCENARIOS = {
   pre: [
     ["the clinic is open", { stamp: "202611161500" }, /inside clinic hours/],
+    ["RUNDAY is the night 0110 was applied", { mignight: "20261116" }, /not a night after the night 0110 was applied/],
+    ["RUNDAY is before the night 0110 was applied", { mignight: "20261117" }, /not a night after the night 0110 was applied/],
+    ["MIGNIGHT left PENDING", { mignight: "PENDING" }, /MIGNIGHT is still PENDING/],
     ["Sunday, closed, but not the named night", { stamp: "202611151000", dow: "7" }, /outside the window/],
     ["the night after the window", { stamp: "202611170700", dow: "2" }, /outside the window/],
     ["the zone did not load", { zone: "UTC" }, /zone WET or WEST/],

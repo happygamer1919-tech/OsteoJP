@@ -114,6 +114,36 @@ BEGIN
     RAISE EXCEPTION 'Q6STOP: % of the % recorded services still read 0 and M07: staff changed the others since THE WRITE. Nothing is written; the lead rules', v_n, v_expect;
   END IF;
 
+  -- A STAFF RE-SAVE LEAVES 0 AND M07 IN PLACE, so "still 0 and M07" does not
+  -- prove a row untouched. Two signals, either refuses the whole rollback:
+  -- any service.* audit row on a recorded service, other than THE WRITE's
+  -- own, written from 10 minutes before THE WRITE's audit row on (the margin
+  -- covers a staff transaction that began before THE WRITE and waited for
+  -- its lock, whose audit row carries its own earlier start time); and a
+  -- recorded row whose updated_at is later than THE WRITE's audit row (THE
+  -- WRITE does not set updated_at; the app sets it on every edit).
+  SELECT count(*) INTO v_n
+    FROM public.audit_log later
+    JOIN public.audit_log mine
+      ON mine.tenant_id = later.tenant_id AND mine.entity_id = later.entity_id
+     AND mine.entity_type = 'service' AND mine.action = 'service.vat_default_q6'
+   WHERE later.tenant_id = v_tenant AND later.entity_type = 'service' AND later.entity_id = ANY (v_ids)
+     AND later.action LIKE 'service.%' AND later.action <> 'service.vat_default_q6'
+     AND later.created_at > mine.created_at - interval '10 minutes';
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % service audit rows of another action sit on the recorded services from THE WRITE on: staff may have re-saved them. Nothing is written; the lead rules', v_n;
+  END IF;
+
+  SELECT count(*) INTO v_n
+    FROM public.services s
+    JOIN public.audit_log mine
+      ON mine.tenant_id = s.tenant_id AND mine.entity_id = s.id
+     AND mine.entity_type = 'service' AND mine.action = 'service.vat_default_q6'
+   WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.updated_at > mine.created_at;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % recorded services were updated after THE WRITE: staff may have re-saved them. Nothing is written; the lead rules', v_n;
+  END IF;
+
   SELECT md5(coalesce(string_agg(to_jsonb(s)::text, '|' ORDER BY s.id), ''))
     INTO v_other_b
     FROM public.services s
