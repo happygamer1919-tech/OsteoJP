@@ -49,6 +49,39 @@
 \timing off
 \set ON_ERROR_STOP on
 
+\if :{?journal_rows_before}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v journal_rows_before is missing (the pre-check''s verdict 10 row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?policies_before}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v policies_before is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?policies_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v policies_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?relation_acl_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v relation_acl_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?services_rows}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v services_rows is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?services_shape_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v services_shape_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?name_grants_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v name_grants_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?services_filenode}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v services_filenode is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+
 SET LOCAL row_security = off;
 SET LOCAL search_path = public;
 

@@ -2457,3 +2457,13 @@ test("THE CHAIN GATE (strategy's C1 and C2): BEFORE YOU START, whole, refuses to
     }
   });
 });
+
+test("THE CARRIES ARE REQUIRED: the post-check refuses to guess a missing -v, before any verdict prints, for each carry stage 2 passes", () => {
+  for (const [, , name] of CARRY_MAP) {
+    assert.ok(post.includes(`\\if :{?${name}}\n\\else\n  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v ${name} is missing`), `${name}: no missing-variable guard`);
+  }
+  const required = [...post.matchAll(/^\\if :\{\?(\w+)\}$/gm)].map((m) => m[1]).sort();
+  const passed = [...blockWith(gdoc, STAGE2).matchAll(/-v (\w+)="\$\{[A-Z]+\}"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(passed, required);
+  assert.ok(post.indexOf("\\endif") < post.indexOf("SET LOCAL row_security = off;"), "a guard comes after the first statement");
+});
