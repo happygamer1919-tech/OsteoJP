@@ -49,13 +49,27 @@ export function packTitle(v: Pick<PackInUseView, "packName" | "packPriceCents">)
   return `${v.packName} • ${formatEurosShort(v.packPriceCents)}€`;
 }
 
-export function PacksInUseTable({ rows }: { rows: PackInUseView[] }) {
+/**
+ * PACK-FICHA-01: the patient's ficha draws the same table for ONE patient, so
+ * it leaves out NOME UTENTE (`showPatient={false}`) and names each of its two
+ * tables (`testId`). Every other cell is the same, so the ficha and "Packs em
+ * uso" cannot disagree about a pacote.
+ */
+export function PacksInUseTable({
+  rows,
+  showPatient = true,
+  testId = "packs-in-use-table",
+}: {
+  rows: PackInUseView[];
+  showPatient?: boolean;
+  testId?: string;
+}) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm" data-testid="packs-in-use-table">
+      <table className="w-full border-collapse text-sm" data-testid={testId}>
         <thead>
           <tr className="border-b border-v2-border">
-            <th scope="col" className={th}>{s["packsInUse.colPatient"]}</th>
+            {showPatient && <th scope="col" className={th}>{s["packsInUse.colPatient"]}</th>}
             <th scope="col" className={th}>{s["packsInUse.colPack"]}</th>
             <th scope="col" className={th}>{s["packsInUse.colStarted"]}</th>
             <th scope="col" className={th}>{s["packsInUse.colPayment"]}</th>
@@ -66,14 +80,16 @@ export function PacksInUseTable({ rows }: { rows: PackInUseView[] }) {
         <tbody>
           {rows.map((v) => (
             <tr key={v.instanceId} className="border-b border-v2-border" data-testid="packs-in-use-row">
-              <td className={td}>
-                <Link
-                  href={`/patients/${v.patientId}`}
-                  className="font-medium text-v2-text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                >
-                  {v.patientName}
-                </Link>
-              </td>
+              {showPatient && (
+                <td className={td}>
+                  <Link
+                    href={`/patients/${v.patientId}`}
+                    className="font-medium text-v2-text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  >
+                    {v.patientName}
+                  </Link>
+                </td>
+              )}
               <td className={td}>
                 <details>
                   <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2">
