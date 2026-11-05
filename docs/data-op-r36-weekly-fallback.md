@@ -14,7 +14,7 @@ NOT READY: authored 2026-11-05, awaiting R4 review, a rehearsal by another sessi
 | Program | `packages/db/scripts/r36-fallback-rearm-emit.mjs`, **unchanged**: the file the R36 document pins and its rehearsal ran (sha256 `1795c035...f454`). It runs `packages/db/scripts/inc-1007-rearm-reminders-emit.mjs` (the program of 2026-10-12, unchanged). See "Why the program does not change" |
 | Tests | `scripts/r36-weekly-fallback.test.mjs`: this document's blocks statically, under fault injection in bash and zsh against the program's real output, its scenarios, its pins, its nights and dates, and the program's settled-marker refusals at a week's distance. The program's own tests are unchanged (`scripts/r36-fallback-rearm-emit.test.mjs`) |
 | Who runs it | GREEN, an apply-only session, on the owner's dispatch naming `packages/db/scripts/r36-fallback-rearm-emit.mjs`, in a closed window with the owner at the keyboard. The session that wrote this never runs it |
-| Run from | The HELD head of THIS document's pull request, fetched as `refs/pull/<PR>/head` (the number is in every block) and compared to HELD, in `/Users/ivan/Projects/GitHub/osteojp-prod-apply`. That ref survives the branch being deleted. It does not read `origin/data/R36-fallback-rearm-20261104` (#1690) |
+| Run from | The HELD head of THIS document's pull request, fetched as `refs/pull/1726/head` (`PR=1726` in WEEKLY, BEFORE YOU START; the later blocks run on the head it recorded) and compared to HELD, in `/Users/ivan/Projects/GitHub/osteojp-prod-apply`. That ref survives the branch being deleted. It does not read `origin/data/R36-fallback-rearm-20261104` (#1690) |
 | When | Only a night strategy has ruled for a weekly sitting, listed in every block as `NIGHTS`. **Today: `20261113` only (Friday 2026-11-13).** From 21:00 Lisbon that day until 06:29 Lisbon the next morning |
 | Scope | `--max-days-ahead 28`: appointments starting more than 24 hours and no more than 28 days after each read, that this operation's marker does not hold as sent at their present start |
 | What it sends | One `appointment/scheduled` event per eligible appointment, `confirmationEligible: false`, with NO event id of its own |
@@ -140,7 +140,7 @@ STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'
 LASTOK='PENDING: yes only when GREEN reported the last sitting ended clean, as the dispatch names it'
 PRIORK='PENDING: the count of appointments sent that the last closing line printed'
 NIGHTS='20261113'
-PR=4242
+PR=1726
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
 SHAWRAP=1795c035a45d7a318b2966eda3991423ee0d2c27c5bc1a78d1e811404459f454
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
@@ -650,5 +650,5 @@ What the rehearsal should show at the least: the four blocks in order end on the
 
 ## Authoring record
 
-- Authored on branch `data/R36-weekly-fallback-20261113`, stacked on #1690's held head `415bd0e9`, as pull request #4242, the number in WEEKLY, BEFORE YOU START. This pull request's own diff is this document, its sidecar and `scripts/r36-weekly-fallback.test.mjs`. No program, no other test and no document of #1690 changed.
+- Authored on branch `data/R36-weekly-fallback-20261113`, stacked on #1690's held head `415bd0e9`, as pull request #1726, the number in WEEKLY, BEFORE YOU START. This pull request's own diff is this document, its sidecar and `scripts/r36-weekly-fallback.test.mjs`. No program, no other test and no document of #1690 changed.
 - `scripts/r36-weekly-fallback.test.mjs`, run with `node --test` and `DATABASE_URL` blank, no database and no Docker. Its counts are in the pull request's description.
