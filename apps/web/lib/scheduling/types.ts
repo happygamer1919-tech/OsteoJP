@@ -7,6 +7,7 @@
 import { appointmentConfirmationState, appointmentStatus } from "@osteojp/db";
 import type { AgendaView } from "./time";
 import type { RecurrenceSpec, SeriesScope } from "./recurrence";
+import type { ClinicClosurePayload } from "./closed-days-core";
 
 export type { AgendaView };
 export type { RecurrenceSpec, SeriesScope, Frequency } from "./recurrence";
@@ -420,7 +421,7 @@ export type ActionResult<T> =
        * when, rather than "closed" - the same refusal-names-the-facts rule the
        * availability windows above follow.
        */
-      clinicClosure?: { locationName: string; from: string; to: string };
+      clinicClosure?: ClinicClosurePayload;
       /**
        * AGENDA-2100. Set only with `error: "outside_clinic_hours"`. It carries
        * the clinic, its hours, and the LAST START it will accept, because the

@@ -7,6 +7,8 @@ import { confirmAppointmentRequest } from "@/lib/scheduling/actions";
 import { s } from "@/lib/i18n";
 import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import type { ConflictInfo } from "@/lib/scheduling/types";
+import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
+import type { ClinicClosurePayload } from "@/lib/scheduling/closed-days-core";
 
 import { ApprovalNotices, withApprovalNotice, type ApprovalNoticeView } from "./approval-notices";
 
@@ -50,6 +52,10 @@ type RowError =
   // Its own code and not "conflict": the conflict branch renders a list and
   // implies a retry is possible, and this refusal is absolute.
   | { code: "doubleBooked" }
+  // TIER C 0114: the pedido falls inside the clinic's closure (a closed day
+  // entered after the patient asked, or the lunch closure). The clinic's own
+  // sentence, never the generic one: nothing about it can be retried.
+  | { code: "clinicClosed"; closure?: ClinicClosurePayload }
   | { code: "generic" };
 
 const TIME_FMT: Intl.DateTimeFormatOptions = {
@@ -80,6 +86,8 @@ function messageFor(err: RowError): string {
       return s["requests.error.forbidden"];
     case "doubleBooked":
       return s["requests.error.doubleBooked"];
+    case "clinicClosed":
+      return clinicClosedMessage(err.closure);
     default:
       return s["requests.error.generic"];
   }
@@ -116,6 +124,13 @@ export function PendingRequests({ items }: { items: PendingRequestView[] }) {
             }),
           );
         }
+        return;
+      }
+      if (result.error === "clinic_closed") {
+        setErrors((prev) => ({
+          ...prev,
+          [appointmentId]: { code: "clinicClosed", closure: result.clinicClosure },
+        }));
         return;
       }
       if (result.error === "conflict") {

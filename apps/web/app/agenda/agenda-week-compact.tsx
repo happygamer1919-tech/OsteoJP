@@ -1,5 +1,6 @@
 "use client";
 
+import type { AgendaClosedDays } from "@/lib/scheduling/closed-days-core";
 import { useEffect, useRef, useState, type Ref } from "react";
 
 import { locale, s } from "@/lib/i18n";
@@ -130,6 +131,8 @@ type CompactProps = {
   appointments: AgendaAppointment[];
   blocks?: BlockSpan[];
   closure?: { startMin: number; endMin: number; locationName: string } | null;
+  /** TIER C 0114: the selected clinic's dated closures, per date. */
+  closedDays?: AgendaClosedDays;
   sharedResourceIds?: ReadonlySet<string>;
   /** Opens the existing edit sheet, exactly as the grid and the list do. */
   onSelectAppointment: (appt: AgendaAppointment) => void;
@@ -149,12 +152,13 @@ export function AgendaWeekCompact({
   appointments,
   blocks = [],
   closure = null,
+  closedDays,
   sharedResourceIds,
   onSelectAppointment,
   onSelectDay,
   className,
 }: CompactProps) {
-  const week = buildCompactWeek({ anchor, appointments, blocks, closure, sharedResourceIds });
+  const week = buildCompactWeek({ anchor, appointments, blocks, closure, closedDays, sharedResourceIds });
   const win = week.window;
 
   /* "NOW" IS READ AFTER MOUNT, NOT DURING RENDER. A clock read in render would
@@ -354,8 +358,8 @@ export function CompactWeekView({
               ),
             )}
 
-            {d.bands.map((b) => (
-              <Band key={b.kind === "block" ? b.id : `closure-${d.date}`} band={b} top={minToPx(b.startMin)} height={minToPx(b.endMin) - minToPx(b.startMin)} />
+            {d.bands.map((b, i) => (
+              <Band key={b.kind === "block" ? b.id : `closure-${d.date}-${i}`} band={b} top={minToPx(b.startMin)} height={minToPx(b.endMin) - minToPx(b.startMin)} />
             ))}
 
             {d.appointments.map((a) => (

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { can } from "@osteojp/auth";
 import { GlassPanel } from "@osteojp/ui";
@@ -266,6 +267,18 @@ export default async function HorariosPage({
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold text-v2-text-primary">{s[heading.title]}</h1>
         <p className="text-sm text-v2-text-secondary">{s[heading.subtitle]}</p>
+        {/* TIER C 0114: the clinic's dated closures (holidays, closed days)
+            live one level down, behind their own capability (owner, admin,
+            reception). A therapist does not see the link. */}
+        {can(actor.role, "closures:manage") && (
+          <Link
+            href="/horarios/encerramentos"
+            data-testid="open-encerramentos"
+            className="mt-1 w-fit text-sm font-medium text-accent-2-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            {s["closures.openLink"]}
+          </Link>
+        )}
       </header>
 
       {banner && (

@@ -61,6 +61,7 @@ import type {
   AppointmentStatusValue,
   ConflictInfo,
 } from "@/lib/scheduling/types";
+import type { ClinicClosurePayload } from "@/lib/scheduling/closed-days-core";
 
 type StringKey = keyof typeof s;
 
@@ -664,7 +665,7 @@ function EstadoInline({ appt }: { appt: AgendaAppointment }) {
  */
 function estadoRefusalMessage(r: {
   error?: string;
-  clinicClosure?: { locationName: string; from: string; to: string };
+  clinicClosure?: ClinicClosurePayload;
   clinicWindow?: ClinicWindowRefusal;
 }): string {
   switch (r.error) {

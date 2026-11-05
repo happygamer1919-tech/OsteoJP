@@ -13,6 +13,7 @@
 import { MAX_OCCURRENCES } from "./recurrence";
 import { addDays, lisbonDateTimeToUtc, lisbonParts } from "./time";
 import type { ConflictInfo } from "./types";
+import type { ClinicClosurePayload } from "./closed-days-core";
 
 /**
  * The most visits one bulk change may touch: the reminder ceiling of ONE
@@ -134,7 +135,7 @@ export type BulkVerdict =
       kind: "refused";
       error: string;
       availabilityWindows?: { startTime: string; endTime: string }[];
-      clinicClosure?: { locationName: string; from: string; to: string };
+      clinicClosure?: ClinicClosurePayload;
       clinicWindow?: {
         reason: "before_open" | "after_latest_start";
         locationName: string;
@@ -294,7 +295,7 @@ export function verdictOfRefusal(r: {
   error: string;
   conflicts?: ConflictInfo[];
   availabilityWindows?: { startTime: string; endTime: string }[];
-  clinicClosure?: { locationName: string; from: string; to: string };
+  clinicClosure?: ClinicClosurePayload;
   clinicWindow?: {
     reason: "before_open" | "after_latest_start";
     locationName: string;

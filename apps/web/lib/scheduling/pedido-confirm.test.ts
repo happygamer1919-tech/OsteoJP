@@ -44,9 +44,22 @@ vi.mock("./conflict", () => ({
   findConflictsForWindow: vi.fn(async () => []),
   blockingConflicts: (c: unknown[]) => c,
 }));
+// TIER C 0114: the confirmation now refuses a pedido inside the clinic's
+// closure (lunch or a dated closure entered after the patient asked). The
+// check is mocked here, as the conflict check is, so the trace below still
+// proves the lock/check/write order; its own arms are at the end of the file.
+vi.mock("./clinic-closure-enforcement", () => ({
+  checkClinicClosure: vi.fn(async () => ({ ok: true })),
+  checkClinicWindow: vi.fn(async () => ({ ok: true })),
+  clinicClosurePayload: (v: { locationName: string; from: string; to: string; closedDay?: unknown }) => {
+    const { locationName, from, to, closedDay } = v;
+    return closedDay ? { locationName, from, to, closedDay } : { locationName, from, to };
+  },
+}));
 
 import { requireRequestContext, runScoped } from "@/lib/auth/context";
 import { findConflictsForWindow } from "./conflict";
+import { checkClinicClosure } from "./clinic-closure-enforcement";
 import { writeAppointmentAudit } from "./audit";
 import { confirmAppointmentRequest } from "./actions";
 import type { RequestContext } from "@osteojp/auth";
@@ -56,6 +69,7 @@ const mockCtx = vi.mocked(requireRequestContext);
 const mockRunScoped = vi.mocked(runScoped);
 const mockConflicts = vi.mocked(findConflictsForWindow);
 const mockAudit = vi.mocked(writeAppointmentAudit);
+const mockClosure = vi.mocked(checkClinicClosure);
 
 const actor: RequestContext = { tenantId: "tenant-A", role: "reception", userId: "user-1" };
 
@@ -125,6 +139,8 @@ beforeEach(() => {
   mockAudit.mockReset();
   mockCtx.mockResolvedValue(actor);
   mockConflicts.mockResolvedValue([]);
+  mockClosure.mockReset();
+  mockClosure.mockResolvedValue({ ok: true });
   mockRunScoped.mockImplementation((_actor, cb) => Promise.resolve(cb(fakeTx() as never)));
 });
 
@@ -274,3 +290,39 @@ describe("the action writes the LIFECYCLE axis and never the confirmation axis",
     expect(body).not.toMatch(/confirmation_state/);
   });
 });
+
+describe("Tier C 0114: a pedido inside the clinic's closure is refused, and nothing is written", () => {
+  it("asks the closure check about the pedido's OWN clinic and window", async () => {
+    await confirmAppointmentRequest("appt-1");
+    expect(mockClosure).toHaveBeenCalledTimes(1);
+    expect(mockClosure.mock.calls[0]![1]).toEqual({
+      locationId: "loc-1",
+      startsAt: PEDIDO.startsAt,
+      endsAt: PEDIDO.endsAt,
+    });
+  });
+
+  it("a dated closure refuses with clinic_closed, carrying its reason; the status is not written", async () => {
+    mockClosure.mockResolvedValueOnce({
+      ok: false,
+      locationName: "Clinica A",
+      from: "",
+      to: "",
+      closedDay: { kind: "feriado_nacional", label: "Natal", wholeDay: true },
+    });
+    const result = await confirmAppointmentRequest("appt-1");
+    expect(result).toEqual({
+      ok: false,
+      error: "clinic_closed",
+      clinicClosure: {
+        locationName: "Clinica A",
+        from: "",
+        to: "",
+        closedDay: { kind: "feriado_nacional", label: "Natal", wholeDay: true },
+      },
+    });
+    expect(sets).toHaveLength(0);
+    expect(trace).not.toContain("update");
+  });
+});
+

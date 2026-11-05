@@ -51,6 +51,7 @@
 //           holds only a cancelled row still shows Dom (what the desktop grid and
 //           the phone list already do with cancelled rows).
 
+import { agendaClosuresOn, type AgendaClosedDays } from "./closed-days-core";
 import { placeBlocksOnDate, type BlockSpan } from "./blocked-time-core";
 import { deriveEstado, estadoStrikesName, type Estado } from "./estado";
 import { isPatientWithheld, patientLabel } from "./patient-label";
@@ -156,6 +157,8 @@ export type BuildCompactWeekInput = {
   appointments: readonly AgendaAppointment[];
   blocks?: readonly BlockSpan[];
   closure?: { startMin: number; endMin: number; locationName: string } | null;
+  /** TIER C 0114: the selected clinic's dated closures, per date. */
+  closedDays?: AgendaClosedDays;
   /**
    * Ids of shared resources (NESA). Used ONLY as a tie-break so a twin pair
    * (a person row and a machine row, same patient, same start) lays out
@@ -673,7 +676,7 @@ export function faceName(patientName: string | null): string {
 }
 
 export function buildCompactWeek(input: BuildCompactWeekInput): CompactWeek {
-  const { anchor, appointments, blocks = [], closure = null } = input;
+  const { anchor, appointments, blocks = [], closure = null, closedDays } = input;
   const machines = input.sharedResourceIds ?? new Set<string>();
   const dates = compactDates(anchor, appointments);
   const dateSet = new Set(dates);
@@ -745,13 +748,17 @@ export function buildCompactWeek(input: BuildCompactWeekInput): CompactWeek {
       endMin: p.endMin,
       note: p.note,
     }));
-    if (closure && closure.endMin > win.startMin && closure.startMin < win.endMin) {
-      bands.push({
-        kind: "closure",
-        startMin: Math.max(closure.startMin, win.startMin),
-        endMin: Math.min(closure.endMin, win.endMin),
-        locationName: closure.locationName,
-      });
+    // The lunch closure and this date's dated closures (Tier C 0114), through
+    // the one function the desktop grid and the week list use.
+    for (const c of agendaClosuresOn(date, closure, closedDays)) {
+      if (c.endMin > win.startMin && c.startMin < win.endMin) {
+        bands.push({
+          kind: "closure",
+          startMin: Math.max(c.startMin, win.startMin),
+          endMin: Math.min(c.endMin, win.endMin),
+          locationName: c.locationName,
+        });
+      }
     }
 
     return {

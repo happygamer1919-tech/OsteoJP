@@ -1,5 +1,6 @@
 "use client";
 
+import type { AgendaClosedDays } from "@/lib/scheduling/closed-days-core";
 import { locale, s } from "@/lib/i18n";
 import {
   buildWeekListDays,
@@ -76,6 +77,7 @@ export function AgendaWeekList({
   appointments,
   blocks = [],
   closure = null,
+  closedDays,
   dayWindow,
   onSelectAppointment,
   onOpenBlock,
@@ -86,13 +88,15 @@ export function AgendaWeekList({
   appointments: AgendaAppointment[];
   blocks?: BlockSpan[];
   closure?: ClosureWindow | null;
+  /** TIER C 0114: the selected clinic's dated closures, per date. */
+  closedDays?: AgendaClosedDays;
   dayWindow?: { startMin: number; endMin: number };
   onSelectAppointment: (appt: AgendaAppointment) => void;
   /** SCHED-22: a band opens the block that made it. Absent = not openable. */
   onOpenBlock?: (blockId: string) => void;
   className?: string;
 }) {
-  const days = buildWeekListDays({ view, anchor, appointments, blocks, closure, dayWindow });
+  const days = buildWeekListDays({ view, anchor, appointments, blocks, closure, closedDays, dayWindow });
   const byId = new Map(appointments.map((a) => [a.id, a]));
   const today = todayInLisbon();
 
@@ -154,7 +158,7 @@ export function AgendaWeekList({
 }
 
 function rowKey(date: string, row: WeekListRow): string {
-  return row.kind === "closure" ? `${date}-closure` : `${row.kind}-${row.id}`;
+  return row.kind === "closure" ? `${date}-closure-${row.startMin}-${row.endMin}-${row.locationName}` : `${row.kind}-${row.id}`;
 }
 
 /** "09:00 · 1h30" — the time column. Duration is TEXT, not a height: the grid's

@@ -9,6 +9,7 @@
 // Split out from day-availability.ts (which is `server-only`) so the interval
 // math is unit-testable in isolation, mirroring batch-core / availability.
 
+import { closedDayIntervals, type ClosedDayRule } from "./closed-days-core";
 import { mergeIntervals, subtractIntervals, type TimeInterval } from "./intervals";
 import {
   isWithinValidity,
@@ -176,6 +177,10 @@ export function buildDay(
    *  localizações" a closure is only true of ONE of them, so drawing or
    *  subtracting it would be a claim about the wrong clinic (owner ruling). */
   clinicHours: ClinicHours | null = null,
+  /** TIER C 0114. The clinic's DATED closures (holidays, closed days) over
+   *  the range, read only when the call is scoped to one clinic, for the same
+   *  reason as `clinicHours`: a closure is true of exactly one clinic. */
+  closedDays: readonly ClosedDayRule[] = [],
 ): DayAvailability {
   const dayStart = lisbonMidnightUtc(date).getTime();
   const dayEnd = lisbonMidnightUtc(addDays(date, 1)).getTime();
@@ -221,7 +226,13 @@ export function buildDay(
   // 0085: the clinic's closure on this day, if this call is scoped to a clinic
   // that has one.
   const closure = closureFor(date, clinicHours);
-  const closureIntervals: TimeInterval[] = closure ? [closure] : [];
+  // TIER C 0114: the day's dated closures join the lunch closure HERE, in the
+  // one list every consumer reads (free time, the "closed" reason, the
+  // inspector and Agendar lote), so none can subtract one and miss the other.
+  const closureIntervals: TimeInterval[] = [
+    ...(closure ? [closure] : []),
+    ...closedDayIntervals(closedDays, date),
+  ];
 
   // free = working minus (booked ∪ blocks ∪ closures). The closure is cut out
   // exactly like the other two - it is the SUBTRACTION that makes a slot

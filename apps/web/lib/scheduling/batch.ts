@@ -8,7 +8,8 @@ import { addBookedTherapistsToCareTeam } from "@/lib/admin/care-team-auto";
 import { careTeamNotices, type CareTeamAddition } from "@/lib/admin/care-team-core";
 import { emitCareTeamAddedNotifications } from "@/lib/notifications/centre";
 import { writeAppointmentAudit } from "./audit";
-import { checkClinicWindow } from "./clinic-closure-enforcement";
+import { checkClinicClosure, checkClinicWindow, clinicClosurePayload } from "./clinic-closure-enforcement";
+import type { ClinicClosurePayload } from "./closed-days-core";
 import { getTherapistAvailability } from "./day-availability";
 import { toRRule, type RecurrenceSpec } from "./recurrence";
 import type { TimeInterval } from "./intervals";
@@ -107,6 +108,19 @@ export class PackBatchRefused extends Error {
  * reads names the clinic and the last start it accepts, and a boolean cannot.
  * The action maps it by INSTANCE, never by message.
  */
+/**
+ * TIER C 0114 - the batch asked for a slot inside the clinic's closure (the
+ * lunch closure or a dated one). Thrown, like ClinicHoursRefused, to refuse the
+ * WHOLE batch: the clinic being shut is a fact about the request, not about one
+ * busy hour. The action maps it by instance to `clinic_closed`.
+ */
+export class ClinicClosedRefused extends Error {
+  constructor(readonly closure: ClinicClosurePayload) {
+    super("clinic closed refused");
+    this.name = "ClinicClosedRefused";
+  }
+}
+
 export class ClinicHoursRefused extends Error {
   constructor(
     readonly window: {
@@ -246,6 +260,19 @@ export async function batchSchedule(
        * action would be a second read of the same fact, outside the lock.
        */
       for (const s of toBook) {
+        // TIER C 0114 - AND THE CLINIC'S CLOSURES, through the same function
+        // every single-booking door refuses with, so Agendar lote cannot write
+        // into a closed day (or the lunch closure) that Nova marcacao refuses.
+        // The free intervals this engine books from already leave closures
+        // out when one clinic is named; this is the write-path guard, because
+        // a read path is never enforcement.
+        const cl = await checkClinicClosure(tx, {
+          locationId: input.locationId,
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+        });
+        if (!cl.ok) throw new ClinicClosedRefused(clinicClosurePayload(cl));
+
         const cw = await checkClinicWindow(tx, {
           locationId: input.locationId,
           startsAt: s.startsAt,

@@ -91,6 +91,7 @@ import { AvailabilityPanel } from "./availability-panel";
 import { ConfirmationIndicator } from "./confirmation-indicator";
 import { PackLinkPanel } from "./pack-link-panel";
 import { PackAvailableNotice, type AvailablePack } from "./pack-available-notice";
+import type { ClinicClosurePayload } from "@/lib/scheduling/closed-days-core";
 
 export type ModalState =
   | {
@@ -1010,7 +1011,7 @@ export function AppointmentDrawer({
     availabilityWindows?: { startTime: string; endTime: string }[];
     // 0085. Set only with error "clinic_closed"; carries the clinic's own name
     // and shut hour so the sentence below can name the building, not a person.
-    clinicClosure?: { locationName: string; from: string; to: string };
+    clinicClosure?: ClinicClosurePayload;
     // AGENDA-2100. Set only with error "outside_clinic_hours"; carries the
     // clinic's hours and the last start it accepts.
     clinicWindow?: ClinicWindowRefusal;

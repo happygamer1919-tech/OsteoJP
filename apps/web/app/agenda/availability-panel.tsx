@@ -179,7 +179,7 @@ function AvailabilityBody({
             <dt className="text-xs font-medium text-text-secondary">
               {s["appointment.availabilityClosed"]}
             </dt>
-            <dd className="text-xs text-text-primary">{joinIntervals(day.closures)}</dd>
+            <dd className="text-xs text-text-primary">{joinClosures(day.closures)}</dd>
           </div>
         )}
         {day.blocks.length > 0 && (
@@ -233,6 +233,21 @@ function AvailabilityBody({
 }
 
 /** "09:00-13:00, 14:00-18:00" — plain hyphen, brand forbids en/em dashes. */
+/**
+ * TIER C 0114: a dated closure of a WHOLE day runs from Lisbon midnight to the
+ * next (23 to 25 hours), which as clock times would read "00:00-00:00". It is
+ * named as the whole day instead; a partial closure keeps its hours.
+ */
+function joinClosures(intervals: IsoInterval[]): string {
+  return intervals
+    .map((i) =>
+      new Date(i.end).getTime() - new Date(i.start).getTime() >= 23 * 3_600_000
+        ? s["appointment.availabilityClosedAllDay"]
+        : `${formatTimeOfDay(new Date(i.start))}-${formatTimeOfDay(new Date(i.end))}`,
+    )
+    .join(", ");
+}
+
 function joinIntervals(intervals: IsoInterval[]): string {
   return intervals
     .map((i) => `${formatTimeOfDay(new Date(i.start))}-${formatTimeOfDay(new Date(i.end))}`)
