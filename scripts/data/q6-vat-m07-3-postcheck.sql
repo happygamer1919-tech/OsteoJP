@@ -5,9 +5,10 @@
 --
 -- It reads the ids THE WRITE recorded (`-v ids`, comma separated, from the
 -- file under the operator's home; never printed) and the same per-type list
--- THE WRITE read (on psql's standard input, its sha256 checked by the block
--- against the carry of THE PRE-CHECK; loaded by `\copy ... FROM pstdin` into
--- the temporary table the block creates before `begin read only`), and proves,
+-- THE WRITE read (on psql's standard input from the private snapshot, its
+-- sha256 checked by the block against the carry of THE PRE-CHECK; loaded by
+-- `\copy ... FROM pstdin` into the temporary table the block creates ON COMMIT
+-- DROP before it sets the transaction READ ONLY), and proves,
 -- against production as it stands after the COMMIT:
 --   * every recorded id is a services row of the tenant osteojp, is in the
 --     list, and reads exactly its list row's rate and code;
@@ -25,9 +26,9 @@
 -- Run (THE POST-CHECK block of the document):
 --   psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off
 --        -v ids=<the recorded ids, comma separated> -v expect=<n>
---        -c "create temp table q6_list_raw (n bigint generated always as identity, line text)"
---        -c "begin read only" -c "set local statement_timeout = '60s'"
---        -f scripts/data/q6-vat-m07-3-postcheck.sql -c "rollback" < <the list>
+--        -c "begin" -c "create temp table q6_list_raw (n bigint generated always as identity, line text) on commit drop"
+--        -c "set transaction read only" -c "set local statement_timeout = '60s'"
+--        -f scripts/data/q6-vat-m07-3-postcheck.sql -c "rollback" < <the snapshot>
 -- ============================================================================
 
 \if :{?ids}

@@ -1,4 +1,4 @@
-NOT READY: reworked for the per-type list 2026-11-05, R4 owed on the rework, the blocks whole NOT REHEARSED, the night Thu 2026-11-19 conditional on Q6-D (the accountant's written confirmation before Thu 11-19 12:00 Lisbon), 0110 not applied.
+NOT READY: reworked for the per-type list 2026-11-05, R4 owed on the rework (round 1 PASS, its MINOR and NIT fixes not re-reviewed), the blocks whole NOT REHEARSED, the night Thu 2026-11-19 conditional on Q6-D (the accountant's written confirmation before Thu 11-19 12:00 Lisbon), 0110 not applied.
 
 # Q6: the existing appointment types take the VAT rate and exemption code the accountant confirms, type by type
 
@@ -15,11 +15,11 @@ A separate read-only block, THE READ-OUT, runs on an earlier day and writes the 
 | Tier | C, a production data op. NEW: it is on no ruled Tier C list, and it writes production rows outside STAFF-10. Strategy's Q6 and its rulings of 2026-11-05 rule what it writes and the night |
 | Precondition | 0110 is applied to production, in an earlier sitting (`packages/db/migrations-pending/NEXT-AFTER-0109_services_booking_type_fields.sql` at the head of #1704, which takes the next free number when it is promoted; its night is Tue 2026-11-10). THE PRE-CHECK and THE WRITE read `information_schema` and refuse while the two columns, or their two CHECK constraints, are not there |
 | Stage 0 | `scripts/data/q6-vat-m07-0-readout.sql`, READ ONLY, for building the list on an earlier day, sha256 `b189bd6ea335161aefa88c02895e8eb1db6b80f84658a7d7473f60f95daec4da` |
-| Stage 1 | `scripts/data/q6-vat-m07-1-precheck.sql`, READ ONLY, sha256 `27518f9160562857fbb68c66a6580619dd3fbebb4b335f0068d55ca2ee1cc166` |
-| Stage 2 | `scripts/data/q6-vat-m07-2-write.sql`, ONE transaction, sha256 `32c2699bbda269a793d44d39f119c3b83df1b55ef42c9e5f0b575888b50e1b08` |
-| Stage 3 | `scripts/data/q6-vat-m07-3-postcheck.sql`, READ ONLY, sha256 `8983a1de29c94ddcaa1fc194a67da9c532a8c5a6b43f1502d72ee379539dc472` |
+| Stage 1 | `scripts/data/q6-vat-m07-1-precheck.sql`, READ ONLY, sha256 `0dacf2328530f36f0fe9d929fdf38a0e64cd5fb058a3ca5fea75772341891528` |
+| Stage 2 | `scripts/data/q6-vat-m07-2-write.sql`, ONE transaction, sha256 `a80ada068a23d355f25c0382665db737121f8bfd668020c9bab6232ce2e6dcbf` |
+| Stage 3 | `scripts/data/q6-vat-m07-3-postcheck.sql`, READ ONLY, sha256 `89132951f8edbabb48040355c20cc6fa4dada94e0873b371a3a0f42f9de94dd3` |
 | Rollback | `scripts/data/q6-vat-m07-4-rollback.sql`, ONE transaction, run only on the lead's word, sha256 `48aa5859352a3f27d1ddb42892487854128e483b12662a2f60d00a764cd29c2a` |
-| The list | `/Users/ivan/osteojp-handover/q6-vat-list.csv`, NEVER committed. Its format is in "The per-type list". Its sha256 is pinned in GREEN's dispatch (`LISTSHA`), and THE PRE-CHECK stops on a mismatch before it reads production |
+| The list | `/Users/ivan/osteojp-handover/q6-vat-list.csv`, NEVER committed. Its format is in "The per-type list". Its sha256 is pinned in GREEN's dispatch (`LISTSHA`). THE PRE-CHECK copies it once to a private snapshot, `/tmp/q6-list.csv` (mode 600), hashes the snapshot and stops on a mismatch before it reads production; every psql call reads the snapshot only |
 | Target guard | `scripts/assert-production-target.mjs`, sha256 `6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96`, and its module `scripts/production-target.mjs`, sha256 `e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c` (the bytes R14-PROFILE and R36 pin) |
 | This document | `docs/data-op-q6-service-types-vat-m07.md`, pinned by `docs/data-op-q6-service-types-vat-m07.sha256`; GREEN's dispatch names its sha256 in `DOCSHA` |
 | Test | `scripts/q6-service-types-vat-m07.test.mjs`: the pins, the SQL's shape, every refusal of the list, and every block under fault injection in bash and zsh |
@@ -27,7 +27,7 @@ A separate read-only block, THE READ-OUT, runs on an earlier day and writes the 
 | Run from | The HELD head of this branch's pull request #1724, fetched explicitly as `refs/pull/1724/head` (never the branch name), pinned to `HELD` and checked out detached in `/Users/ivan/Projects/GitHub/osteojp-prod-apply`. GitHub keeps that ref after a merge and after the branch is deleted, so the blocks work before and after the pull request merges, the rollback included. The pull request stays held, unmerged, until GREEN reports |
 | When | Thu 2026-11-19, from 21:00 Lisbon until 06:29 Lisbon on Fri 2026-11-20, and closed by the weekday table; ONLY IF the accountant's written confirmation (Q6-D) reached the owner before Thu 2026-11-19 12:00 Lisbon. Without it the night is skipped and nothing is written. THE PRE-CHECK refuses unless RUNDAY is later than MIGNIGHT, the night 0110 was applied (D18), and unless Q6DAT, the time the confirmation reached the owner, is before 12:00 on RUNDAY (D20) |
 | What it writes | `services.vat_rate` and `services.vat_exemption_code`, each target row from its own list row; one `audit_log` row per written service, action `service.vat_default_q6` |
-| What it records locally | The written ids, one per line, in `/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt` (written by psql before the COMMIT, never printed), and THE WRITE's transcript beside it. Counts-only transcripts and the sitting's records under `/tmp/q6-`. THE READ-OUT's file under `/Users/ivan/osteojp-handover/` |
+| What it records locally | The written ids, one per line, in `/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt` (written by psql before the COMMIT, never printed), and THE WRITE's transcript beside it. Counts-only transcripts, the sitting's records and the list's private snapshot (`/tmp/q6-list.csv`, mode 600) under `/tmp/q6-`. THE READ-OUT's file under `/Users/ivan/osteojp-handover/` |
 | What it prints | Counts, column types, the words on and off, sha256 pins and commit shas. Never a service name, an id, a price, a line of the list or any other column. THE READ-OUT writes names and ids to its file only, and prints counts |
 
 ## The rulings (strategy, 2026-11-04 and 2026-11-05)
@@ -58,7 +58,7 @@ Each is what the files do today. A different ruling changes the files, their pin
 | D5 | The values | Per type, from the list (Q6-D): the row's rate, and its code at a rate of 0, or no code above 0. Both fields in one UPDATE, so each written row carries its whole pair. Every value is inside 0110's CHECK constraints (`services_vat_rate_allowed`: 0, 6, 13, 23; `services_vat_exemption_code_allowed`: the 33 codes); a value outside them would abort the transaction with nothing written, and the list's own refusals (D19) stop it earlier with a reason |
 | D6 | B10, and the app's rule "0% requires a Motivo" | Both are enforced on the list before any write: a row at 0 without a code, and a row above 0 with a code, are each a STOP (D19). So every row this op writes satisfies both rules. 0110 itself carries no CHECK pairing the two (its section 1); B10 is a separate pull request, and this op is consistent with it whether or not that lands first |
 | D7 | The audit | One `audit_log` row per written service, the shape the app's own service actions write (`apps/web/lib/admin/services.ts`: entity_type `service`, entity_id the service), with actor NULL (a data op has no actor, as in DUR-01 and the clinic-hours op) and a distinct action, `service.vat_default_q6` (Q6-C, accepted), so the trail tells this op from a staff edit (`service.update`) without diffing rows. Metadata is slugs and values only: `card` Q6, `source` psql_data_op, `ruling` strategy-q6-2026-11-05, and the before and after of the two fields: before both null, after the row's rate (a number) and its code (a code, or null above 0). That is fiscal codes and slugs only, no personal data, and it fits the audit metadata contract (`apps/web/lib/audit/metadata-contract.ts`: no string over 64 characters or with whitespace; numbers and nulls pass) |
-| D8 | The expected count | THE PRE-CHECK prints the target count N and the md5 of the target ids, and records both with the list's sha256. THE WRITE receives N and the md5 from that record (`-v expect`, `-v target_md5`), hashes the list again against the recorded sha256 before psql, and under its lock counts and hashes the set again, then checks the UPDATE's row count, the audit insert's row count and the written rows that equal their list row, each against N, all BEFORE the COMMIT. Any difference aborts the transaction: nothing is written |
+| D8 | The expected count | THE PRE-CHECK prints the target count N, the md5 of the target ids and the md5 of the list's lines as its SQL loaded them, and records all three with the snapshot's sha256. THE WRITE receives them from that record (`-v expect`, `-v target_md5`, `-v list_md5`), hashes the snapshot again against the recorded sha256 before psql, and under its lock hashes the lines it loaded against `list_md5`, counts and hashes the set again, then checks the UPDATE's row count, the audit insert's row count and the written rows that equal their list row, each against N, all BEFORE the COMMIT. Any difference aborts the transaction: nothing is written |
 | D9 | Nothing else moves | Inside THE WRITE's transaction, before the COMMIT: an md5 of every `services` row outside the written set (every tenant), whole, before and after; and an md5 of the written rows with the two VAT fields left out, before and after. Either differing aborts it |
 | D10 | The ceiling | 60 rows, for the target set and for the list. 0110's own header counts about twenty rows in `services`; above 60 is a STOP and strategy rules |
 | D11 | Locks and timeouts | `SET LOCAL lock_timeout = '5s'` and `SET LOCAL statement_timeout = '60s'` are THE WRITE's first two statements after `BEGIN`, as for every migration from 0100. Then `LOCK TABLE public.services IN SHARE ROW EXCLUSIVE MODE`: reads go on (every booking reads `services`), and no other write to `services` can land between the count and the COMMIT. A write already in flight makes it wait 5 seconds and STOP cleanly. The list is loaded and validated after the lock, so the target set it is checked against cannot move under it |
@@ -69,10 +69,10 @@ Each is what the files do today. A different ruling changes the files, their pin
 | D16 | `updated_at` | **Not bumped.** `services.updated_at` is set by the application (Drizzle's `$onUpdate`), not by a trigger, and this op leaves it alone, for three reasons: THE WRITE's md5 control then proves every column other than the two VAT fields unchanged, `updated_at` included; THE ROLLBACK returns each row to exactly its bytes before the op; and a staff save after the op moves `updated_at` past THE WRITE's audit row, which THE ROLLBACK reads as a refusal (D17). The audit row is the record of when and by what |
 | D17 | A staff re-save before a rollback | A type staff saved again with the same values after THE WRITE still reads those values, so "still the recorded values" does not prove it untouched. THE ROLLBACK refuses the whole rollback, and writes nothing, when any recorded service carries a `service.*` audit row of another action from 10 minutes before THE WRITE's own audit row on (the margin covers a staff transaction that started before THE WRITE and waited for its lock, whose audit row keeps its earlier start time), or an `updated_at` later than THE WRITE's audit row. It never rolls back part of the set; the lead rules |
 | D18 | "Its own night after 0110" | No reliable apply-time signal exists in production: the drizzle journal's `created_at` is the repository's constant `when`, not the moment of the apply, and nothing in the catalogue dates an `ALTER TABLE ... ADD COLUMN`. So the dispatch carries `MIGNIGHT`, the Lisbon date of the night 0110 was applied, taken from 0110's GREEN report, and THE PRE-CHECK refuses unless `RUNDAY` is later than it. With 0110 on Tue 2026-11-10, `MIGNIGHT` is `20261110` and `RUNDAY` `20261119`: the check passes, and it still passes if 0110 slips to any night up to Wed 2026-11-18; from 0110 on 2026-11-19 on, it refuses. THE LIMIT: the block trusts the date the dispatch states; what it proves from production is only that 0110 is applied (the two columns and their two CHECK constraints) |
-| D19 | The list | A CSV file supplied at run time under `/Users/ivan/osteojp-handover/`, NEVER committed (section "The per-type list"). Its sha256 is in the dispatch (`LISTSHA`); THE PRE-CHECK hashes the file before it reads production and STOPs on a mismatch, and records the sha256 for THE WRITE and THE POST-CHECK, which hash it again. psql reads it on its standard input, `\copy q6_list_raw (line) FROM pstdin`, into a temporary table, one raw line per row, and the SQL validates every line BEFORE any write, refusing with a `Q6STOP` line and writing nothing on any of: a first line that is not the header; no row; more than 60 rows; a malformed row; a rate outside 0, 6, 13 and 23; a rate of 0 with no code; a code with a rate above 0 (B10); a code that is not one of the 33; a service id listed twice; a listed id that is not a service of the tenant; a target type (both fields empty, archived and internal-only included) missing from the list. The DO block that holds these refusals, `$q6list$`, is byte-identical in THE PRE-CHECK and THE WRITE, and runs again in THE WRITE under its lock |
+| D19 | The list | A CSV file supplied at run time under `/Users/ivan/osteojp-handover/`, NEVER committed (section "The per-type list"). Its sha256 is in the dispatch (`LISTSHA`). THE PRE-CHECK copies the file once, under `umask 077`, to a private snapshot `/tmp/q6-list.csv`, checks the snapshot's mode is 600, hashes the snapshot before it reads production and STOPs on a mismatch, and STOPs on any line holding a backslash or a control character other than the line end (text COPY would decode a backslash as an escape, and a line `\.` would end the load early, silently). Every psql call reads the snapshot, never the original, so the bytes loaded are the bytes hashed; THE WRITE and THE POST-CHECK hash the snapshot again against the carried sha256, and THE WRITE's SQL compares the md5 of the lines it loaded with the md5 THE PRE-CHECK's SQL printed for the lines it loaded. psql reads it on its standard input, `\copy q6_list_raw (line) FROM pstdin`, into a temporary table, one raw line per row, and the SQL validates every line BEFORE any write, refusing with a `Q6STOP` line and writing nothing on any of: a first line that is not the header; no row; more than 60 rows; a malformed row; a rate outside 0, 6, 13 and 23; a rate of 0 with no code; a code with a rate above 0 (B10); a code that is not one of the 33; a service id listed twice; a listed id that is not a service of the tenant; a target type (both fields empty, archived and internal-only included) missing from the list. The DO block that holds these refusals, `$q6list$`, is byte-identical in THE PRE-CHECK and THE WRITE, and runs again in THE WRITE under its lock |
 | D20 | The condition on the night (B9) | The dispatch for the night is written only if the accountant's written confirmation reached the owner before Thu 2026-11-19 12:00 Lisbon, and it carries `Q6DAT`, the Lisbon time it reached him (`YYYYMMDDHHMM`). THE PRE-CHECK refuses unless `Q6DAT` is earlier than 12:00 Lisbon on `RUNDAY`. Without the confirmation there is no dispatch, the night is skipped, and nothing is written; another night is a new ruling. THE LIMIT, as for D18: the block trusts the time the dispatch states |
-| D21 | The 33 exemption codes | The application's list, `VAT_EXEMPTION_CODES` in `packages/db/src/service-type-fields.ts` (on #1704; confirmed against the AT's "Tabela dos Codigos de Motivo de Isencao", V4.0 of 18-06-2026), and the CHECK of 0110 names the same 33. THE PRE-CHECK and THE WRITE carry a copy and hold it against the database's own CHECK before they read the list: the same count, and every code of the copy inside the CHECK's definition, or a STOP. The test pins the copy and compares it with the application's file, and with 0110's CHECK, wherever those files are on disk |
-| D22 | A listed type staff already set | **Skipped and counted: staff edits win.** A listed type whose rate or code is already set (staff chose it on the types screen after 0110) is not matched by the UPDATE, which writes only rows with both fields empty, and is never overwritten, even when its values differ from the list. THE PRE-CHECK prints how many (`list_skipped_staff_set`) for the owner. A type with only one field set is not a target, need not be listed, and is left as staff left it |
+| D21 | The 33 exemption codes | The application's list, `VAT_EXEMPTION_CODES` in `packages/db/src/service-type-fields.ts` (on #1704; confirmed against the AT's "Tabela dos Codigos de Motivo de Isencao", V4.0 of 18-06-2026), and the CHECK of 0110 names the same 33. THE PRE-CHECK and THE WRITE carry a copy and hold it against the database's own CHECK before they read the list: the same count, and every code of the copy inside the CHECK's definition, or a STOP. The test pins the copy and compares it with the application's file and with 0110's CHECK, each read from disk once #1704 has merged, or else from #1704's branch (`git show origin/db/RODICA-services-vat-colour:<path>`); it FAILS if either cannot be read, so the comparison is never skipped |
+| D22 | A listed type staff already set | **Skipped and counted: staff edits win. This is SOLO's default, NOT a ruling.** A listed type whose rate or code is already set (staff chose it on the types screen after 0110) is not matched by the UPDATE, which writes only rows with both fields empty, and is never overwritten, even when its values differ from the list. THE PRE-CHECK prints how many (`list_skipped_staff_set`), and how many of those differ from their list row in the rate or the code (`list_disagrees_staff_set`), and its PASSED line repeats that second count. **A non-zero `list_disagrees_staff_set` goes to the lead before THE WRITE is pasted:** the accountant's value and staff's value differ, and which one stands is a ruling, not the runner's. A type with only one field set is not a target, need not be listed, and is left as staff left it |
 
 ## The per-type list
 
@@ -98,7 +98,7 @@ service_id,vat_rate,vat_exemption_code
 00000000-0000-4000-8000-000000000002,23,
 ```
 
-At most 60 rows; each id once. Every type of the tenant whose two VAT fields are empty on the night must be in it, archived and internal-only types included. A type staff already set may be listed or not; if listed it is skipped (D22). A row with a tab or a backslash is refused by the load itself (psql stops with an error, before any write).
+At most 60 rows; each id once. Every type of the tenant whose two VAT fields are empty on the night must be in it, archived and internal-only types included. A type staff already set may be listed or not; if listed it is skipped (D22). A line holding a backslash, a tab or any other control character (other than the CR of a CRLF line end) is refused by THE PRE-CHECK's shell before the load: text COPY would decode a backslash as an escape, and a line `\.` would end the load early without an error.
 
 **How the owner and SOLO build it.** (1) GREEN runs THE READ-OUT on an earlier day; its file goes to the owner. (2) The owner gives the file to the accountant, who answers in writing, type by type: exempt with a code, or a stated rate. (3) SOLO writes `q6-vat-list.csv` from that answer, one row per type, copying each `service_id` from THE READ-OUT's file, and the owner checks it against the accountant's answer. (4) SOLO computes `shasum -a 256 /Users/ivan/osteojp-handover/q6-vat-list.csv` and puts the value in the dispatch as `LISTSHA`, with `Q6DAT`, the time the written answer reached the owner. A type added to the clinic after THE READ-OUT and still empty on the night is missing from the list, and THE PRE-CHECK refuses; the owner rules (a new READ-OUT and an amended list).
 
@@ -211,9 +211,9 @@ RUNDAY='PENDING: the Lisbon date of the night the dispatch names, YYYYMMDD'
 MIGNIGHT='PENDING: the Lisbon date of the night 0110 was applied, YYYYMMDD, from its GREEN report'
 Q6DAT='PENDING: the Lisbon time the accountant written confirmation (Q6-D) reached the owner, YYYYMMDDHHMM'
 LISTSHA='PENDING: the sha256 of the list file, from the dispatch'
-SHAPRE=27518f9160562857fbb68c66a6580619dd3fbebb4b335f0068d55ca2ee1cc166
-SHAWRITE=32c2699bbda269a793d44d39f119c3b83df1b55ef42c9e5f0b575888b50e1b08
-SHAPOST=8983a1de29c94ddcaa1fc194a67da9c532a8c5a6b43f1502d72ee379539dc472
+SHAPRE=0dacf2328530f36f0fe9d929fdf38a0e64cd5fb058a3ca5fea75772341891528
+SHAWRITE=a80ada068a23d355f25c0382665db737121f8bfd668020c9bab6232ce2e6dcbf
+SHAPOST=89132951f8edbabb48040355c20cc6fa4dada94e0873b371a3a0f42f9de94dd3
 SHAUNDO=48aa5859352a3f27d1ddb42892487854128e483b12662a2f60d00a764cd29c2a
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
@@ -228,6 +228,7 @@ GUARD=scripts/assert-production-target.mjs
 PTM=scripts/production-target.mjs
 IDS=/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt
 LIST=/Users/ivan/osteojp-handover/q6-vat-list.csv
+SNAP=/tmp/q6-list.csv
 
 echo "${HELD}" | grep -qxE '[0-9a-f]{40}' || { echo "STOP: HELD is not a filled-in sha, so this block is NOT READY: GREEN pastes the copy in its dispatch, where SOLO filled it. Nothing was read from production"; exit 1; }
 echo "${DOCSHA}" | grep -qxE '[0-9a-f]{64}' || { echo "STOP: DOCSHA is still PENDING, so this block is NOT READY. Nothing was read from production"; exit 1; }
@@ -235,16 +236,22 @@ echo "${RUNDAY}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9]' || { echo "STOP: RU
 echo "${MIGNIGHT}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9]' || { echo "STOP: MIGNIGHT is still PENDING, or is not a Lisbon date YYYYMMDD, so this block is NOT READY. Nothing was read from production"; exit 1; }
 echo "${Q6DAT}" | grep -qxE '20[0-9]{2}[01][0-9][0-3][0-9][0-2][0-9][0-5][0-9]' || { echo "STOP: Q6DAT is still PENDING, or is not a Lisbon time YYYYMMDDHHMM: without the accountant's written confirmation (Q6-D) the night is skipped and nothing is written. Nothing was read from production"; exit 1; }
 echo "${LISTSHA}" | grep -qxE '[0-9a-f]{64}' || { echo "STOP: LISTSHA is still PENDING, so this block is NOT READY. Nothing was read from production"; exit 1; }
+rm -f /tmp/q6-head.sha /tmp/q6-night.ok /tmp/q6-pre.ok /tmp/q6-pre.out /tmp/q6-target-a.out /tmp/q6-list.csv || { echo "STOP: the previous sitting's records could not be cleared. Nothing was read from production"; exit 1; }
 [ "${RUNDAY}" -gt "${MIGNIGHT}" ] || { echo "STOP: RUNDAY ${RUNDAY} is not a night after the night 0110 was applied (${MIGNIGHT}). This operation runs on a closed night of its own after 0110. Nothing was read from production"; exit 1; }
 echo "after 0110:    RUNDAY ${RUNDAY} is after the night 0110 was applied, ${MIGNIGHT}, as the dispatch states it"
 [ "${Q6DAT}" -lt "${RUNDAY}1200" ] || { echo "STOP: the accountant's written confirmation (Q6-D) reached the owner at ${Q6DAT}, not before ${RUNDAY} 12:00 Lisbon: the night is skipped and nothing is written. Nothing was read from production"; exit 1; }
 echo "Q6-D:          the accountant's written confirmation reached the owner at ${Q6DAT}, before ${RUNDAY} 12:00 Lisbon, as the dispatch states it"
 test ! -e ${IDS} || { echo "STOP: the ids file of THE WRITE already exists, so the write has run or began. Never paste THE PRE-CHECK or THE WRITE again. The lead rules. Nothing was read from production"; exit 1; }
-rm -f /tmp/q6-head.sha /tmp/q6-night.ok /tmp/q6-pre.ok /tmp/q6-pre.out /tmp/q6-target-a.out || { echo "STOP: the previous sitting's records could not be cleared. Nothing was read from production"; exit 1; }
 test -f ${LIST} || { echo "STOP: the list ${LIST} is not there. Nothing was read from production"; exit 1; }
-LS=$(shasum -a 256 ${LIST} | cut -d' ' -f1) || { echo "STOP: the list could not be hashed. Nothing was read from production"; exit 1; }
-[ "${LS}" = "${LISTSHA}" ] || { echo "STOP: the list on disk is not the one the dispatch names (its sha256 is ${LS}). Never edit the list or the dispatch to pass this. Nothing was read from production"; exit 1; }
-echo "the list:      ${LIST}, sha256 ${LS}, the dispatch's"
+umask 077 || { echo "STOP: the file mode mask could not be set. Nothing was read from production"; exit 1; }
+cp ${LIST} ${SNAP} || { echo "STOP: the list could not be copied to its private snapshot. Nothing was read from production"; exit 1; }
+PERM=$(find ${SNAP} -perm 600) || { echo "STOP: the mode of the snapshot could not be read. Nothing was read from production"; exit 1; }
+[ -n "${PERM}" ] || { echo "STOP: the snapshot of the list is not mode 600. Nothing was read from production"; exit 1; }
+LS=$(shasum -a 256 ${SNAP} | cut -d' ' -f1) || { echo "STOP: the snapshot of the list could not be hashed. Nothing was read from production"; exit 1; }
+[ "${LS}" = "${LISTSHA}" ] || { echo "STOP: the list is not the one the dispatch names (its sha256 is ${LS}). Never edit the list or the dispatch to pass this. Nothing was read from production"; exit 1; }
+BADC=$(awk '{ sub(/\r$/, "") } /[\\]|[[:cntrl:]]/ { c++ } END { printf "%d", c }' ${SNAP}) || { echo "STOP: the snapshot of the list could not be scanned. Nothing was read from production"; exit 1; }
+[ "${BADC}" = 0 ] || { echo "STOP: ${BADC} lines of the list hold a backslash or a control character, which the load would not read as written. Nothing was read from production"; exit 1; }
+echo "the list:      ${LIST}, copied to the snapshot ${SNAP} (mode 600), sha256 ${LS}, the dispatch's"
 cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was read from production"; exit 1; }
 SN=$(sntp time.apple.com 2>&1) || { echo "STOP: sntp time.apple.com failed, so the machine's clock is not shown to be right. Paste this block again in a minute, and do not set the clock yourself. Nothing was read from production"; exit 1; }
 OFF=$(echo "${SN}" | awk '$1 ~ /^[+-][0-9]+[.][0-9]+$/ && $2 == "+/-" && $4 == "time.apple.com" { v = $1 } END { print v }') || { echo "STOP: the answer of sntp could not be read. Nothing was read from production"; exit 1; }
@@ -303,26 +310,29 @@ echo "pins:          the document, its sidecar, the four stage files, the target
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was read from production"; exit 1; }
 node ${GUARD} 2>&1 | tee /tmp/q6-target-a.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was read from production"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/q6-target-a.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was read from production"; exit 1; }
-psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -c "create temp table q6_list_raw (n bigint generated always as identity, line text)" -c "begin read only" -c "set local statement_timeout = '60s'" -f ${PRE} -c "rollback" < ${LIST} > /tmp/q6-pre.out 2>&1 || { echo "STOP: THE PRE-CHECK refused or failed. Its reason is the Q6STOP line of /tmp/q6-pre.out, which GREEN may print alone. Nothing was written: the transaction is read only"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -c "begin" -c "create temp table q6_list_raw (n bigint generated always as identity, line text) on commit drop" -c "set transaction read only" -c "set local statement_timeout = '60s'" -f ${PRE} -c "rollback" < ${SNAP} > /tmp/q6-pre.out 2>&1 || { echo "STOP: THE PRE-CHECK refused or failed. Its reason is the Q6STOP line of /tmp/q6-pre.out, which GREEN may print alone. Nothing was written: the transaction is read only"; exit 1; }
 grep -qxF 'Q6PRE read_only on' /tmp/q6-pre.out || { echo "STOP: the pre-check does not show a transaction that read as READ ONLY. Report this line only"; exit 1; }
 XL=$(awk '!/^(Q6PRE [A-Za-z0-9_ ]+)?$/ { c++ } END { printf "%d", c }' /tmp/q6-pre.out) || { echo "STOP: the pre-check's transcript could not be checked. Report this line only"; exit 1; }
 [ "${XL}" = 0 ] || { echo "STOP: the pre-check's transcript holds ${XL} lines that are not Q6PRE count lines. Do NOT print it; report this line only. SOLO reads it"; exit 1; }
-PC=$(grep -cxE 'Q6PRE PASS target [0-9]+ ids_md5 [0-9a-f]{32}' /tmp/q6-pre.out) || { echo "STOP: the pre-check holds no PASS line. Report this line only"; exit 1; }
+PC=$(grep -cxE 'Q6PRE PASS target [0-9]+ ids_md5 [0-9a-f]{32} list_md5 [0-9a-f]{32}' /tmp/q6-pre.out) || { echo "STOP: the pre-check holds no PASS line. Report this line only"; exit 1; }
 [ "${PC}" = 1 ] || { echo "STOP: the pre-check holds ${PC} PASS lines, not exactly one. Report this line only"; exit 1; }
-PL=$(grep -xE 'Q6PRE PASS target [0-9]+ ids_md5 [0-9a-f]{32}' /tmp/q6-pre.out) || { echo "STOP: the PASS line could not be read. Report this line only"; exit 1; }
+PL=$(grep -xE 'Q6PRE PASS target [0-9]+ ids_md5 [0-9a-f]{32} list_md5 [0-9a-f]{32}' /tmp/q6-pre.out) || { echo "STOP: the PASS line could not be read. Report this line only"; exit 1; }
 N=$(echo "${PL}" | cut -d' ' -f4) || { echo "STOP: the target count could not be read from the PASS line. Report this line only"; exit 1; }
 M=$(echo "${PL}" | cut -d' ' -f6) || { echo "STOP: the target md5 could not be read from the PASS line. Report this line only"; exit 1; }
-echo "${N} ${M}" | grep -qxE '[1-9][0-9]? [0-9a-f]{32}' || { echo "STOP: the target count or md5 did not read as a number from 1 to 99 and 32 hex characters. Report this line only"; exit 1; }
+L=$(echo "${PL}" | cut -d' ' -f8) || { echo "STOP: the list md5 could not be read from the PASS line. Report this line only"; exit 1; }
+echo "${N} ${M} ${L}" | grep -qxE '[1-9][0-9]? [0-9a-f]{32} [0-9a-f]{32}' || { echo "STOP: the target count or the two md5 did not read as a number from 1 to 99 and two times 32 hex characters. Report this line only"; exit 1; }
 [ "${N}" -le 60 ] || { echo "STOP: the target count ${N} is above the ceiling of 60. Strategy rules"; exit 1; }
+DIS=$(grep -xE 'Q6PRE list_disagrees_staff_set [0-9]+' /tmp/q6-pre.out | cut -d' ' -f3) || { echo "STOP: the pre-check holds no list_disagrees_staff_set line. Report this line only"; exit 1; }
+echo "${DIS}" | grep -qxE '[0-9]+' || { echo "STOP: list_disagrees_staff_set did not read as a count. Report this line only"; exit 1; }
 grep -E '^Q6PRE [a-z0-9_]+ [a-z0-9]+$' /tmp/q6-pre.out || { echo "STOP: the count lines could not be printed. Report this line only"; exit 1; }
 echo "${TIP}" > /tmp/q6-head.sha || { echo "STOP: the held head could not be recorded. Nothing was written"; exit 1; }
 echo "${RUNDAY} ${NEXTDAY}" > /tmp/q6-night.ok || { echo "STOP: the night could not be recorded. Nothing was written"; exit 1; }
-echo "${N} ${M} ${LISTSHA}" > /tmp/q6-pre.ok || { echo "STOP: the pre-check's carry could not be recorded. Nothing was written"; exit 1; }
-echo "PRE-CHECK PASSED: ${N} services of the tenant osteojp have both VAT fields empty, each with its row in the list, and are THE WRITE's target. The owner reads the counts above; THE WRITE is pasted on his word, within 30 minutes."
+echo "${N} ${M} ${LISTSHA} ${L}" > /tmp/q6-pre.ok || { echo "STOP: the pre-check's carry could not be recorded. Nothing was written"; exit 1; }
+echo "PRE-CHECK PASSED: ${N} services of the tenant osteojp have both VAT fields empty, each with its row in the list, and are THE WRITE's target. list_disagrees_staff_set is ${DIS}: if it is not 0, the lead rules before THE WRITE. The owner reads the counts above; THE WRITE is pasted on his word, within 30 minutes."
 )
 ```
 
-**EXPECT**, each line checked by the block itself, which stops on any difference: `after 0110: RUNDAY ... is after the night 0110 was applied, ...`; `Q6-D: the accountant's written confirmation reached the owner at ..., before ... 12:00 Lisbon ...`; `the list: ..., sha256 ..., the dispatch's`; `network time: ... within 5 seconds`; `Lisbon now: ... closed by the weekday table`; `the night: ... inside: yes`; `held head now:`; `checked out:`; `document:` (the dispatch's DOCSHA); `first line:` (not NOT READY); `pins:`; the target guard's lines with `target verified: production, session pooler.`; then the count lines: the six fact lines (`read_only on`, `tenant_slug_osteojp 1`, `column_vat_rate smallint`, `column_vat_exemption_code text`, `constraint_vat_rate 1`, `constraint_vat_exemption_code 1`); the twelve table lines from `services_total` to `other_tenants_services_untouched`, among them `target_active`, `target_archived`, `target_internal_only`, `staff_set_rate_only`, `staff_set_code_only` and `staff_set_both`; the nine list lines from `list_rows` to `write_code_other`, among them `list_to_write` (equal to `target_total`) and `list_skipped_staff_set` (listed types staff already set, which are not written, D22); then `PRE-CHECK PASSED: <N> services ...`. Exit 0. It reads production and writes nothing.
+**EXPECT**, each line checked by the block itself, which stops on any difference: `after 0110: RUNDAY ... is after the night 0110 was applied, ...`; `Q6-D: the accountant's written confirmation reached the owner at ..., before ... 12:00 Lisbon ...`; `the list: ..., copied to the snapshot ... (mode 600), sha256 ..., the dispatch's`; `network time: ... within 5 seconds`; `Lisbon now: ... closed by the weekday table`; `the night: ... inside: yes`; `held head now:`; `checked out:`; `document:` (the dispatch's DOCSHA); `first line:` (not NOT READY); `pins:`; the target guard's lines with `target verified: production, session pooler.`; then the count lines: the six fact lines (`read_only on`, `tenant_slug_osteojp 1`, `column_vat_rate smallint`, `column_vat_exemption_code text`, `constraint_vat_rate 1`, `constraint_vat_exemption_code 1`); the twelve table lines from `services_total` to `other_tenants_services_untouched`, among them `target_active`, `target_archived`, `target_internal_only`, `staff_set_rate_only`, `staff_set_code_only` and `staff_set_both`; the ten list lines from `list_rows` to `write_code_other`, among them `list_to_write` (equal to `target_total`), `list_skipped_staff_set` (listed types staff already set, which are not written, D22) and `list_disagrees_staff_set` (of those, the ones whose values differ from the list: if not 0, the lead rules before THE WRITE); then `PRE-CHECK PASSED: <N> services ... list_disagrees_staff_set is <n> ...`. The PASS line carries the list's md5 for THE WRITE. Exit 0. It reads production and writes nothing.
 
 ### THE WRITE: one transaction, the list checked again, the count checked before the COMMIT, the ids recorded
 
@@ -331,7 +341,7 @@ Pasted only on the owner's word after he has read THE PRE-CHECK's counts, and wi
 ```
 (
 set -o pipefail
-SHAWRITE=32c2699bbda269a793d44d39f119c3b83df1b55ef42c9e5f0b575888b50e1b08
+SHAWRITE=a80ada068a23d355f25c0382665db737121f8bfd668020c9bab6232ce2e6dcbf
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 DOCPIN=docs/data-op-q6-service-types-vat-m07.sha256
@@ -341,7 +351,7 @@ PTM=scripts/production-target.mjs
 REC=/Users/ivan/.osteojp-q6-vat-m07
 IDS=/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt
 WOUT=/Users/ivan/.osteojp-q6-vat-m07/write.out
-LIST=/Users/ivan/osteojp-handover/q6-vat-list.csv
+SNAP=/tmp/q6-list.csv
 
 cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was written"; exit 1; }
 test -f /tmp/q6-head.sha || { echo "STOP: THE PRE-CHECK recorded no head in this sitting. Nothing was written"; exit 1; }
@@ -385,10 +395,11 @@ CARRY=$(cat /tmp/q6-pre.ok) || { echo "STOP: the pre-check's carry could not be 
 N=$(echo "${CARRY}" | cut -d' ' -f1) || { echo "STOP: the target count could not be read from the carry. Nothing was written"; exit 1; }
 M=$(echo "${CARRY}" | cut -d' ' -f2) || { echo "STOP: the target md5 could not be read from the carry. Nothing was written"; exit 1; }
 LSHA=$(echo "${CARRY}" | cut -d' ' -f3) || { echo "STOP: the list's sha256 could not be read from the carry. Nothing was written"; exit 1; }
-echo "${N} ${M} ${LSHA}" | grep -qxE '[1-9][0-9]? [0-9a-f]{32} [0-9a-f]{64}' || { echo "STOP: the carry did not read as a count, an md5 and the list's sha256. Nothing was written"; exit 1; }
-test -f ${LIST} || { echo "STOP: the list ${LIST} is not there. Nothing was written"; exit 1; }
-LS=$(shasum -a 256 ${LIST} | cut -d' ' -f1) || { echo "STOP: the list could not be hashed. Nothing was written"; exit 1; }
-[ "${LS}" = "${LSHA}" ] || { echo "STOP: the list changed since THE PRE-CHECK read it. Never edit the list to pass this. Nothing was written"; exit 1; }
+L=$(echo "${CARRY}" | cut -d' ' -f4) || { echo "STOP: the list md5 could not be read from the carry. Nothing was written"; exit 1; }
+echo "${N} ${M} ${LSHA} ${L}" | grep -qxE '[1-9][0-9]? [0-9a-f]{32} [0-9a-f]{64} [0-9a-f]{32}' || { echo "STOP: the carry did not read as a count, an md5, the list's sha256 and the list md5. Nothing was written"; exit 1; }
+test -f ${SNAP} || { echo "STOP: the snapshot of the list ${SNAP} is not there. Nothing was written"; exit 1; }
+LS=$(shasum -a 256 ${SNAP} | cut -d' ' -f1) || { echo "STOP: the snapshot of the list could not be hashed. Nothing was written"; exit 1; }
+[ "${LS}" = "${LSHA}" ] || { echo "STOP: the snapshot of the list changed since THE PRE-CHECK read it. Never edit it to pass this. Nothing was written"; exit 1; }
 echo "the list:      sha256 ${LS}, the one THE PRE-CHECK read"
 test ! -e ${IDS} || { echo "STOP: the ids file of THE WRITE already exists, so the write has run or began. Never paste THE WRITE again. The lead rules. Nothing was written"; exit 1; }
 mkdir -p ${REC} || { echo "STOP: the folder for the ids file could not be made. Nothing was written"; exit 1; }
@@ -397,7 +408,7 @@ set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && se
 node ${GUARD} 2>&1 | tee /tmp/q6-target-b.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was written"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/q6-target-b.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was written"; exit 1; }
 echo "the write:     ${N} services expected, the carry of THE PRE-CHECK. It runs now, in one transaction"
-psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -v expect=${N} -v target_md5=${M} -v idsfile=${IDS} -f ${WRITE} < ${LIST} > ${WOUT} 2>&1 || { echo "STOP: THE WRITE refused or failed (psql exited non-zero). If it stopped before its COMMIT nothing was written; if after, it may have committed. Do NOT open, print or paste its transcript; report this line only. Nothing else is pasted: the lead rules, and THE POST-CHECK runs only on the lead's word"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -v expect=${N} -v target_md5=${M} -v list_md5=${L} -v idsfile=${IDS} -f ${WRITE} < ${SNAP} > ${WOUT} 2>&1 || { echo "STOP: THE WRITE refused or failed (psql exited non-zero). If it stopped before its COMMIT nothing was written; if after, it may have committed. Do NOT open, print or paste its transcript; report this line only. Nothing else is pasted: the lead rules, and THE POST-CHECK runs only on the lead's word"; exit 1; }
 grep -qxF "Q6WRITE ready_to_commit ${N}" ${WOUT} || { echo "STOP: THE WRITE's transcript does not show ready_to_commit ${N}. Do NOT open it; report this line only. The lead rules"; exit 1; }
 grep -qxF "Q6WRITE COMMITTED ${N}" ${WOUT} || { echo "STOP: THE WRITE's transcript does not show COMMITTED ${N}. Do NOT open it; report this line only. The lead rules"; exit 1; }
 test -f ${IDS} || { echo "STOP: THE WRITE committed, but its ids file is not there. The audit rows hold the same ids; the lead rules"; exit 1; }
@@ -416,7 +427,7 @@ echo "THE WRITE: COMMITTED. ${N} services of the tenant osteojp carry their list
 ```
 (
 set -o pipefail
-SHAPOST=8983a1de29c94ddcaa1fc194a67da9c532a8c5a6b43f1502d72ee379539dc472
+SHAPOST=89132951f8edbabb48040355c20cc6fa4dada94e0873b371a3a0f42f9de94dd3
 SHAGUARD=6c9a481c7f1bb73014639799d1be33702d9742da8fac8c32ed6d5650e0fffc96
 SHAPTM=e037104dfbfa698e8a64869b08db6ba5324e35155459f790cdd66fa06a26051c
 DOCPIN=docs/data-op-q6-service-types-vat-m07.sha256
@@ -424,7 +435,7 @@ POST=scripts/data/q6-vat-m07-3-postcheck.sql
 GUARD=scripts/assert-production-target.mjs
 PTM=scripts/production-target.mjs
 IDS=/Users/ivan/.osteojp-q6-vat-m07/written-ids.txt
-LIST=/Users/ivan/osteojp-handover/q6-vat-list.csv
+SNAP=/tmp/q6-list.csv
 
 cd /Users/ivan/Projects/GitHub/osteojp-prod-apply || { echo "STOP: the apply worktree is not there. Nothing was read"; exit 1; }
 test -f /tmp/q6-head.sha || { echo "STOP: THE PRE-CHECK recorded no head in this sitting. Nothing was read"; exit 1; }
@@ -450,9 +461,9 @@ test -f /tmp/q6-pre.ok || { echo "STOP: THE PRE-CHECK recorded no carry in this 
 CARRY=$(cat /tmp/q6-pre.ok) || { echo "STOP: the pre-check's carry could not be read. Nothing was read"; exit 1; }
 LSHA=$(echo "${CARRY}" | cut -d' ' -f3) || { echo "STOP: the list's sha256 could not be read from the carry. Nothing was read"; exit 1; }
 echo "${LSHA}" | grep -qxE '[0-9a-f]{64}' || { echo "STOP: the carry holds no sha256 of the list. Nothing was read"; exit 1; }
-test -f ${LIST} || { echo "STOP: the list ${LIST} is not there. Nothing was read"; exit 1; }
-LS=$(shasum -a 256 ${LIST} | cut -d' ' -f1) || { echo "STOP: the list could not be hashed. Nothing was read"; exit 1; }
-[ "${LS}" = "${LSHA}" ] || { echo "STOP: the list changed since THE PRE-CHECK read it. Never edit the list to pass this. Nothing was read"; exit 1; }
+test -f ${SNAP} || { echo "STOP: the snapshot of the list ${SNAP} is not there. Nothing was read"; exit 1; }
+LS=$(shasum -a 256 ${SNAP} | cut -d' ' -f1) || { echo "STOP: the snapshot of the list could not be hashed. Nothing was read"; exit 1; }
+[ "${LS}" = "${LSHA}" ] || { echo "STOP: the snapshot of the list changed since THE PRE-CHECK read it. Never edit it to pass this. Nothing was read"; exit 1; }
 test -f ${IDS} || { echo "STOP: the ids file of THE WRITE is not there. Nothing was read"; exit 1; }
 IC=$(awk 'END { printf "%d", NR }' ${IDS}) || { echo "STOP: the ids file could not be counted. Nothing was read"; exit 1; }
 echo "${IC}" | grep -qxE '[1-9][0-9]?' || { echo "STOP: the ids file holds ${IC} lines, not 1 to 99. Nothing was read"; exit 1; }
@@ -460,7 +471,7 @@ JOINED=$(awk '{ printf "%s%s", (NR > 1 ? "," : ""), $0 }' ${IDS}) || { echo "STO
 set -o allexport && . /Users/ivan/osteojp-secrets/new-prod.env 2>/dev/null && set +o allexport || { echo "STOP: the production environment did not load. Nothing was read"; exit 1; }
 node ${GUARD} 2>&1 | tee /tmp/q6-target-c.out || { echo "STOP: the target guard refused, or its output could not be kept; its lines are above. Nothing was read"; exit 1; }
 grep -qxF 'target verified: production, session pooler.' /tmp/q6-target-c.out || { echo "STOP: the target guard did not print the line target verified: production, session pooler. Nothing was read"; exit 1; }
-psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -v ids=${JOINED} -v expect=${IC} -c "create temp table q6_list_raw (n bigint generated always as identity, line text)" -c "begin read only" -c "set local statement_timeout = '60s'" -f ${POST} -c "rollback" < ${LIST} > /tmp/q6-post.out 2>&1 || { echo "STOP: THE POST-CHECK refused or failed. Its reason is the Q6STOP line of /tmp/q6-post.out, which GREEN may print alone. Nothing was written: the transaction is read only"; exit 1; }
+psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -v ids=${JOINED} -v expect=${IC} -c "begin" -c "create temp table q6_list_raw (n bigint generated always as identity, line text) on commit drop" -c "set transaction read only" -c "set local statement_timeout = '60s'" -f ${POST} -c "rollback" < ${SNAP} > /tmp/q6-post.out 2>&1 || { echo "STOP: THE POST-CHECK refused or failed. Its reason is the Q6STOP line of /tmp/q6-post.out, which GREEN may print alone. Nothing was written: the transaction is read only"; exit 1; }
 grep -qxF 'Q6POST read_only on' /tmp/q6-post.out || { echo "STOP: the post-check does not show a transaction that read as READ ONLY. Report this line only"; exit 1; }
 XL=$(awk '!/^(Q6POST [A-Za-z0-9_ ]+)?$/ { c++ } END { printf "%d", c }' /tmp/q6-post.out) || { echo "STOP: the post-check's transcript could not be checked. Report this line only"; exit 1; }
 [ "${XL}" = 0 ] || { echo "STOP: the post-check's transcript holds ${XL} lines that are not Q6POST count lines. Do NOT print it; report this line only. SOLO reads it"; exit 1; }
@@ -590,6 +601,8 @@ echo "THE ROLLBACK: COMMITTED. The ${IC} recorded services of the tenant osteojp
 
 **THE POST-CHECK's and THE ROLLBACK's refusals:** an audit row whose after value differs from the list (THE POST-CHECK); a second rollback (`5 undo audit rows already exist`); THE POST-CHECK after the rollback; and on fresh copies after a write: a later `updated_at` alone, a later `service.update` audit row alone, a value changed, and an audit row recording a before value, each refused the whole rollback, nothing written.
 
+**The R4 fixes, checked again by the author on a second throwaway of the same kind (`--network none`, stopped and removed):** THE PRE-CHECK and THE POST-CHECK in their new shape (`begin`, the temporary table `on commit drop`, then `set transaction read only`) print `read_only on` on Postgres 17 and pass; THE PRE-CHECK's PASS line carries `list_md5`; THE WRITE with that md5 committed 5 rows, and refused, with nothing written, a `list_md5` of another list, the same rows in another order, and a missing `-v list_md5`; a list naming three types staff had set, two of them with other values, printed `list_skipped_staff_set 3` and `list_disagrees_staff_set 2`; THE POST-CHECK and THE ROLLBACK passed after that write. A list with a line `\.` in the middle confirmed the NIT: the load stopped at that line without an error, and only the missing-target refusal caught it; THE PRE-CHECK's shell now stops such a list before the load.
+
 ### BLUE, 2026-11-05, on the one-value version (superseded for the SQL)
 
 **2026-11-05, 03:00 to 03:09 WET, lane BLUE, by a session that did not write this document, on the head `dacacb37` of #1724.** It rehearsed the one-value version (0% and M07 for all), whose SQL files the rework replaced; its results stand for that version only and say nothing of the list. What still carries over from it: the blocks' shell, unchanged in the rework except for the list lines, `Q6DAT` and THE READ-OUT, stopped at its own first-line check (`still reads NOT READY`) as designed; the explicit fetch of `refs/pull/1724/head`; the target guard refusing the throwaway (`REFUSING: project ref is "postgres", not the production project.`, exit 2); and the psql behaviours (`-q -A -t` prints only the `Q6` lines; `\o :idsfile` writes the whole ids file before the COMMIT; a failed `\o` stops psql with exit 3 before the COMMIT; a `RAISE` inside a DO block exits psql with 3 and rolls the transaction back).
@@ -599,7 +612,7 @@ echo "THE ROLLBACK: COMMITTED. The ${IC} recorded services of the tenant osteojp
 - **The blocks whole.** They stop at their NOT READY first-line check until the READY line, by design (THE READ-OUT has no such check, and still stops at the target guard on a throwaway). A whole run of each block, at the READY head, against a throwaway, by a session that did not write them, is owed before the night; the target guard will still stop each one there (next item), so that run proves everything up to the guard.
 - **The reworked SQL by an independent session.** The checks above were the author's.
 - **The target guard's production path** (the environment file, the guard, the connection). The guard refuses a throwaway by design, and the lead's rule of 2026-09-30 forbids getting past it: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
-- **The `\copy ... FROM pstdin` load through Supabase's session pooler.** It was checked on a local Postgres 17 only.
+- **The `\copy ... FROM pstdin` load, and `set transaction read only` after the temporary table, through Supabase's session pooler.** Both were checked on a local Postgres 17 only.
 - **The fetch of `refs/pull/1724/head` after the pull request merges.** It was run before the merge only.
 
 What stands beside the checks: **the fault-injection test** (`scripts/q6-service-types-vat-m07.test.mjs`) runs every block in GREEN's tool shape, in bash and in zsh, with every external command a stub, fails each call in turn, and proves every halt is explicit and that each block passes only on its expected output, with no database (`DATABASE_URL` blank). It also pins every statement of the five SQL files, in order, every refusal with its message, and the list's own refusals.
@@ -608,11 +621,12 @@ What stands beside the checks: **the fault-injection test** (`scripts/q6-service
 
 - **An impossible RUNDAY passes the format check.** `RUNDAY` and `MIGNIGHT` are checked as `20YYMMDD` shapes, not as real dates, and `Q6DAT` as a `20YYMMDDHHMM` shape. An impossible date can never equal the Lisbon clock's date, so the night window refuses it; one edge remains: macOS `date -j` may roll a date such as 20261131 over to the next month when it computes the day after, which could open the early morning (up to 06:29) of that rolled-over day. The dispatch's dates come from strategy's ruling and SOLO fills them; this is known and left as is.
 - **THE ROLLBACK's `shasum -a 256 -c` of the sidecar is not separately tested.** It is redundant: the same block has already hashed the document at the fetched head (`git show`) against `DOCSHA` and checked the sidecar's text, on a clean worktree checked out at that head. The fault-injection test still fails that call in turn and proves it STOPs.
+- **RUNDAY is not pinned to 20261119 in any file.** The dispatch fills it, and the dispatch is the only control on which night runs; the block proves only that RUNDAY is after MIGNIGHT, that Q6DAT is before 12:00 on RUNDAY, and that the clock is inside RUNDAY's window. Another night than Thu 2026-11-19 is a new ruling, and SOLO fills no other date without one.
 - **A type name with a line break** would make THE READ-OUT's file hold more lines than rows; the block then STOPs and SOLO reads the file with the owner.
 
 ## What must happen before READY, in this order, and none of it by GREEN
 
-1. R4 on the rework (the document, the five SQL files and the test), under the review-loop cap. THE READ-OUT may run once R4 has passed on it.
+1. R4 on the rework: round 1 PASS (2026-11-05, on `edd743a0`); its four MINOR and four NIT fixes are not re-reviewed. Whether they need a round is the lead's call under the review-loop cap (they change production-touching bytes). THE READ-OUT, whose bytes did not change, may run now.
 2. THE READ-OUT runs on its own dispatch; the owner gives its file to the accountant.
 3. 0110 is applied to production in its own sitting (Tue 2026-11-10), and GREEN reports.
 4. The accountant's written answer, type by type, reaches the owner before Thu 2026-11-19 12:00 Lisbon (B9). If it does not, the night is skipped: no dispatch, nothing written.
@@ -633,3 +647,12 @@ What stands beside the checks: **the fault-injection test** (`scripts/q6-service
   - MINOR 2: THE WRITE and THE ROLLBACK each gained a scenario at 07:00 the morning after RUNDAY, which must STOP.
   - NITs: the rollback prose says "from 10 minutes before" and states its short horizon; the two known, harmless limits are under "Known limits, harmless".
 - **The rework, 2026-11-05, after strategy's rulings of that day (Q6-D: a per-type list).** Every production-touching byte changed: the four SQL files, a new fifth (THE READ-OUT), and every block. So R4 runs again on the rework, as a fresh round, under the review-loop cap; rounds 1 and 2 above reviewed the one-value version. What changed: the write takes each type's rate and code from the list, never one value; the list is loaded with `\copy` and refused in SQL on every path D19 names; THE PRE-CHECK checks the list's sha256 and the Q6-D time; the POST-CHECK compares each written row with its list row; the rollback restores from the audit rows; the rollback's message on a later audit row now says "from 10 minutes before THE WRITE on", as its query always counted; the night is Thu 2026-11-19. R4 owed.
+- **R4 on the rework, round 1, 2026-11-05, on `edd743a0`: PASS, no MAJOR; 4 MINOR, 4 NIT, all fixed the same day. Not re-reviewed (they change production-touching bytes; the lead rules on a round).**
+  - MINOR 1: THE PRE-CHECK cleared the last sitting's records only after its MIGNIGHT and Q6DAT checks, so a pre-check pasted again that stopped there left an earlier pass's carry for THE WRITE. The clean-up is now the first command after the PENDING checks; a test seeds an old carry and proves each of those STOPs (MIGNIGHT, the Q6-D time) removes it. A STOP at the PENDING checks themselves still runs no command at all, by design: an unfilled copy touches nothing.
+  - MINOR 2: the list was hashed, then opened again for psql. THE PRE-CHECK now copies it once to a mode 600 snapshot under `/tmp/q6-`, hashes the snapshot, and every psql call reads the snapshot; THE PRE-CHECK's SQL prints the md5 of the loaded lines, carried and compared by THE WRITE's SQL before its UPDATE (D8, D19).
+  - MINOR 3: `list_disagrees_staff_set` counts listed types staff set with other values; D22 says it is SOLO's default, not a ruling, and that a non-zero count goes to the lead before THE WRITE.
+  - MINOR 4: the codes cross-check was skipped on this branch. The test now reads the application's file and 0110 from disk or from `origin/db/RODICA-services-vat-colour`, and fails if either cannot be read (D21).
+  - NIT 1: a backslash is not refused by text COPY (escapes decode; a line `\.` ends the load). THE PRE-CHECK's shell now STOPs on a backslash or any control character but the line end, with a test; the sentence in "The per-type list" is corrected.
+  - NIT 2: the test's tampered-file case for THE PRE-CHECK now changes stage 1 itself.
+  - NIT 3: THE PRE-CHECK and THE POST-CHECK create the temporary table inside their transaction, `on commit drop`, then `set transaction read only`, so every statement of their files runs read only (checked on Postgres 17).
+  - NIT 4: "Known limits" records that RUNDAY is not pinned in any file and the dispatch is the only control.

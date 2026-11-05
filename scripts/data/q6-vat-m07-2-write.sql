@@ -25,9 +25,11 @@
 -- one in THE PRE-CHECK and runs again here, under the lock, before the UPDATE.
 --
 -- IT REFUSES WITHOUT THIS SITTING'S PRE-CHECK (SR-59). `-v expect` is the
--- target count and `-v target_md5` the md5 of the target ids that THE
--- PRE-CHECK printed in the same sitting. Under the lock, the set is counted
--- and hashed again, and any difference is a STOP before the UPDATE.
+-- target count, `-v target_md5` the md5 of the target ids and `-v list_md5`
+-- the md5 of the list's lines as THE PRE-CHECK loaded them, all three printed
+-- by THE PRE-CHECK in the same sitting. Under the lock, the set is counted and
+-- hashed again and the loaded lines are hashed again, and any difference is a
+-- STOP before the UPDATE.
 --
 -- THE EXPECTED COUNT IS CHECKED BEFORE COMMIT: the target set under the lock,
 -- the UPDATE's own row count, the audit rows' row count and the written rows
@@ -45,8 +47,8 @@
 --
 -- Run (THE WRITE block of the document; the block runs it, never a hand):
 --   psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off
---        -v expect=<n> -v target_md5=<md5> -v idsfile=<the ids file>
---        -f scripts/data/q6-vat-m07-2-write.sql < <the list>
+--        -v expect=<n> -v target_md5=<md5> -v list_md5=<md5> -v idsfile=<the ids file>
+--        -f scripts/data/q6-vat-m07-2-write.sql < <the snapshot>
 -- ============================================================================
 
 \if :{?expect}
@@ -59,6 +61,12 @@
 \else
   DO $missing$ BEGIN
     RAISE EXCEPTION 'Q6STOP: -v target_md5 is missing. THE PRE-CHECK prints it; this file refuses to guess.';
+  END $missing$;
+\endif
+\if :{?list_md5}
+\else
+  DO $missing$ BEGIN
+    RAISE EXCEPTION 'Q6STOP: -v list_md5 is missing. THE PRE-CHECK prints it; this file refuses to guess.';
   END $missing$;
 \endif
 \if :{?idsfile}
@@ -74,7 +82,7 @@ SET LOCAL statement_timeout = '60s';
 
 -- psql interpolates :'var' in an ordinary statement and NOT inside a dollar
 -- quote, so the carries travel through set_config, local to this transaction.
-SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) || ' ' || length(set_config('q6.target_md5', :'target_md5', true));
+SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) || ' ' || length(set_config('q6.target_md5', :'target_md5', true)) || ' ' || length(set_config('q6.list_md5', :'list_md5', true));
 
 -- SHARE ROW EXCLUSIVE: reads of services go on (every booking reads it), and
 -- no other write to services can land between the count and the COMMIT. A
@@ -187,6 +195,8 @@ DECLARE
   c_action   constant text := 'service.vat_default_q6';
   s_expect   text := current_setting('q6.expect');
   s_md5      text := current_setting('q6.target_md5');
+  s_list     text := current_setting('q6.list_md5');
+  v_list     text;
   v_expect   int;
   v_tenants  int;
   v_tenant   uuid;
@@ -213,6 +223,15 @@ BEGIN
   END IF;
   IF s_md5 !~ '^[0-9a-f]{32}$' THEN
     RAISE EXCEPTION 'Q6STOP: -v target_md5 must be 32 lower-case hex characters';
+  END IF;
+  IF s_list !~ '^[0-9a-f]{32}$' THEN
+    RAISE EXCEPTION 'Q6STOP: -v list_md5 must be 32 lower-case hex characters';
+  END IF;
+
+  -- THE LIST LOADED NOW IS THE LIST THE PRE-CHECK LOADED, line for line.
+  SELECT md5(coalesce(string_agg(r.line, E'\n' ORDER BY r.n), '')) INTO v_list FROM q6_list_raw r;
+  IF v_list <> s_list THEN
+    RAISE EXCEPTION 'Q6STOP: the list loaded now is not the list THE PRE-CHECK loaded. Paste THE PRE-CHECK again';
   END IF;
 
   -- THE PRECONDITIONS, again, under the lock.

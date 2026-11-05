@@ -8,13 +8,14 @@
 -- for every decision this file carries out.
 --
 -- THE LIST arrives on psql's standard input (the block runs psql with
--- `< <the list file>`, whose sha256 the block has already checked against the
--- dispatch) and is loaded by `\copy ... FROM pstdin` into the temporary table
--- q6_list_raw, one raw line per row, numbered in file order. The block creates
--- that table with -c before `begin read only`: a temporary table cannot be
--- created inside a read only transaction, and rows can be copied into one.
--- The rollback at the end of the read drops the rows; the table itself goes
--- when the session ends. Nothing of production is written.
+-- `< <the private snapshot of the list>`, whose sha256 the block has already
+-- checked against the dispatch) and is loaded by `\copy ... FROM pstdin` into
+-- the temporary table q6_list_raw, one raw line per row, numbered in file
+-- order. The block opens the transaction, creates that table ON COMMIT DROP,
+-- and only then sets the transaction READ ONLY (a temporary table cannot be
+-- created once it is read only, and rows can be copied into one), so every
+-- statement of this file runs read only. The rollback at the end drops the
+-- table with its rows. Nothing of production is written.
 --
 -- WHAT IT READS, and it prints nothing else: one line per fact, each
 -- "Q6PRE <name> <value>", where the value is a count, a column type, the word
@@ -31,13 +32,16 @@
 -- IS NULL AND vat_exemption_code IS NULL, active or archived, internal-only
 -- or not (Q6-A and Q6-B, ruled yes on 2026-11-05). Every target row must be in
 -- the list. A listed row with either field set is never written: staff set
--- it, and a staff edit wins. It is counted (list_skipped_staff_set).
+-- it, and a staff edit wins (SOLO's default, not a ruling). It is counted
+-- (list_skipped_staff_set), and so is every such row whose values differ from
+-- its list row (list_disagrees_staff_set), which the lead reads before THE
+-- WRITE.
 --
 -- Run (THE PRE-CHECK block of the document; the block runs it, never a hand):
 --   psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off
---        -c "create temp table q6_list_raw (n bigint generated always as identity, line text)"
---        -c "begin read only" -c "set local statement_timeout = '60s'"
---        -f scripts/data/q6-vat-m07-1-precheck.sql -c "rollback" < <the list>
+--        -c "begin" -c "create temp table q6_list_raw (n bigint generated always as identity, line text) on commit drop"
+--        -c "set transaction read only" -c "set local statement_timeout = '60s'"
+--        -f scripts/data/q6-vat-m07-1-precheck.sql -c "rollback" < <the snapshot>
 -- ============================================================================
 
 SELECT 'Q6PRE read_only ' || current_setting('transaction_read_only');
@@ -269,24 +273,29 @@ WITH t AS (
   SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code
     FROM q6_list_raw r WHERE r.n > 1
 ), j AS (
-  SELECT l.vat_rate, l.vat_exemption_code, (sv.vat_rate IS NULL AND sv.vat_exemption_code IS NULL) AS target
+  SELECT l.vat_rate, l.vat_exemption_code, (sv.vat_rate IS NULL AND sv.vat_exemption_code IS NULL) AS target,
+         (sv.vat_rate IS DISTINCT FROM l.vat_rate OR sv.vat_exemption_code IS DISTINCT FROM l.vat_exemption_code) AS differs
     FROM l JOIN public.services sv ON sv.id = l.id JOIN t ON t.id = sv.tenant_id
 )
 SELECT line FROM (
   SELECT 1 AS k, 'Q6PRE list_rows ' || count(*) AS line FROM j
   UNION ALL SELECT 2, 'Q6PRE list_to_write ' || count(*) FILTER (WHERE target) FROM j
   UNION ALL SELECT 3, 'Q6PRE list_skipped_staff_set ' || count(*) FILTER (WHERE NOT target) FROM j
-  UNION ALL SELECT 4, 'Q6PRE write_rate_0_with_code ' || count(*) FILTER (WHERE target AND vat_rate = 0) FROM j
-  UNION ALL SELECT 5, 'Q6PRE write_rate_6 ' || count(*) FILTER (WHERE target AND vat_rate = 6) FROM j
-  UNION ALL SELECT 6, 'Q6PRE write_rate_13 ' || count(*) FILTER (WHERE target AND vat_rate = 13) FROM j
-  UNION ALL SELECT 7, 'Q6PRE write_rate_23 ' || count(*) FILTER (WHERE target AND vat_rate = 23) FROM j
-  UNION ALL SELECT 8, 'Q6PRE write_code_m07 ' || count(*) FILTER (WHERE target AND vat_exemption_code = 'M07') FROM j
-  UNION ALL SELECT 9, 'Q6PRE write_code_other ' || count(*) FILTER (WHERE target AND vat_exemption_code <> 'M07') FROM j
+  UNION ALL SELECT 4, 'Q6PRE list_disagrees_staff_set ' || count(*) FILTER (WHERE NOT target AND differs) FROM j
+  UNION ALL SELECT 5, 'Q6PRE write_rate_0_with_code ' || count(*) FILTER (WHERE target AND vat_rate = 0) FROM j
+  UNION ALL SELECT 6, 'Q6PRE write_rate_6 ' || count(*) FILTER (WHERE target AND vat_rate = 6) FROM j
+  UNION ALL SELECT 7, 'Q6PRE write_rate_13 ' || count(*) FILTER (WHERE target AND vat_rate = 13) FROM j
+  UNION ALL SELECT 8, 'Q6PRE write_rate_23 ' || count(*) FILTER (WHERE target AND vat_rate = 23) FROM j
+  UNION ALL SELECT 9, 'Q6PRE write_code_m07 ' || count(*) FILTER (WHERE target AND vat_exemption_code = 'M07') FROM j
+  UNION ALL SELECT 10, 'Q6PRE write_code_other ' || count(*) FILTER (WHERE target AND vat_exemption_code <> 'M07') FROM j
 ) x
 ORDER BY k;
 
--- THE CARRY: the count and the md5 of the target set's ids, sorted. THE WRITE
--- receives both from this sitting's transcript and refuses on any difference.
+-- THE CARRY: the count and the md5 of the target set's ids, sorted, and the md5
+-- of the list's lines as loaded, in file order. THE WRITE receives all three
+-- from this sitting's transcript and refuses on any difference before its
+-- UPDATE.
 SELECT 'Q6PRE PASS target ' || count(*) || ' ids_md5 ' || md5(coalesce(string_agg(s.id::text, ',' ORDER BY s.id), ''))
+       || ' list_md5 ' || (SELECT md5(coalesce(string_agg(r.line, E'\n' ORDER BY r.n), '')) FROM q6_list_raw r)
   FROM public.services s JOIN public.tenants t ON t.id = s.tenant_id
  WHERE t.slug = 'osteojp' AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL;

@@ -48,7 +48,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync,
+  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -84,7 +84,9 @@ const CODES33 = [
 const LIST_HEADER = "service_id,vat_rate,vat_exemption_code";
 const LIST_PARSE = "(SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1) l";
 const COPY_LINE = "\\copy q6_list_raw (line) FROM pstdin";
-const TEMP_TABLE = "create temp table q6_list_raw (n bigint generated always as identity, line text)";
+const READ_TX = `-c "begin" -c "create temp table q6_list_raw (n bigint generated always as identity, line text) on commit drop" -c "set transaction read only" -c "set local statement_timeout = '60s'"`;
+const SNAP_PATH = "/tmp/q6-list.csv";
+const SRC1704 = "origin/db/RODICA-services-vat-colour";
 
 const doc = read(DOC);
 const sql = { readout: read(READ), pre: read(PRE), write: read(WRITE), post: read(POST), undo: read(UNDO) };
@@ -124,7 +126,7 @@ const SUCCESS = {
 
 test("the sidecar pins the document, and the document says NOT READY, records its rehearsal and what is NOT REHEARSED", () => {
   assert.equal(read(SIDECAR), `${sha256(doc)}  ${DOC}\n`);
-  assert.match(doc.split("\n")[0], /^NOT READY: reworked for the per-type list 2026-11-05, R4 owed on the rework, the blocks whole NOT REHEARSED, the night Thu 2026-11-19 conditional on Q6-D/);
+  assert.match(doc.split("\n")[0], /^NOT READY: reworked for the per-type list 2026-11-05, R4 owed on the rework.*, the blocks whole NOT REHEARSED, the night Thu 2026-11-19 conditional on Q6-D/);
   assert.match(doc, /\n## Rehearsal\n/);
   assert.match(doc, /\n### SQL checked by the author, 2026-11-05/);
   assert.match(doc, /\n## NOT REHEARSED\n\n- \*\*The blocks whole\.\*\*/);
@@ -171,7 +173,10 @@ test("the list is never committed: no list or read-out file is in the repository
   assert.deepEqual(seen, [], "a Q6 list or read-out file is committed");
   for (const b of Object.values(BLOCKS)) {
     for (const l of b.split("\n").filter((x) => x.includes("${LIST}"))) {
-      assert.match(l, /^(test -f \$\{LIST\} \|\||echo "the list: |LS=\$\(shasum -a 256 \$\{LIST\} \| cut -d' ' -f1\) \|\||echo "STOP|psql .* < \$\{LIST\} > )/, `a block line uses the list other than to test, hash or feed psql: ${l}`);
+      assert.match(l, /^(test -f \$\{LIST\} \|\||cp \$\{LIST\} \$\{SNAP\} \|\||echo "the list: )/, `a block line uses the list other than to test it or copy it to the snapshot: ${l}`);
+    }
+    for (const l of b.split("\n").filter((x) => x.includes("${SNAP}"))) {
+      assert.match(l, /^(test -f \$\{SNAP\} \|\||cp \$\{LIST\} \$\{SNAP\} \|\||PERM=\$\(find \$\{SNAP\} -perm 600\) \|\||LS=\$\(shasum -a 256 \$\{SNAP\} \| cut -d' ' -f1\) \|\||BADC=\$\(awk '[^']*' \$\{SNAP\}\) \|\||echo "the list: |psql .* < \$\{SNAP\} > )/, `a block line uses the snapshot other than to test, copy, hash, scan or feed psql: ${l}`);
     }
   }
 });
@@ -215,6 +220,7 @@ function writeFindings(text) {
   for (const check of [
     `${COPY_LINE}\n`,
     "DO $q6list$",
+    "IF v_list <> s_list THEN",
     "IF v_target <> v_expect THEN",
     "IF v_md5 <> s_md5 THEN",
     "IF v_upd <> v_expect THEN",
@@ -234,6 +240,8 @@ function writeFindings(text) {
     f.push("not in order: the lock, the list loaded, the list validated, then the write and its UPDATE");
   }
   if (body.indexOf("IF v_upd <> v_expect THEN") > body.indexOf("INSERT INTO public.audit_log")) f.push("the audit rows are written before the UPDATE's count is checked");
+  if (body.indexOf("IF v_list <> s_list THEN") < 0 || body.indexOf("IF v_list <> s_list THEN") > body.indexOf("UPDATE public.services s")) f.push("the md5 of the loaded list is not compared before the UPDATE");
+  if (!body.includes("SELECT md5(coalesce(string_agg(r.line, E'\\n' ORDER BY r.n), '')) INTO v_list FROM q6_list_raw r;")) f.push("the md5 of the loaded list is not the md5 of its lines in file order");
   if (!/WHERE s\.tenant_id = v_tenant AND s\.vat_rate IS NULL AND s\.vat_exemption_code IS NULL;\n\s+IF v_target <> v_expect/.test(body)) {
     f.push("the target count does not read the target predicate");
   }
@@ -389,6 +397,8 @@ const EXPECTED_GUARDS = {
     "IF s_expect !~ '^[1-9][0-9]?$' => Q6STOP: -v expect must be a whole number from 1 to 60; received %",
     "IF v_expect > 60 => Q6STOP: -v expect % is above the ceiling of 60",
     "IF s_md5 !~ '^[0-9a-f]{32}$' => Q6STOP: -v target_md5 must be 32 lower-case hex characters",
+    "IF s_list !~ '^[0-9a-f]{32}$' => Q6STOP: -v list_md5 must be 32 lower-case hex characters",
+    "IF v_list <> s_list => Q6STOP: the list loaded now is not the list THE PRE-CHECK loaded. Paste THE PRE-CHECK again",
     "IF v_tenants <> 1 => Q6STOP: the slug osteojp names % tenants, not exactly 1",
     "IF v_cols <> 2 => Q6STOP: services carries % of the 2 columns of 0110 with their types: 0110 is not applied",
     "IF v_prior <> 0 => Q6STOP: % audit rows of this op are already in the tenant: it ran before, or was undone. The lead rules",
@@ -490,11 +500,12 @@ const EXPECTED_PREDICATES = {
     "WHERE r.n > 1",
     "WHERE r.n > 1 AND NOT EXISTS (SELECT 1 FROM public.services s WHERE s.id = split_part(r.line, ',', 1)::uuid AND s.tenant_id = v_tenant)",
     "WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL AND NOT EXISTS (SELECT 1 FROM q6_list_raw r WHERE r.n > 1 AND split_part(r.line, ',', 1) = s.id::text)",
-    "WHERE slug = 'osteojp' ), l AS ( SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1 ), j AS ( SELECT l.vat_rate, l.vat_exemption_code, (sv.vat_rate IS NULL AND sv.vat_exemption_code IS NULL) AS target FROM l",
+    "WHERE slug = 'osteojp' ), l AS ( SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1 ), j AS ( SELECT l.vat_rate, l.vat_exemption_code, (sv.vat_rate IS NULL AND sv.vat_exemption_code IS NULL) AS target, (sv.vat_rate IS DISTINCT FROM l.vat_rate OR sv.vat_exemption_code IS DISTINCT FROM l.vat_exemption_code) AS differs FROM l",
     "ON sv.id = l.id",
     "ON t.id = sv.tenant_id ) SELECT line FROM ( SELECT 1 AS k, 'Q6PRE list_rows ' || count(*) AS line FROM j",
     "WHERE target) FROM j",
     "WHERE NOT target) FROM j",
+    "WHERE NOT target AND differs) FROM j",
     "WHERE target AND vat_rate = 0) FROM j",
     "WHERE target AND vat_rate = 6) FROM j",
     "WHERE target AND vat_rate = 13) FROM j",
@@ -682,8 +693,8 @@ const EXPECTED_STATEMENTS = {
     "IF v_n <> 0 THEN RAISE EXCEPTION 'Q6STOP: % appointment types of the tenant with both VAT fields empty are missing from the list: every one must be listed', v_n",
     "END IF",
     "END $q6list$",
-    "WITH t AS ( SELECT id FROM public.tenants WHERE slug = 'osteojp' ), l AS ( SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1 ), j AS ( SELECT l.vat_rate, l.vat_exemption_code, (sv.vat_rate IS NULL AND sv.vat_exemption_code IS NULL) AS target FROM l JOIN public.services sv ON sv.id = l.id JOIN t ON t.id = sv.tenant_id ) SELECT line FROM ( SELECT 1 AS k, 'Q6PRE list_rows ' || count(*) AS line FROM j UNION ALL SELECT 2, 'Q6PRE list_to_write ' || count(*) FILTER (WHERE target) FROM j UNION ALL SELECT 3, 'Q6PRE list_skipped_staff_set ' || count(*) FILTER (WHERE NOT target) FROM j UNION ALL SELECT 4, 'Q6PRE write_rate_0_with_code ' || count(*) FILTER (WHERE target AND vat_rate = 0) FROM j UNION ALL SELECT 5, 'Q6PRE write_rate_6 ' || count(*) FILTER (WHERE target AND vat_rate = 6) FROM j UNION ALL SELECT 6, 'Q6PRE write_rate_13 ' || count(*) FILTER (WHERE target AND vat_rate = 13) FROM j UNION ALL SELECT 7, 'Q6PRE write_rate_23 ' || count(*) FILTER (WHERE target AND vat_rate = 23) FROM j UNION ALL SELECT 8, 'Q6PRE write_code_m07 ' || count(*) FILTER (WHERE target AND vat_exemption_code = 'M07') FROM j UNION ALL SELECT 9, 'Q6PRE write_code_other ' || count(*) FILTER (WHERE target AND vat_exemption_code <> 'M07') FROM j ) x ORDER BY k",
-    "SELECT 'Q6PRE PASS target ' || count(*) || ' ids_md5 ' || md5(coalesce(string_agg(s.id::text, ',' ORDER BY s.id), '')) FROM public.services s JOIN public.tenants t ON t.id = s.tenant_id WHERE t.slug = 'osteojp' AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
+    "WITH t AS ( SELECT id FROM public.tenants WHERE slug = 'osteojp' ), l AS ( SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1 ), j AS ( SELECT l.vat_rate, l.vat_exemption_code, (sv.vat_rate IS NULL AND sv.vat_exemption_code IS NULL) AS target, (sv.vat_rate IS DISTINCT FROM l.vat_rate OR sv.vat_exemption_code IS DISTINCT FROM l.vat_exemption_code) AS differs FROM l JOIN public.services sv ON sv.id = l.id JOIN t ON t.id = sv.tenant_id ) SELECT line FROM ( SELECT 1 AS k, 'Q6PRE list_rows ' || count(*) AS line FROM j UNION ALL SELECT 2, 'Q6PRE list_to_write ' || count(*) FILTER (WHERE target) FROM j UNION ALL SELECT 3, 'Q6PRE list_skipped_staff_set ' || count(*) FILTER (WHERE NOT target) FROM j UNION ALL SELECT 4, 'Q6PRE list_disagrees_staff_set ' || count(*) FILTER (WHERE NOT target AND differs) FROM j UNION ALL SELECT 5, 'Q6PRE write_rate_0_with_code ' || count(*) FILTER (WHERE target AND vat_rate = 0) FROM j UNION ALL SELECT 6, 'Q6PRE write_rate_6 ' || count(*) FILTER (WHERE target AND vat_rate = 6) FROM j UNION ALL SELECT 7, 'Q6PRE write_rate_13 ' || count(*) FILTER (WHERE target AND vat_rate = 13) FROM j UNION ALL SELECT 8, 'Q6PRE write_rate_23 ' || count(*) FILTER (WHERE target AND vat_rate = 23) FROM j UNION ALL SELECT 9, 'Q6PRE write_code_m07 ' || count(*) FILTER (WHERE target AND vat_exemption_code = 'M07') FROM j UNION ALL SELECT 10, 'Q6PRE write_code_other ' || count(*) FILTER (WHERE target AND vat_exemption_code <> 'M07') FROM j ) x ORDER BY k",
+    "SELECT 'Q6PRE PASS target ' || count(*) || ' ids_md5 ' || md5(coalesce(string_agg(s.id::text, ',' ORDER BY s.id), '')) || ' list_md5 ' || (SELECT md5(coalesce(string_agg(r.line, E'\\n' ORDER BY r.n), '')) FROM q6_list_raw r) FROM public.services s JOIN public.tenants t ON t.id = s.tenant_id WHERE t.slug = 'osteojp' AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL",
   ],
   write: [
     "\\if :{?expect}",
@@ -696,6 +707,11 @@ const EXPECTED_STATEMENTS = {
     "DO $missing$ BEGIN RAISE EXCEPTION 'Q6STOP: -v target_md5 is missing. THE PRE-CHECK prints it; this file refuses to guess.'",
     "END $missing$",
     "\\endif",
+    "\\if :{?list_md5}",
+    "\\else",
+    "DO $missing$ BEGIN RAISE EXCEPTION 'Q6STOP: -v list_md5 is missing. THE PRE-CHECK prints it; this file refuses to guess.'",
+    "END $missing$",
+    "\\endif",
     "\\if :{?idsfile}",
     "\\else",
     "DO $missing$ BEGIN RAISE EXCEPTION 'Q6STOP: -v idsfile is missing. The rollback keys on that file; this file refuses to write without it.'",
@@ -704,7 +720,7 @@ const EXPECTED_STATEMENTS = {
     "BEGIN",
     "SET LOCAL lock_timeout = '5s'",
     "SET LOCAL statement_timeout = '60s'",
-    "SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) || ' ' || length(set_config('q6.target_md5', :'target_md5', true))",
+    "SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) || ' ' || length(set_config('q6.target_md5', :'target_md5', true)) || ' ' || length(set_config('q6.list_md5', :'list_md5', true))",
     "LOCK TABLE public.services IN SHARE ROW EXCLUSIVE MODE",
     "CREATE TEMP TABLE q6_list_raw (n bigint GENERATED ALWAYS AS IDENTITY, line text) ON COMMIT DROP",
     "\\copy q6_list_raw (line) FROM pstdin",
@@ -763,6 +779,8 @@ const EXPECTED_STATEMENTS = {
     "DO $q6write$ DECLARE c_action constant text := 'service.vat_default_q6'",
     "s_expect text := current_setting('q6.expect')",
     "s_md5 text := current_setting('q6.target_md5')",
+    "s_list text := current_setting('q6.list_md5')",
+    "v_list text",
     "v_expect int",
     "v_tenants int",
     "v_tenant uuid",
@@ -784,6 +802,11 @@ const EXPECTED_STATEMENTS = {
     "IF v_expect > 60 THEN RAISE EXCEPTION 'Q6STOP: -v expect % is above the ceiling of 60', v_expect",
     "END IF",
     "IF s_md5 !~ '^[0-9a-f]{32}$' THEN RAISE EXCEPTION 'Q6STOP: -v target_md5 must be 32 lower-case hex characters'",
+    "END IF",
+    "IF s_list !~ '^[0-9a-f]{32}$' THEN RAISE EXCEPTION 'Q6STOP: -v list_md5 must be 32 lower-case hex characters'",
+    "END IF",
+    "SELECT md5(coalesce(string_agg(r.line, E'\\n' ORDER BY r.n), '')) INTO v_list FROM q6_list_raw r",
+    "IF v_list <> s_list THEN RAISE EXCEPTION 'Q6STOP: the list loaded now is not the list THE PRE-CHECK loaded. Paste THE PRE-CHECK again'",
     "END IF",
     "SELECT count(*) INTO v_tenants FROM public.tenants WHERE slug = 'osteojp'",
     "IF v_tenants <> 1 THEN RAISE EXCEPTION 'Q6STOP: the slug osteojp names % tenants, not exactly 1', v_tenants",
@@ -1041,6 +1064,8 @@ test("every refusal of the list is in the pre-check and the write, in one DO blo
   assert.ok(sql.write.indexOf(COPY_LINE) < sql.write.indexOf("DO $q6list$") && sql.write.indexOf("$q6list$;") < sql.write.indexOf("DO $q6write$"), "the write does not load and validate the list before its write block");
   assert.ok(sql.pre.indexOf(COPY_LINE) < sql.pre.indexOf("DO $q6list$") && sql.pre.indexOf("$q6list$;") < sql.pre.indexOf("'Q6PRE PASS target '"), "the pre-check does not validate the list before its PASS line");
   assert.match(sql.write, /CREATE TEMP TABLE q6_list_raw \(n bigint GENERATED ALWAYS AS IDENTITY, line text\) ON COMMIT DROP;\n\\copy q6_list_raw \(line\) FROM pstdin\n/);
+  assert.ok(EXPECTED_STATEMENTS.pre.at(-1).includes("|| ' list_md5 ' || (SELECT md5(coalesce(string_agg(r.line, E'\\n' ORDER BY r.n), '')) FROM q6_list_raw r)"), "the pre-check's PASS line does not carry the md5 of the loaded lines");
+  assert.ok(EXPECTED_GUARDS.pre.every((g) => !g.includes("list_disagrees")) && sql.pre.includes("'Q6PRE list_disagrees_staff_set ' || count(*) FILTER (WHERE NOT target AND differs) FROM j"), "the pre-check does not count listed types staff set with other values");
   assert.ok(sql.post.indexOf(COPY_LINE) < sql.post.indexOf("DO $q6post$"), "the post-check does not load the list before it checks it");
 });
 
@@ -1051,20 +1076,24 @@ test("the 33 exemption codes the SQL carries are the application's 33 and 0110's
     assert.ok(m, `${k} carries no c_codes array`);
     assert.deepEqual([...m[0].matchAll(/'(M[0-9]{2})'/g)].map((x) => x[1]), CODES33, `${k}: the codes are not the pinned 33`);
   }
-  const app = join(ROOT, "packages/db/src/service-type-fields.ts");
-  if (existsSync(app)) {
-    const t = readFileSync(app, "utf8");
-    assert.deepEqual([...t.matchAll(/\{ code: "(M[0-9]{2})"/g)].map((x) => x[1]), CODES33, "the application's VAT_EXEMPTION_CODES differ from the 33 this op carries");
-  }
-  const migs = [join(ROOT, "packages/db/migrations-pending"), join(ROOT, "packages/db/migrations")]
+  // From disk once #1704 has merged, else from #1704's branch. Either source missing is a FAILURE:
+  // the comparison is never skipped (R4 on the rework, MINOR 4).
+  const fromRef = (path) => {
+    const r = spawnSync("git", ["show", `${SRC1704}:${path}`], { cwd: ROOT, encoding: "utf8" });
+    return r.status === 0 ? { text: r.stdout, from: `${SRC1704}:${path}` } : null;
+  };
+  const appPath = "packages/db/src/service-type-fields.ts";
+  const app = existsSync(join(ROOT, appPath)) ? { text: readFileSync(join(ROOT, appPath), "utf8"), from: appPath } : fromRef(appPath);
+  const migDisk = [join(ROOT, "packages/db/migrations-pending"), join(ROOT, "packages/db/migrations")]
     .filter((d) => existsSync(d))
     .flatMap((d) => readdirSync(d).filter((n) => /services_booking_type_fields\.sql$/.test(n)).map((n) => join(d, n)));
-  for (const m of migs) {
-    const t = readFileSync(m, "utf8");
-    const c = t.match(/services_vat_exemption_code_allowed CHECK \(([\s\S]*?)\n  \)/);
-    assert.ok(c, `${m}: no services_vat_exemption_code_allowed CHECK`);
-    assert.deepEqual([...c[1].matchAll(/'(M[0-9]{2})'/g)].map((x) => x[1]), CODES33, `${m}: 0110's CHECK differs from the 33 this op carries`);
-  }
+  const mig = migDisk.length === 1 ? { text: readFileSync(migDisk[0], "utf8"), from: migDisk[0] } : migDisk.length === 0 ? fromRef("packages/db/migrations-pending/NEXT-AFTER-0109_services_booking_type_fields.sql") : null;
+  assert.ok(app, `the application's code list could not be read, from disk or from ${SRC1704} (git fetch origin db/RODICA-services-vat-colour)`);
+  assert.ok(mig, `0110 could not be read (exactly one file), from disk or from ${SRC1704}`);
+  assert.deepEqual([...app.text.matchAll(/\{ code: "(M[0-9]{2})"/g)].map((x) => x[1]), CODES33, `${app.from}: VAT_EXEMPTION_CODES differ from the 33 this op carries`);
+  const c = mig.text.match(/services_vat_exemption_code_allowed CHECK \(([\s\S]*?)\n  \)/);
+  assert.ok(c, `${mig.from}: no services_vat_exemption_code_allowed CHECK`);
+  assert.deepEqual([...c[1].matchAll(/'(M[0-9]{2})'/g)].map((x) => x[1]), CODES33, `${mig.from}: 0110's CHECK differs from the 33 this op carries`);
 });
 
 test("the write has the shape the document claims: each row's list values, no single value for all", () => {
@@ -1111,6 +1140,7 @@ test("each shape rule catches its own seeded fault", () => {
     ["write", "the list not loaded", w.replace(`${COPY_LINE}\n`, ""), /not before the COMMIT: \\copy|not in order/],
     ["write", "the count check dropped", w.replace("IF v_upd <> v_expect THEN", "IF false THEN"), /not before the COMMIT: IF v_upd/],
     ["write", "the list check dropped", w.replace("IF v_ok <> v_expect THEN", "IF false THEN"), /not before the COMMIT: IF v_ok/],
+    ["write", "the list md5 check dropped", w.replace("IF v_list <> s_list THEN", "IF false THEN"), /md5 of the loaded list is not compared/],
     ["write", "the ids recorded after the COMMIT", w.replace("\\o :idsfile\nSELECT w.id FROM q6_written w ORDER BY w.id;\n\\o\n", "").replace("COMMIT;\n", "COMMIT;\n\\o :idsfile\nSELECT w.id FROM q6_written w ORDER BY w.id;\n\\o\n"), /not before the COMMIT: \\o :idsfile/],
     ["write", "no statement timeout", w.replace("SET LOCAL statement_timeout = '60s';\n", ""), /does not open with BEGIN/],
     ["write", "a second UPDATE", w.replace("COMMIT;\n", "UPDATE public.services SET color = NULL;\nCOMMIT;\n"), /2 UPDATE statements/],
@@ -1159,20 +1189,20 @@ test("every block: pipefail on line 2, no set -e, no # line, no continuation, on
     assert.match(psql[0], / > \S+ 2>&1 \|\| \{ echo "STOP: /, `${name}: psql's output does not go to a file only`);
     assert.doesNotMatch(psql[0], /\btee\b/, name);
     if (name === "pre" || name === "post") {
-      assert.match(psql[0], new RegExp(`-c "${TEMP_TABLE.replace(/[()]/g, "\\$&")}" -c "begin read only" -c "set local statement_timeout = '60s'" -f \\$\\{(PRE|POST)\\} -c "rollback" < \\$\\{LIST\\} > `), name);
+      assert.ok(psql[0].includes(` ${READ_TX} -f ${name === "pre" ? "${PRE}" : "${POST}"} -c "rollback" < \${SNAP} > `), `${name}: the read does not create its temporary table inside the transaction before it turns read only, or does not read the snapshot`);
     } else if (name === "readout") {
       assert.match(psql[0], /-v outfile=\$\{OUTF\} -c "begin read only" -c "set local statement_timeout = '60s'" -f \$\{READ\} -c "rollback" > \/tmp\/q6-readout\.out 2>&1 /, name);
     } else if (name === "write") {
-      assert.match(psql[0], / -f \$\{WRITE\} < \$\{LIST\} > \$\{WOUT\} 2>&1 /, name);
+      assert.match(psql[0], / -v list_md5=\$\{L\} -v idsfile=\$\{IDS\} -f \$\{WRITE\} < \$\{SNAP\} > \$\{WOUT\} 2>&1 /, name);
     } else {
-      assert.doesNotMatch(psql[0], /begin read only|< \$\{LIST\}/, name);
+      assert.doesNotMatch(psql[0], /begin read only|read only|< \$\{(LIST|SNAP)\}/, name);
     }
     for (const l of lines) {
       if (/\|\| \{/.test(l)) assert.match(l, /\|\| \{ echo "STOP: [^"]+"; exit 1; \}$/, `${name}: a halt that is not one STOP and exit 1: ${l}`);
       assert.doesNotMatch(l, /^(echo|printf)\b.*\$\{?DATABASE_URL/, `${name}: a line prints the connection string`);
     }
     assert.doesNotMatch(b, /\b(cat|head|tail|less|more)\b[^\n]*(write|undo)\.out/, `${name}: a line prints a write transcript`);
-    for (const l of lines.filter((x) => /\$\{(LIST|OUTF)\}/.test(x))) {
+    for (const l of lines.filter((x) => /\$\{(LIST|SNAP|OUTF)\}/.test(x))) {
       assert.doesNotMatch(l, /\b(cat|head|tail|less|more)\b/, `${name}: a line prints the list or the read-out file: ${l}`);
       if (/\bsed\b/.test(l)) assert.match(l, /^HDR=\$\(sed -n 1p \$\{OUTF\}\) \|\| \{/, `${name}: a sed reads more than the header of the read-out file: ${l}`);
     }
@@ -1195,37 +1225,42 @@ test("every block: pipefail on line 2, no set -e, no # line, no continuation, on
 test("the list's sha256 is checked before production is read, and again before THE WRITE and THE POST-CHECK", () => {
   const pre = BLOCKS.pre;
   const at = (s) => pre.indexOf(s);
-  assert.ok(pre.includes(`\nLIST=${LIST_PATH}\n`), "the pre-check does not name the list file");
-  for (const s of ["LS=$(shasum -a 256 ${LIST} | cut -d' ' -f1) || {", '[ "${LS}" = "${LISTSHA}" ] || {', "echo \"${LISTSHA}\" | grep -qxE '[0-9a-f]{64}' || {"]) {
+  assert.ok(pre.includes(`\nLIST=${LIST_PATH}\nSNAP=${SNAP_PATH}\n`), "the pre-check does not name the list file and its snapshot");
+  const lines = pre.split("\n");
+  const lastPending = lines.findLastIndex((l) => /^echo "\$\{(HELD|DOCSHA|RUNDAY|MIGNIGHT|Q6DAT|LISTSHA)\}" \| grep -qxE /.test(l));
+  assert.match(lines[lastPending + 1], /^rm -f \/tmp\/q6-head\.sha \/tmp\/q6-night\.ok \/tmp\/q6-pre\.ok \/tmp\/q6-pre\.out \/tmp\/q6-target-a\.out \/tmp\/q6-list\.csv \|\| \{/, "the last sitting's records are not cleared by the first command after the PENDING checks");
+  for (const s of ["umask 077 || {", "cp ${LIST} ${SNAP} || {", '[ -n "${PERM}" ] || {', "LS=$(shasum -a 256 ${SNAP} | cut -d' ' -f1) || {", '[ "${LS}" = "${LISTSHA}" ] || {', "echo \"${LISTSHA}\" | grep -qxE '[0-9a-f]{64}' || {", '[ "${BADC}" = 0 ] || {']) {
     assert.ok(at(s) > 0, `the pre-check lacks: ${s}`);
     for (const later of ["\ncd /Users/ivan/Projects/GitHub/osteojp-prod-apply", "\nSN=$(sntp", "\ngit fetch", "\nnode ${GUARD}", "\npsql "]) {
       assert.ok(at(s) < at(later), `the pre-check checks the list after ${later.trim()}`);
     }
   }
-  assert.ok(pre.includes('echo "${N} ${M} ${LISTSHA}" > /tmp/q6-pre.ok || {'), "the pre-check does not carry the list's sha256");
+  assert.ok(pre.indexOf("cp ${LIST} ${SNAP} || {") < pre.indexOf("LS=$(shasum -a 256 ${SNAP}") && pre.indexOf("umask 077 || {") < pre.indexOf("cp ${LIST} ${SNAP}"), "the snapshot is not made private before it is hashed");
+  assert.ok(pre.includes('echo "${N} ${M} ${LISTSHA} ${L}" > /tmp/q6-pre.ok || {'), "the pre-check does not carry the list's sha256 and md5");
   assert.ok(pre.includes('[ "${Q6DAT}" -lt "${RUNDAY}1200" ] || {'), "the pre-check does not hold Q6-D's time before 12:00 on RUNDAY");
   assert.ok(at('[ "${Q6DAT}" -lt "${RUNDAY}1200" ] || {') < at("\ncd /Users/ivan/Projects/GitHub/osteojp-prod-apply"), "Q6-D's time is checked after the worktree is entered");
   for (const name of ["write", "post"]) {
     const b = BLOCKS[name];
-    assert.ok(b.includes(`\nLIST=${LIST_PATH}\n`), `${name} does not name the list file`);
+    assert.ok(b.includes(`\nSNAP=${SNAP_PATH}\n`) && !b.includes("\nLIST="), `${name} does not read the snapshot only`);
     assert.ok(b.includes("LSHA=$(echo \"${CARRY}\" | cut -d' ' -f3) || {"), `${name} does not read the list's sha256 from the carry`);
     assert.ok(b.includes('[ "${LS}" = "${LSHA}" ] || {'), `${name} does not compare the list with the carry`);
     assert.ok(b.indexOf('[ "${LS}" = "${LSHA}" ] || {') < b.indexOf("\npsql "), `${name} compares the list after psql`);
   }
-  assert.doesNotMatch(BLOCKS.undo, /LIST/, "the rollback names the list");
+  assert.doesNotMatch(BLOCKS.undo, /LIST|SNAP/, "the rollback names the list");
+  assert.ok(BLOCKS.write.includes("L=$(echo \"${CARRY}\" | cut -d' ' -f4) || {"), "the write does not read the list md5 from the carry");
 });
 
 /* ---- THE HARNESS. Nothing in it touches a real host, the secrets folder or a database. ------ */
 
 const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
-const STUBBED = ["git", "node", "psql", "sntp", "date", "grep", "awk", "cut", "sed", "shasum", "rm", "cat", "find", "mkdir", "tee", "touch"];
+const STUBBED = ["git", "node", "psql", "sntp", "date", "grep", "awk", "cut", "sed", "shasum", "rm", "cat", "cp", "find", "mkdir", "tee", "touch"];
 const FAKED = new Set(["git", "node", "psql", "sntp", "date"]);
 const NOT_CALLED = {
-  readout: ["sntp", "find", "touch", "cat"],
-  pre: ["find", "mkdir", "touch", "cat"],
-  write: ["sntp", "sed", "touch"],
-  post: ["sntp", "sed", "find", "mkdir", "touch", "rm"],
-  undo: ["find", "mkdir", "cat"],
+  readout: ["sntp", "find", "touch", "cat", "cp"],
+  pre: ["mkdir", "touch", "cat"],
+  write: ["sntp", "sed", "touch", "cp"],
+  post: ["sntp", "sed", "find", "mkdir", "touch", "rm", "cp"],
+  undo: ["find", "mkdir", "cat", "cp"],
 };
 const FAKE_DB_URL = "postgresql://postgres.harness:x@harness.invalid:5432/postgres";
 const TIP = "1".repeat(40);
@@ -1238,6 +1273,7 @@ const IDS = [
 const LIST_TEXT = `${LIST_HEADER}\n${IDS[0]},0,M07\n${IDS[1]},23,\n${IDS[2]},0,M10\n`;
 const LIST_SHA = sha256(LIST_TEXT);
 const STAMP = "202611192130";
+const LMD5 = "fedcba9876543210fedcba9876543210";
 
 const realPath = (name) => {
   const r = spawnSync("/bin/sh", ["-c", `command -v ${name}`], { encoding: "utf8", env: { PATH: SYSTEM_PATH } });
@@ -1297,6 +1333,7 @@ case "$n" in
       *-0-readout.sql) kind=readout;; *-1-precheck.sql) kind=pre;; *-2-write.sql) kind=write;; *-3-postcheck.sql) kind=post;; *-4-rollback.sql) kind=undo;; *) unexpected "$@";;
     esac
     ${R("cat")} > "$d/stdin.$kind"
+    printf '%s\\n' "$@" > "$d/args.$kind"
     if [ "$kind" = write ] && [ "\${HARNESS_IDS:-ok}" != none ]; then [ -n "$idsf" ] || unexpected "no idsfile"; ${R("cat")} "$HARNESS_FIX/ids.\${HARNESS_IDS:-ok}" > "$idsf"; fi
     if [ "$kind" = readout ] && [ "\${HARNESS_RFILE:-ok}" != none ]; then [ -n "$outf" ] || unexpected "no outfile"; ${R("cat")} "$HARNESS_FIX/rfile.\${HARNESS_RFILE:-ok}" > "$outf"; fi
     ${R("cat")} "$HARNESS_FIX/$kind.\${HARNESS_VARIANT:-ok}"; exit "\${HARNESS_PSQL_EXIT:-0}";;
@@ -1311,9 +1348,9 @@ const PRE_OK = [
   "Q6PRE services_archived 3", "Q6PRE target_total 3", "Q6PRE target_active 2", "Q6PRE target_archived 1",
   "Q6PRE target_internal_only 1", "Q6PRE staff_set_rate_only 1", "Q6PRE staff_set_code_only 0", "Q6PRE staff_set_both 16",
   "Q6PRE audit_rows_q6 0", "Q6PRE audit_rows_q6_undone 0", "Q6PRE other_tenants_services_untouched 4",
-  "Q6PRE list_rows 3", "Q6PRE list_to_write 3", "Q6PRE list_skipped_staff_set 0", "Q6PRE write_rate_0_with_code 2",
+  "Q6PRE list_rows 3", "Q6PRE list_to_write 3", "Q6PRE list_skipped_staff_set 0", "Q6PRE list_disagrees_staff_set 0", "Q6PRE write_rate_0_with_code 2",
   "Q6PRE write_rate_6 0", "Q6PRE write_rate_13 0", "Q6PRE write_rate_23 1", "Q6PRE write_code_m07 1", "Q6PRE write_code_other 1",
-  `Q6PRE PASS target 3 ids_md5 ${MD5}`,
+  `Q6PRE PASS target 3 ids_md5 ${MD5} list_md5 ${LMD5}`,
 ].join("\n");
 const POST_OK = [
   "Q6POST read_only on", "Q6POST carries 110 1", "Q6POST services_total 20", "Q6POST vat_rate_0_with_code 2", "Q6POST vat_rate_above_0 17",
@@ -1331,7 +1368,10 @@ const FIX = {
   "pre.notro": PRE_OK.replace("Q6PRE read_only on", "Q6PRE read_only off"),
   "pre.extra": `${PRE_OK}\nERROR:  something the read did not expect`,
   "pre.nopass": PRE_OK.replace(/\nQ6PRE PASS[^\n]*/, ""),
-  "pre.twopass": `${PRE_OK}\nQ6PRE PASS target 3 ids_md5 ${MD5}`,
+  "pre.twopass": `${PRE_OK}\nQ6PRE PASS target 3 ids_md5 ${MD5} list_md5 ${LMD5}`,
+  "pre.dis": PRE_OK.replace("Q6PRE list_disagrees_staff_set 0", "Q6PRE list_disagrees_staff_set 2"),
+  "pre.nodis": PRE_OK.replace("\nQ6PRE list_disagrees_staff_set 0", ""),
+  "pre.nolmd5": PRE_OK.replace(` list_md5 ${LMD5}`, ""),
   "pre.big": PRE_OK.replace("PASS target 3 ", "PASS target 61 "),
   "write.ok": "Q6WRITE carries 1 32\nQ6WRITE ready_to_commit 3\nQ6WRITE COMMITTED 3",
   "write.notready": "Q6WRITE carries 1 32\nQ6WRITE COMMITTED 3",
@@ -1437,14 +1477,18 @@ function setupFor(name, run, s) {
   } else {
     writeFileSync(join(run, "head"), `${"9".repeat(40)}\n`);
   }
-  if (name === "pre" || name === "write" || name === "post") {
-    if (!s.noList) fresh(join(hand, "q6-vat-list.csv"), s.listChanged ? `${LIST_TEXT}${IDS[2].replace(/3$/, "4")},6,\n` : LIST_TEXT);
+  if (name === "pre" && !s.noList) fresh(join(hand, "q6-vat-list.csv"), s.listText ?? LIST_TEXT);
+  if (name === "pre" && s.staleCarry) {
+    for (const f of ["q6-head.sha", "q6-night.ok", "q6-pre.ok", "q6-pre.out", "q6-list.csv"]) fresh(join(tmp, f), "an earlier pass\n");
+  }
+  if ((name === "write" || name === "post") && !s.noList) {
+    fresh(join(tmp, "q6-list.csv"), s.listChanged ? `${LIST_TEXT}${IDS[2].replace(/3$/, "4")},6,\n` : LIST_TEXT);
   }
   if (name === "write") {
     if (!s.noNight) fresh(join(tmp, "q6-night.ok"), "20261119 20261120\n");
-    if (!s.noCarry) fresh(join(tmp, "q6-pre.ok"), `${s.carry ?? `3 ${MD5} ${LIST_SHA}`}\n`, s.carryAge ?? 1);
+    if (!s.noCarry) fresh(join(tmp, "q6-pre.ok"), `${s.carry ?? `3 ${MD5} ${LIST_SHA} ${LMD5}`}\n`, s.carryAge ?? 1);
   }
-  if (name === "post" && !s.noCarry) fresh(join(tmp, "q6-pre.ok"), `3 ${MD5} ${LIST_SHA}\n`, 45);
+  if (name === "post" && !s.noCarry) fresh(join(tmp, "q6-pre.ok"), `3 ${MD5} ${LIST_SHA} ${LMD5}\n`, 45);
   if (name === "readout" && s.outExists) fresh(join(hand, `q6-service-types-${s.stamp ?? STAMP}.csv`), "an earlier read-out\n");
   if ((name === "post" || name === "undo") && !s.noIds) fresh(join(rec, "written-ids.txt"), `${IDS.join("\n")}\n`);
   if (s.idsExist) fresh(join(rec, "written-ids.txt"), `${IDS.join("\n")}\n`);
@@ -1477,7 +1521,10 @@ async function runOnce(cfg, s = {}) {
   const calls = readRun("log").split("\n").filter(Boolean);
   const result = {
     ...r, calls, unexpected: readRun("unexpected"), idsAfter: readRun("rec/written-ids.txt"), undoneAfter: existsSync(join(run, "rec/undone.ok")),
-    stdin: readRun(`stdin.${cfg.name}`), readoutFile: readRun(`hand/q6-service-types-${s.stamp ?? STAMP}.csv`),
+    stdin: readRun(`stdin.${cfg.name}`), args: readRun(`args.${cfg.name}`).split("\n"),
+    tmpLeft: existsSync(join(run, "tmp")) ? readdirSync(join(run, "tmp")).filter((f) => ["q6-head.sha", "q6-night.ok", "q6-pre.ok", "q6-list.csv"].includes(f)) : [],
+    snapMode: existsSync(join(run, "tmp", "q6-list.csv")) ? (statSync(join(run, "tmp", "q6-list.csv")).mode & 0o777) : null,
+    readoutFile: readRun(`hand/q6-service-types-${s.stamp ?? STAMP}.csv`),
   };
   rmSync(run, { recursive: true, force: true });
   return result;
@@ -1546,7 +1593,14 @@ const SCENARIOS = {
     ["the confirmation reached the owner after RUNDAY", { q6dat: "202611201000" }, /not before 20261119 12:00 Lisbon: the night is skipped/],
     ["LISTSHA left PENDING", { listsha: "PENDING" }, /LISTSHA is still PENDING/],
     ["the list is not there", { noList: true }, /the list \S+ is not there/],
-    ["the list is not the one the dispatch names", { listsha: "d".repeat(64) }, /the list on disk is not the one the dispatch names/],
+    ["the list is not the one the dispatch names", { listsha: "d".repeat(64) }, /the list is not the one the dispatch names/],
+    ["a line \\. in the list, which would end the load early", { listText: LIST_TEXT.replace(`${IDS[1]},23,\n`, `${IDS[1]},23,\n\\.\n`), listsha: sha256(LIST_TEXT.replace(`${IDS[1]},23,\n`, `${IDS[1]},23,\n\\.\n`)) }, /1 lines of the list hold a backslash or a control character/],
+    ["a tab in the list", { listText: LIST_TEXT.replace(`${IDS[1]},23,`, `${IDS[1]},23,\t`), listsha: sha256(LIST_TEXT.replace(`${IDS[1]},23,`, `${IDS[1]},23,\t`)) }, /1 lines of the list hold a backslash or a control character/],
+    ["an earlier pass's carry, and the confirmation after RUNDAY", { staleCarry: true, q6dat: "202611201000" }, /not before 20261119 12:00 Lisbon/],
+    ["an earlier pass's carry, and the confirmation at 12:00", { staleCarry: true, q6dat: "202611191200" }, /not before 20261119 12:00 Lisbon/],
+    ["an earlier pass's carry, and RUNDAY not after 0110", { staleCarry: true, mignight: "20261119" }, /not a night after the night 0110 was applied/],
+    ["no list_disagrees_staff_set line", { variant: "nodis" }, /no list_disagrees_staff_set line/],
+    ["a PASS line without the list md5", { variant: "nolmd5" }, /no PASS line/],
     ["Sunday, closed, but not the named night", { stamp: "202611151000", dow: "7" }, /outside the window/],
     ["the night after the window", { stamp: "202611200700", dow: "5" }, /outside the window/],
     ["the zone did not load", { zone: "UTC" }, /zone WET or WEST/],
@@ -1574,9 +1628,10 @@ const SCENARIOS = {
     ["no night recorded", { noNight: true }, /recorded no night/],
     ["no carry", { noCarry: true }, /recorded no carry/],
     ["a stale carry", { carryAge: 31 }, /more than 30 minutes ago/],
-    ["a carry without the list's sha256 (the one-value carry)", { carry: `3 ${MD5}` }, /did not read as a count, an md5 and the list's sha256/],
-    ["the list is not there", { noList: true }, /the list \S+ is not there/],
-    ["the list changed since THE PRE-CHECK", { listChanged: true }, /the list changed since THE PRE-CHECK/],
+    ["a carry without the list's sha256 (the one-value carry)", { carry: `3 ${MD5}` }, /did not read as a count, an md5, the list's sha256 and the list md5/],
+    ["a carry without the list md5", { carry: `3 ${MD5} ${LIST_SHA}` }, /did not read as a count, an md5, the list's sha256 and the list md5/],
+    ["the snapshot is not there", { noList: true }, /the snapshot of the list \S+ is not there/],
+    ["the snapshot changed since THE PRE-CHECK", { listChanged: true }, /the snapshot of the list changed since THE PRE-CHECK/],
     ["the ids file exists", { idsExist: true }, /already exists/],
     ["the write refused", { psqlExit: 3 }, /refused or failed/],
     ["no ready_to_commit line", { variant: "notready" }, /ready_to_commit 3/],
@@ -1590,8 +1645,8 @@ const SCENARIOS = {
     ["no ids file", { noIds: true }, /ids file of THE WRITE is not there/],
     ["the worktree is on another head", { head: "2".repeat(40) }, /not on the head THE PRE-CHECK recorded/],
     ["no carry, so the list is not known", { noCarry: true }, /recorded no carry/],
-    ["the list is not there", { noList: true }, /the list \S+ is not there/],
-    ["the list changed since THE PRE-CHECK", { listChanged: true }, /the list changed since THE PRE-CHECK/],
+    ["the snapshot is not there", { noList: true }, /the snapshot of the list \S+ is not there/],
+    ["the snapshot changed since THE PRE-CHECK", { listChanged: true }, /the snapshot of the list changed since THE PRE-CHECK/],
     ["the read is not read only", { variant: "notro" }, /READ ONLY/],
     ["the transcript holds another line", { variant: "extra" }, /not Q6POST count lines/],
     ["PASS does not read the count", { variant: "nopass" }, /PASS written 3/],
@@ -1610,7 +1665,7 @@ const SCENARIOS = {
     ["the environment file is missing", { noEnv: true }, /did not load/],
   ],
 };
-const STAGE_FILE = { readout: READ, pre: WRITE, write: WRITE, post: POST, undo: UNDO };
+const STAGE_FILE = { readout: READ, pre: PRE, write: WRITE, post: POST, undo: UNDO };
 
 for (const shell of shells) {
   for (const name of Object.keys(BLOCKS)) {
@@ -1623,6 +1678,8 @@ for (const shell of shells) {
         if (name === "write") assert.equal(clean.idsAfter, `${IDS.join("\n")}\n`, "the write's ids file is not the recorded ids");
         if (name === "undo") assert.ok(clean.undoneAfter, "the rollback left no marker");
         if (name === "readout") assert.equal(clean.readoutFile, `${RFILE_OK}\n`, "the read-out file is not the one psql wrote");
+        if (name === "pre") assert.equal(clean.snapMode, 0o600, "the snapshot of the list is not mode 600");
+        if (name === "write") assert.ok(clean.args.includes(`list_md5=${LMD5}`), "the write does not pass the carried list md5 to psql");
         assert.equal(clean.stdin, ["pre", "write", "post"].includes(name) ? LIST_TEXT : "", `${name}: psql's standard input is not ${["pre", "write", "post"].includes(name) ? "the list" : "empty"}`);
         for (const n of STUBBED) {
           if (NOT_CALLED[name].includes(n)) continue;
@@ -1655,6 +1712,7 @@ for (const shell of shells) {
           if (s.psqlExit === undefined && s.variant === undefined && s.ids === undefined && s.rfile === undefined) {
             assert.ok(!r.calls.some((c) => c.startsWith("psql#")), `${name}: ${label}: psql ran`);
           }
+          if (s.staleCarry) assert.deepEqual(r.tmpLeft, [], `${name}: ${label}: an earlier pass's records survived the STOP: ${r.tmpLeft}`);
           if (name === "pre" && (s.q6dat || s.listsha || s.noList)) {
             assert.ok(!r.calls.some((c) => /^(git|node|psql|sntp)#/.test(c)), `${name}: ${label}: a call reached git, the network or production first: ${r.calls}`);
           }
@@ -1674,6 +1732,13 @@ for (const shell of shells) {
           writeFileSync(f, Buffer.concat([keep, Buffer.from("\n")]));
           assertStop(name, await runOnce(cfg), re, `${shell} ${name}: changed ${p}`);
           writeFileSync(f, keep);
+        }
+        if (name === "pre") {
+          const crlf = LIST_TEXT.replaceAll("\n", "\r\n");
+          assertPass(name, await runOnce(cfg, { listText: crlf, listsha: sha256(crlf) }), `${shell} pre: a CRLF list`);
+          const dis = await runOnce(cfg, { variant: "dis" });
+          assertPass(name, dis, `${shell} pre: listed types staff set with other values`);
+          assert.match(dis.stdout, /list_disagrees_staff_set is 2: if it is not 0, the lead rules before THE WRITE\./, `${shell} pre: the disagreement count is not handed to the lead`);
         }
         assertPass(name, await runOnce(cfg), `${shell} ${name}: clean again after the scenarios`);
       } finally {
