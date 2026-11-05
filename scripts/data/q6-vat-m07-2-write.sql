@@ -19,17 +19,19 @@
 --     after of the two fields.
 --
 -- THE LIST arrives on psql's standard input (the block runs psql with
--- `< <the list file>`, whose sha256 the block has checked against the carry of
--- THE PRE-CHECK) and is loaded by `\copy ... FROM pstdin` into a temporary
+-- `< <the private snapshot of the list>`, whose sha256 the block has checked
+-- against the carry of THE PRE-CHECK) and is loaded by `\copy ... FROM pstdin` into a temporary
 -- table dropped at the COMMIT. The DO block $q6list$ is byte-identical to the
 -- one in THE PRE-CHECK and runs again here, under the lock, before the UPDATE.
 --
 -- IT REFUSES WITHOUT THIS SITTING'S PRE-CHECK (SR-59). `-v expect` is the
 -- target count, `-v target_md5` the md5 of the target ids and `-v list_md5`
 -- the md5 of the list's lines as THE PRE-CHECK loaded them, all three printed
--- by THE PRE-CHECK in the same sitting. Under the lock, the set is counted and
--- hashed again and the loaded lines are hashed again, and any difference is a
--- STOP before the UPDATE.
+-- by THE PRE-CHECK in the same sitting, and `-v disagree` the count of listed
+-- types staff set with other values, which THE PRE-CHECK held equal to the
+-- dispatch's DISAGREEOK. Under the lock, the set is counted and hashed again,
+-- the loaded lines are hashed again and the disagreements are counted again,
+-- and any difference is a STOP before the UPDATE.
 --
 -- THE EXPECTED COUNT IS CHECKED BEFORE COMMIT: the target set under the lock,
 -- the UPDATE's own row count, the audit rows' row count and the written rows
@@ -47,7 +49,7 @@
 --
 -- Run (THE WRITE block of the document; the block runs it, never a hand):
 --   psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off
---        -v expect=<n> -v target_md5=<md5> -v list_md5=<md5> -v idsfile=<the ids file>
+--        -v expect=<n> -v target_md5=<md5> -v list_md5=<md5> -v disagree=<n> -v idsfile=<the ids file>
 --        -f scripts/data/q6-vat-m07-2-write.sql < <the snapshot>
 -- ============================================================================
 
@@ -69,6 +71,12 @@
     RAISE EXCEPTION 'Q6STOP: -v list_md5 is missing. THE PRE-CHECK prints it; this file refuses to guess.';
   END $missing$;
 \endif
+\if :{?disagree}
+\else
+  DO $missing$ BEGIN
+    RAISE EXCEPTION 'Q6STOP: -v disagree is missing. THE PRE-CHECK carries it; this file refuses to guess.';
+  END $missing$;
+\endif
 \if :{?idsfile}
 \else
   DO $missing$ BEGIN
@@ -82,7 +90,7 @@ SET LOCAL statement_timeout = '60s';
 
 -- psql interpolates :'var' in an ordinary statement and NOT inside a dollar
 -- quote, so the carries travel through set_config, local to this transaction.
-SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) || ' ' || length(set_config('q6.target_md5', :'target_md5', true)) || ' ' || length(set_config('q6.list_md5', :'list_md5', true));
+SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) || ' ' || length(set_config('q6.target_md5', :'target_md5', true)) || ' ' || length(set_config('q6.list_md5', :'list_md5', true)) || ' ' || length(set_config('q6.disagree', :'disagree', true));
 
 -- SHARE ROW EXCLUSIVE: reads of services go on (every booking reads it), and
 -- no other write to services can land between the count and the COMMIT. A
@@ -196,7 +204,9 @@ DECLARE
   s_expect   text := current_setting('q6.expect');
   s_md5      text := current_setting('q6.target_md5');
   s_list     text := current_setting('q6.list_md5');
+  s_dis      text := current_setting('q6.disagree');
   v_list     text;
+  v_dis      int;
   v_expect   int;
   v_tenants  int;
   v_tenant   uuid;
@@ -226,6 +236,9 @@ BEGIN
   END IF;
   IF s_list !~ '^[0-9a-f]{32}$' THEN
     RAISE EXCEPTION 'Q6STOP: -v list_md5 must be 32 lower-case hex characters';
+  END IF;
+  IF s_dis !~ '^(0|[1-9][0-9]?)$' THEN
+    RAISE EXCEPTION 'Q6STOP: -v disagree must be a whole number from 0 to 99; received %', s_dis;
   END IF;
 
   -- THE LIST LOADED NOW IS THE LIST THE PRE-CHECK LOADED, line for line.
@@ -268,6 +281,17 @@ BEGIN
   END IF;
   IF v_md5 <> s_md5 THEN
     RAISE EXCEPTION 'Q6STOP: the target set is not the one THE PRE-CHECK read (same count, other rows). Paste THE PRE-CHECK again';
+  END IF;
+
+  -- THE LISTED TYPES STAFF SET WITH OTHER VALUES, counted again under the lock:
+  -- the count THE PRE-CHECK held equal to the dispatch's DISAGREEOK, or a STOP.
+  SELECT count(*) INTO v_dis
+    FROM public.services s
+    JOIN (SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1) l ON l.id = s.id
+   WHERE s.tenant_id = v_tenant AND NOT (s.vat_rate IS NULL AND s.vat_exemption_code IS NULL)
+     AND (s.vat_rate IS DISTINCT FROM l.vat_rate OR s.vat_exemption_code IS DISTINCT FROM l.vat_exemption_code);
+  IF v_dis <> s_dis::int THEN
+    RAISE EXCEPTION 'Q6STOP: % listed types staff set now differ from the list, and THE PRE-CHECK carried %: the table moved. The lead rules', v_dis, s_dis;
   END IF;
 
   -- THE BASELINES. Every row outside the target set, every tenant, whole; and
