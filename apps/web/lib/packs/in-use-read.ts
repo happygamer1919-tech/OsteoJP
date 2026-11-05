@@ -7,16 +7,20 @@ import {
   patientPackInstances,
   patients,
   servicePacks,
+  type DbTx,
 } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import {
   PACKS_IN_USE_CAPABILITIES,
   PACKS_IN_USE_READ_CAP,
+  PATIENT_PACKS_READ_CAP,
   buildPacksInUse,
+  buildPatientPacks,
   isInUseCandidate,
   type PackInstanceRow,
   type PackSession,
   type PacksInUsePage,
+  type PatientPacksPage,
 } from "./in-use";
 
 /**
@@ -141,32 +145,118 @@ export async function listPacksInUse(
           purchasedAt: r.purchasedAt,
         }));
 
-      const sessionsByInstance = new Map<string, PackSession[]>();
-      if (candidates.length > 0) {
-        const ids = sql.join(
-          candidates.map((c) => sql`${c.instanceId}::uuid`),
-          sql`, `,
-        );
-        const found = (await tx.execute(sql`
-          select i.id as instance_id, s.appointment_id, s.starts_at
-            from unnest(array[${ids}]) as i(id)
-            cross join lateral public.pack_instance_consuming_sessions(i.id) s
-        `)) as unknown as ReadonlyArray<{
-          instance_id: string;
-          appointment_id: string;
-          starts_at: string | Date;
-        }>;
-        for (const f of found) {
-          const list = sessionsByInstance.get(f.instance_id) ?? [];
-          // A raw statement carries no column type, so the driver may hand back
-          // a string rather than a Date. Converted once, here.
-          list.push({ appointmentId: f.appointment_id, startsAt: new Date(f.starts_at) });
-          sessionsByInstance.set(f.instance_id, list);
-        }
-      }
+      const sessionsByInstance = await readConsumingSessions(tx, candidates);
 
       return { ...buildPacksInUse(candidates, sessionsByInstance, now, query), truncated };
     },
     "db:packs-in-use",
+  );
+}
+
+/**
+ * The consuming sessions of each instance, from 0108's
+ * `pack_instance_consuming_sessions`, called AS THE VIEWER. One call per
+ * instance, which is why both reads in this file are bounded.
+ */
+async function readConsumingSessions(
+  tx: DbTx,
+  instances: readonly PackInstanceRow[],
+): Promise<Map<string, PackSession[]>> {
+  const sessionsByInstance = new Map<string, PackSession[]>();
+  if (instances.length === 0) return sessionsByInstance;
+  const ids = sql.join(
+    instances.map((c) => sql`${c.instanceId}::uuid`),
+    sql`, `,
+  );
+  const found = (await tx.execute(sql`
+    select i.id as instance_id, s.appointment_id, s.starts_at
+      from unnest(array[${ids}]) as i(id)
+      cross join lateral public.pack_instance_consuming_sessions(i.id) s
+  `)) as unknown as ReadonlyArray<{
+    instance_id: string;
+    appointment_id: string;
+    starts_at: string | Date;
+  }>;
+  for (const f of found) {
+    const list = sessionsByInstance.get(f.instance_id) ?? [];
+    // A raw statement carries no column type, so the driver may hand back
+    // a string rather than a Date. Converted once, here.
+    list.push({ appointmentId: f.appointment_id, startsAt: new Date(f.starts_at) });
+    sessionsByInstance.set(f.instance_id, list);
+  }
+  return sessionsByInstance;
+}
+
+/**
+ * PACK-FICHA-01: ONE patient's pacotes, for the "Packs" tab of the ficha.
+ *
+ * The same read as "Packs em uso", narrowed to one patient, with the same
+ * gate and the same boundary:
+ *
+ * - Same capabilities (`patients:read` AND `appointments:read`), asserted
+ *   before anything is read.
+ * - Same session: `runScoped`, the viewer's own JWT, never the service role.
+ *   The instances are joined to `patients`, so `patients_select` (RLS) still
+ *   decides whether this patient's pacotes come back at all; the patient
+ *   filter only NARROWS what that policy already allows, it widens nothing.
+ * - Same sessions: 0108's function, as the viewer.
+ *
+ * Two differences, both because this is one patient's file rather than a
+ * clinic-wide list:
+ *
+ * - NO in-use pre-filter. Every pacote of the patient is read, so the tab can
+ *   show the finished ones too, and the running/finished split is made on the
+ *   exact numbers (0108's), not on the viewer-visible pre-filter.
+ * - NO soft-delete filter. The ficha opens for a soft-deleted patient (it is
+ *   where they are restored), and their pacotes belong in their own file.
+ *   That is a display rule of the clinic-wide list, not an access rule.
+ *
+ * BOUNDED: at most PATIENT_PACKS_READ_CAP pacotes, newest purchase first, one
+ * row past the cap so the tab can say it stopped.
+ */
+export async function listPatientPacks(
+  actor: RequestContext,
+  patientId: string,
+  opts: { now?: Date; cap?: number } = {},
+): Promise<PatientPacksPage> {
+  for (const c of PACKS_IN_USE_CAPABILITIES) assertCan(actor.role, c);
+  const now = opts.now ?? new Date();
+  const cap = opts.cap ?? PATIENT_PACKS_READ_CAP;
+  if (!Number.isInteger(cap) || cap < 1) throw new RangeError("cap must be a positive integer");
+  if (!patientId) throw new RangeError("patientId is required");
+
+  return runScoped(
+    actor,
+    async (tx) => {
+      const rows = await tx
+        .select({
+          instanceId: patientPackInstances.id,
+          patientId: patientPackInstances.patientId,
+          patientName: patients.fullName,
+          packName: servicePacks.name,
+          packPriceCents: servicePacks.priceCents,
+          sessionsTotal: patientPackInstances.sessionsTotal,
+          legacyConsumed: patientPackInstances.legacyConsumed,
+          purchasedAt: patientPackInstances.purchasedAt,
+        })
+        .from(patientPackInstances)
+        .innerJoin(
+          patients,
+          and(
+            eq(patients.id, patientPackInstances.patientId),
+            eq(patients.tenantId, patientPackInstances.tenantId),
+          ),
+        )
+        .innerJoin(servicePacks, eq(servicePacks.id, patientPackInstances.packId))
+        .where(eq(patientPackInstances.patientId, patientId))
+        .orderBy(desc(patientPackInstances.purchasedAt), desc(patientPackInstances.id))
+        .limit(cap + 1);
+
+      const truncated = rows.length > cap;
+      const kept: PackInstanceRow[] = rows.slice(0, cap);
+      const sessionsByInstance = await readConsumingSessions(tx, kept);
+      return { ...buildPatientPacks(patientId, kept, sessionsByInstance, now), truncated };
+    },
+    "db:patient-packs",
   );
 }

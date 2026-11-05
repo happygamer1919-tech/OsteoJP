@@ -3,7 +3,9 @@ import { PERMISSIONS, ROLES } from "@osteojp/auth";
 
 import {
   PACKS_IN_USE_CAPABILITIES,
+  PATIENT_PACKS_READ_CAP,
   buildPacksInUse,
+  buildPatientPacks,
   comparePacksByLastUse,
   comparePacksInUse,
   formatEurosShort,
@@ -364,5 +366,77 @@ describe("role access", () => {
         expect(PERMISSIONS[role].has(c), `${role} ${c}`).toBe(true);
       }
     }
+  });
+});
+
+describe("buildPatientPacks (PACK-FICHA-01): one patient's pacotes for the ficha", () => {
+  const P = "pat-ficha";
+
+  it("splits running from finished by the same rule as Packs em uso", () => {
+    const running = row({ patientId: P, instanceId: "run" });
+    const ahead = row({ patientId: P, instanceId: "ahead", sessionsTotal: 2 });
+    const spent = row({ patientId: P, instanceId: "spent", sessionsTotal: 2 });
+    const page = buildPatientPacks(
+      P,
+      [running, ahead, spent],
+      new Map([
+        ["run", sessions(past(2))],
+        ["ahead", sessions(past(5), future(3))],
+        ["spent", sessions(past(9), past(4))],
+      ]),
+      NOW,
+    );
+    expect(page.running.map((v) => v.instanceId).sort()).toEqual(["ahead", "run"]);
+    expect(page.finished.map((v) => v.instanceId)).toEqual(["spent"]);
+    const spentView = page.finished[0]!;
+    expect(spentView.reserved).toBe(2);
+    expect(spentView.free).toBe(0);
+    expect(spentView.sessions).toHaveLength(2);
+  });
+
+  it("the numbers are summarizePackInstance's, the ones Packs em uso prints", () => {
+    const r = row({ patientId: P });
+    const ss = sessions(past(3), future(4));
+    const page = buildPatientPacks(P, [r], new Map([[r.instanceId, ss]]), NOW);
+    expect(page.running[0]).toEqual(summarizePackInstance(r, ss, NOW));
+  });
+
+  it("CANNOT RETURN ANOTHER PATIENT'S PACOTE, whatever rows it is handed", () => {
+    const mine = row({ patientId: P, instanceId: "mine" });
+    const theirsRunning = row({ patientId: "pat-other", instanceId: "theirs-run" });
+    const theirsSpent = row({ patientId: "pat-other", instanceId: "theirs-spent", sessionsTotal: 1 });
+    const page = buildPatientPacks(
+      P,
+      [theirsRunning, mine, theirsSpent],
+      new Map([["theirs-spent", sessions(past(1))]]),
+      NOW,
+    );
+    const all = [...page.running, ...page.finished];
+    expect(all.map((v) => v.instanceId)).toEqual(["mine"]);
+    expect(all.every((v) => v.patientId === P)).toBe(true);
+  });
+
+  it("an empty patient id matches nothing", () => {
+    const page = buildPatientPacks("", [row({ patientId: P })], new Map(), NOW);
+    expect(page.running).toEqual([]);
+    expect(page.finished).toEqual([]);
+  });
+
+  it("newest purchase first in both sections, the id breaking a tie", () => {
+    const old = row({ patientId: P, instanceId: "b-old", purchasedAt: past(90) });
+    const recent = row({ patientId: P, instanceId: "b-new", purchasedAt: past(2) });
+    const tieA = row({ patientId: P, instanceId: "a-tie", purchasedAt: past(10) });
+    const tieB = row({ patientId: P, instanceId: "c-tie", purchasedAt: past(10) });
+    const page = buildPatientPacks(P, [old, tieB, recent, tieA], new Map(), NOW);
+    expect(page.running.map((v) => v.instanceId)).toEqual(["b-new", "a-tie", "c-tie", "b-old"]);
+  });
+
+  it("no pacotes: both sections empty", () => {
+    expect(buildPatientPacks(P, [], new Map(), NOW)).toEqual({ running: [], finished: [] });
+  });
+
+  it("the patient cap is a positive integer", () => {
+    expect(Number.isInteger(PATIENT_PACKS_READ_CAP)).toBe(true);
+    expect(PATIENT_PACKS_READ_CAP).toBeGreaterThan(0);
   });
 });

@@ -53,6 +53,9 @@ import { POPSTATE_CAPTURE_SCRIPT, UrlIsAuthoritative } from "./url-authoritative
 import { bookingLocationScope } from "../../../lib/auth/viewer-locations";
 import { ownCancelRefusal } from "../../../lib/scheduling/cancel-authority";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
+// PACK-FICHA-01: this patient's pacotes, as "Packs em uso" reads them.
+import { PACKS_IN_USE_CAPABILITIES } from "../../../lib/packs/in-use";
+import { listPatientPacks } from "../../../lib/packs/in-use-read";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
 import { NotesTab } from "./notes-tab";
@@ -69,6 +72,7 @@ import { RecordLifecycleActions } from "./record-lifecycle-actions";
 import { AppointmentsList } from "./appointments-list";
 import { BulkChangeButton } from "./bulk-change";
 import { PatientPacks } from "./patient-packs";
+import { PatientPacksTab } from "./patient-packs-tab";
 import { createEpisodeAction } from "./episode-actions";
 import { ProfileTabs } from "./profile-tabs";
 import { PatientDocuments } from "./PatientDocuments";
@@ -263,10 +267,16 @@ export default async function PatientProfilePage({
       ? ("references" as const)
       : null;
 
+  // PACK-FICHA-01: the Packs tab, for the roles "Packs em uso" opens for (today
+  // every staff role). What it lists is the database's, under the viewer's own
+  // session; listPatientPacks re-asserts both capabilities.
+  const canSeePacks = PACKS_IN_USE_CAPABILITIES.every((c) => can(ctx.role, c));
+
   // Permission-filtered tabs. aria-controls links each tab button to its panel.
   const tabItems = [
     { value: "resumo", label: s["patients.tabSummary"], "aria-controls": "tabpanel-resumo" },
     { value: "consultas", label: s["patients.tabAppointments"], "aria-controls": "tabpanel-consultas" },
+    ...(canSeePacks ? [{ value: "packs", label: s["patients.tabPacks"], "aria-controls": "tabpanel-packs" }] : []),
     { value: "notas", label: s["patients.tabNotes"], "aria-controls": "tabpanel-notas" },
     ...(canReadClinical ? [{ value: "registos", label: s["patients.tabRecords"], "aria-controls": "tabpanel-registos" }] : []),
     { value: "documentos", label: s["patients.tabDocuments"], "aria-controls": "tabpanel-documentos" },
@@ -573,6 +583,8 @@ export default async function PatientProfilePage({
   // Consultas tab: this patient's pack instances + remaining sessions (W8-01c).
   const patientPackInstances =
     tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
+  // Packs tab (PACK-FICHA-01): read only when it is the tab being shown.
+  const patientPacksPage = tab === "packs" ? await listPatientPacks(ctx, patient.id) : null;
   // Notas tab: unified note history (W12-13) — appointment_notes (patient-level
   // + per-appointment) merged with the legacy patient_note_revisions (0030).
   const noteRevisions = tab === "notas" ? await listPatientNotes(ctx, id) : [];
@@ -819,6 +831,12 @@ export default async function PatientProfilePage({
               canHardDelete,
             }}
           />
+        </div>
+      )}
+
+      {tab === "packs" && patientPacksPage && (
+        <div role="tabpanel" id="tabpanel-packs" aria-label={s["patients.tabPacks"]}>
+          <PatientPacksTab page={patientPacksPage} />
         </div>
       )}
 
