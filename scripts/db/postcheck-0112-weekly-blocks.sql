@@ -53,6 +53,31 @@
 \timing off
 \set ON_ERROR_STOP on
 
+\if :{?journal_rows_before}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v journal_rows_before is missing (the pre-check''s verdict 9 row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?policies_before}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v policies_before is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?policies_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v policies_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?relation_acl_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v relation_acl_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?tables_before}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v tables_before is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+\if :{?tenants_users_shape_md5}
+\else
+  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v tenants_users_shape_md5 is missing (the pre-check''s CARRY row). This file refuses to guess.'; END $missing$;
+\endif
+
 SET LOCAL row_security = off;
 SET LOCAL search_path = public;
 
