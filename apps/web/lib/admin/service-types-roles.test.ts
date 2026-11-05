@@ -29,7 +29,6 @@ const as = (role: string) => ({ tenantId: "tenant-A", role, userId: "user-1" }) 
 const row = {
   id: ID,
   name: "Fisioterapia",
-  followUpDays: null,
   priceCents: 5000,
   vatRate: null,
   vatExemptionCode: null,
@@ -44,7 +43,7 @@ const row = {
 const writes = {
   saveServiceTypesTable: (role: string) => saveServiceTypesTable(as(role), [row]),
   createService: (role: string) =>
-    createService(as(role), { name: "Pilates", durationMin: 50, priceCents: 5000, vatRate: 0 }),
+    createService(as(role), { name: "Pilates", durationMin: 50, priceCents: 5000, vatRate: 0, vatExemptionCode: "M07" }),
   setServiceContraindicationSensitive: (role: string) => setServiceContraindicationSensitive(as(role), ID, true),
 };
 

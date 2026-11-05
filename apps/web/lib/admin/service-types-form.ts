@@ -21,13 +21,21 @@
  * stored value, so a save over a row somebody else changed in between is
  * refused rather than silently reverting their change (see
  * `saveServiceTypesTable`).
+ *
+ * IVA 0% NEEDS A MOTIVO (strategy Q5, 2026-11-04). A type at 0% VAT with no
+ * exemption reason is refused, in the table and in the new-type row
+ * (`assertVatReason`, field "vatReasonRequired"). A reason on a 6, 13 or 23%
+ * type is still admitted, as it was before Q5: nothing reads it yet.
+ *
+ * FOLLOWUP IS NOT ON THE FORM (strategy Q9, 2026-11-04). The column
+ * `follow_up_days` stays and keeps its stored values, but nothing here reads
+ * a posted `followUp` value: the screen does not show it until the clinic
+ * says what it does, and a save must leave the stored value as it is.
  */
 import {
   SERVICE_COLOR_PATTERN,
-  isServiceFollowUpDays,
   isServiceVatRate,
   isVatExemptionCode,
-  type ServiceFollowUpDays,
   type ServiceVatRate,
   type VatExemptionCode,
 } from "@osteojp/db";
@@ -39,12 +47,19 @@ export class ServiceTypesFormError extends Error {
   }
 }
 
+/**
+ * The code a refused form puts in the page's query string: Q5's missing Motivo
+ * is `err:vat_reason` (its own banner); every other bad cell is `err:invalid`.
+ */
+export function formErrorCode(e: ServiceTypesFormError): "err:vat_reason" | "err:invalid" {
+  return e.field === "vatReasonRequired" ? "err:vat_reason" : "err:invalid";
+}
+
 /** The colour a colour input shows for a type with none chosen (Fisiozero's white). */
 export const UNSET_COLOR_SHOWN = "#FFFFFF";
 
 export type ServiceTypeFields = {
   name: string;
-  followUpDays: ServiceFollowUpDays | null;
   priceCents: number | null;
   vatRate: ServiceVatRate | null;
   vatExemptionCode: VatExemptionCode | null;
@@ -114,12 +129,22 @@ export function parseVatExemptionCode(raw: string | undefined): VatExemptionCode
   return t;
 }
 
-export function parseFollowUpDays(raw: string | undefined): ServiceFollowUpDays | null {
-  const t = (raw ?? "").trim();
-  if (!t) return null;
-  const n = Number(t);
-  if (!/^\d+$/.test(t) || !isServiceFollowUpDays(n)) throw new ServiceTypesFormError("followUp");
-  return n;
+/**
+ * Q5: IVA 0% is an exemption, and an exemption names its Motivo. Empty IVA
+ * ("not set") needs none; 6, 13 and 23% are not refused for carrying one.
+ */
+export function assertVatReason(vatRate: ServiceVatRate | null, code: VatExemptionCode | null): void {
+  if (vatRate === 0 && code === null) throw new ServiceTypesFormError("vatReasonRequired");
+}
+
+function vatPair(
+  rawRate: string | undefined,
+  rawCode: string | undefined,
+): { vatRate: ServiceVatRate | null; vatExemptionCode: VatExemptionCode | null } {
+  const vatRate = parseVatRate(rawRate);
+  const vatExemptionCode = parseVatExemptionCode(rawCode);
+  assertVatReason(vatRate, vatExemptionCode);
+  return { vatRate, vatExemptionCode };
 }
 
 /**
@@ -172,10 +197,8 @@ export function parseServiceTypesTable(entries: Entries): ServiceTypeRow[] {
     return {
       id,
       name: parseName(first(m, `name__${id}`)),
-      followUpDays: parseFollowUpDays(first(m, `followUp__${id}`)),
       priceCents: parsePriceCents(first(m, `price__${id}`)),
-      vatRate: parseVatRate(first(m, `vat__${id}`)),
-      vatExemptionCode: parseVatExemptionCode(first(m, `vatReason__${id}`)),
+      ...vatPair(first(m, `vat__${id}`), first(m, `vatReason__${id}`)),
       isActive: m.has(`active__${id}`),
       color: parseColor(first(m, `color__${id}`), m.has(`noColor__${id}`)),
       smsReminders: m.has(`sms__${id}`),
@@ -191,10 +214,8 @@ export function parseNewServiceType(entries: Entries): NewServiceType {
   const m = toMap(entries);
   return {
     name: parseName(first(m, "name")),
-    followUpDays: parseFollowUpDays(first(m, "followUp")),
     priceCents: parsePriceCents(first(m, "price")),
-    vatRate: parseVatRate(first(m, "vat")),
-    vatExemptionCode: parseVatExemptionCode(first(m, "vatReason")),
+    ...vatPair(first(m, "vat"), first(m, "vatReason")),
     durationMin: parseDuration(first(m, "durationMin")),
   };
 }

@@ -59,14 +59,19 @@ function Tag({
   title,
   checked,
   typeName,
+  hint,
+  hintId,
 }: {
   name: string;
   label: string;
   title: string;
   checked: boolean;
   typeName: string;
+  /** A muted line under the tag, read with it by a screen reader. */
+  hint?: string;
+  hintId?: string;
 }) {
-  return (
+  const tag = (
     <label
       title={title}
       className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-v2-border bg-v2-surface px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-v2-text-primary has-[:checked]:bg-v2-surface-hover"
@@ -77,27 +82,26 @@ function Tag({
         form={TABLE_FORM_ID}
         defaultChecked={checked}
         aria-label={named(label, typeName)}
+        aria-describedby={hint ? hintId : undefined}
         className={focusRing}
       />
       {label}
     </label>
   );
-}
-
-function FollowUpSelect({ name, value, form, typeName }: { name: string; value: number | null; form?: string; typeName?: string }) {
+  if (!hint) return tag;
   return (
-    <select
-      name={name}
-      form={form}
-      defaultValue={value === null ? "" : String(value)}
-      aria-label={named(s["admin.serviceTypes.colFollowUp"], typeName)}
-      className={`w-40 ${adminInputInline}`}
-    >
-      <option value="">{s["admin.serviceTypes.followUpNone"]}</option>
-      <option value="2">{s["admin.serviceTypes.followUp2Days"]}</option>
-    </select>
+    <span className="inline-flex flex-col items-start gap-0.5">
+      {tag}
+      <span id={hintId} className="text-[11px] text-v2-text-secondary">
+        {hint}
+      </span>
+    </span>
   );
 }
+
+/* FollowUP (follow_up_days) is NOT rendered (strategy Q9, 2026-11-04): hidden
+   until the clinic says what it does. The column and its stored values stay;
+   the table's save does not write it (saveServiceTypesTable). */
 
 function VatSelect({ name, value, form, typeName }: { name: string; value: number | null; form?: string; typeName?: string }) {
   return (
@@ -153,16 +157,21 @@ export function ServiceTypesTable({
   overrideByServiceLocation: Map<string, number>;
   offeredServiceLocation: Set<string>;
 }) {
-  const COLS = 11;
+  const COLS = 10;
   return (
     <GlassPanel title={s["admin.serviceTypes.title"]}>
       <div className="flex flex-col gap-4">
+        {/* Next to the IVA columns: the Q5 rule the save enforces, and Q6's
+            note that the values wait for the accountant. */}
+        <div className={adminHelp} data-testid="service-types-vat-notes">
+          <p>{s["admin.serviceTypes.vatReasonRule"]}</p>
+          <p>{s["admin.serviceTypes.vatAccountantNote"]}</p>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm" data-testid="service-types-table">
             <thead>
               <tr className={adminTrBorder}>
                 <th scope="col" className={adminTh}>{s["admin.serviceTypes.colName"]}</th>
-                <th scope="col" className={adminTh}>{s["admin.serviceTypes.colFollowUp"]}</th>
                 <th scope="col" className={adminTh}>{s["admin.serviceTypes.colPrice"]}</th>
                 <th scope="col" className={adminTh}>{s["admin.serviceTypes.colVat"]}</th>
                 <th scope="col" className={adminTh}>{s["admin.serviceTypes.colVatReason"]}</th>
@@ -220,14 +229,6 @@ export function ServiceTypesTable({
                           className={`w-56 ${adminInputInline}`}
                         />
                       </th>
-                      <td className={adminTd}>
-                        <FollowUpSelect
-                          name={`followUp__${svc.id}`}
-                          value={svc.followUpDays}
-                          form={TABLE_FORM_ID}
-                          typeName={svc.name}
-                        />
-                      </td>
                       <td className={adminTd}>
                         <span className="inline-flex items-center gap-1">
                           <input
@@ -300,6 +301,9 @@ export function ServiceTypesTable({
                           title={s["admin.serviceTypes.smsHelp"]}
                           checked={svc.smsReminders}
                           typeName={svc.name}
+                          // Q4: stored only; no reminder path reads it yet.
+                          hint={s["admin.serviceTypes.smsNotYetApplied"]}
+                          hintId={`service-type-sms-hint-${svc.id}`}
                         />
                       </td>
                       <td className={adminTd}>
@@ -448,7 +452,6 @@ export function ServiceTypesTable({
             aria-label={s["admin.serviceTypes.newName"]}
             className={`w-56 ${adminInputInline}`}
           />
-          <FollowUpSelect name="followUp" value={null} />
           <span className="inline-flex items-center gap-1">
             <input
               name="price"
@@ -460,7 +463,9 @@ export function ServiceTypesTable({
             />
             <span aria-hidden="true">€</span>
           </span>
-          <VatSelect name="vat" value={0} />
+          {/* Starts unset, not 0%: a 0% type needs a Motivo (Q5), and a
+              prefilled 0% would refuse every insert left at its default. */}
+          <VatSelect name="vat" value={null} />
           <VatReasonSelect name="vatReason" value={null} />
           {/* Not in Fisiozero's row: OsteoJP books by duration, so a new type
               states it. No prefilled value: a silent 60 is how a 30-minute
@@ -474,11 +479,12 @@ export function ServiceTypesTable({
           </Button>
         </form>
 
-        {/* Fisiozero's "Nota 1" and "Nota 2" (admin.serviceTypes.note1 / note2)
-            are NOT rendered until the owner rules on them: in OsteoJP,
-            appointments store no price, so Nota 1 is false, and statistics count
-            invoices that are issued OR paid (lib/statistics/kpi-queries.ts), so
-            Nota 2 is very likely false. The keys stay for the day he rules. */}
+        {/* OsteoJP's own two notes (strategy Q8, 2026-11-04), in place of
+            Fisiozero's "Nota 1" and "Nota 2", which are not true here. */}
+        <div className={adminHelp} data-testid="service-types-notes">
+          <p>{s["admin.serviceTypes.note1"]}</p>
+          <p>{s["admin.serviceTypes.note2"]}</p>
+        </div>
       </div>
     </GlassPanel>
   );

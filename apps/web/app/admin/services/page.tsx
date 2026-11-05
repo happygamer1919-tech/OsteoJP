@@ -85,12 +85,15 @@ export default async function ServicesPage({
     // have their own messages, one per refusal.
     mt === "ok" ? { ok: true, text: s["admin.serviceTypes.saved"] }
     : mt === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.invalid"] }
+    // Q5: IVA 0% with no Motivo. Its own message, naming what to choose.
+    : mt === "err:vat_reason" ? { ok: false, text: s["admin.serviceTypes.vatReasonRequired"] }
     : mt === "err:stale" ? { ok: false, text: s["admin.serviceTypes.stale"] }
     : mt === "err:has_packs" ? { ok: false, text: s["admin.services.archiveHasPacks"] }
     : mt === "err:not_found" ? { ok: false, text: s["admin.serviceTypes.notFound"] }
     : mt && mt.startsWith("err") ? { ok: false, text: s["admin.serviceTypes.tableError"] }
     : mn === "ok" ? { ok: true, text: s["admin.serviceTypes.inserted"] }
     : mn === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.newInvalid"] }
+    : mn === "err:vat_reason" ? { ok: false, text: s["admin.serviceTypes.newVatReasonRequired"] }
     : mn && mn.startsWith("err") ? { ok: false, text: s["admin.serviceTypes.newError"] }
     : m === "ok" ? { ok: true, text: s["admin.services.saved"] }
     : m === "err:has_references" ? { ok: false, text: s["admin.services.deleteHasReferences"] }

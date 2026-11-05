@@ -13,7 +13,7 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import { effectivePriceCents } from "./pricing";
-import { staleRowIds, type ServiceTypeRow } from "./service-types-form";
+import { assertVatReason, staleRowIds, type ServiceTypeRow } from "./service-types-form";
 import type { ServiceFollowUpDays, ServiceVatRate, VatExemptionCode } from "@osteojp/db";
 import { archiveBlockedReason, packsBoundToService } from "./service-archive";
 import {
@@ -125,6 +125,8 @@ function validate(input: ServiceInput): { name: string; durationMin: number } {
 export async function createService(actor: RequestContext, input: ServiceInput): Promise<void> {
   assertCan(actor.role, "services:write");
   const { name, durationMin } = validate(input);
+  // Q5: the parser refuses it first; this holds for any other caller.
+  assertVatReason(input.vatRate ?? null, input.vatExemptionCode ?? null);
 
   await runScoped(actor, async (tx) => {
     const rows = await tx
@@ -222,6 +224,7 @@ export async function saveServiceTypesTable(
   if (rows.length === 0) throw new AdminError("invalid", "no rows");
   for (const r of rows) {
     validate({ name: r.name, durationMin: r.durationMin, priceCents: r.priceCents });
+    assertVatReason(r.vatRate, r.vatExemptionCode);
   }
 
   await runScoped(actor, async (tx) => {
@@ -232,7 +235,6 @@ export async function saveServiceTypesTable(
         name: services.name,
         priceCents: services.priceCents,
         durationMin: services.durationMin,
-        followUpDays: services.followUpDays,
         vatRate: services.vatRate,
         vatExemptionCode: services.vatExemptionCode,
         smsReminders: services.smsReminders,
@@ -267,7 +269,8 @@ export async function saveServiceTypesTable(
         name: r.name.trim(),
         priceCents: r.priceCents,
         durationMin: r.durationMin,
-        followUpDays: r.followUpDays,
+        // follow_up_days is NOT here (strategy Q9, 2026-11-04): the table does
+        // not show it, so its save never writes it and the stored value stays.
         vatRate: r.vatRate,
         vatExemptionCode: r.vatExemptionCode,
         smsReminders: r.smsReminders,

@@ -11,6 +11,7 @@ import {
 } from "@/lib/admin/services";
 import {
   ServiceTypesFormError,
+  formErrorCode,
   parseNewServiceType,
   parseServiceTypesTable,
 } from "@/lib/admin/service-types-form";
@@ -82,6 +83,9 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
  * new-type row), so the banner can say which of the two failed and why: "a value
  * in the table is invalid" and "the new type has an invalid value" point at
  * different boxes on the page.
+ *
+ * IVA 0% with no Motivo (strategy Q5) has its own code, `err:vat_reason`, so
+ * the banner says what to choose instead of "an invalid value".
  */
 async function runTypes(param: "mt" | "mn", fn: () => Promise<void>): Promise<never> {
   let code = "ok";
@@ -89,7 +93,7 @@ async function runTypes(param: "mt" | "mn", fn: () => Promise<void>): Promise<ne
     await fn();
   } catch (e) {
     code =
-      e instanceof ServiceTypesFormError ? "err:invalid" : isAdminError(e) ? `err:${e.code}` : "err";
+      e instanceof ServiceTypesFormError ? formErrorCode(e) : isAdminError(e) ? `err:${e.code}` : "err";
   }
   revalidatePath("/admin/services");
   updateTag("agenda-reference-data");

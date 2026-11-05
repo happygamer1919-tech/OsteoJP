@@ -112,7 +112,6 @@ const current = (over: Partial<Current> = {}): Current => ({
 const posted = (c: Current, over: Partial<ServiceTypeRow> = {}): ServiceTypeRow => ({
   id: c.id,
   name: c.name,
-  followUpDays: c.followUpDays as 2 | null,
   priceCents: c.priceCents,
   vatRate: c.vatRate as 0 | null,
   vatExemptionCode: c.vatExemptionCode as "M07" | null,
@@ -249,6 +248,37 @@ describe("it is gated, audited, and never writes over somebody else's save", () 
       code: "not_found",
     });
     expect(H.audits).toEqual([]);
+  });
+});
+
+describe("strategy's answers of 2026-11-04 hold on the server", () => {
+  it("Q9: a save never writes follow_up_days, so a stored value stays", async () => {
+    const c = current({ followUpDays: 2 });
+    H.selects = [[c]];
+    await saveServiceTypesTable(actor, [posted(c, { name: "Mudou", priceCents: 6000 })]);
+    expect(H.sets).toHaveLength(1);
+    expect(H.sets[0]).not.toHaveProperty("followUpDays");
+    expect(H.audits).toEqual([
+      { action: "service.update", entityType: "service", entityId: c.id, metadata: { fields: ["name", "priceCents"] } },
+    ]);
+  });
+
+  it("Q5: IVA 0% with no Motivo is refused before the database, whatever the caller", async () => {
+    const c = current();
+    H.selects = [[c]];
+    await expect(
+      saveServiceTypesTable(actor, [posted(c, { vatRate: 0, vatExemptionCode: null })]),
+    ).rejects.toMatchObject({ field: "vatReasonRequired" });
+    expect(H.locks).toEqual([]);
+    expect(H.sets).toEqual([]);
+    expect(H.audits).toEqual([]);
+  });
+
+  it("Q5: IVA 0% with a Motivo saves", async () => {
+    const c = current();
+    H.selects = [[c]];
+    await saveServiceTypesTable(actor, [posted(c, { vatRate: 0, vatExemptionCode: "M07" })]);
+    expect(H.sets).toEqual([expect.objectContaining({ vatRate: 0, vatExemptionCode: "M07" })]);
   });
 });
 

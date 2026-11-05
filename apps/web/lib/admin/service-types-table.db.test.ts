@@ -130,7 +130,6 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
   const unchanged = async (id: string, r: Row) => ({
     id,
     name: r.name,
-    followUpDays: r.follow_up_days as 2 | null,
     priceCents: r.price_cents,
     vatRate: r.vat_rate as 0 | 6 | 13 | 23 | null,
     vatExemptionCode: r.vat_exemption_code as "M07" | null,
@@ -183,6 +182,9 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
   });
 
   it("one save writes every column of every row and audits the changed field NAMES only", async () => {
+    // Q9 (strategy, 2026-11-04): FollowUP is off the screen and the save never
+    // writes it, so a value already stored survives the save untouched.
+    await db.execute(sql`update public.services set follow_up_days = 2 where id = ${svcA}`);
     const a0 = await read(svcA);
     const b0 = await read(svcB);
     await saveServiceTypesTable(actor(), [
@@ -194,7 +196,6 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
         vatExemptionCode: "M07",
         color: "#C27E3A",
         smsReminders: false,
-        followUpDays: 2,
         durationMin: 50,
       },
       await unchanged(svcB, b0),
@@ -221,7 +222,7 @@ d(`Tipos de Marcacao: the table save and the new-type row [${applied ? "COLUMNS 
       {
         entity_id: svcA,
         metadata: {
-          fields: ["name", "priceCents", "durationMin", "followUpDays", "vatRate", "vatExemptionCode", "smsReminders", "color"],
+          fields: ["name", "priceCents", "durationMin", "vatRate", "vatExemptionCode", "smsReminders", "color"],
         },
       },
     ]);

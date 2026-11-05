@@ -113,7 +113,6 @@ d("PACK-04: archiving a service that carries a pacote", () => {
         name: r.name,
         priceCents: r.price_cents,
         durationMin: r.duration_min,
-        followUpDays: r.follow_up_days,
         vatRate: r.vat_rate,
         vatExemptionCode: r.vat_exemption_code,
         color: r.color,
