@@ -6,7 +6,7 @@
 //
 // WHAT THIS PROVES, with no database:
 //   * the document pins the real read, guard and module, and the sidecar pins the document; the
-//     document's first line is its NOT READY line until R4 has read it;
+//     document's first line is its READY line, set after R4 read it;
 //   * the read writes nothing, controls no transaction, reads the clock once and the appointment id
 //     once, names no column that holds a person, prints no tenant id, and names no appointment;
 //   * the block: line 2 is `set -o pipefail`, no `set -e`, no `#` line, no continuation; both
@@ -70,8 +70,8 @@ const block = theBlock(doc);
 /** The read with its comments removed and every string literal emptied. */
 const code = sql.replace(/--[^\n]*/g, "").replace(/'(?:[^']|'')*'/g, "''");
 
-test("the document reads NOT READY until R4 has read it, and the sidecar pins it", () => {
-  assert.equal(doc.split("\n")[0], "NOT READY: awaiting R4 review");
+test("the document reads READY after R4, and the sidecar pins it", () => {
+  assert.match(doc.split("\n")[0], /^READY: R4 three rounds /);
   assert.equal(read(SIDECAR).trim(), `${sha256(doc)}  ${DOC_PATH}`);
 });
 

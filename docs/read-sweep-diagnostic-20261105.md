@@ -1,4 +1,4 @@
-NOT READY: awaiting R4 review
+READY: R4 three rounds (2026-11-04); the round-3 MINOR fixes are not re-reviewed (review-loop cap, 2026-09-27); throwaway rehearsal done; the production path is NOT REHEARSED (see "NOT REHEARSED"). GREEN runs it from its own dispatch.
 
 # SWEEP DIAGNOSTIC, 2026-11-05 (strategy's A1): the 11-03 heartbeats, the two heartbeats whose counts differ, and one shadow-only mark's history
 
