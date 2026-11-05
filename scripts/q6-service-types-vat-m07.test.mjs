@@ -5,7 +5,8 @@
 //
 // WHAT THIS PROVES, with no database (DATABASE_URL is never read):
 //   * the sidecar pins the document; the first line reads NOT READY; the document carries its
-//     NOT YET REHEARSED section; no em dash in any file of the op;
+//     Rehearsal and NOT REHEARSED sections (the blocks whole stay NOT REHEARSED until READY); no em dash in
+//     any file of the op;
 //   * the document pins the real four SQL files, the target guard and its module, in its table and
 //     in every block that runs them;
 //   * THE SQL: the write and the rollback open with BEGIN and the two SET LOCAL timeouts; each holds
@@ -29,7 +30,7 @@
 //     missing or stale, a written marker, each psql answer that is not the clean one) is a STOP.
 //
 // WHAT IT DOES NOT PROVE: that the SQL runs against a database. That is the rehearsal the document
-// lists under NOT YET REHEARSED.
+// records under Rehearsal.
 //
 // Run: DATABASE_URL= node --test scripts/q6-service-types-vat-m07.test.mjs
 
@@ -95,11 +96,12 @@ const SUCCESS = {
 
 /* ---- The document and its pins. ------------------------------------------------------------ */
 
-test("the sidecar pins the document, and the document says NOT READY and NOT YET REHEARSED", () => {
+test("the sidecar pins the document, and the document says NOT READY, records its rehearsal and what is NOT REHEARSED", () => {
   assert.equal(read(SIDECAR), `${sha256(doc)}  ${DOC}\n`);
   assert.match(doc.split("\n")[0], /^NOT READY: /);
-  assert.match(doc, /\n## NOT YET REHEARSED\n/);
-  assert.match(doc, /Nothing in this document has run against a database/);
+  assert.match(doc, /\n## Rehearsal\n/);
+  assert.match(doc, /\n## NOT REHEARSED\n\n- \*\*The blocks whole\.\*\*/);
+  assert.match(doc, /\*\*The target guard's production path\*\*/);
   for (const f of [DOC, PRE, WRITE, POST, UNDO, SELF]) {
     assert.ok(!read(f).includes(String.fromCharCode(0x2014)), `${f} carries an em dash`);
   }

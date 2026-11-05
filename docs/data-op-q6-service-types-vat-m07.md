@@ -1,8 +1,8 @@
-NOT READY: authored 2026-11-04, R4 rounds 1 and 2 answered (round 2's fixes not re-reviewed, review-loop cap), NOT YET REHEARSED, five questions open for strategy (Q6-A to Q6-E), the night not ruled, 0110 not applied.
+NOT READY: authored 2026-11-04, R4 rounds 1 and 2 answered (round 2's fixes not re-reviewed, review-loop cap), SQL rehearsed 2026-11-05 on BLUE, the blocks whole NOT REHEARSED, five questions open for strategy (Q6-A to Q6-E), the night not ruled, 0110 not applied.
 
 # Q6: the existing appointment types take 0% VAT and the exemption code M07
 
-**Status: AUTHORED 2026-11-04 BY SOLO. NOT YET REHEARSED (see "NOT YET REHEARSED"). R4 ROUND 1 (NOT PASS, 1 MAJOR, 3 MINOR, 2 NIT) AND ROUND 2 (2 MINOR, 4 NIT) ANSWERED 2026-11-04; round 2 was the last loop under the review-loop cap (see "Review history"). NOT RUN.** Nothing in this document may be pasted until its first line reads READY. THE PRE-CHECK carries `PENDING` in the four lines GREEN's dispatch fills and THE ROLLBACK in three, and STOP at their first check while they do.
+**Status: AUTHORED 2026-11-04 BY SOLO. THE SQL FILES REHEARSED 2026-11-05 ON BLUE BY A SESSION THAT DID NOT WRITE THEM; THE BLOCKS WHOLE NOT REHEARSED (see "Rehearsal" and "NOT REHEARSED"). R4 ROUND 1 (NOT PASS, 1 MAJOR, 3 MINOR, 2 NIT) AND ROUND 2 (2 MINOR, 4 NIT) ANSWERED 2026-11-04; round 2 was the last loop under the review-loop cap (see "Review history"). NOT RUN.** Nothing in this document may be pasted until its first line reads READY. THE PRE-CHECK carries `PENDING` in the four lines GREEN's dispatch fills and THE ROLLBACK in three, and STOP at their first check while they do.
 
 **In plain words.** Migration 0110 (held pull request #1704) adds two empty fields to every appointment type: the VAT rate and the VAT exemption reason. Strategy ruled that the types the clinic already has take the values Fisiozero used for them: a rate of 0% and the exemption code M07. This operation fills those two fields, once, on every appointment type of the clinic where both are still empty. It changes nothing else: not the price, not the name, not any appointment, invoice or patient. A type where staff already chose a rate or a code after 0110 is left exactly as staff left it.
 
@@ -426,18 +426,42 @@ echo "THE ROLLBACK: COMMITTED. The ${IC} recorded services of the tenant osteojp
 
 **EXPECT:** `network time:`; `Lisbon now: ... closed ...; inside: yes`; `checked out:`; the sidecar line; `pins:`; the target guard's lines; `the rollback: <N> recorded services expected ...`; then `THE ROLLBACK: COMMITTED. ...`. Exit 0.
 
-## NOT YET REHEARSED
+## Rehearsal
 
-**Nothing in this document has run against a database.** It was authored on 2026-11-04 with no Docker and no database started (another session held the only local stack that night). What stands today:
+**2026-11-05, 03:00 to 03:09 WET, lane BLUE, by a session that did not write this document, on the head `dacacb37` of #1724** (document sha256 `93e701544b997eb92730d90f422a785e637788a7fb4b2b88a59da20d1fbd13ac`, the four SQL files at the pins in the facts table).
 
-- **The fault-injection test** (`scripts/q6-service-types-vat-m07.test.mjs`) runs every block in GREEN's tool shape, in bash and in zsh, with every external command a stub, fails each call in turn, and proves every halt is explicit and that each block passes only on its expected output. It runs with no database (`DATABASE_URL` blank). It also holds the SQL's shape: the write's first statements, its single UPDATE and its predicate, the count checks before the COMMIT, the rollback keyed on the recorded ids.
-- **NOT YET REHEARSED, to be done on a throwaway database by a session that did not write this, before the READY line:**
-  - the four SQL files against a schema built from `main` plus 0110 at the head of #1704, with synthetic services rows: the clean case (both VAT fields empty on active, archived and internal-only rows, plus a partial row, a row at other values and a row of a second tenant), and each refusal (no tenant, two tenants, 0110 absent, a prior audit row, an empty target, a target above 60, a moved target between THE PRE-CHECK and THE WRITE by count and by md5, a mismatched `expect`);
-  - the psql details the blocks rely on and that only a real psql shows: that `-q -A -t` prints only the `Q6` lines (THE PRE-CHECK and THE POST-CHECK STOP on any other line); that `\o :idsfile` writes the ids before the COMMIT, and whether a failed `\o` stops psql under `ON_ERROR_STOP=1`; that a `RAISE` inside the DO blocks exits psql with a non-zero code and rolls the transaction back;
-  - the rollback, after a rehearsed write, including its refusals when staff changed one row after the write, and when staff re-saved one with the same 0% and M07 (a later `service.update` audit row; a later `updated_at`);
-  - `git fetch origin refs/pull/1724/head` and `FETCH_HEAD` in the apply worktree, before and after the pull request merges (the fault-injection test stubs git);
-  - the blocks themselves against the throwaway: THE PRE-CHECK, THE WRITE, THE POST-CHECK and THE ROLLBACK read only production, because the target guard refuses anything else, and the lead's rule of 2026-09-30 forbids getting past a guard on a throwaway. "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so." So each block's production path (the environment file, the guard, the connection) stays NOT REHEARSED; the rehearsal runs the SQL files with exactly the blocks' psql arguments.
-- **No R4 round yet.** The review runs after the rehearsal, on the bytes the rehearsal ran.
+**The database.** A throwaway positioned at `main` to `0108`, then `0109` and `0110` applied by `psql -1`. Synthetic services rows only: ten rows, nine of the tenant `osteojp` and one of a second tenant (`osteojp-preview`): five with both VAT fields empty (three active, two archived, two internal-only), one partial row at 23 and no code, one partial row with no rate and M10, one at 13 and M01, one already at 0 and M07.
+
+**The blocks, whole, in GREEN's eval shape.** Each stopped at its own first-line check, by design: THE PRE-CHECK and THE ROLLBACK passed `after 0110:`, network time, the Lisbon clock (`closed by the weekday table`), the night (`inside: yes`), the explicit fetch (`refs/pull/1724/head -> FETCH_HEAD`), `held head now:`, `checked out:` and `document:` with the sha256 above, and then printed `STOP: the document's first line at the held head still reads NOT READY, or it could not be searched. Nothing was read from production` (exit 1). THE WRITE and THE POST-CHECK printed `STOP: THE PRE-CHECK recorded no head in this sitting.` A block cannot run whole before the READY line, so the SQL files were rehearsed as separate steps, each with its block's own psql line and its own checks on the output. The target guard, run against the throwaway, printed `REFUSING: project ref is "postgres", not the production project.` (exit 2), as it must.
+
+**The clean run.**
+
+| Step | Printed |
+|---|---|
+| THE PRE-CHECK's SQL | 19 `Q6PRE` lines, among them `services_total 9`, `target_total 5`, `target_active 3`, `target_archived 2`, `target_internal_only 2`, `partial_left_alone 2`, `already_0_m07 1`, `other_values_left_alone 1`, `other_tenants_services_untouched 1`, and the PASS carry `5` with its md5 |
+| THE WRITE's SQL | `THE WRITE: COMMITTED. 5 services of the tenant osteojp read 0% and M07, with 5 audit rows.` and an ids file of 5 lines |
+| THE POST-CHECK's SQL | `at_0_m07_total 6` (the five written and the one already there), `target_left_now 0`, `partial_left_alone 2`, then `POST-CHECK PASSED: the 5 recorded services ...` |
+| The state after | exactly the five NULL/NULL rows of `osteojp` changed, to 0 and M07; every other row, the partial rows and the second tenant's row included, byte-identical by an md5 per row; 5 audit rows `service.vat_default_q6`, 5 distinct services, actor NULL on all 5 |
+
+**The refusals proven.**
+
+- **A second run:** THE PRE-CHECK and THE WRITE refused on the ids file (`STOP: the ids file of THE WRITE already exists ...`); THE PRE-CHECK's SQL refused in the database, and THE WRITE's SQL printed `Q6STOP: 5 audit rows of this op are already in the tenant: it ran before, or was undone. The lead rules` (psql exit 3).
+- **The table moved after THE PRE-CHECK:** one more empty row (6 against the carry of 5) and the same count with other rows (the md5 carry): THE WRITE refused both, nothing written.
+- **A staff re-save before the rollback:** three cases, each refused the whole set with nothing written: a later `service.*` audit row alone, a later `updated_at` alone, and a value changed.
+- **A held lock:** with another session holding a lock on `services`, THE WRITE printed `ERROR:  canceling statement due to lock timeout` after 5 seconds, at its `LOCK TABLE` statement, and wrote nothing. That error carries no `Q6STOP` line: it is Postgres's own, and THE WRITE's block STOPs on psql's exit code as for any other failure.
+
+**The rollback, right after a write.** `THE ROLLBACK: COMMITTED. The 5 recorded services of the tenant osteojp have both VAT fields empty again, with 5 undo audit rows.`; every row byte-identical to the seed by the same md5 per row; 5 audit rows `service.vat_default_q6_undone`. A second rollback refused, by its marker in the block (`STOP: the rollback has already run (its marker exists).`) and in the database (`Q6STOP: 5 undo audit rows already exist: the rollback ran before`). After the rollback THE POST-CHECK and THE PRE-CHECK both refuse, as they must.
+
+**The psql behaviours now rehearsed:** `-q -A -t` prints only the `Q6` lines; `\o :idsfile` writes the whole ids file before the COMMIT; a failed `\o` (a folder that does not exist) stops psql with exit 3 before the COMMIT, nothing written; a `RAISE` inside a DO block exits psql with 3 and rolls the transaction back.
+
+## NOT REHEARSED
+
+- **The blocks whole.** They stop at their NOT READY first-line check until the READY line, by design. A whole run of each block, at the READY head, against a throwaway, is owed before the night; the target guard will still stop each one there (next item), so that run proves everything up to the guard.
+- **The target guard's production path** (the environment file, the guard, the connection). The guard refuses a throwaway by design, and the lead's rule of 2026-09-30 forbids getting past it: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
+- **0110 absent, an empty target, and the 60-row ceiling.** Each is a refusal in THE PRE-CHECK's SQL (and the first in THE WRITE's); none was run on the throwaway.
+- **The fetch of `refs/pull/1724/head` after the pull request merges.** It was run before the merge only.
+
+What stands beside the rehearsal: **the fault-injection test** (`scripts/q6-service-types-vat-m07.test.mjs`) runs every block in GREEN's tool shape, in bash and in zsh, with every external command a stub, fails each call in turn, and proves every halt is explicit and that each block passes only on its expected output, with no database (`DATABASE_URL` blank). It also pins every statement of the four SQL files, in order.
 
 ## Known limits, harmless
 
@@ -448,7 +472,7 @@ echo "THE ROLLBACK: COMMITTED. The ${IC} recorded services of the tenant osteojp
 
 1. Strategy answers Q6-A to Q6-E (a different answer changes the files, their pins and this document).
 2. 0110 is applied to production in its own sitting, and GREEN reports.
-3. The rehearsal above, by a session that did not write this, recorded in this document.
+3. The SQL rehearsal is recorded above (2026-11-05, BLUE). Still owed: each block run whole at the READY head against a throwaway, up to its target guard, recorded here.
 4. R4 rounds on the document, the four SQL files and the test, under the review-loop cap.
 5. SOLO sets the first line to READY, recomputes the sidecar, and fills `HELD`, `DOCSHA`, `RUNDAY` and `MIGNIGHT` in GREEN's dispatch copy only (this document keeps `PENDING`).
 
