@@ -74,3 +74,10 @@ export * from "./src/guest-intake-staff";
 // read and the creation form both gate on the same answer, and each keeping its
 // own check is how they would come to disagree about whether the table exists.
 export * from "./src/rgpd-acceptance-schema";
+
+// DATED CLINIC CLOSURES (Tier C 0114) - whether the pending location_closed_days
+// table exists yet. Exported from the package for the reason `shared-resource`
+// above is: the staff refusal, the availability read, the agenda band and the
+// patient portal (apps/api) all gate on the same answer, and each keeping its
+// own check is how they would come to disagree about whether a clinic is shut.
+export * from "./src/closed-days-schema";
