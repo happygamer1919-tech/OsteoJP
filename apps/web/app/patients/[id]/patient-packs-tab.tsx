@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { s } from "@/lib/i18n";
 import { PATIENT_PACKS_READ_CAP, type PatientPacksPage } from "@/lib/packs/in-use";
+import type { PackPaymentSummary } from "@/lib/packs/payments";
 import { PacksInUseTable } from "../packs/packs-in-use-table";
 
 /**
@@ -18,19 +19,31 @@ import { PacksInUseTable } from "../packs/packs-in-use-table";
  *
  * Two sections: the pacotes still running (the same rule as "Packs em uso":
  * a free session, or a booked session still ahead) and the finished ones.
- * PAGAMENTO stays empty with "Pagamento: em breve", as on "Packs em uso":
- * nothing records a payment against a pacote yet.
+ * PAGAMENTO (pack payments): for the money roles, once the pending migration
+ * is applied, each pacote shows its state (Recebido, Por receber, Preço por
+ * indicar) and a link to its payments page, from `payments`, read by the page.
+ * A therapist is given no `payments`, so the cells stay empty and there is no
+ * link (P4). "Pagamento: em breve" shows only where it is true: a money role
+ * on a database without the tables (`showPaymentSoon`).
  *
  * PRESENTATIONAL AND SERVER-RENDERED. The read is `listPatientPacks`
  * (lib/packs/in-use-read.ts), under the viewer's own session.
  */
-export function PatientPacksTab({ page }: { page: PatientPacksPage }) {
+export function PatientPacksTab({
+  page,
+  payments = null,
+  showPaymentSoon = true,
+}: {
+  page: PatientPacksPage;
+  payments?: ReadonlyMap<string, PackPaymentSummary> | null;
+  showPaymentSoon?: boolean;
+}) {
   const { running, finished, truncated } = page;
 
   return (
     <div className="flex flex-col gap-6" data-testid="patient-packs-tab">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <p className="text-xs text-v2-text-secondary">{s["packsInUse.paymentSoon"]}</p>
+        {showPaymentSoon ? <p className="text-xs text-v2-text-secondary">{s["packsInUse.paymentSoon"]}</p> : <span />}
         <Link
           href="/patients/packs"
           className="text-sm font-medium text-accent-2-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
@@ -66,7 +79,7 @@ export function PatientPacksTab({ page }: { page: PatientPacksPage }) {
               {running.length === 0 ? (
                 <p className="text-sm text-v2-text-secondary">{s["patientPacks.noneRunning"]}</p>
               ) : (
-                <PacksInUseTable rows={running} showPatient={false} testId="patient-packs-running-table" />
+                <PacksInUseTable rows={running} showPatient={false} testId="patient-packs-running-table" payments={payments} />
               )}
             </GlassPanel>
           </section>
@@ -79,7 +92,7 @@ export function PatientPacksTab({ page }: { page: PatientPacksPage }) {
               </div>
               <p className="text-xs text-v2-text-secondary">{s["patientPacks.finishedHint"]}</p>
               <GlassPanel>
-                <PacksInUseTable rows={finished} showPatient={false} testId="patient-packs-finished-table" />
+                <PacksInUseTable rows={finished} showPatient={false} testId="patient-packs-finished-table" payments={payments} />
               </GlassPanel>
             </section>
           )}

@@ -48,6 +48,9 @@ export type PackPaymentMethod = (typeof PACK_PAYMENT_METHODS)[number];
 
 /** The database's bounds, restated so a form refuses before the database does. */
 export const STYLUS_REF_MAX = 40;
+export const REASON_MAX = 500;
+/** No payment line is dated before this (the database's received_on floor). */
+export const RECEIVED_ON_FLOOR = "2020-01-01";
 export const MAX_PACK_AMOUNT_CENTS = 10_000_000;
 
 /** One line as the read hands it over. */
@@ -79,6 +82,8 @@ export type PackPaymentSummary = {
   lastPaidOn: string | null;
   /** Lines with no Stylus reference yet (P3: flagged when missing). */
   linesWithoutStylusRef: number;
+  /** "Recebido a mais": what was received beyond what is due; 0 when not overpaid or unpriced. */
+  overpaidCents: number;
 };
 
 /** The minimum each summary needs from a line. */
@@ -111,6 +116,7 @@ export function summarizePackPayments(
     state,
     lastPaidOn,
     linesWithoutStylusRef,
+    overpaidCents: outstandingCents !== null && outstandingCents < 0 ? -outstandingCents : 0,
   };
 }
 
@@ -160,7 +166,8 @@ export type PackPaymentFormError =
   | "stylus_ref"
   | "reason"
   | "agreed_price"
-  | "agreed_price_required";
+  | "agreed_price_required"
+  | "reason_long";
 
 const PLAIN_DECIMAL = /^\d+(?:[.,]\d{1,2})?$/;
 
@@ -239,6 +246,7 @@ export function parsePackPaymentForm(
 
   const receivedOn = str("receivedOn").trim();
   if (!validYmd(receivedOn)) return { ok: false, error: "date" };
+  if (receivedOn < RECEIVED_ON_FLOOR) return { ok: false, error: "date" };
   if (receivedOn > lisbonDate(ctx.now)) return { ok: false, error: "date_future" };
 
   const rawMethod = str("method").trim();
@@ -256,6 +264,7 @@ export function parsePackPaymentForm(
   if (ref.length > STYLUS_REF_MAX) return { ok: false, error: "stylus_ref" };
 
   const reason = str("reason").trim();
+  if (reason.length > REASON_MAX) return { ok: false, error: "reason_long" };
   if (kind !== "pagamento" && !reason) return { ok: false, error: "reason" };
 
   let agreedPriceCents: number | null = null;
@@ -308,6 +317,8 @@ const ERROR_KEYS = {
   forbidden: "packsPay.errForbidden",
   patient: "packsPay.errPatient",
   pack: "packsPay.errPack",
+  reason_long: "packsPay.errReasonLong",
+  pack_has_free_sessions: "packsSell.errHasFreeSessions",
 } as const;
 export type PackPaymentMessageKey = (typeof ERROR_KEYS)[keyof typeof ERROR_KEYS];
 

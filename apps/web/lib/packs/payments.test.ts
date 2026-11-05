@@ -71,6 +71,14 @@ describe("summarizePackPayments", () => {
     expect(summarizePackPayments(0, null, []).state).toBe("paid");
   });
 
+  it("an overpaid pacote is 'paid' and says how much was received in excess; otherwise 0", () => {
+    const over = summarizePackPayments(45000, null, [pay(50000, "2026-11-01")]);
+    expect(over).toMatchObject({ state: "paid", outstandingCents: -5000, overpaidCents: 5000 });
+    expect(summarizePackPayments(45000, null, [pay(45000, "2026-11-01")]).overpaidCents).toBe(0);
+    expect(summarizePackPayments(null, null, [pay(45000, "2026-11-01")]).overpaidCents).toBe(0);
+    expect(summarizePackPayments(45000, null, []).overpaidCents).toBe(0);
+  });
+
   it("counts the lines with no Stylus document, corrections aside (P3)", () => {
     const sum = summarizePackPayments(45000, null, [
       pay(10000, "2026-11-01", null),
@@ -191,6 +199,17 @@ describe("parsePackPaymentForm", () => {
     expect(parsePackPaymentForm(form({ locationId: "x" }), opts)).toEqual({ ok: false, error: "location" });
     expect(parsePackPaymentForm(form({ stylusRef: "x".repeat(41) }), opts)).toEqual({ ok: false, error: "stylus_ref" });
     expect(parsePackPaymentForm(form({ stylusRef: "x".repeat(40) }), opts).ok).toBe(true);
+  });
+
+  it("the date floor (2020-01-01, as the database) and the reason cap (500, as the database)", () => {
+    const opts = { now: NOW, instanceHasPrice: true };
+    expect(parsePackPaymentForm(form({ receivedOn: "2019-12-31" }), opts)).toEqual({ ok: false, error: "date" });
+    expect(parsePackPaymentForm(form({ receivedOn: "2020-01-01" }), opts).ok).toBe(true);
+    const refund = { kind: "reembolso" };
+    expect(parsePackPaymentForm(form({ ...refund, reason: "x".repeat(501) }), opts)).toEqual({ ok: false, error: "reason_long" });
+    expect(parsePackPaymentForm(form({ ...refund, reason: "x".repeat(500) }), opts).ok).toBe(true);
+    // Trimmed first: surrounding spaces do not count against the cap.
+    expect(parsePackPaymentForm(form({ ...refund, reason: ` ${"x".repeat(500)} ` }), opts).ok).toBe(true);
   });
 
   it("'today' is the Lisbon date: just after midnight in Lisbon in summer, today's date is accepted", () => {

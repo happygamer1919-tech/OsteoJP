@@ -14,14 +14,19 @@ import {
   sortPacksInUse,
   type PacksInUseSort,
 } from "@/lib/packs/in-use";
-import { listPacksInUse } from "@/lib/packs/in-use-read";
+import { listPacksByIds, listPacksInUse } from "@/lib/packs/in-use-read";
 import {
   filterPorReceber,
   formatSignedEuros,
   parsePorReceberFilter,
   withPorReceberFilter,
 } from "@/lib/packs/payments";
-import { readPackPaymentSummaries, readPacksReceivedThisMonth } from "@/lib/packs/payments-read";
+import {
+  RECEIVABLES_READ_CAP,
+  listReceivableInstanceIds,
+  readPackPaymentSummaries,
+  readPacksReceivedThisMonth,
+} from "@/lib/packs/payments-read";
 import { SearchBox } from "../_components/search-box";
 import { PacksInUseTable } from "./packs-in-use-table";
 
@@ -67,19 +72,34 @@ export default async function PacksInUsePage({
   const page = await listPacksInUse(ctx, q);
   const { totalInUse, truncated } = page;
   const moneyRole = can(ctx.role, "pack_payments:read");
-  const payments = moneyRole
+  const inUsePayments = moneyRole
     ? await readPackPaymentSummaries(
         ctx,
         page.rows.map((r) => r.instanceId),
       )
     : null;
+  const porReceber = inUsePayments !== null && parsePorReceberFilter(first(sp.pagamento));
+  // "€ POR RECEBER" is NOT a filter over the pacotes in use: a pacote with every
+  // session spent and money still owed has left that list and is exactly the one
+  // to chase. It reads every pacote with money to receive (bounded), as the
+  // viewer, and draws those rows with the same numbers.
+  const receivables = porReceber ? await listReceivableInstanceIds(ctx) : null;
+  const receivableRows = receivables ? await listPacksByIds(ctx, receivables.ids, q) : null;
+  const payments = receivableRows
+    ? await readPackPaymentSummaries(
+        ctx,
+        receivableRows.map((r) => r.instanceId),
+      )
+    : inUsePayments;
   const month = payments ? await readPacksReceivedThisMonth(ctx) : null;
-  const porReceber = payments !== null && parsePorReceberFilter(first(sp.pagamento));
   const canSell = payments !== null && can(ctx.role, "pack_payments:record");
-  // The read returns every row the page shows (bounded, not paginated), so the
-  // filter and the sort run here, on the server, over the full list.
-  const shown = payments !== null && porReceber ? filterPorReceber(page.rows, payments) : page.rows;
+  // Both reads return every row the page shows (bounded, not paginated), so the
+  // filter and the sort run here, on the server, over the full list. The
+  // filter re-checks "due" on the rows drawn, so the list and its badges agree.
+  const shown = receivableRows && payments ? filterPorReceber(receivableRows, payments) : page.rows;
   const rows = sortPacksInUse(shown, sort);
+  const shownTruncated = porReceber ? (receivables?.truncated ?? false) : truncated;
+  const shownCap = porReceber ? RECEIVABLES_READ_CAP : PACKS_IN_USE_READ_CAP;
 
   return (
     <main className="flex flex-col gap-5">
@@ -126,20 +146,23 @@ export default async function PacksInUsePage({
             : s["packsInUse.count"].replace("{n}", String(totalInUse))}
         </h2>
         {month ? (
-          <p className="text-sm text-v2-text-secondary tabular-nums" data-testid="packs-in-use-received-month">
-            {s["packsInUse.receivedMonth"]
-              .replace("{month}", monthLabel(month.first))
-              .replace("{amount}", formatSignedEuros(month.cents))}
-          </p>
+          <div className="flex flex-col items-end">
+            <p className="text-sm text-v2-text-secondary tabular-nums" data-testid="packs-in-use-received-month">
+              {s["packsInUse.receivedMonth"]
+                .replace("{month}", monthLabel(month.first))
+                .replace("{amount}", formatSignedEuros(month.cents))}
+            </p>
+            <p className="text-xs text-v2-text-secondary">{s["packsInUse.receivedMonthScope"]}</p>
+          </div>
         ) : (
           payments === null &&
           moneyRole && <p className="text-xs text-v2-text-secondary">{s["packsInUse.paymentSoon"]}</p>
         )}
       </div>
 
-      {truncated && (
+      {shownTruncated && (
         <p className="text-sm text-v2-text-secondary" role="status" data-testid="packs-in-use-truncated">
-          {s["packsInUse.truncated"].replace("{n}", String(PACKS_IN_USE_READ_CAP))}
+          {s["packsInUse.truncated"].replace("{n}", String(shownCap))}
         </p>
       )}
 
@@ -147,8 +170,8 @@ export default async function PacksInUsePage({
         {rows.length === 0 ? (
           <EmptyState
             icon={Package}
-            title={q ? s["packsInUse.noMatchTitle"] : s["packsInUse.emptyTitle"]}
-            description={q ? s["packsInUse.noMatchBody"] : s["packsInUse.emptyBody"]}
+            title={q ? s["packsInUse.noMatchTitle"] : porReceber ? s["packsInUse.porReceberEmptyTitle"] : s["packsInUse.emptyTitle"]}
+            description={q ? s["packsInUse.noMatchBody"] : porReceber ? s["packsInUse.porReceberEmptyBody"] : s["packsInUse.emptyBody"]}
           />
         ) : (
           <PacksInUseTable rows={rows} payments={payments} />

@@ -12,6 +12,8 @@ import {
   PACK_KIND_KEYS,
   PACK_METHOD_KEYS,
   PACK_PAYMENT_METHODS,
+  RECEIVED_ON_FLOOR,
+  REASON_MAX,
   STYLUS_REF_MAX,
   formatCalendarDate,
   formatSignedEuros,
@@ -189,6 +191,14 @@ export default async function PackPaymentsPage({
               {p.state === "due" && p.outstandingCents !== null && <span>{formatEurosShort(p.outstandingCents)}€</span>}
             </dd>
           </div>
+          {p.overpaidCents > 0 && (
+            <div>
+              <dt className={hint}>{s["packsPay.summaryOverpaid"]}</dt>
+              <dd className="font-medium tabular-nums text-warning-700" data-testid="pack-pay-overpaid">
+                {formatEurosShort(p.overpaidCents)}€
+              </dd>
+            </div>
+          )}
         </dl>
       </GlassPanel>
 
@@ -280,7 +290,7 @@ export default async function PackPaymentsPage({
               )}
               <label className={label}>
                 {s["packsPay.fieldDate"]}
-                <input type="date" name="receivedOn" defaultValue={today} max={today} required className={field} />
+                <input type="date" name="receivedOn" defaultValue={today} min={RECEIVED_ON_FLOOR} max={today} required className={field} />
               </label>
               <label className={label}>
                 {s["packsPay.fieldMethod"]}
@@ -312,7 +322,7 @@ export default async function PackPaymentsPage({
             </div>
             <label className={label}>
               {s["packsPay.fieldReason"]}
-              <textarea name="reason" rows={2} className={field} />
+              <textarea name="reason" rows={2} maxLength={REASON_MAX} className={field} />
             </label>
             <div>
               <button

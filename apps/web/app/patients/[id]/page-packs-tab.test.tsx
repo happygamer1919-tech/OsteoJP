@@ -91,6 +91,15 @@ vi.mock("../../../lib/packs/in-use-read", () => ({
     return h.page;
   },
 }));
+// PACK PAYMENTS: the money read, a recorder too. Null = the tables are not
+// there yet (before the sitting); a map = after it.
+const pay = vi.hoisted(() => ({ calls: [] as Array<{ role: unknown; ids: unknown }>, answer: null as unknown }));
+vi.mock("@/lib/packs/payments-read", () => ({
+  readPackPaymentSummaries: async (ctx: { role: unknown }, ids: unknown) => {
+    pay.calls.push({ role: ctx.role, ids });
+    return pay.answer;
+  },
+}));
 vi.mock("../../../lib/patients/queries", () => ({
   getPatient: async () => patient,
   getPatientHardDeleteBlockers: async () => ({ hasClinicalRecords: true, hasOtherReferences: false, counts: [] }),
@@ -200,7 +209,37 @@ describe("the Packs tab in the ficha", () => {
     expect(html).toContain('data-testid="patient-packs-running-table"');
     expect(html).toContain("Zzz Pack Fisioterapia 10 • 450€");
     expect(html).toMatch(/>2<\/td><td[^>]*>8<\/td><\/tr>/);
-    expect(html).toContain(s["packsInUse.paymentSoon"]);
+    // Before the sitting: "em breve" for the money roles; a therapist is told
+    // nothing about money at all (P4).
+    if (role === "therapist") expect(html).not.toContain(s["packsInUse.paymentSoon"]);
+    else expect(html).toContain(s["packsInUse.paymentSoon"]);
+  });
+
+  it("PACK PAYMENTS: a money role sees each pacote's payment state and its payments link; the read is made for these pacotes", async () => {
+    const { summarizePackPayments } = await import("@/lib/packs/payments");
+    h.page = { running: [view], finished: [], truncated: false };
+    pay.calls = [];
+    pay.answer = new Map([["inst-1", summarizePackPayments(45000, null, [])]]);
+    for (const role of ["owner", "admin", "reception"] as const) {
+      const html = await render(role, { tab: "packs" });
+      expect(html, role).toContain('data-pay-state="due"');
+      expect(html, role).toContain('href="/patients/packs/inst-1/pagamentos"');
+      expect(html, role).not.toContain(s["packsInUse.paymentSoon"]);
+    }
+    expect(pay.calls.map((c) => c.ids)).toEqual([["inst-1"], ["inst-1"], ["inst-1"]]);
+    pay.answer = null;
+  });
+
+  it("PACK PAYMENTS: a therapist is never read for money, sees no state and no payments link (P4)", async () => {
+    const { summarizePackPayments } = await import("@/lib/packs/payments");
+    h.page = { running: [view], finished: [], truncated: false };
+    pay.calls = [];
+    pay.answer = new Map([["inst-1", summarizePackPayments(45000, null, [])]]);
+    const html = await render("therapist", { tab: "packs" });
+    expect(pay.calls).toHaveLength(0);
+    expect(html).not.toContain("data-pay-state");
+    expect(html).not.toContain("/pagamentos");
+    pay.answer = null;
   });
 
   it("no pacotes: the panel draws the empty state", async () => {

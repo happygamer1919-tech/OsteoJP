@@ -1,7 +1,15 @@
 import "server-only";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { packPaymentsSchemaPresent } from "@osteojp/db";
+import {
+  packInstanceAgreedPrices,
+  packLinkedCountSql,
+  packPaymentsSchemaPresent,
+  packSessionsAvailable,
+  patientPackInstances,
+  patients,
+  servicePacks,
+} from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "@/lib/admin/audit";
 
@@ -21,19 +29,26 @@ import { writeAudit } from "@/lib/admin/audit";
  * .test.mjs`): nothing may UPDATE it. It is NOT NULL with no default, so a new
  * row must name it, with the purchase-time value (the full total), exactly as
  * `bookPackSessionTx` does. This file is on that guard's allow-list by its own
- * GATE-CHANGE, and the guard also asserts this file never UPDATEs it. The
- * balance stays DERIVED (`packSessionsAvailable`): a sold pacote with no
- * booking reads every session free, and the first booking of the same pacote
- * attaches to it (the newest instance with sessions left).
+ * GATE-CHANGE (#1729), and the guard also asserts this file never UPDATEs it.
+ * The balance stays DERIVED (`packSessionsAvailable`).
+ *
+ * ==========================================================================
+ * ONE RUNNING PACOTE OF A KIND AT A TIME (the lead's default, reversible)
+ * ==========================================================================
+ * The sale is refused while the patient already holds the SAME pacote with
+ * sessions left ("Este utente já tem este pack com sessões livres"): the
+ * booking path draws from the newest instance with sessions left, so a second
+ * running one would be consumed first and the older one would sit unused.
+ * "Sessions left" is the booking path's own rule (`packSessionsAvailable` over
+ * the visits the viewer's session counts), so the refusal agrees with what a
+ * booking would do.
  *
  * ==========================================================================
  * THE PRICE IS TYPED, NEVER TAKEN FROM THE CATALOGUE (P2)
  * ==========================================================================
  * The form shows today's catalogue price beside the field and never fills it;
- * this function stores exactly what was typed. It is written by raw SQL because
- * `agreed_price_cents` is not declared on the drizzle instance table until
- * after the apply (see schema.ts beside `packInstancePayments`), and the whole
- * sale is refused on a database without the column.
+ * this function stores exactly what was typed, as the instance's one row in
+ * `pack_instance_agreed_prices`, in the same transaction as the instance.
  *
  * Nothing here is fiscal: the sale itself is made in Stylus first, by hand (S1,
  * S2, design note 1.6). The audit row carries ids and the session count, never
@@ -42,7 +57,9 @@ import { writeAudit } from "@/lib/admin/audit";
 
 export type SellPackResult =
   | { ok: true; instanceId: string }
-  | { ok: false; reason: "unavailable" | "patient" | "pack" };
+  | { ok: false; reason: "unavailable" | "patient" | "pack" | "pack_has_free_sessions" };
+
+const linkedCount = sql<number>`${sql.raw(packLinkedCountSql('"patient_pack_instances"."id"'))}`;
 
 export async function sellPack(
   actor: RequestContext,
@@ -60,33 +77,63 @@ export async function sellPack(
       if (!(await packPaymentsSchemaPresent(tx))) return { ok: false as const, reason: "unavailable" as const };
 
       // The patient as the viewer may see them (patients_select), not deleted.
-      const [patient] = (await tx.execute(sql`
-        select id from patients where id = ${input.patientId}::uuid and deleted_at is null
-      `)) as unknown as ReadonlyArray<{ id: string }>;
-      if (!patient) return { ok: false as const, reason: "patient" as const };
+      const [patient] = await tx
+        .select({ id: patients.id, deletedAt: patients.deletedAt })
+        .from(patients)
+        .where(eq(patients.id, input.patientId))
+        .limit(1);
+      if (!patient || patient.deletedAt !== null) return { ok: false as const, reason: "patient" as const };
 
-      const [pack] = (await tx.execute(sql`
-        select id, session_count from service_packs where id = ${input.packId}::uuid and is_active
-      `)) as unknown as ReadonlyArray<{ id: string; session_count: number }>;
-      if (!pack) return { ok: false as const, reason: "pack" as const };
-      const total = Number(pack.session_count);
+      const [pack] = await tx
+        .select({ id: servicePacks.id, sessionCount: servicePacks.sessionCount, isActive: servicePacks.isActive })
+        .from(servicePacks)
+        .where(eq(servicePacks.id, input.packId))
+        .limit(1);
+      if (!pack || !pack.isActive) return { ok: false as const, reason: "pack" as const };
 
-      // tenant_id from the actor; 0037's policy checks it against the JWT, and
-      // the pending migration's restrictive INSERT policy admits a price only
-      // from owner, admin or reception.
-      const [row] = (await tx.execute(sql`
-        insert into patient_pack_instances
-          (tenant_id, patient_id, pack_id, sessions_total, sessions_remaining, legacy_consumed, agreed_price_cents)
-        values
-          (${actor.tenantId}::uuid, ${input.patientId}::uuid, ${input.packId}::uuid, ${total}, ${total}, 0, ${input.agreedPriceCents})
-        returning id
-      `)) as unknown as ReadonlyArray<{ id: string }>;
+      const held = await tx
+        .select({
+          sessionsTotal: patientPackInstances.sessionsTotal,
+          legacyConsumed: patientPackInstances.legacyConsumed,
+          linked: linkedCount,
+        })
+        .from(patientPackInstances)
+        .where(and(eq(patientPackInstances.patientId, input.patientId), eq(patientPackInstances.packId, input.packId)));
+      const hasFree = held.some(
+        (h) =>
+          packSessionsAvailable({
+            sessionsTotal: h.sessionsTotal,
+            legacyConsumed: h.legacyConsumed,
+            linkedAppointments: Number(h.linked),
+          }) > 0,
+      );
+      if (hasFree) return { ok: false as const, reason: "pack_has_free_sessions" as const };
+
+      // tenant_id from the actor; 0037's policy checks it against the JWT.
+      const [row] = await tx
+        .insert(patientPackInstances)
+        .values({
+          tenantId: actor.tenantId,
+          patientId: input.patientId,
+          packId: input.packId,
+          sessionsTotal: pack.sessionCount,
+          sessionsRemaining: pack.sessionCount,
+          legacyConsumed: 0,
+        })
+        .returning({ id: patientPackInstances.id });
+
+      await tx.insert(packInstanceAgreedPrices).values({
+        packInstanceId: row!.id,
+        tenantId: actor.tenantId,
+        agreedPriceCents: input.agreedPriceCents,
+        createdBy: actor.userId,
+      });
 
       await writeAudit(tx, actor, {
         action: "pack_instance.sell",
         entityType: "patient_pack_instance",
         entityId: row!.id,
-        metadata: { packId: input.packId, patientId: input.patientId, sessionsTotal: total },
+        metadata: { packId: input.packId, patientId: input.patientId, sessionsTotal: pack.sessionCount },
       });
 
       return { ok: true as const, instanceId: row!.id };

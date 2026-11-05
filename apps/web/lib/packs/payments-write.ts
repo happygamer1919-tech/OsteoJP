@@ -1,7 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { packInstancePayments, packPaymentsSchemaPresent } from "@osteojp/db";
+import { packInstanceAgreedPrices, packInstancePayments, packPaymentsSchemaPresent } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "@/lib/admin/audit";
 import type { PackPaymentInput } from "./payments";
@@ -15,17 +15,17 @@ import type { PackPaymentInput } from "./payments";
  * ==========================================================================
  * - Who: `pack_payments:record` (owner, admin, reception); a correcao also
  *   needs `pack_payments:correct` (owner, admin). The pending migration's
- *   INSERT policy says the same, so a caller that skipped this check would
+ *   INSERT policies say the same, so a caller that skipped this check would
  *   still be refused.
  * - Which pacote: one the viewer can see, read joined to `patients` under the
  *   viewer's own RLS, as Packs em uso reads it.
  * - Which clinic: an active location of the tenant.
- * - The agreed price is SET ONCE: the UPDATE carries `agreed_price_cents IS
- *   NULL` in its WHERE, and the restrictive policy refuses anything else, so two
- *   receptionists typing a price at once cannot both win; the loser's whole
- *   transaction rolls back, line included.
- * - APPEND ONLY. There is no update and no delete of a line anywhere: a mistake
- *   is a new line (a correcao by owner or admin).
+ * - The agreed price is SET ONCE: it is a row of `pack_instance_agreed_prices`,
+ *   whose primary key is the instance. This file checks for an existing row
+ *   first; a second writer racing past that check hits the key (23505) and the
+ *   whole transaction rolls back, line included, as `price_already_set`.
+ * - APPEND ONLY. There is no update and no delete of a price or a line
+ *   anywhere: a mistake is a new line (a correcao by owner or admin).
  *
  * The audit row carries ids, the kind and two booleans. Never the amount and
  * never the reason (design note 2.1; CLAUDE.md rule 7): the reason lives on the
@@ -47,6 +47,15 @@ class Refused extends Error {
   }
 }
 
+/** A unique violation, wherever the driver or drizzle put the code. */
+export function isUniqueViolation(e: unknown): boolean {
+  for (let cur: unknown = e, depth = 0; cur && depth < 4; depth++) {
+    if ((cur as { code?: unknown }).code === "23505") return true;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export async function recordPackPayment(
   actor: RequestContext,
   input: PackPaymentInput,
@@ -61,9 +70,10 @@ export async function recordPackPayment(
         if (!(await packPaymentsSchemaPresent(tx))) throw new Refused("unavailable");
 
         const [inst] = (await tx.execute(sql`
-          select i.id, i.agreed_price_cents
+          select i.id, ap.agreed_price_cents
             from patient_pack_instances i
             join patients p on p.id = i.patient_id and p.tenant_id = i.tenant_id
+            left join pack_instance_agreed_prices ap on ap.pack_instance_id = i.id
            where i.id = ${input.instanceId}::uuid
         `)) as unknown as ReadonlyArray<{ id: string; agreed_price_cents: number | null }>;
         if (!inst) throw new Refused("not_found");
@@ -76,14 +86,16 @@ export async function recordPackPayment(
         let setAgreedPrice = false;
         if (inst.agreed_price_cents === null && input.kind === "pagamento") {
           if (input.agreedPriceCents === null) throw new Refused("price_required");
-          const updated = (await tx.execute(sql`
-            update patient_pack_instances
-               set agreed_price_cents = ${input.agreedPriceCents}, updated_at = now()
-             where id = ${input.instanceId}::uuid and agreed_price_cents is null
-            returning id
-          `)) as unknown as ReadonlyArray<{ id: string }>;
-          if (updated.length !== 1) throw new Refused("price_already_set");
+          await tx.insert(packInstanceAgreedPrices).values({
+            packInstanceId: input.instanceId,
+            tenantId: actor.tenantId,
+            agreedPriceCents: input.agreedPriceCents,
+            createdBy: actor.userId,
+          });
           setAgreedPrice = true;
+        } else if (inst.agreed_price_cents !== null && input.agreedPriceCents !== null) {
+          // The form believed there was no price; somebody set it meanwhile.
+          throw new Refused("price_already_set");
         }
 
         const [line] = await tx
@@ -120,6 +132,7 @@ export async function recordPackPayment(
     );
   } catch (e) {
     if (e instanceof Refused) return { ok: false, reason: e.reason };
+    if (isUniqueViolation(e)) return { ok: false, reason: "price_already_set" };
     throw e;
   }
 }

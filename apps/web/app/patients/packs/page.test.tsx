@@ -28,16 +28,23 @@ vi.mock("@/lib/auth/context", () => ({
 
 let page = { totalInUse: 0, rows: [] as unknown[], truncated: false };
 const listPacksInUse = vi.fn(async () => page);
+let byIds: unknown[] = [];
+const listPacksByIds = vi.fn(async () => byIds);
 vi.mock("@/lib/packs/in-use-read", () => ({
   listPacksInUse: (...a: unknown[]) => (listPacksInUse as (...x: unknown[]) => unknown)(...a),
+  listPacksByIds: (...a: unknown[]) => (listPacksByIds as (...x: unknown[]) => unknown)(...a),
 }));
 
 type Summary = import("@/lib/packs/payments").PackPaymentSummary;
 let payments: Map<string, Summary> | null = null;
 let month: { cents: number; first: string; last: string } | null = null;
+let receivables: { ids: string[]; truncated: boolean } | null = null;
 const readPackPaymentSummaries = vi.fn(async () => payments);
+const listReceivableInstanceIds = vi.fn(async () => receivables);
 vi.mock("@/lib/packs/payments-read", () => ({
+  RECEIVABLES_READ_CAP: 1000,
   readPackPaymentSummaries: (...a: unknown[]) => (readPackPaymentSummaries as (...x: unknown[]) => unknown)(...a),
+  listReceivableInstanceIds: (...a: unknown[]) => (listReceivableInstanceIds as (...x: unknown[]) => unknown)(...a),
   readPacksReceivedThisMonth: async () => month,
 }));
 
@@ -71,8 +78,12 @@ beforeEach(() => {
   page = { totalInUse: 0, rows: [], truncated: false };
   payments = null;
   month = null;
+  receivables = null;
+  byIds = [];
   listPacksInUse.mockClear();
+  listPacksByIds.mockClear();
   readPackPaymentSummaries.mockClear();
+  listReceivableInstanceIds.mockClear();
 });
 
 const view = (id: string, name: string): PackInUseView => ({
@@ -130,22 +141,47 @@ describe("Packs em uso page, pack payments", () => {
     expect(html).toContain(s["packsInUse.footnotePayments"]);
   });
 
-  it("'€ POR RECEBER' keeps only the pacotes with money to receive, and the sort links keep the filter", async () => {
+  it("'€ POR RECEBER' draws the RECEIVABLES read, not the in-use list: a fully used, unpaid pacote is on it", async () => {
     role = "admin";
-    page = { totalInUse: 3, rows: [view("a", "Ana"), view("b", "Bruno"), view("c", "Carla")], truncated: false };
+    // In use: Ana (unpaid) and Bruno (paid). Not in use: Duarte, every session
+    // spent and money still owed. The receivables read names Ana and Duarte.
+    page = { totalInUse: 2, rows: [view("a", "Ana"), view("b", "Bruno")], truncated: false };
+    const spent = { ...view("d", "Duarte"), free: 0, reserved: 10, upcoming: 0 };
+    receivables = { ids: ["a", "d"], truncated: false };
+    byIds = [view("a", "Ana"), spent];
     payments = new Map([
       ["a", summarizePackPayments(45000, null, [])],
       ["b", summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 45000, receivedOn: "2026-11-01", stylusRef: "FR 1E/1" }])],
-      ["c", summarizePackPayments(null, null, [])],
+      ["d", summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 10000, receivedOn: "2026-10-01", stylusRef: "FR 1E/2" }])],
     ]);
-    const html = await render({ pagamento: "por-receber" });
+    const html = await render({ pagamento: "por-receber", q: "  " });
+    expect(listReceivableInstanceIds).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }));
+    expect(listPacksByIds).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }), ["a", "d"], "");
     expect(html).toContain(">Ana</a>");
+    expect(html).toContain(">Duarte</a>");
     expect(html).not.toContain(">Bruno</a>");
-    expect(html).not.toContain(">Carla</a>");
-    expect(html).toContain(s["packsInUse.countPorReceber"].replace("{n}", "1"));
+    expect(html).toContain(s["packsInUse.countPorReceber"].replace("{n}", "2"));
     expect(sortLink(html, "lastUse")).toContain("pagamento=por-receber");
     const filterOn = html.match(/<a [^>]*data-pay-filter="por-receber"[^>]*>/)![0];
     expect(filterOn).toContain('aria-current="true"');
+  });
+
+  it("'€ POR RECEBER' says so when the receivables read stopped at its cap, and when nothing is owed", async () => {
+    role = "reception";
+    payments = new Map();
+    receivables = { ids: [], truncated: true };
+    const html = await render({ pagamento: "por-receber" });
+    expect(html).toContain('data-testid="packs-in-use-truncated"');
+    expect(html).toContain(s["packsInUse.truncated"].replace("{n}", "1000"));
+    expect(html).toContain(s["packsInUse.porReceberEmptyTitle"]);
+  });
+
+  it("the month total carries its scope note", async () => {
+    role = "owner";
+    payments = new Map();
+    month = { cents: 0, first: "2026-11-01", last: "2026-11-30" };
+    const html = await render();
+    expect(html).toContain(s["packsInUse.receivedMonthScope"]);
   });
 
   it("a therapist's ?pagamento=por-receber is ignored: no payments, so no filter", async () => {

@@ -102,6 +102,15 @@ describe("PacksInUseTable", () => {
     expect(html).toContain(s["packsInUse.noStylusRef"].replace("{n}", "1"));
   });
 
+  it("an overpaid pacote is flagged 'Recebido a mais' with the excess", () => {
+    const html = withPayments(
+      summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 50000, receivedOn: "2026-10-02", stylusRef: "FR 1E/1" }]),
+    );
+    expect(html).toContain('data-pay-state="paid"');
+    expect(html).toContain(s["packsInUse.overpaid"].replace("{amount}", "50"));
+    expect(withPayments(summarizePackPayments(45000, null, []))).not.toContain("packs-in-use-overpaid");
+  });
+
   it("an unpriced pacote reads 'Preço por indicar', never 'Por receber' from the catalogue price", () => {
     const html = withPayments(summarizePackPayments(null, null, []));
     expect(html).toContain('data-pay-state="unpriced"');

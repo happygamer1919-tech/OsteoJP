@@ -20,13 +20,12 @@ import {
  * GUARDED TWICE: THE CAPABILITY, THEN THE SCHEMA
  * ==========================================================================
  * 1. `pack_payments:read` (owner, admin, reception). A therapist gets `null`
- *    and the screens show no amount (P4). The database says the same: the
- *    payment table's SELECT policy admits no therapist.
- * 2. `packPaymentsSchemaPresent`. The table and the agreed price column come
- *    from a PENDING migration; on a database without them every read here
- *    answers `null` and the page reads as it did before ("Pagamento: em
- *    breve"). A query naming either would raise 42P01 or 42703 and take the
- *    whole page down.
+ *    and the screens show no amount (P4). The database says the same: neither
+ *    pack money table's SELECT policy admits a therapist.
+ * 2. `packPaymentsSchemaPresent`. Both tables come from a PENDING migration;
+ *    on a database without them every read here answers `null` (or
+ *    "unavailable") and the pages read as before ("Pagamento: em breve"). A
+ *    query naming either would raise 42P01 and take the whole page down.
  *
  * ==========================================================================
  * AS THE VIEWER, JOINED TO patients
@@ -34,18 +33,23 @@ import {
  * Every statement runs inside `runScoped`, under the viewer's own JWT, and
  * joins the instance to `patients`, so `patients_select` decides which
  * pacotes' money a located receptionist or admin sees, exactly as Packs em uso
- * decides which pacotes they see. The payment table's own policy is tenant and
- * role only.
+ * decides which pacotes they see. The two money tables' own policies are
+ * tenant and role only.
  *
- * `agreed_price_cents` IS READ BY RAW SQL ON PURPOSE: it is not declared on the
- * drizzle instance table until after the apply (see schema.ts beside
- * `packInstancePayments`).
+ * THE AGREED PRICE is a row of `pack_instance_agreed_prices` (one at most per
+ * instance); no row is "Preço por indicar", never a catalogue number.
  *
  * NEVER THE invoices TABLE. Pack money is not invoiced revenue (P7) and is not
  * a Stylus posting input (S2); `scripts/pack-payments-census.test.mjs` pins
- * that no file reading the payment table writes invoices, and that the revenue
- * readers never read the payment table.
+ * that no file reading the payment tables writes invoices, and that no revenue
+ * file reads or imports them.
  */
+
+const ids = (instanceIds: readonly string[]) =>
+  sql.join(
+    instanceIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
 
 /** Null when the viewer may not see amounts or the schema is not there yet. */
 export async function readPackPaymentSummaries(
@@ -59,15 +63,12 @@ export async function readPackPaymentSummaries(
       if (!(await packPaymentsSchemaPresent(tx))) return null;
       const out = new Map<string, PackPaymentSummary>();
       if (instanceIds.length === 0) return out;
-      const ids = sql.join(
-        instanceIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      );
       const instances = (await tx.execute(sql`
-        select i.id, i.agreed_price_cents, i.switch_amount_cents
+        select i.id, ap.agreed_price_cents, i.switch_amount_cents
           from patient_pack_instances i
           join patients p on p.id = i.patient_id and p.tenant_id = i.tenant_id
-         where i.id = any(array[${ids}])
+          left join pack_instance_agreed_prices ap on ap.pack_instance_id = i.id
+         where i.id = any(array[${ids(instanceIds)}])
       `)) as unknown as ReadonlyArray<{
         id: string;
         agreed_price_cents: number | null;
@@ -76,7 +77,7 @@ export async function readPackPaymentSummaries(
       const lines = (await tx.execute(sql`
         select l.pack_instance_id, l.kind, l.amount_cents, l.received_on::text as received_on, l.stylus_ref
           from pack_instance_payments l
-         where l.pack_instance_id = any(array[${ids}])
+         where l.pack_instance_id = any(array[${ids(instanceIds)}])
       `)) as unknown as ReadonlyArray<{
         pack_instance_id: string;
         kind: PackPaymentKind;
@@ -84,7 +85,10 @@ export async function readPackPaymentSummaries(
         received_on: string;
         stylus_ref: string | null;
       }>;
-      const byInstance = new Map<string, { kind: PackPaymentKind; amountCents: number; receivedOn: string; stylusRef: string | null }[]>();
+      const byInstance = new Map<
+        string,
+        { kind: PackPaymentKind; amountCents: number; receivedOn: string; stylusRef: string | null }[]
+      >();
       for (const l of lines) {
         const list = byInstance.get(l.pack_instance_id) ?? [];
         list.push({ kind: l.kind, amountCents: Number(l.amount_cents), receivedOn: l.received_on, stylusRef: l.stylus_ref });
@@ -103,6 +107,47 @@ export async function readPackPaymentSummaries(
       return out;
     },
     "db:pack-payments-summaries",
+  );
+}
+
+/**
+ * THE RECEIVABLES READ, for "€ POR RECEBER". Every pacote of the patients the
+ * viewer may read (not deleted) that HAS a stated price and has received less
+ * than is due (price + switch amount), whether or not it is still in use: a
+ * pacote whose sessions are all spent but which was never paid in full is
+ * exactly the one reception must chase, and an in-use filter would hide it.
+ *
+ * BOUNDED like Packs em uso: newest purchase first, at most `cap`, one row past
+ * it so the page can say it stopped. Null for a viewer without amounts or
+ * before the sitting.
+ */
+export const RECEIVABLES_READ_CAP = 1000;
+
+export async function listReceivableInstanceIds(
+  actor: RequestContext,
+  opts: { cap?: number } = {},
+): Promise<{ ids: string[]; truncated: boolean } | null> {
+  if (!can(actor.role, "pack_payments:read")) return null;
+  const cap = opts.cap ?? RECEIVABLES_READ_CAP;
+  if (!Number.isInteger(cap) || cap < 1) throw new RangeError("cap must be a positive integer");
+  return runScoped(
+    actor,
+    async (tx) => {
+      if (!(await packPaymentsSchemaPresent(tx))) return null;
+      const rows = (await tx.execute(sql`
+        select i.id
+          from patient_pack_instances i
+          join patients p on p.id = i.patient_id and p.tenant_id = i.tenant_id
+          join pack_instance_agreed_prices ap on ap.pack_instance_id = i.id
+         where p.deleted_at is null
+           and ap.agreed_price_cents + coalesce(i.switch_amount_cents, 0)
+               - coalesce((select sum(l.amount_cents) from pack_instance_payments l where l.pack_instance_id = i.id), 0) > 0
+         order by i.purchased_at desc, i.id desc
+         limit ${cap + 1}
+      `)) as unknown as ReadonlyArray<{ id: string }>;
+      return { ids: rows.slice(0, cap).map((r) => r.id), truncated: rows.length > cap };
+    },
+    "db:pack-payments-receivables",
   );
 }
 
@@ -148,7 +193,7 @@ export type PackPaymentDetail = {
   lines: PackPaymentLine[];
 };
 
-/** One pacote's money, for its payment page. Null when not visible or not available. */
+/** One pacote's money, for its payment page. Null when not visible; "unavailable" before the sitting. */
 export async function getPackPaymentDetail(
   actor: RequestContext,
   instanceId: string,
@@ -160,10 +205,11 @@ export async function getPackPaymentDetail(
       if (!(await packPaymentsSchemaPresent(tx))) return "unavailable" as const;
       const [inst] = (await tx.execute(sql`
         select i.id, i.patient_id, p.full_name, sp.name as pack_name, sp.price_cents,
-               i.sessions_total, i.purchased_at, i.agreed_price_cents, i.switch_amount_cents
+               i.sessions_total, i.purchased_at, ap.agreed_price_cents, i.switch_amount_cents
           from patient_pack_instances i
           join patients p on p.id = i.patient_id and p.tenant_id = i.tenant_id
           join service_packs sp on sp.id = i.pack_id
+          left join pack_instance_agreed_prices ap on ap.pack_instance_id = i.id
          where i.id = ${instanceId}::uuid
       `)) as unknown as ReadonlyArray<{
         id: string;

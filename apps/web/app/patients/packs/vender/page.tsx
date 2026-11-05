@@ -85,6 +85,7 @@ export default async function SellPackPage({
   }
 
   const patient = UUID.test(rawPatient) ? await getSellPatient(ctx, rawPatient) : null;
+  const found = !patient && q ? await searchPatients(q, { limit: 20 }) : null;
 
   return (
     <main className="flex flex-col gap-5">
@@ -106,7 +107,7 @@ export default async function SellPackPage({
             <div className="w-full max-w-md">
               <SearchBox initialQuery={q} path="/patients/packs/vender" placeholder={s["packsSell.searchPlaceholder"]} />
             </div>
-            {q && <PatientResults q={q} />}
+            {found && <PatientResults found={found} />}
           </div>
         </GlassPanel>
       )}
@@ -114,8 +115,7 @@ export default async function SellPackPage({
   );
 }
 
-async function PatientResults({ q }: { q: string }) {
-  const found = await searchPatients(q, { limit: 20 });
+function PatientResults({ found }: { found: ReadonlyArray<{ id: string; fullName: string }> }) {
   if (found.length === 0) return <p className="text-sm text-v2-text-secondary">{s["packsSell.noResults"]}</p>;
   return (
     <ul className="flex flex-col gap-1" data-testid="pack-sell-results">

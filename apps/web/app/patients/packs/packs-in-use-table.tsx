@@ -87,6 +87,11 @@ function PaymentCell({ instanceId, p }: { instanceId: string; p: PackPaymentSumm
           {s["packsInUse.outstanding"].replace("{amount}", formatEurosShort(p.outstandingCents))}
         </span>
       )}
+      {p.overpaidCents > 0 && (
+        <span className="text-xs font-medium tabular-nums text-warning-700" data-testid="packs-in-use-overpaid">
+          {s["packsInUse.overpaid"].replace("{amount}", formatEurosShort(p.overpaidCents))}
+        </span>
+      )}
       {p.linesWithoutStylusRef > 0 && (
         <span className="text-xs text-warning-700" data-testid="packs-in-use-no-stylus">
           {s["packsInUse.noStylusRef"].replace("{n}", String(p.linesWithoutStylusRef))}
