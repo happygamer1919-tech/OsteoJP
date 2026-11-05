@@ -113,7 +113,7 @@
     "scripts/obs-05-backfill-emit.test.mjs": "4004068875a0f56d4fd3149137fc0a672337e25114f359233ceeced9bb57e2a1",
     "scripts/owner-blocks-survive-zsh.test.mjs": "0a0d6e3446e0f14f0b77677bfb457864b14497b43ed6e6ca41b31813cf34396e",
     "scripts/pack-instance-consuming-sessions-0108.test.mjs": "c15684cdee3af67b4436a3c821cdbacdd54fc024a36a9ab0000e54d842939c94",
-    "scripts/pack-sessions-remaining-is-frozen.test.mjs": "be437f1f85e18076dcd6e3814275ea933161636d04bfe42efa56d3fc8cb56413",
+    "scripts/pack-sessions-remaining-is-frozen.test.mjs": "882db5cd4ffda8a458dc24369293b689045c6a6551841983183d27f78e72798b",
     "scripts/perf-project-is-pinned.test.mjs": "02ea02d9624250362393e21c0541a4cd147514779fc775ef5dcaa184ecd7868c",
     "scripts/portal-frozen-locale-is-quarantined.test.mjs": "fff0f73ad106d9f74ea31fb9b4ac09c2c82568b2b0f8ccd12590b438bd93b27f",
     "scripts/portal-i18n-dead-keys.test.mjs": "fef0b33d3fb6a352240130e4ad506fa97f9b33a2ffa31f2feb554f3ece1c8bb8",
