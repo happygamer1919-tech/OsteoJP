@@ -1,30 +1,40 @@
 -- ============================================================================
 -- Q6, STAGE 2 of 3: THE WRITE. ONE TRANSACTION.
 --
--- Strategy's Q6 (owner-delegated, 2026-11-04): the existing appointment types
--- take Fisiozero's VAT values, 0% and the exemption code M07. Document:
--- docs/data-op-q6-service-types-vat-m07.md.
+-- Strategy's Q6 (2026-11-04) and its rulings of 2026-11-05: the existing
+-- appointment types take the VAT values the accountant confirms TYPE BY TYPE
+-- (Q6-D), from a per-type list supplied at run time and never committed.
+-- Document: docs/data-op-q6-service-types-vat-m07.md.
 --
 -- WRITES, and nothing else:
---   * public.services.vat_rate := 0 and public.services.vat_exemption_code :=
---     'M07', on every row of the tenant osteojp (by slug) whose two fields are
---     BOTH NULL, active or archived. A row with either field set is never
---     touched: staff set it after 0110.
+--   * public.services.vat_rate and public.services.vat_exemption_code, set to
+--     the rate and the code (or no code) the list names for that service, on
+--     every row of the tenant osteojp (by slug) whose two fields are BOTH
+--     NULL, active or archived, internal-only or not. A row with either field
+--     set is never touched, listed or not: staff set it, and a staff edit
+--     wins.
 --   * one public.audit_log row per written service, action
 --     'service.vat_default_q6', entity_type 'service', entity_id the service,
---     actor NULL (a data op has no actor), metadata slugs only.
+--     actor NULL (a data op has no actor), metadata slugs and the before and
+--     after of the two fields.
+--
+-- THE LIST arrives on psql's standard input (the block runs psql with
+-- `< <the list file>`, whose sha256 the block has checked against the carry of
+-- THE PRE-CHECK) and is loaded by `\copy ... FROM pstdin` into a temporary
+-- table dropped at the COMMIT. The DO block $q6list$ is byte-identical to the
+-- one in THE PRE-CHECK and runs again here, under the lock, before the UPDATE.
 --
 -- IT REFUSES WITHOUT THIS SITTING'S PRE-CHECK (SR-59). `-v expect` is the
 -- target count and `-v target_md5` the md5 of the target ids that THE
 -- PRE-CHECK printed in the same sitting. Under the lock, the set is counted
 -- and hashed again, and any difference is a STOP before the UPDATE.
 --
--- THE EXPECTED COUNT IS CHECKED BEFORE COMMIT, three times: the target set
--- under the lock, the UPDATE's own row count, and the audit rows' row count.
--- Each must equal `expect`, or the transaction aborts and nothing is written.
--- Two md5 controls prove nothing else moved: every services row outside the
--- written set (every tenant), whole, and the written rows with the two VAT
--- fields left out, each hashed before and after the UPDATE.
+-- THE EXPECTED COUNT IS CHECKED BEFORE COMMIT: the target set under the lock,
+-- the UPDATE's own row count, the audit rows' row count and the written rows
+-- that equal their list row, each against `expect`, or the transaction aborts
+-- and nothing is written. Two md5 controls prove nothing else moved: every
+-- services row outside the written set (every tenant), whole, and the written
+-- rows with the two VAT fields left out, each hashed before and after.
 --
 -- THE IDS ARE RECORDED BEFORE COMMIT. `\o :idsfile` writes the written ids,
 -- one per line, to the file under the operator's home that THE ROLLBACK keys
@@ -36,7 +46,7 @@
 -- Run (THE WRITE block of the document; the block runs it, never a hand):
 --   psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off
 --        -v expect=<n> -v target_md5=<md5> -v idsfile=<the ids file>
---        -f scripts/data/q6-vat-m07-2-write.sql
+--        -f scripts/data/q6-vat-m07-2-write.sql < <the list>
 -- ============================================================================
 
 \if :{?expect}
@@ -71,12 +81,109 @@ SELECT 'Q6WRITE carries ' || length(set_config('q6.expect', :'expect', true)) ||
 -- write already in flight holds a lock; this waits 5 seconds and STOPs.
 LOCK TABLE public.services IN SHARE ROW EXCLUSIVE MODE;
 
-CREATE TEMP TABLE q6_written (id uuid PRIMARY KEY) ON COMMIT DROP;
+CREATE TEMP TABLE q6_list_raw (n bigint GENERATED ALWAYS AS IDENTITY, line text) ON COMMIT DROP;
+\copy q6_list_raw (line) FROM pstdin
+
+CREATE TEMP TABLE q6_written (id uuid PRIMARY KEY, vat_rate smallint NOT NULL, vat_exemption_code text) ON COMMIT DROP;
+
+-- ----------------------------------------------------------------------------
+-- EVERY REFUSAL OF THE LIST, under the lock. Byte-identical to THE PRE-CHECK's.
+-- ----------------------------------------------------------------------------
+DO $q6list$
+DECLARE
+  c_codes   constant text[] := ARRAY['M01', 'M02', 'M04', 'M05', 'M06', 'M07', 'M09', 'M10', 'M11', 'M12', 'M13', 'M14', 'M15', 'M16', 'M19', 'M20', 'M21', 'M25', 'M26', 'M30', 'M31', 'M32', 'M33', 'M34', 'M35', 'M40', 'M41', 'M42', 'M43', 'M44', 'M45', 'M46', 'M99'];
+  v_tenants int;
+  v_tenant  uuid;
+  v_def     text;
+  v_header  text;
+  v_rows    int;
+  v_n       int;
+BEGIN
+  SELECT count(*) INTO v_tenants FROM public.tenants WHERE slug = 'osteojp';
+  IF v_tenants <> 1 THEN
+    RAISE EXCEPTION 'Q6STOP: the slug osteojp names % tenants, not exactly 1', v_tenants;
+  END IF;
+  SELECT id INTO v_tenant FROM public.tenants WHERE slug = 'osteojp';
+
+  -- THE 33 CODES are the application's list (packages/db/src/service-type-fields.ts,
+  -- VAT_EXEMPTION_CODES) and the CHECK of 0110 names the same 33. This file's
+  -- copy is held against the database's own CHECK: the same count, and every
+  -- code of this copy inside it.
+  SELECT pg_get_constraintdef(k.oid) INTO v_def
+    FROM pg_catalog.pg_constraint k
+   WHERE k.conrelid = 'public.services'::regclass AND k.contype = 'c'
+     AND k.conname = 'services_vat_exemption_code_allowed';
+  SELECT count(*) INTO v_n FROM regexp_matches(coalesce(v_def, ''), '''M[0-9]{2}''', 'g') m;
+  IF v_n <> cardinality(c_codes) THEN
+    RAISE EXCEPTION 'Q6STOP: the CHECK of 0110 names % exemption codes and this file names %: the two lists differ', v_n, cardinality(c_codes);
+  END IF;
+  SELECT count(*) INTO v_n FROM unnest(c_codes) c WHERE position('''' || c || '''' IN coalesce(v_def, '')) = 0;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % exemption codes of this file are not in the CHECK of 0110: the two lists differ', v_n;
+  END IF;
+
+  -- THE SHAPE OF THE LIST.
+  SELECT r.line INTO v_header FROM q6_list_raw r WHERE r.n = 1;
+  IF v_header IS DISTINCT FROM 'service_id,vat_rate,vat_exemption_code' THEN
+    RAISE EXCEPTION 'Q6STOP: the first line of the list is not the header service_id,vat_rate,vat_exemption_code';
+  END IF;
+  SELECT count(*) INTO v_rows FROM q6_list_raw r WHERE r.n > 1;
+  IF v_rows = 0 THEN
+    RAISE EXCEPTION 'Q6STOP: the list holds no row under its header';
+  END IF;
+  IF v_rows > 60 THEN
+    RAISE EXCEPTION 'Q6STOP: the list holds % rows, more than the ceiling of 60', v_rows;
+  END IF;
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE r.n > 1 AND (r.line IS NULL OR r.line !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12},[0-9]+,[A-Z0-9]*$');
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % rows of the list are malformed: each row is a lower-case service id, a rate and a code or nothing, joined by two commas', v_n;
+  END IF;
+
+  -- THE VALUES OF EACH ROW (B10: a code is valid at 0% only).
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE r.n > 1 AND split_part(r.line, ',', 2) NOT IN ('0', '6', '13', '23');
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % rows of the list carry a rate other than 0, 6, 13 or 23', v_n;
+  END IF;
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE r.n > 1 AND split_part(r.line, ',', 2) = '0' AND split_part(r.line, ',', 3) = '';
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % rows of the list carry the rate 0 and no exemption code: a rate of 0 requires one', v_n;
+  END IF;
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE r.n > 1 AND split_part(r.line, ',', 2) <> '0' AND split_part(r.line, ',', 3) <> '';
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % rows of the list carry an exemption code with a rate above 0: a code is valid at 0 only (B10)', v_n;
+  END IF;
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE r.n > 1 AND split_part(r.line, ',', 3) <> '' AND NOT (split_part(r.line, ',', 3) = ANY (c_codes));
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % rows of the list carry an exemption code that is not one of the 33 codes', v_n;
+  END IF;
+
+  -- THE KEYS.
+  SELECT count(*) - count(DISTINCT split_part(r.line, ',', 1)) INTO v_n FROM q6_list_raw r WHERE r.n > 1;
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: the list repeats a service id: % rows more than distinct ids', v_n;
+  END IF;
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE r.n > 1
+     AND NOT EXISTS (SELECT 1 FROM public.services s WHERE s.id = split_part(r.line, ',', 1)::uuid AND s.tenant_id = v_tenant);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % service ids of the list are not appointment types of the tenant osteojp', v_n;
+  END IF;
+  SELECT count(*) INTO v_n FROM public.services s
+   WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL
+     AND NOT EXISTS (SELECT 1 FROM q6_list_raw r WHERE r.n > 1 AND split_part(r.line, ',', 1) = s.id::text);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % appointment types of the tenant with both VAT fields empty are missing from the list: every one must be listed', v_n;
+  END IF;
+END
+$q6list$;
 
 DO $q6write$
 DECLARE
-  c_rate     constant smallint := 0;
-  c_code     constant text := 'M07';
   c_action   constant text := 'service.vat_default_q6';
   s_expect   text := current_setting('q6.expect');
   s_md5      text := current_setting('q6.target_md5');
@@ -155,14 +262,17 @@ BEGIN
     FROM public.services s
    WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL;
 
-  -- THE WRITE. One statement, the target predicate and nothing wider.
+  -- THE WRITE. One statement: each target row takes its own list row's rate
+  -- and code. The target predicate and nothing wider; a listed row whose
+  -- fields staff already set is not matched, and so is never overwritten.
   WITH u AS (
     UPDATE public.services s
-       SET vat_rate = c_rate, vat_exemption_code = c_code
-     WHERE s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL
-    RETURNING s.id
+       SET vat_rate = l.vat_rate, vat_exemption_code = l.vat_exemption_code
+      FROM (SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1) l
+     WHERE s.id = l.id AND s.tenant_id = v_tenant AND s.vat_rate IS NULL AND s.vat_exemption_code IS NULL
+    RETURNING s.id, s.vat_rate, s.vat_exemption_code
   )
-  INSERT INTO q6_written (id) SELECT u.id FROM u;
+  INSERT INTO q6_written (id, vat_rate, vat_exemption_code) SELECT u.id, u.vat_rate, u.vat_exemption_code FROM u;
   GET DIAGNOSTICS v_upd = ROW_COUNT;
   IF v_upd <> v_expect THEN
     RAISE EXCEPTION 'Q6STOP: the UPDATE wrote % rows, expected exactly %', v_upd, v_expect;
@@ -170,30 +280,33 @@ BEGIN
 
   -- THE AUDIT. One row per written service, the shape the app's service
   -- actions write (entity_type service, entity_id the service), metadata
-  -- slugs only (the audit metadata contract: no whitespace, 64 characters at
-  -- most).
+  -- slugs, numbers, codes and nulls only (the audit metadata contract: no
+  -- whitespace, 64 characters at most).
   INSERT INTO public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
   SELECT v_tenant, NULL, c_action, 'service', w.id,
          jsonb_build_object(
            'card', 'Q6',
            'source', 'psql_data_op',
-           'ruling', 'strategy-q6-2026-11-04',
+           'ruling', 'strategy-q6-2026-11-05',
            'vat_rate_before', NULL,
            'vat_exemption_code_before', NULL,
-           'vat_rate_after', c_rate,
-           'vat_exemption_code_after', c_code)
+           'vat_rate_after', w.vat_rate,
+           'vat_exemption_code_after', w.vat_exemption_code)
     FROM q6_written w;
   GET DIAGNOSTICS v_aud = ROW_COUNT;
   IF v_aud <> v_expect THEN
     RAISE EXCEPTION 'Q6STOP: wrote % audit rows, expected exactly %', v_aud, v_expect;
   END IF;
 
-  -- THE CHECKS AFTER THE WRITE, STILL BEFORE COMMIT.
+  -- THE CHECKS AFTER THE WRITE, STILL BEFORE COMMIT. Each written row equals
+  -- its own list row, field by field.
   SELECT count(*) INTO v_ok
-    FROM public.services s JOIN q6_written w ON w.id = s.id
-   WHERE s.tenant_id = v_tenant AND s.vat_rate = c_rate AND s.vat_exemption_code = c_code;
+    FROM public.services s
+    JOIN q6_written w ON w.id = s.id
+    JOIN (SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1) l ON l.id = s.id
+   WHERE s.tenant_id = v_tenant AND s.vat_rate = l.vat_rate AND s.vat_exemption_code IS NOT DISTINCT FROM l.vat_exemption_code;
   IF v_ok <> v_expect THEN
-    RAISE EXCEPTION 'Q6STOP: % written rows read 0 and M07, expected exactly %', v_ok, v_expect;
+    RAISE EXCEPTION 'Q6STOP: % written rows equal their list row, expected exactly %', v_ok, v_expect;
   END IF;
 
   SELECT count(*) INTO v_left

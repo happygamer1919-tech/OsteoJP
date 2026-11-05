@@ -3,19 +3,27 @@
 --
 -- Document: docs/data-op-q6-service-types-vat-m07.md, section "Rollback".
 --
--- Sets vat_rate and vat_exemption_code back to NULL on the services THE WRITE
--- recorded, and on no other row. It is KEYED ON THE RECORDED IDS (`-v ids`,
--- from the file THE WRITE wrote under the operator's home), never on a broad
--- WHERE: a services row with 0 and M07 that this op did not write (staff set
--- it, before or after) is not in the list and is never touched.
+-- Puts vat_rate and vat_exemption_code back to the BEFORE values that THE
+-- WRITE's own audit row records for each service (both NULL, by the target
+-- set's definition), on the services THE WRITE recorded, and on no other row.
+-- It is KEYED ON THE RECORDED IDS (`-v ids`, from the file THE WRITE wrote
+-- under the operator's home), never on a broad WHERE: a services row that
+-- this op did not write (staff set it, before or after) is not in the file and
+-- is never touched. It does not read the per-type list: each row's after and
+-- before values are in its audit row.
 --
 -- IT REFUSES, before any write, when:
 --   * the ids are not a list of `expect` distinct lower-case uuids;
---   * any recorded id is not a services row of the tenant osteojp that still
---     reads 0 and M07 (staff changed it since THE WRITE; the lead rules, and
---     this file never overwrites a staff change);
 --   * the tenant does not hold exactly one 'service.vat_default_q6' audit row
 --     per recorded id, and no other (the file and the audit trail disagree);
+--   * any of those audit rows does not record two empty before values;
+--   * any recorded id is not a services row of the tenant osteojp that still
+--     reads the after values its audit row records (staff changed it since
+--     THE WRITE; the lead rules, and this file never overwrites a staff
+--     change);
+--   * any recorded service carries a later service.* audit row of another
+--     action, or an updated_at later than THE WRITE's audit row (a staff
+--     re-save with the same values);
 --   * an undo audit row already exists (it ran before).
 -- The expected count is checked before COMMIT: the UPDATE's row count and the
 -- undo audit rows' row count must each equal `expect`. One audit row per
@@ -108,14 +116,27 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO v_n
-    FROM public.services s
-   WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = 0 AND s.vat_exemption_code = 'M07';
+    FROM public.audit_log mine
+   WHERE mine.tenant_id = v_tenant AND mine.action = 'service.vat_default_q6' AND mine.entity_type = 'service' AND mine.entity_id = ANY (v_ids)
+     AND mine.metadata -> 'vat_rate_before' = 'null'::jsonb AND mine.metadata -> 'vat_exemption_code_before' = 'null'::jsonb;
   IF v_n <> v_expect THEN
-    RAISE EXCEPTION 'Q6STOP: % of the % recorded services still read 0 and M07: staff changed the others since THE WRITE. Nothing is written; the lead rules', v_n, v_expect;
+    RAISE EXCEPTION 'Q6STOP: % of the % audit rows of THE WRITE record two empty before values. Nothing is written; the lead rules', v_n, v_expect;
   END IF;
 
-  -- A STAFF RE-SAVE LEAVES 0 AND M07 IN PLACE, so "still 0 and M07" does not
-  -- prove a row untouched. Two signals, either refuses the whole rollback:
+  SELECT count(*) INTO v_n
+    FROM public.services s
+    JOIN public.audit_log mine
+      ON mine.tenant_id = s.tenant_id AND mine.entity_id = s.id
+     AND mine.entity_type = 'service' AND mine.action = 'service.vat_default_q6'
+   WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant
+     AND s.vat_rate = (mine.metadata ->> 'vat_rate_after')::smallint
+     AND s.vat_exemption_code IS NOT DISTINCT FROM (mine.metadata ->> 'vat_exemption_code_after');
+  IF v_n <> v_expect THEN
+    RAISE EXCEPTION 'Q6STOP: % of the % recorded services still read the values THE WRITE recorded: staff changed the others since THE WRITE. Nothing is written; the lead rules', v_n, v_expect;
+  END IF;
+
+  -- A STAFF RE-SAVE WITH THE SAME VALUES LEAVES THEM IN PLACE, so "still the
+  -- recorded values" does not prove a row untouched. Two signals, either refuses the whole rollback:
   -- any service.* audit row on a recorded service, other than THE WRITE's
   -- own, written from 10 minutes before THE WRITE's audit row on (the margin
   -- covers a staff transaction that began before THE WRITE and waited for
@@ -131,7 +152,7 @@ BEGIN
      AND later.action LIKE 'service.%' AND later.action <> 'service.vat_default_q6'
      AND later.created_at > mine.created_at - interval '10 minutes';
   IF v_n <> 0 THEN
-    RAISE EXCEPTION 'Q6STOP: % service audit rows of another action sit on the recorded services from THE WRITE on: staff may have re-saved them. Nothing is written; the lead rules', v_n;
+    RAISE EXCEPTION 'Q6STOP: % service audit rows of another action sit on the recorded services from 10 minutes before THE WRITE on: staff may have re-saved them. Nothing is written; the lead rules', v_n;
   END IF;
 
   SELECT count(*) INTO v_n
@@ -150,24 +171,26 @@ BEGIN
    WHERE NOT (s.id = ANY (v_ids));
 
   UPDATE public.services s
-     SET vat_rate = NULL, vat_exemption_code = NULL
-   WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = 0 AND s.vat_exemption_code = 'M07';
+     SET vat_rate = (mine.metadata ->> 'vat_rate_before')::smallint, vat_exemption_code = (mine.metadata ->> 'vat_exemption_code_before')
+    FROM public.audit_log mine
+   WHERE mine.tenant_id = s.tenant_id AND mine.entity_id = s.id AND mine.entity_type = 'service' AND mine.action = 'service.vat_default_q6' AND s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = (mine.metadata ->> 'vat_rate_after')::smallint AND s.vat_exemption_code IS NOT DISTINCT FROM (mine.metadata ->> 'vat_exemption_code_after');
   GET DIAGNOSTICS v_upd = ROW_COUNT;
   IF v_upd <> v_expect THEN
     RAISE EXCEPTION 'Q6STOP: the UPDATE reset % rows, expected exactly %', v_upd, v_expect;
   END IF;
 
   INSERT INTO public.audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, metadata)
-  SELECT v_tenant, NULL, c_action, 'service', x.id,
+  SELECT v_tenant, NULL, c_action, 'service', mine.entity_id,
          jsonb_build_object(
            'card', 'Q6',
            'source', 'psql_data_op',
            'ruling', 'lead-word-rollback',
-           'vat_rate_before', 0,
-           'vat_exemption_code_before', 'M07',
-           'vat_rate_after', NULL,
-           'vat_exemption_code_after', NULL)
-    FROM unnest(v_ids) AS x(id);
+           'vat_rate_before', mine.metadata -> 'vat_rate_after',
+           'vat_exemption_code_before', mine.metadata -> 'vat_exemption_code_after',
+           'vat_rate_after', mine.metadata -> 'vat_rate_before',
+           'vat_exemption_code_after', mine.metadata -> 'vat_exemption_code_before')
+    FROM public.audit_log mine
+   WHERE mine.tenant_id = v_tenant AND mine.action = 'service.vat_default_q6' AND mine.entity_type = 'service' AND mine.entity_id = ANY (v_ids);
   GET DIAGNOSTICS v_aud = ROW_COUNT;
   IF v_aud <> v_expect THEN
     RAISE EXCEPTION 'Q6STOP: wrote % undo audit rows, expected exactly %', v_aud, v_expect;

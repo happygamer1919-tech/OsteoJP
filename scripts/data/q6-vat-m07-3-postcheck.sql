@@ -4,12 +4,16 @@
 -- Document: docs/data-op-q6-service-types-vat-m07.md.
 --
 -- It reads the ids THE WRITE recorded (`-v ids`, comma separated, from the
--- file under the operator's home; never printed) and proves, against
--- production as it stands after the COMMIT:
---   * every recorded id is a services row of the tenant osteojp, and reads
---     vat_rate 0 and vat_exemption_code M07;
+-- file under the operator's home; never printed) and the same per-type list
+-- THE WRITE read (on psql's standard input, its sha256 checked by the block
+-- against the carry of THE PRE-CHECK; loaded by `\copy ... FROM pstdin` into
+-- the temporary table the block creates before `begin read only`), and proves,
+-- against production as it stands after the COMMIT:
+--   * every recorded id is a services row of the tenant osteojp, is in the
+--     list, and reads exactly its list row's rate and code;
 --   * the tenant holds exactly one 'service.vat_default_q6' audit row per
---     recorded id, and no other row of that action;
+--     recorded id, and no other row of that action, and each carries the
+--     list row's values as its after values and empty before values;
 --   * no 'service.vat_default_q6_undone' row exists.
 -- Any failure is a RAISE (psql exits 3, the block STOPs). Then it prints
 -- counts for the owner, and last the line "Q6POST PASS written <n>".
@@ -21,8 +25,9 @@
 -- Run (THE POST-CHECK block of the document):
 --   psql "${DATABASE_URL_DIRECT}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off
 --        -v ids=<the recorded ids, comma separated> -v expect=<n>
+--        -c "create temp table q6_list_raw (n bigint generated always as identity, line text)"
 --        -c "begin read only" -c "set local statement_timeout = '60s'"
---        -f scripts/data/q6-vat-m07-3-postcheck.sql -c "rollback"
+--        -f scripts/data/q6-vat-m07-3-postcheck.sql -c "rollback" < <the list>
 -- ============================================================================
 
 \if :{?ids}
@@ -41,6 +46,8 @@
 SELECT 'Q6POST read_only ' || current_setting('transaction_read_only');
 
 SELECT 'Q6POST carries ' || length(set_config('q6.ids', :'ids', true)) || ' ' || length(set_config('q6.expect', :'expect', true));
+
+\copy q6_list_raw (line) FROM pstdin
 
 DO $q6post$
 DECLARE
@@ -74,11 +81,28 @@ BEGIN
   END IF;
   SELECT id INTO v_tenant FROM public.tenants WHERE slug = 'osteojp';
 
+  -- THE LIST reads as THE WRITE read it: the header, and every row in shape,
+  -- before any cast below.
+  SELECT count(*) INTO v_n FROM q6_list_raw r
+   WHERE (r.n = 1 AND r.line IS DISTINCT FROM 'service_id,vat_rate,vat_exemption_code')
+      OR (r.n > 1 AND (r.line IS NULL OR r.line !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12},(0|6|13|23),[A-Z0-9]*$'));
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'Q6STOP: % lines of the list do not read as the list THE WRITE read', v_n;
+  END IF;
+
+  SELECT count(*) INTO v_n
+    FROM q6_list_raw r
+   WHERE r.n > 1 AND split_part(r.line, ',', 1)::uuid = ANY (v_ids);
+  IF v_n <> v_expect THEN
+    RAISE EXCEPTION 'Q6STOP: % of the % recorded services are in the list', v_n, v_expect;
+  END IF;
+
   SELECT count(*) INTO v_n
     FROM public.services s
-   WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = 0 AND s.vat_exemption_code = 'M07';
+    JOIN (SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1) l ON l.id = s.id
+   WHERE s.id = ANY (v_ids) AND s.tenant_id = v_tenant AND s.vat_rate = l.vat_rate AND s.vat_exemption_code IS NOT DISTINCT FROM l.vat_exemption_code;
   IF v_n <> v_expect THEN
-    RAISE EXCEPTION 'Q6STOP: % of the % recorded services read 0 and M07 in the tenant', v_n, v_expect;
+    RAISE EXCEPTION 'Q6STOP: % of the % recorded services equal their list row in the tenant', v_n, v_expect;
   END IF;
 
   SELECT count(*) INTO v_n
@@ -98,6 +122,16 @@ BEGIN
 
   SELECT count(*) INTO v_n
     FROM public.audit_log al
+    JOIN (SELECT split_part(r.line, ',', 1)::uuid AS id, split_part(r.line, ',', 2)::smallint AS vat_rate, nullif(split_part(r.line, ',', 3), '') AS vat_exemption_code FROM q6_list_raw r WHERE r.n > 1) l ON l.id = al.entity_id
+   WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6' AND al.entity_type = 'service' AND al.entity_id = ANY (v_ids)
+     AND al.metadata -> 'vat_rate_before' = 'null'::jsonb AND al.metadata -> 'vat_exemption_code_before' = 'null'::jsonb
+     AND al.metadata -> 'vat_rate_after' = to_jsonb(l.vat_rate) AND al.metadata -> 'vat_exemption_code_after' = coalesce(to_jsonb(l.vat_exemption_code), 'null'::jsonb);
+  IF v_n <> v_expect THEN
+    RAISE EXCEPTION 'Q6STOP: % of the % audit rows of this op record empty before values and their list row as after values', v_n, v_expect;
+  END IF;
+
+  SELECT count(*) INTO v_n
+    FROM public.audit_log al
    WHERE al.tenant_id = v_tenant AND al.action = 'service.vat_default_q6_undone';
   IF v_n <> 0 THEN
     RAISE EXCEPTION 'Q6STOP: % undo audit rows exist: the op was rolled back', v_n;
@@ -113,12 +147,12 @@ WITH t AS (
 )
 SELECT line FROM (
   SELECT 1 AS k, 'Q6POST services_total ' || count(*) AS line FROM s
-  UNION ALL SELECT 2, 'Q6POST at_0_m07_total ' || count(*) FILTER (WHERE vat_rate = 0 AND vat_exemption_code = 'M07') FROM s
-  UNION ALL SELECT 3, 'Q6POST at_0_m07_active ' || count(*) FILTER (WHERE vat_rate = 0 AND vat_exemption_code = 'M07' AND is_active) FROM s
-  UNION ALL SELECT 4, 'Q6POST at_0_m07_archived ' || count(*) FILTER (WHERE vat_rate = 0 AND vat_exemption_code = 'M07' AND NOT is_active) FROM s
+  UNION ALL SELECT 2, 'Q6POST vat_rate_0_with_code ' || count(*) FILTER (WHERE vat_rate = 0 AND vat_exemption_code IS NOT NULL) FROM s
+  UNION ALL SELECT 3, 'Q6POST vat_rate_above_0 ' || count(*) FILTER (WHERE vat_rate > 0) FROM s
+  UNION ALL SELECT 4, 'Q6POST code_m07 ' || count(*) FILTER (WHERE vat_exemption_code = 'M07') FROM s
   UNION ALL SELECT 5, 'Q6POST target_left_now ' || count(*) FILTER (WHERE vat_rate IS NULL AND vat_exemption_code IS NULL) FROM s
-  UNION ALL SELECT 6, 'Q6POST partial_left_alone ' || count(*) FILTER (WHERE (vat_rate IS NULL) <> (vat_exemption_code IS NULL)) FROM s
-  UNION ALL SELECT 7, 'Q6POST other_values_left_alone ' || count(*) FILTER (WHERE vat_rate IS NOT NULL AND vat_exemption_code IS NOT NULL AND NOT (vat_rate = 0 AND vat_exemption_code = 'M07')) FROM s
+  UNION ALL SELECT 6, 'Q6POST rate_0_without_code ' || count(*) FILTER (WHERE vat_rate = 0 AND vat_exemption_code IS NULL) FROM s
+  UNION ALL SELECT 7, 'Q6POST code_without_rate ' || count(*) FILTER (WHERE vat_rate IS NULL AND vat_exemption_code IS NOT NULL) FROM s
 ) x
 ORDER BY k;
 
