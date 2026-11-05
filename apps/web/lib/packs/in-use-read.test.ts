@@ -79,3 +79,22 @@ describe("listPacksInUse: never the service role", () => {
     expect(src).toContain("public.pack_instance_consuming_sessions(i.id)");
   });
 });
+
+describe("listPacksInUse: no age limit (Q15, 2026-11-04)", () => {
+  const src = readFileSync(fileURLToPath(new URL("./in-use-read.ts", import.meta.url)), "utf8");
+
+  // A pacote with sessions left stays "a decorrer" however old it is. The
+  // read's only filters are the soft-delete and the candidate rule; an age cut
+  // would need a date comparison helper or an interval, and it names neither.
+  it("imports no drizzle comparison helper a date cut-off would use", () => {
+    expect(src).toContain('import { and, desc, eq, isNull, sql } from "drizzle-orm";');
+  });
+
+  it("names no SQL interval or age()", () => {
+    expect(src).not.toMatch(/\binterval\b|\bage\s*\(/i);
+  });
+
+  it("the where clause is the soft-delete and the candidate rule, nothing else", () => {
+    expect(src).toContain(".where(and(isNull(patients.deletedAt), isCandidateSql))");
+  });
+});
