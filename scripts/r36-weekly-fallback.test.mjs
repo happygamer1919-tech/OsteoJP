@@ -130,8 +130,10 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /\*\*THE MERGE FREEZE, mandatory: no merge to `main` from the owner's first look of step 1 until GREEN reports\.\*\*/);
   assert.match(doc, /^THE HALT RULE\. /m);
   assert.match(doc, /\*\*Nobody presses Replay or Rerun on any event or run in the Inngest dashboard/);
-  assert.match(doc, /^\*\*NOT REHEARSED\.\*\* Nothing in this document has run on a database\./m);
-  assert.match(doc, /\*\*What a throwaway cannot run, so it stays NOT REHEARSED whatever the rehearsal does:\*\*/);
+  assert.match(doc, /^\*\*REHEARSED by a session that did not write this, on BLUE /m);
+  assert.match(doc, /\*\*Since `3173a15c` only prose has changed: the four blocks are byte-identical to the blocks rehearsed\*\*/);
+  assert.match(doc, /^\*\*NOT REHEARSED, said one by one:\*\*$/m);
+  assert.ok(doc.includes("**Its pass branch is NOT REHEARSED.**"));
   assert.match(doc, /A script's own REFUSE or STOP line is a halt, the same as a harness refusal\. Never edit an env file, a URL, a flag, a label or a script to get past a guard\. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so\./);
   for (const f of ["`RUNDAY`", "`HELD`", "`DOCSHA`", "`STALEPATH`", "`LASTOK`", "`PRIORK`"]) assert.ok(doc.includes(`| ${f} |`), f);
   assert.match(doc, /\*\*SOLO's written statement of THE MERGE FREEZE\*\*/);

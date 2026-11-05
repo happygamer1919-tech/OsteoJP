@@ -1,8 +1,8 @@
-NOT READY: authored 2026-11-05, awaiting R4 review, a rehearsal by another session and SOLO's READY line.
+NOT READY: R4 two rounds PASS (2026-11-05); rehearsed 2026-11-05 by another session (see Rehearsal); READY at the dispatch fill if the sweep is still in shadow on Fri 11-13.
 
 # R36: the weekly fallback sittings, while the reminder sweep is still in shadow
 
-**Status: AUTHORED 2026-11-05 BY A BUILD SESSION ON STRATEGY'S RULING B6. NOT REVIEWED. NOT REHEARSED. NOT RUN.** Nothing in this document may be pasted until the first line reads READY. WEEKLY, BEFORE YOU START carries `PENDING` in the six lines GREEN's dispatch fills, and STOPs at its first check while it does.
+**Status: AUTHORED 2026-11-05 BY A BUILD SESSION ON STRATEGY'S RULING B6. REVIEWED (R4, two rounds, PASS). REHEARSED 2026-11-05 BY A SESSION THAT DID NOT WRITE IT (see "Rehearsal"). NOT RUN.** Nothing in this document may be pasted until the first line reads READY. WEEKLY, BEFORE YOU START carries `PENDING` in the six lines GREEN's dispatch fills, and STOPs at its first check while it does.
 
 **In plain words.** On Wednesday 2026-11-04 the fallback re-arm (`docs/data-op-r36-fallback-rearm-20261104.md`, "the R36 document" below) gave a fresh reminder job to every qualifying appointment starting within the next 28 days, and its second pass on Thursday 2026-11-05 reached the visits Wednesday skipped. That covers visits up to about Wednesday 2026-12-02. If the reminder sweep is still in shadow (sending nothing) on Friday 2026-11-13, this document runs the same re-arm once more that night, reaching 28 days from its read, so up to about Friday 2026-12-11. It sends nothing for a visit an earlier sitting already re-armed at the start it still has: this operation's marker holds those, and the program skips them. It writes nothing to the database. It sends one scheduling event per appointment it re-arms, behind the same refusal that stops it if the sweep is sending.
 
@@ -580,7 +580,7 @@ echo "WEEKLY CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the ${K} appointmen
 )
 ```
 
-**EXPECT:** the opening lines; the closing dry run IN FULL, counts only, with `ELIGIBLE: 0` and the G3 line reading 0 for every appointment this operation has sent; `for the owner: G4 NEXT 48 HOURS, NOT RE-ARMED: ...`; `for the owner: skipped: touched in the last 25 hours: <n> ...`; then `WEEKLY CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the <K> appointments this operation sent, <K minus PRIORK> of them in this sitting. ... The next weekly dispatch's PRIORK is <K>.` Exit 0. GREEN reports every line of every block.
+**EXPECT:** the opening lines; the closing dry run IN FULL, counts only, with `ELIGIBLE: 0` and the G3 line reading 0 for every appointment this operation has sent; `for the owner: G4 NEXT 48 HOURS, NOT RE-ARMED: ...`; `for the owner: skipped: touched in the last 25 hours: <n> ...`; then `WEEKLY CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the <K> appointments this operation sent, <K minus PRIORK> of them in this sitting. ... The next weekly dispatch's PRIORK is <K>.` Exit 0. K counts the marker's ROWS, as G3 does: an appointment sent again at a new start after it moved counts twice, once per start (in the rehearsal, 222 rows for 220 distinct appointments). PRIORK is that row count, which is what the next first block compares. GREEN reports every line of every block.
 
 ### After the closing dry run: the owner's look at the re-plan (step 7)
 
@@ -620,24 +620,67 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 
 ## Rehearsal
 
-**NOT REHEARSED.** Nothing in this document has run on a database. The rehearsal is done by a session that did not write it, on a local throwaway at production's migration position, under the lead's rule: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so." The R36 document's substitutions (a) to (i) apply ("Rehearsal"), plus: (j) the scratch clone's local bare `origin` carries this pull request's head as `refs/pull/<PR>/head`; (k) the scratch marker is the one left by a rehearsed Wednesday sitting and second pass into the sink, and, to pass `--second-pass` without waiting 25 hours, its first `readAt` may be aged as run 6 of the R36 rehearsal did (test data on a throwaway, said in the record, an untouched copy kept); (l) `PRIORK` is filled from that rehearsal's own closing line.
+**REHEARSED by a session that did not write this, on BLUE (a local throwaway, Postgres at production's migration position, through `0108`), on Thursday 2026-11-05, 13:15 to 14:05 WET,** at this pull request's head `3173a15c` with this document at sha256 `6a8f4897...0d27`. Verdict: rehearsed OK within the substitutions below; no defect found in the blocks. **Since `3173a15c` only prose has changed: the four blocks are byte-identical to the blocks rehearsed** (compared fence by fence). The blocks ran in GREEN's shape (`cd && eval`) under `zsh -f` (the NOT READY stop also under `bash --noprofile --norc`), every command under a clean environment; the stack was stopped at the end. The unit tests at that head (`scripts/r36-weekly-fallback.test.mjs` and `scripts/r36-fallback-rearm-emit.test.mjs`, `DATABASE_URL` blank): 45 of 45. The lead's rule held throughout: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
 
-What the rehearsal should show at the least: the four blocks in order end on their last lines, the weekly sitting sends exactly the visits beyond the earlier reach plus those not in the marker at their present start, and nothing the marker holds at the same start; an empty marker, an attempted row, a lock, a PRIORK one off, a RUNDAY outside `NIGHTS` and `main` moved each STOP before any send.
+**The substitutions, and nothing else**, as applied:
+- (a) the throwaway's connection string inline on each program call;
+- (b) the line sourcing the production environment file replaced, never read;
+- (c) `cd` into the apply checkout replaced by a scratch clone whose `origin` is a LOCAL bare repository holding `main`, #1690's held head `415bd0e9` (for the R36 blocks) and `refs/pull/1726/head` at `3173a15c`; nothing was pushed anywhere and the apply checkout was never entered;
+- (d) `/tmp/r36` and the program's home folder replaced by scratch folders; the real `~/.osteojp-r36-fallback-rearm` was never read, listed or touched (sink runs keep the marker beside the sink file);
+- (e) **the night's window not faked**: its STOP was recorded in every block and turned into a note so the next line ran, as run 6 of the R36 rehearsal did; no clock was substituted anywhere. **On the lead's ruling**, the run being at 13:xx on a Thursday, WEEKLY, BEFORE YOU START's `inside clinic hours by the weekday table` STOP was handled the same way, as part of the night's window, recorded, and the next line run. **Its pass branch is NOT REHEARSED.** Network time: the `sntp` and `curl` lines left out, as run 6 did (no remote host), its STOP recorded;
+- (f) the target guard's refusal of 127.0.0.1 recorded every time, and the missing `target   PRODUCTION` recorded; never passed;
+- (g) the unfilled block proven to STOP at its first check (`HELD is not a filled-in sha`, zsh and bash); then filled as a dispatch: HELD `3173a15c...`, DOCSHA `6a8f4897...`, RUNDAY `20261113`, STALEPATH `no`, LASTOK `yes`, PRIORK `11` (Thursday's closing line). The first line at the held head reads NOT READY, so that STOP was recorded too;
+- (h) `--sink-file` on every program call: nothing went to the hosted scheduler;
+- (i) the switch unset (`UNSET`), the owner's flags as the blocks carry them.
 
-**What a throwaway cannot run, so it stays NOT REHEARSED whatever the rehearsal does:**
+**Test data, on the throwaway only:** the R36 rehearsal's seed (two tenants, 20 appointments in and out of scope) and heartbeats in `sweep.ts`'s shape. Between Wednesday and Thursday, as run 6 did: the marker's first `readAt` aged 26 hours (an untouched copy kept), one visit's touch aged 26 hours, one sent visit moved portal-style. Before the weekly night: 210 visits the earlier sittings never saw, 20 to 27.4 days ahead (standing in for what a week brings inside 28 days), one already-sent visit moved portal-style since Thursday, one new visit saved 2 hours before, one new visit 31 days ahead.
 
-- the production target guard's pass and `target   PRODUCTION`: the guard refuses 127.0.0.1 by design;
+**The prior state, by the R36 blocks (byte-identical to run 6's):** Wednesday (RUNDAY `20261104`): counts equal to the seed, the canary `SENT: 5 of 5`, THE REST `SENT: 4 of 4`, then ELIGIBLE 0, and its closing line for 9 appointments. Thursday's second pass (WEDOK `yes`): settled, `26.2 hours ago`, `SENT: 2 of 2` (the touch-aged visit and the moved one), then ELIGIBLE 0, and `SECOND PASS, CLOSING DRY RUN: ... for the 11 appointments this operation sent.` So PRIORK was 11. (Its closing dry run first STOPPED on `the apply worktree is not on the head SECOND PASS, BEFORE YOU START recorded`, because the rehearser's own interleaved weekly STOP tests had moved the scratch clone: a correct catch by the block; the clone was put back on `415bd0e9` and the block passed.)
+
+**The weekly blocks, whole:**
+- **WEEKLY, BEFORE YOU START:** exit 0, `... ELIGIBLE 211 at this read. THE WEEKLY CANARY next.` The held head, `main`, the fix, the document, the sidecar and the four pins printed and equal; the settled-marker line (`26.5 hours ago`); attempted 0; already sent 9; FUTURE REMINDABLE 226; beyond 28 days 2; touched 1; ELIGIBLE 211; G1 5746 for 221 `yes`; G3 0 for 11, equal to PRIORK. The counts are the seed plus the additions (14 + 212 = 226; already sent 9 = 11 rows less the two moved visits' old starts; ELIGIBLE 211 = 210 new + 1 moved).
+- **THE WEEKLY CANARY:** exit 0, `THIS RUN: 5 of 211`, G3 0 for 11, `canary began:` in both zones, `SENT: 5 of 5`, G4 yes, `G3 AFTER THIS RUN: 0` for 5, `The marker now holds 16 ...`. The five events went to five NEW appointments.
+- **THE WEEKLY REST**, three pastes: run 1 `THIS RUN: 200 of 206`, `SENT: 200 of 200`, `The marker now holds 216`; run 2 G3 0 for 216, `SENT: 6 of 6`, `The marker now holds 222`; run 3 G3 0 for 222, `WEEKLY REST: ELIGIBLE 0 at this read ...`. Every printed total (16, 216, 222) equalled the next read's G3 count.
+- **THE WEEKLY CLOSING DRY RUN:** STOPPED at 2 minutes (`less than 12 minutes ago`), then passed after 12: `ELIGIBLE: 0`, G3 0 for 222, both `for the owner:` lines, `... for the 222 appointments this operation sent, 211 of them in this sitting. ... The next weekly dispatch's PRIORK is 222.` (222 rows, 220 distinct appointments: two visits were sent at two starts each.)
+
+**The sink, counts only:** 211 weekly events, each `appointment/scheduled` with `name` and `data` only (no event id), `confirmationEligible` false; **0 weekly events at an (appointment, start) the marker held at the weekly start**; 1 for an appointment the marker named at all (the visit moved since Thursday, at its new start); 210 to the 210 new visits; 0 to the touched new visit, the 31-day visit or any other earlier visit; **no (appointment, start) twice across all 222 events.** The marker: 222 sent rows, 0 attempted, no lock.
+
+**Every STOP, proven before any send** (each on its own copy of the records and the sink; sink and marker unchanged; exit 1):
+
+| Case | Block | Line |
+|---|---|---|
+| the unfilled block | WEEKLY, BEFORE YOU START | `HELD is not a filled-in sha ...` (zsh and bash) |
+| PRIORK 12, and PRIORK 10 | WEEKLY, BEFORE YOU START | `this operation's marker holds 11 sent appointments, not the 12 (10) ...` |
+| LASTOK `no` | WEEKLY, BEFORE YOU START | `LASTOK is not yes ...` |
+| an empty marker (a fresh sink) | WEEKLY, BEFORE YOU START | the program's `--second-pass: ... holds no sending run`, then the block's STOP |
+| a row of unknown outcome | WEEKLY, BEFORE YOU START | the program's `... 1 row(s) of unknown outcome` |
+| a lock | WEEKLY, BEFORE YOU START | the program's `... lock is present` (the lock kept) |
+| RUNDAY `20261120` | WEEKLY, BEFORE YOU START | `RUNDAY 20261120 is not a weekly night strategy has ruled (this document lists 20261113) ...` |
+| `main` moved after the first block | THE WEEKLY CANARY | `main moved during the sitting ...`, before its dry run |
+| `main` moved after the canary | THE WEEKLY REST | `main moved during the sitting ...`, before its dry run |
+| the canary pasted twice | THE WEEKLY CANARY | `the weekly canary already ran in this sitting ...` |
+| the closing before 12 minutes | THE WEEKLY CLOSING DRY RUN | `the last send returned less than 12 minutes ago ...` |
+
+`main` moved was a scratch commit on the LOCAL bare `main`, restored after each test. **The recovery after `main moved` in THE WEEKLY CANARY** ("If a block stops": WEEKLY, BEFORE YOU START pasted again with the same PRIORK) was run on a copy: it passed with G3 11 equal to PRIORK, re-recorded `main`, and the canary then sent 5 of 5 into that copy.
+
+**Counts only:** 98 output files (3,482 lines) searched for uuids, the seeded names, `@`, phone digits, `+351`, connection strings, the lane's host and port, and `password`: 0 data hits (30 matching lines in the seed and prep files as the control). The only matches are git's `From <local bare origin path>` lines (a scratch path) and the target guard's own `host:` and `port:` lines in its recorded refusal. Every uuid on a program line reads `<id>`.
+
+**Wording notes from the rehearsal, no defect:** the closing line says "appointments" where it counts marker rows (now said in its EXPECT); and the block's own `marker is empty` STOP sits behind the program's earlier `holds no sending run` refusal, so on the throwaway the program's refusal is the one that fires. The refusal list names both.
+
+**NOT REHEARSED, said one by one:**
+- the production target guard's pass and `target   PRODUCTION` (it refuses 127.0.0.1 by design);
+- network time (`sntp`, the Date headers): no remote host;
+- the night's window on a Friday night after 21:00, and the weekday table's pass branch (`closed by the weekday table`): the run was at 13:xx on a Thursday;
+- GitHub: `refs/pull/1726/head` read from GitHub itself (here a local bare repository), the Actions run of the scheduler sync, and the Vercel looks;
 - the real scheduler: the sends to Inngest, G2, the step 7 look, and the Inngest settings look;
-- GitHub: `refs/pull/<PR>/head` read from GitHub itself, the Actions run of the scheduler sync, and the Vercel looks;
-- network time (`sntp`, the Date headers) against real hosts;
-- the night's window on a real Friday night, unless the rehearsal runs on one;
-- the marker and lock in `~/.osteojp-r36-fallback-rearm` (sink runs keep them beside the sink file), and a marker genuinely a week old;
-- `OUT OF TIME`, a killed run, a failed send, and a row that changes between its read and its send.
+- the marker and lock in `~/.osteojp-r36-fallback-rearm` (sink runs keep them beside the sink file), and a marker genuinely a week old (the first `readAt` was aged 26 hours);
+- `OUT OF TIME`, a killed run, a failed send, and a row that changes between its read and its send;
+- `STALEPATH=yes` through a weekly sitting.
 
 ## What must happen before READY, in this order, and none of it by GREEN
 
-1. **The R4 round**, a fresh reviewer given this document, `scripts/r36-weekly-fallback.test.mjs` and the ruling, under the review-loop cap.
-2. **The rehearsal** on a throwaway by a session that did not write this (see "Rehearsal"), recorded in this document with what stayed NOT REHEARSED.
+1. **The R4 round:** DONE, two rounds, PASS (2026-11-05): round 1 on `38345ed2` (no MAJOR; six fixes in `fefb1591`), round 2 on `fefb1591` (no MINOR; two prose NITs fixed in `3173a15c`).
+2. **The rehearsal:** DONE, 2026-11-05 at `3173a15c`, by a session that did not write this (see "Rehearsal"), with what stayed NOT REHEARSED. A later change to any block needs its own rehearsal of the delta.
 3. **No GATE-CHANGE is needed to land the new test file:** it is under `scripts/**/*.test.mjs`, a gate glob, and the freeze allows an ADDED gate file (`scripts/assert-gates-unchanged.mjs`). It becomes frozen at the next GATE-CHANGE that regenerates the manifest.
 4. **SOLO's READY line**: the first line changes and the sidecar `docs/data-op-r36-weekly-fallback.sha256` is regenerated in the same commit. The test accepts either first line.
 5. **The pull request kept held, unarmed and unmerged, with the label `held-for-apply` REQUIRED, on from before the READY line until the last weekly sitting's GREEN report.** Without the label the auto-update workflow merges `main` into this branch, the head moves, and `refs/pull/1726/head` stops matching HELD: WEEKLY, BEFORE YOU START stops, and the READY line, DOCSHA and HELD would all have to be redone. This authoring session changes no label; SOLO puts it on, and nobody takes it off before that report.
