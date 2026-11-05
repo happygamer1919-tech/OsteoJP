@@ -88,7 +88,7 @@ const GATE_FILE = "scripts/migration-timeouts.test.mjs";
 const BRANCH = "origin/db/HOR-02-saturday-closing-time";
 const CHECK_NAME = "locations_saturday_hours_valid";
 /** The document's first line until SOLO's READY line removes it. */
-export const NOT_READY_LINE = "NOT READY: the R4 re-check (11-03, SHIP / SHIP AFTER FIXES) and the independent rehearsal of the final bytes (11-04 00:06, REHEARSED OK on BLUE, transcripts rh1104-transcripts/) are done; fix round 3 applied 11-04 (unset line, CI check); narrow re-check of those lines pending";
+export const NOT_READY_LINE = "NOT READY: the R4 re-check (11-03, SHIP / SHIP AFTER FIXES) and the independent rehearsal of the bytes before fix round 3 (11-04 00:06, REHEARSED OK on BLUE, transcripts rh1104-transcripts/) are done; fix round 3 applied 11-04 (unset line, CI check); narrow re-check of those lines pending";
 
 /** The pins of files this branch does not own, as they read on main when the document was written. */
 export const EXTERNAL_PINS = Object.freeze({
@@ -453,7 +453,7 @@ export const WRITE_STANDS = "0109 IS APPLIED and the write stands. Run nothing a
 const WRITE_STANDS_IF = `If stage 1 ended with its line 0109 APPLIED, then ${WRITE_STANDS}`;
 const STOP_TEXT = /echo "STOP: ([^"]+)"/;
 export const STATE_UNKNOWN = "Stage 1 recorded that it applied 0109, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report";
-export const POST_RUN_START = 'psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before=';
+export const POST_RUN_START = 'psql "${DATABASE_URL_DIRECT:?}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before=';
 export const POST_RUN_SENTENCE = "If psql's lines say a relation or a column does not exist, this read does not agree with stage 1's marker and the state is UNKNOWN; otherwise this read confirmed nothing and contradicted nothing. Run nothing again, not stage 0 and not stage 1, and report this whole output; the lead rules";
 export const CONTRADICTING_READS = Object.freeze({
   stage2: ['[ "${FAILS}" = 0 ] || ', '[ "${JA}" = "$((J + 1))" ] || ', '[ "${HN}" = 1 ] || '],
@@ -586,7 +586,7 @@ export function argumentProblems(s1, s2) {
   const problems = [];
   const l1 = s1.split("\n");
   const l2 = s2.split("\n");
-  if (!l1.some((l) => l.startsWith(`psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -f ${PRE} -c "rollback" 2>&1 | tee /tmp/0109-precheck.new || `))) {
+  if (!l1.some((l) => l.startsWith(`psql "\${DATABASE_URL_DIRECT:?}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -f ${PRE} -c "rollback" 2>&1 | tee /tmp/0109-precheck.new || `))) {
     problems.push("stage 1 does not run the pre-check inside its own begin read only");
   }
   if (!l1.some((l) => l.startsWith(`node packages/db/scripts/verified-migrate.mjs --tag ${TAG} --sha256 \${SHA0109} --expect-pending 1 2>&1 | tee /tmp/0109-apply.out || `))) {
@@ -594,11 +594,11 @@ export function argumentProblems(s1, s2) {
   }
   for (const [v, row] of CARRY_MAP) if (!l2.includes(`${v}=$(carry ${row})`)) problems.push(`stage 2 does not read \${${v}} from the row ${row}`);
   if (!l2.includes(CARRY_FUNCTION)) problems.push("stage 2's carry() does not match a row by its whole name");
-  const want = `psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 ${CARRY_MAP.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0109-postcheck.out || `;
+  const want = `psql "\${DATABASE_URL_DIRECT:?}" -X -P pager=off -v ON_ERROR_STOP=1 ${CARRY_MAP.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0109-postcheck.out || `;
   if (!l2.some((l) => l.startsWith(want))) problems.push("stage 2 does not hand the post-check the seven carries, each under its own name, inside begin read only");
   for (const c of CARRY_CHECKS) if (!l2.some((l) => l.startsWith(c) && EXPLICIT_HALT.test(l))) problems.push(`stage 2 lacks the carry check ${c}`);
   const at = (start) => l2.findIndex((l) => l.startsWith(start));
-  if (CARRY_CHECKS.some((c) => at(c) > at('psql "${DATABASE_URL_DIRECT}" -X -P pager=off'))) problems.push("a carry check follows the post-check it guards");
+  if (CARRY_CHECKS.some((c) => at(c) > at('psql "${DATABASE_URL_DIRECT:?}" -X -P pager=off'))) problems.push("a carry check follows the post-check it guards");
   return problems;
 }
 
@@ -1882,7 +1882,10 @@ test("STALE VARIABLES, the four blocks that load the env file, whole: a stale .i
         assert.equal(r.unexpected, "", `${tag}: ${r.unexpected}`);
         assert.ok(credentialCalls(r).length > 0, `${tag}: no program that reads the URL ran, so the run proves nothing: ${r.out.slice(-400)}`);
         assert.ok(!r.calls.some((c) => c.args.includes("shell-profile.invalid")), `${tag}: a program was handed the shell's URL`);
-        if (r.code === 0) assert.ok(r.out.includes(HARNESS_BLOCKS[name].success.at(-1)), `${tag}: ${r.out.slice(-600)}`);
+        if (blockWith(doc, HARNESS_BLOCKS[name].marker).includes("node scripts/assert-production-target.mjs || ")) {
+          assert.match(r.out, /^target verified: production, session pooler\.$/m, `${tag}: the guard did not pass on the file's URL: ${r.out.slice(-600)}`);
+        }
+        if (r.code === 0) assert.ok(r.out.includes(HARNESS_BLOCKS[name].marker), `${tag}: ${r.out.slice(-600)}`);
         else assert.equal(r.out.split("\n").filter((l) => l.startsWith("STOP: ")).length, 1, `${tag}: ${r.out.slice(-600)}`);
       }
     }
