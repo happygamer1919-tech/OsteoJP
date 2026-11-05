@@ -31,11 +31,22 @@
 /*     is one Sistema or SubSistema of one clinic.                        */
 /*   - ONE NAME PER CLINIC, by a unique index on the tenant and the       */
 /*     NORMALIZED name: lower case, runs of whitespace read as one space, */
-/*     no leading or trailing space. "ADSE", "adse" and " ADSE  " are one */
-/*     name. Accents are NOT folded ("Medis" and "Medis" with an accent   */
-/*     are two names): folding needs the unaccent extension, which this   */
-/*     schema does not install. Inactive rows count, so a name that was   */
-/*     deactivated is reactivated, not typed in twice.                    */
+/*     no leading or trailing space, and ACCENTS FOLDED. "ADSE", "adse"   */
+/*     and " ADSE  " are one name, and so are "Medis" and "Medis" written */
+/*     with an acute accent on the e (ruling Q12 of 2026-11-04: one name, */
+/*     whatever its accents and case). The fold is a built-in translate() */
+/*     over the lowered name with an explicit map, NO EXTENSION (unaccent */
+/*     is not installed and this file does not add it): a, e, i, o and u  */
+/*     with acute, grave, circumflex, tilde or diaeresis read as the bare */
+/*     vowel, c with cedilla as c, n with tilde as n. The map holds both  */
+/*     cases, so the fold does not depend on how the database's ctype     */
+/*     lowers a non-ASCII letter. lower(), btrim(), regexp_replace() and  */
+/*     translate() are IMMUTABLE, so the expression can be indexed.       */
+/*     Letters outside the map, and an accent typed as a separate         */
+/*     combining mark, are not folded. The application's pre-check folds */
+/*     with the same map (lib/admin/health-systems-core.ts in apps/web).  */
+/*     Inactive rows count, so a name that was deactivated is             */
+/*     reactivated, not typed in twice.                                   */
 /*   - NO DELETE. A Sistema is deactivated (active = false) and stays, so */
 /*     a ficha that names it keeps its label. No role but the table's    */
 /*     owner may delete a row (no grant, no policy).                      */
@@ -128,14 +139,17 @@ CREATE TABLE public.health_systems (
 );--> statement-breakpoint
 
 /* One name per clinic, normalized (section 1). It also serves the list   */
-/* read, which is by tenant.                                              */
+/* read, which is by tenant. The two literals of translate() are the      */
+/* accent map, position for position: 27 lower-case letters, then the    */
+/* same 27 in upper case, each onto its bare letter.                      */
 CREATE UNIQUE INDEX health_systems_tenant_name_key
-  ON public.health_systems (tenant_id, lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g'))));--> statement-breakpoint
+  ON public.health_systems (tenant_id, translate(lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g'))), 'áàâãäéèêëẽíìîïĩóòôõöúùûüũçñÁÀÂÃÄÉÈÊËẼÍÌÎÏĨÓÒÔÕÖÚÙÛÜŨÇÑ', 'aaaaaeeeeeiiiiiooooouuuuucnaaaaaeeeeeiiiiiooooouuuuucn'));--> statement-breakpoint
 
 COMMENT ON TABLE public.health_systems IS
   'Sistemas / SubSistemas: the clinic''s own list of health systems and '
   'subsystems, each a single free-text name (Fisiozero''s panel, owner request '
-  '2026-11-02). One name per tenant after normalizing case and whitespace. '
+  '2026-11-02). One name per tenant after normalizing case, whitespace and '
+  'accents. '
   'Deactivated, never deleted. Read by every staff role of the tenant; written '
   'by owner and admin. A label only: no price, discount or invoice reads it.';--> statement-breakpoint
 

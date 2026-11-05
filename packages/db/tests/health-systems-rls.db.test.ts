@@ -35,6 +35,11 @@
  *   - patient, anon and service_role: refused every read;
  *   - ONE NAME PER CLINIC, normalized: case and whitespace variants are refused
  *     in the same tenant and accepted in another;
+ *   - ACCENTS FOLD TOO (ruling Q12, 2026-11-04): "Medis" after "Médis" is
+ *     refused in the same tenant and accepted in another, the index expression
+ *     read from the catalogue maps a table of names to the expected keys, and a
+ *     CONTROL shows the same inserts pass under the old expression (case and
+ *     whitespace only), so the arm is proven to detect a missing fold;
  *   - patients: a ficha names a Sistema of its own tenant only (the composite
  *     key refuses another tenant's, even on the owner connection that bypasses
  *     RLS), and an admin sets and clears both fields through RLS.
@@ -448,6 +453,133 @@ d(`Sistemas / SubSistemas: health_systems and the two patients columns [${SIDE}]
       );
     expect(other).toBe("rollback");
     await sql`delete from health_systems where tenant_id = ${A.tenant} and name = 'Sub Sistema X'`;
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Accents fold (ruling Q12, 2026-11-04)                               */
+  /* ------------------------------------------------------------------ */
+
+  /** The index's name expression, read from the catalogue (its second column). */
+  const indexExpression = async (): Promise<string> => {
+    const [row] = await sql<{ e: string }[]>`
+      select pg_get_indexdef('public.health_systems_tenant_name_key'::regclass, 2, false) as e`;
+    return row!.e;
+  };
+
+  /** The expression before Q12: case and whitespace only. The CONTROL. */
+  const OLD_EXPRESSION = "lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))";
+
+  /** Insert two names, in order, into the same tenant; the error code of the second, or null. */
+  const secondInsert = async (tx: TransactionSql, table: string, first: string, second: string) => {
+    const t = randomUUID();
+    await tx.unsafe(`insert into ${table} (tenant_id, name) values ($1, $2)`, [t, first]);
+    try {
+      await tx.savepoint((sp) => sp.unsafe(`insert into ${table} (tenant_id, name) values ($1, $2)`, [t, second]));
+      return null;
+    } catch (err) {
+      const e = err as { code?: string };
+      if (e.code === undefined) throw err;
+      return e.code;
+    }
+  };
+
+  it("the index folds accents: its catalogue expression maps a table of names to the expected keys", async () => {
+    const expr = await indexExpression();
+    expect(expr).toContain("translate(lower(btrim(regexp_replace(name");
+    const table: [string, string][] = [
+      ["Médis", "medis"],
+      ["Medis", "medis"],
+      ["MEDIS", "medis"],
+      [" médis ", "medis"],
+      ["MÉDIS", "medis"],
+      ["Saúde", "saude"],
+      ["Saude", "saude"],
+      ["Ç", "c"],
+      ["C", "c"],
+      ["Açoreana  Saúde", "acoreana saude"],
+      ["ÀÁÂÃÄ èéêëẽ ìíîïĩ òóôõö ùúûüũ ñ", "aaaaa eeeee iiiii ooooo uuuuu n"],
+      ["Medis Plus", "medis plus"],
+      ["Fidelidade Saúde", "fidelidade saude"],
+    ];
+    // The column is called name, so the catalogue's text runs unchanged.
+    const keys = await sql.unsafe<{ name: string; key: string }[]>(
+      `select name, ${expr} as key from unnest($1::text[]) with ordinality as u(name, ord) order by ord`,
+      [table.map(([n]) => n)],
+    );
+    expect(keys.map((r) => [r.name, r.key])).toEqual(table);
+  });
+
+  it("'Medis' after 'Médis' is refused in the same tenant (and MEDIS, ' médis '), accepted in another; two names stay distinct", async () => {
+    await sql`insert into health_systems (tenant_id, name) values (${A.tenant}, 'Médis'), (${A.tenant}, 'Saúde Prime')`;
+    try {
+      for (const variant of ["Medis", "MEDIS", " médis ", "MÉDIS", "Saude Prime", "SAUDE  PRIME"]) {
+        const code = await sql
+          .begin(async (tx) => {
+            await tx`insert into health_systems (tenant_id, name) values (${A.tenant}, ${variant})`;
+          })
+          .then(
+            () => null,
+            (e: { code?: string }) => e.code ?? "no code",
+          );
+        expect(code, variant).toBe(UNIQUE);
+      }
+      // Another clinic may hold the folded name: B already holds 'Medis' (seed),
+      // and 'Saude Prime' is accepted there.
+      const other = await sql
+        .begin(async (tx) => {
+          await tx`insert into health_systems (tenant_id, name) values (${B.tenant}, 'Saude Prime')`;
+          throw new Error("rollback");
+        })
+        .then(
+          () => "committed",
+          (e: { code?: string; message?: string }) => e.code ?? e.message,
+        );
+      expect(other).toBe("rollback");
+      const [seedB] = await sql<{ n: number }[]>`
+        select count(*)::int as n from health_systems where tenant_id = ${B.tenant} and name = 'Medis'`;
+      expect(seedB!.n).toBe(1);
+      // Two names that must stay distinct in the same tenant.
+      for (const distinct of ["Medis Plus", "Saúde Primeira"]) {
+        const code = await sql
+          .begin(async (tx) => {
+            await tx`insert into health_systems (tenant_id, name) values (${A.tenant}, ${distinct})`;
+            throw new Error("rollback");
+          })
+          .then(
+            () => "committed",
+            (e: { code?: string; message?: string }) => e.code ?? e.message,
+          );
+        expect(code, distinct).toBe("rollback");
+      }
+    } finally {
+      await sql`delete from health_systems where tenant_id = ${A.tenant} and name in ('Médis', 'Saúde Prime')`;
+    }
+  });
+
+  it("CONTROL: under the old expression the same accent inserts are NOT refused; under the catalogue's they are", async () => {
+    const expr = await indexExpression();
+    expect(expr.replace(/::text/g, "")).not.toBe(OLD_EXPRESSION);
+    const verdicts = await sql
+      .begin(async (tx) => {
+        await tx.unsafe("create temp table hs_q12_old (tenant_id uuid not null, name text not null) on commit drop");
+        await tx.unsafe(`create unique index on hs_q12_old (tenant_id, ${OLD_EXPRESSION})`);
+        await tx.unsafe("create temp table hs_q12_new (tenant_id uuid not null, name text not null) on commit drop");
+        await tx.unsafe(`create unique index on hs_q12_new (tenant_id, ${expr})`);
+        const out = {
+          oldAccent: await secondInsert(tx, "hs_q12_old", "Médis", "Medis"),
+          oldCase: await secondInsert(tx, "hs_q12_old", "ADSE", " adse "),
+          newAccent: await secondInsert(tx, "hs_q12_new", "Médis", "Medis"),
+          newCase: await secondInsert(tx, "hs_q12_new", "ADSE", " adse "),
+        };
+        throw Object.assign(new Error("rollback"), { out });
+      })
+      .catch((e: { out?: unknown }) => {
+        if (e.out === undefined) throw e;
+        return e.out;
+      });
+    // The old expression refuses the case variant (it works) but lets the
+    // accent variant in: the defect Q12 names. The catalogue's refuses both.
+    expect(verdicts).toEqual({ oldAccent: null, oldCase: UNIQUE, newAccent: UNIQUE, newCase: UNIQUE });
   });
 
   it("a name must not be blank and is at most 120 characters", async () => {
