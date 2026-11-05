@@ -145,6 +145,22 @@ describe("Q5 and Q6: next to the IVA columns", () => {
     expect(en["admin.serviceTypes.vatReasonRows"]).toBe("Appointment types to fix:");
   });
 
+  it("B10: the mirror refusal names both ways out: clear the Motivo, or set IVA to 0%", () => {
+    expect(pt["admin.serviceTypes.vatReasonNotExempt"]).toBe(
+      "Só o IVA 0% leva Motivo IVA. Retire o Motivo ou ponha o IVA a 0%. Nada foi guardado.",
+    );
+    expect(en["admin.serviceTypes.vatReasonNotExempt"]).toBe(
+      "Only 0% VAT takes a VAT reason. Clear the reason or set VAT to 0%. Nothing was saved.",
+    );
+    expect(pt["admin.serviceTypes.newVatReasonNotExempt"]).toBe(
+      "O novo Tipo de Marcação tem IVA acima de 0%: retire o Motivo IVA ou ponha o IVA a 0%. Nada foi inserido.",
+    );
+    expect(en["admin.serviceTypes.newVatReasonNotExempt"]).toBe(
+      "The new appointment type has VAT above 0%: clear the VAT reason or set VAT to 0%. Nothing was inserted.",
+    );
+    expect(pt["admin.serviceTypes.vatReasonRule"]).toContain("Com IVA 6%, 13% ou 23%, o Motivo fica vazio.");
+  });
+
   it("the new-type row's IVA starts unset, not 0%", () => {
     const newRow = html.split('data-testid="service-types-new-row"')[1] ?? "";
     const vatSelect = newRow.match(/<select name="vat"[\s\S]*?<\/select>/)?.[0] ?? "";

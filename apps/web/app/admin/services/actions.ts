@@ -87,13 +87,15 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
  * IVA 0% with no Motivo (strategy Q5) has its own code, `err:vat_reason`, so
  * the banner says what to choose instead of "an invalid value", and from the
  * table it carries the ids of every row at fault (`vr`), which the banner names.
+ * A Motivo on a 6, 13 or 23% rate (strategy B10) is the mirror refusal, with
+ * its own code, `err:vat_reason_not_exempt`, and the same `vr` row ids.
  */
 async function runTypes(param: "mt" | "mn", fn: () => Promise<void>): Promise<never> {
   let query = `${param}=ok`;
   try {
     await fn();
   } catch (e) {
-    // A refused form cell; Q5's names the rows at fault (`vr`), see formErrorQuery.
+    // A refused form cell; Q5's and B10's name the rows at fault (`vr`), see formErrorQuery.
     query =
       e instanceof ServiceTypesFormError
         ? formErrorQuery(param, e)

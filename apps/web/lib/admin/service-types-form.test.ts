@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { VAT_EXEMPTION_CODES } from "@osteojp/db";
 import {
   ServiceTypesFormError,
   UNSET_COLOR_SHOWN,
@@ -194,14 +195,12 @@ describe("the Tipos de Marcacao table form", () => {
   });
 
   describe("Q5: IVA 0% needs a Motivo (strategy, 2026-11-04)", () => {
-    it("the rule itself: 0% with no Motivo is refused; everything else is admitted", () => {
+    it("the rule itself: 0% with no Motivo is refused; 0% with one and no rate with none are admitted", () => {
       expect(refused(() => assertVatReason(0, null))).toBe("vatReasonRequired");
       expect(refused(() => assertVatReason(0, "M07"))).toBe("admitted");
       expect(refused(() => assertVatReason(null, null))).toBe("admitted");
       for (const r of [6, 13, 23] as const) {
         expect(refused(() => assertVatReason(r, null))).toBe("admitted");
-        // Unchanged by Q5: a Motivo on a non-zero rate is still admitted.
-        expect(refused(() => assertVatReason(r, "M07"))).toBe("admitted");
       }
     });
 
@@ -213,13 +212,12 @@ describe("the Tipos de Marcacao table form", () => {
       ).toBe("vatReasonRequired");
     });
 
-    it("the table admits 0% with a Motivo, no rate with none, and 6/13/23% with or without one", () => {
+    it("the table admits 0% with a Motivo, no rate with none, and 6/13/23% with none", () => {
       expect(parseServiceTypesTable(row(A))[0]?.vatExemptionCode).toBe("M07");
       const unset = parseServiceTypesTable(row(A, { [`vat__${A}`]: "", [`vatReason__${A}`]: "" }))[0];
       expect([unset?.vatRate, unset?.vatExemptionCode]).toEqual([null, null]);
       for (const r of ["6", "13", "23"]) {
         expect(parseServiceTypesTable(row(A, { [`vat__${A}`]: r, [`vatReason__${A}`]: "" }))[0]?.vatRate).toBe(Number(r));
-        expect(parseServiceTypesTable(row(A, { [`vat__${A}`]: r }))[0]?.vatExemptionCode).toBe("M07");
       }
     });
 
@@ -294,6 +292,94 @@ describe("the Tipos de Marcacao table form", () => {
       for (const f of ["vat", "vatReason", "price", "name", "rows", "color", "duration"]) {
         expect(formErrorCode(new ServiceTypesFormError(f))).toBe("err:invalid");
       }
+    });
+  });
+
+  describe("B10: a Motivo only on IVA 0% (strategy, 2026-11-05)", () => {
+    const caught = (fn: () => unknown): ServiceTypesFormError => {
+      try {
+        fn();
+      } catch (e) {
+        if (e instanceof ServiceTypesFormError) return e;
+      }
+      throw new Error("not refused");
+    };
+    const base: [string, string][] = [["name", "Pilates"], ["price", "50"], ["durationMin", "60"]];
+
+    it("the rule itself: 6, 13 or 23% with a Motivo is refused, every one of the 33 codes", () => {
+      expect(VAT_EXEMPTION_CODES).toHaveLength(33);
+      for (const r of [6, 13, 23] as const) {
+        for (const code of VAT_EXEMPTION_CODES) {
+          expect(refused(() => assertVatReason(r, code))).toBe("vatReasonNotExempt");
+        }
+        expect(refused(() => assertVatReason(r, null))).toBe("admitted");
+      }
+      expect(refused(() => assertVatReason(0, "M07"))).toBe("admitted");
+      expect(refused(() => assertVatReason(0, null))).toBe("vatReasonRequired");
+      expect(refused(() => assertVatReason(null, null))).toBe("admitted");
+    });
+
+    it("the table refuses 23% with a Motivo, and 6% and 13% with one", () => {
+      for (const r of ["23", "6", "13"]) {
+        expect(refused(() => parseServiceTypesTable(row(A, { [`vat__${A}`]: r })))).toBe("vatReasonNotExempt");
+      }
+    });
+
+    it("the table admits 23% with no Motivo and 0% with one, and still refuses 0% with none (Q5)", () => {
+      const taxed = parseServiceTypesTable(row(A, { [`vat__${A}`]: "23", [`vatReason__${A}`]: "" }))[0];
+      expect([taxed?.vatRate, taxed?.vatExemptionCode]).toEqual([23, null]);
+      const exempt = parseServiceTypesTable(row(A))[0];
+      expect([exempt?.vatRate, exempt?.vatExemptionCode]).toEqual([0, "M07"]);
+      expect(refused(() => parseServiceTypesTable(row(A, { [`vatReason__${A}`]: "" })))).toBe("vatReasonRequired");
+    });
+
+    it("no rate ('--') is unchanged: admitted with no Motivo; with a Motivo it is admitted as before", () => {
+      const unset = parseServiceTypesTable(row(A, { [`vat__${A}`]: "", [`vatReason__${A}`]: "" }))[0];
+      expect([unset?.vatRate, unset?.vatExemptionCode]).toEqual([null, null]);
+      expect(refused(() => assertVatReason(null, "M07"))).toBe("admitted");
+      expect(parseServiceTypesTable(row(A, { [`vat__${A}`]: "" }))[0]?.vatExemptionCode).toBe("M07");
+      expect(parseNewServiceType([...base, ["vat", ""], ["vatReason", ""]]).vatRate).toBeNull();
+    });
+
+    it("the table's refusal names EVERY row at fault, and a clean row is not named", () => {
+      const both = caught(() =>
+        parseServiceTypesTable([
+          ...row(A, { [`vat__${A}`]: "23" }),
+          ...row(B, { [`vat__${B}`]: "6" }),
+        ]),
+      );
+      expect([both.field, both.rowIds]).toEqual(["vatReasonNotExempt", [A, B]]);
+      const onlyB = caught(() =>
+        parseServiceTypesTable([...row(A), ...row(B, { [`vat__${B}`]: "13" })]),
+      );
+      expect(onlyB.rowIds).toEqual([B]);
+      // Q5 is reported first when both happen in one save.
+      const q5First = caught(() =>
+        parseServiceTypesTable([...row(A, { [`vat__${A}`]: "23" }), ...row(B, { [`vatReason__${B}`]: "" })]),
+      );
+      expect([q5First.field, q5First.rowIds]).toEqual(["vatReasonRequired", [B]]);
+      // Another bad cell still wins.
+      expect(
+        refused(() => parseServiceTypesTable([...row(A, { [`vat__${A}`]: "23" }), ...row(B, { [`price__${B}`]: "abc" })])),
+      ).toBe("price");
+    });
+
+    it("the new-type row refuses 6, 13 or 23% with a Motivo and admits them with none", () => {
+      for (const r of ["6", "13", "23"]) {
+        expect(refused(() => parseNewServiceType([...base, ["vat", r], ["vatReason", "M07"]]))).toBe("vatReasonNotExempt");
+        expect(parseNewServiceType([...base, ["vat", r], ["vatReason", ""]]).vatExemptionCode).toBeNull();
+      }
+    });
+
+    it("its own banner code, and the redirect names the rows by id (vr)", () => {
+      expect(formErrorCode(new ServiceTypesFormError("vatReasonNotExempt"))).toBe("err:vat_reason_not_exempt");
+      expect(formErrorQuery("mt", new ServiceTypesFormError("vatReasonNotExempt", [A, B]))).toBe(
+        `mt=err:vat_reason_not_exempt&vr=${A},${B}`,
+      );
+      expect(formErrorQuery("mn", new ServiceTypesFormError("vatReasonNotExempt"))).toBe("mn=err:vat_reason_not_exempt");
+      expect(formErrorQuery("mt", new ServiceTypesFormError("vatReasonNotExempt", ["x&y=1"]))).toBe(
+        "mt=err:vat_reason_not_exempt",
+      );
     });
   });
 

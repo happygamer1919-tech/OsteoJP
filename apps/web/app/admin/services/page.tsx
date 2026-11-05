@@ -97,6 +97,17 @@ export default async function ServicesPage({
             vatReasonRowNames(vr, serviceNameById),
           ),
         }
+    // B10: a Motivo on a 6, 13 or 23% rate. The mirror of Q5, naming the
+    // types at fault the same way.
+    : mt === "err:vat_reason_not_exempt"
+      ? {
+          ok: false,
+          text: vatReasonBanner(
+            s["admin.serviceTypes.vatReasonNotExempt"],
+            s["admin.serviceTypes.vatReasonRows"],
+            vatReasonRowNames(vr, serviceNameById),
+          ),
+        }
     : mt === "err:stale" ? { ok: false, text: s["admin.serviceTypes.stale"] }
     : mt === "err:has_packs" ? { ok: false, text: s["admin.services.archiveHasPacks"] }
     : mt === "err:not_found" ? { ok: false, text: s["admin.serviceTypes.notFound"] }
@@ -104,6 +115,7 @@ export default async function ServicesPage({
     : mn === "ok" ? { ok: true, text: s["admin.serviceTypes.inserted"] }
     : mn === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.newInvalid"] }
     : mn === "err:vat_reason" ? { ok: false, text: s["admin.serviceTypes.newVatReasonRequired"] }
+    : mn === "err:vat_reason_not_exempt" ? { ok: false, text: s["admin.serviceTypes.newVatReasonNotExempt"] }
     : mn && mn.startsWith("err") ? { ok: false, text: s["admin.serviceTypes.newError"] }
     : m === "ok" ? { ok: true, text: s["admin.services.saved"] }
     : m === "err:has_references" ? { ok: false, text: s["admin.services.deleteHasReferences"] }

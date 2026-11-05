@@ -125,7 +125,7 @@ function validate(input: ServiceInput): { name: string; durationMin: number } {
 export async function createService(actor: RequestContext, input: ServiceInput): Promise<void> {
   assertCan(actor.role, "services:write");
   const { name, durationMin } = validate(input);
-  // Q5: the parser refuses it first; this holds for any other caller.
+  // Q5 and B10: the parser refuses them first; this holds for any other caller.
   assertVatReason(input.vatRate ?? null, input.vatExemptionCode ?? null);
 
   await runScoped(actor, async (tx) => {

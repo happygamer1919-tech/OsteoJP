@@ -280,6 +280,24 @@ describe("strategy's answers of 2026-11-04 hold on the server", () => {
     await saveServiceTypesTable(actor, [posted(c, { vatRate: 0, vatExemptionCode: "M07" })]);
     expect(H.sets).toEqual([expect.objectContaining({ vatRate: 0, vatExemptionCode: "M07" })]);
   });
+
+  it("B10: a Motivo on 23% is refused before the database, whatever the caller", async () => {
+    const c = current();
+    H.selects = [[c]];
+    await expect(
+      saveServiceTypesTable(actor, [posted(c, { vatRate: 23, vatExemptionCode: "M07" })]),
+    ).rejects.toMatchObject({ field: "vatReasonNotExempt" });
+    expect(H.locks).toEqual([]);
+    expect(H.sets).toEqual([]);
+    expect(H.audits).toEqual([]);
+  });
+
+  it("B10: 23% with no Motivo saves", async () => {
+    const c = current();
+    H.selects = [[c]];
+    await saveServiceTypesTable(actor, [posted(c, { vatRate: 23, vatExemptionCode: null })]);
+    expect(H.sets).toEqual([expect.objectContaining({ vatRate: 23, vatExemptionCode: null })]);
+  });
 });
 
 describe("the mis-click cannot expose an internal service", () => {

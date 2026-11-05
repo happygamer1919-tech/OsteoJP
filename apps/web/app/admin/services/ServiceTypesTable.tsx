@@ -20,6 +20,7 @@ import {
   setServiceLocationPricesAction,
 } from "./actions";
 import { ServiceTypeColorCell } from "./ServiceTypeColorCell";
+import { ServiceTypeVatPair } from "./ServiceTypeVatPair";
 import { adminHelp, adminInputInline, adminLabel, adminTd, adminTh, adminTrBorder } from "../admin-ui";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -103,42 +104,38 @@ function Tag({
    until the clinic says what it does. The column and its stored values stay;
    the table's save does not write it (saveServiceTypesTable). */
 
-function VatSelect({ name, value, form, typeName }: { name: string; value: number | null; form?: string; typeName?: string }) {
+/** The IVA and Motivo IVA selects (B10: a rate above 0% clears the Motivo). */
+function VatPair({
+  suffix,
+  rate,
+  reason,
+  form,
+  typeName,
+  inCells,
+}: {
+  suffix: string;
+  rate: number | null;
+  reason: string | null;
+  form?: string;
+  typeName?: string;
+  inCells?: boolean;
+}) {
   return (
-    <select
-      name={name}
+    <ServiceTypeVatPair
+      rateName={`vat${suffix}`}
+      reasonName={`vatReason${suffix}`}
       form={form}
-      defaultValue={value === null ? "" : String(value)}
-      aria-label={named(s["admin.serviceTypes.colVat"], typeName)}
-      className={`w-20 ${adminInputInline}`}
-    >
-      {/* Not one of Fisiozero's four: OsteoJP's types start with no rate, and a
-          select that showed "0%" for "not set" would claim an exemption nobody
-          chose. */}
-      <option value="">{s["admin.serviceTypes.vatUnset"]}</option>
-      {SERVICE_VAT_RATES.map((r) => (
-        <option key={r} value={String(r)}>{`${r}%`}</option>
-      ))}
-    </select>
-  );
-}
-
-function VatReasonSelect({ name, value, form, typeName }: { name: string; value: string | null; form?: string; typeName?: string }) {
-  return (
-    <select
-      name={name}
-      form={form}
-      defaultValue={value ?? ""}
-      aria-label={named(s["admin.serviceTypes.colVatReason"], typeName)}
-      className={`w-44 ${adminInputInline}`}
-    >
-      <option value="">{s["admin.serviceTypes.vatReasonPlaceholder"]}</option>
-      {VAT_EXEMPTION_REASONS.map((r) => (
-        <option key={r.code} value={r.code}>
-          {r.label}
-        </option>
-      ))}
-    </select>
+      rate={rate}
+      reason={reason}
+      rates={SERVICE_VAT_RATES}
+      reasons={VAT_EXEMPTION_REASONS.map((r) => ({ code: r.code, label: r.label }))}
+      rateLabel={named(s["admin.serviceTypes.colVat"], typeName)}
+      reasonLabel={named(s["admin.serviceTypes.colVatReason"], typeName)}
+      unsetLabel={s["admin.serviceTypes.vatUnset"]}
+      reasonPlaceholder={s["admin.serviceTypes.vatReasonPlaceholder"]}
+      inputClassName={adminInputInline}
+      cellClassName={inCells ? adminTd : undefined}
+    />
   );
 }
 
@@ -244,17 +241,14 @@ export function ServiceTypesTable({
                           <span aria-hidden="true">€</span>
                         </span>
                       </td>
-                      <td className={adminTd}>
-                        <VatSelect name={`vat__${svc.id}`} value={svc.vatRate} form={TABLE_FORM_ID} typeName={svc.name} />
-                      </td>
-                      <td className={adminTd}>
-                        <VatReasonSelect
-                          name={`vatReason__${svc.id}`}
-                          value={svc.vatExemptionCode}
-                          form={TABLE_FORM_ID}
-                          typeName={svc.name}
-                        />
-                      </td>
+                      <VatPair
+                        suffix={`__${svc.id}`}
+                        rate={svc.vatRate}
+                        reason={svc.vatExemptionCode}
+                        form={TABLE_FORM_ID}
+                        typeName={svc.name}
+                        inCells
+                      />
                       <td className={adminTd}>
                         <span className="inline-flex items-center gap-2" title={switchHelp}>
                           <input
@@ -465,8 +459,7 @@ export function ServiceTypesTable({
           </span>
           {/* Starts unset, not 0%: a 0% type needs a Motivo (Q5), and a
               prefilled 0% would refuse every insert left at its default. */}
-          <VatSelect name="vat" value={null} />
-          <VatReasonSelect name="vatReason" value={null} />
+          <VatPair suffix="" rate={null} reason={null} />
           {/* Not in Fisiozero's row: OsteoJP books by duration, so a new type
               states it. No prefilled value: a silent 60 is how a 30-minute
               type would book an hour. */}

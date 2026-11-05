@@ -24,8 +24,13 @@
  *
  * IVA 0% NEEDS A MOTIVO (strategy Q5, 2026-11-04). A type at 0% VAT with no
  * exemption reason is refused, in the table and in the new-type row
- * (`assertVatReason`, field "vatReasonRequired"). A reason on a 6, 13 or 23%
- * type is still admitted, as it was before Q5: nothing reads it yet.
+ * (`assertVatReason`, field "vatReasonRequired").
+ *
+ * A MOTIVO ONLY ON 0% (strategy B10, 2026-11-05). The mirror rule: a type at
+ * 6, 13 or 23% that carries an exemption reason is refused, in the table and
+ * in the new-type row (`assertVatReason`, field "vatReasonNotExempt"). An
+ * exemption reason on a taxed rate contradicts itself. No rate ("--") with
+ * no reason is admitted, as before.
  *
  * FOLLOWUP IS NOT ON THE FORM (strategy Q9, 2026-11-04). The column
  * `follow_up_days` stays and keeps its stored values, but nothing here reads
@@ -41,7 +46,7 @@ import {
 } from "@osteojp/db";
 
 export class ServiceTypesFormError extends Error {
-  /** For "vatReasonRequired" from the table: the ids of EVERY row at fault. */
+  /** For the two IVA/Motivo refusals from the table: the ids of EVERY row at fault. */
   constructor(
     readonly field: string,
     readonly rowIds: readonly string[] = [],
@@ -51,25 +56,31 @@ export class ServiceTypesFormError extends Error {
   }
 }
 
+export type ServiceTypesFormErrorCode = "err:vat_reason" | "err:vat_reason_not_exempt" | "err:invalid";
+
 /**
  * The code a refused form puts in the page's query string: Q5's missing Motivo
- * is `err:vat_reason` (its own banner); every other bad cell is `err:invalid`.
+ * is `err:vat_reason` and B10's Motivo on a taxed rate is
+ * `err:vat_reason_not_exempt` (each its own banner); every other bad cell is
+ * `err:invalid`.
  */
-export function formErrorCode(e: ServiceTypesFormError): "err:vat_reason" | "err:invalid" {
-  return e.field === "vatReasonRequired" ? "err:vat_reason" : "err:invalid";
+export function formErrorCode(e: ServiceTypesFormError): ServiceTypesFormErrorCode {
+  if (e.field === "vatReasonRequired") return "err:vat_reason";
+  if (e.field === "vatReasonNotExempt") return "err:vat_reason_not_exempt";
+  return "err:invalid";
 }
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
 /**
- * The query string a refused form redirects with: the code, and for Q5 the
- * ids of the rows at fault (`vr`), so the banner can name the types. Ids, not
- * names: the page looks each one up, so nothing typed travels in the URL.
+ * The query string a refused form redirects with: the code, and for Q5 and B10
+ * the ids of the rows at fault (`vr`), so the banner can name the types. Ids,
+ * not names: the page looks each one up, so nothing typed travels in the URL.
  */
 export function formErrorQuery(param: "mt" | "mn", e: ServiceTypesFormError): string {
   const code = formErrorCode(e);
   const ids = e.rowIds.filter((id) => UUID.test(id));
-  return ids.length > 0 && code === "err:vat_reason" ? `${param}=${code}&vr=${ids.join(",")}` : `${param}=${code}`;
+  return ids.length > 0 && code !== "err:invalid" ?`${param}=${code}&vr=${ids.join(",")}` : `${param}=${code}`;
 }
 
 /** The names of the `vr` rows, in the order posted, unknown ids skipped. */
@@ -81,7 +92,7 @@ export function vatReasonRowNames(raw: string | undefined, nameById: ReadonlyMap
   });
 }
 
-/** The Q5 banner: the message, then which types to fix when they are known. */
+/** The Q5 and B10 banner: the message, then which types to fix when they are known. */
 export function vatReasonBanner(message: string, rowsLabel: string, names: readonly string[]): string {
   return names.length === 0 ? message : `${message} ${rowsLabel} ${names.join(", ")}.`;
 }
@@ -160,12 +171,23 @@ export function parseVatExemptionCode(raw: string | undefined): VatExemptionCode
   return t;
 }
 
+/** Q5: IVA 0% is an exemption, and an exemption names its Motivo. */
+function missesVatReason(vatRate: ServiceVatRate | null, code: VatExemptionCode | null): boolean {
+  return vatRate === 0 && code === null;
+}
+
+/** B10: a Motivo is an exemption reason, so it only goes with IVA 0%. */
+function hasVatReasonOnTaxedRate(vatRate: ServiceVatRate | null, code: VatExemptionCode | null): boolean {
+  return vatRate !== null && vatRate > 0 && code !== null;
+}
+
 /**
- * Q5: IVA 0% is an exemption, and an exemption names its Motivo. Empty IVA
- * ("not set") needs none; 6, 13 and 23% are not refused for carrying one.
+ * Q5 and B10 together: 0% needs a Motivo, and 6, 13 or 23% takes none. Empty
+ * IVA ("not set") with no Motivo is admitted.
  */
 export function assertVatReason(vatRate: ServiceVatRate | null, code: VatExemptionCode | null): void {
-  if (vatRate === 0 && code === null) throw new ServiceTypesFormError("vatReasonRequired");
+  if (missesVatReason(vatRate, code)) throw new ServiceTypesFormError("vatReasonRequired");
+  if (hasVatReasonOnTaxedRate(vatRate, code)) throw new ServiceTypesFormError("vatReasonNotExempt");
 }
 
 function vatPair(
@@ -239,10 +261,13 @@ export function parseServiceTypesTable(entries: Entries): ServiceTypeRow[] {
       seenUpdatedAtMs: parseSeenUpdatedAt(first(m, `seen__${id}`)),
     };
   });
-  // Q5 after every row is read, so the refusal names EVERY row at fault: the
-  // save posts the whole table, and the admin must see which rows block it.
-  const missing = rows.filter((r) => r.vatRate === 0 && r.vatExemptionCode === null).map((r) => r.id);
+  // Q5 and B10 after every row is read, so the refusal names EVERY row at
+  // fault: the save posts the whole table, and the admin must see which rows
+  // block it. Q5 is reported first when both occur in one save.
+  const missing = rows.filter((r) => missesVatReason(r.vatRate, r.vatExemptionCode)).map((r) => r.id);
   if (missing.length > 0) throw new ServiceTypesFormError("vatReasonRequired", missing);
+  const taxed = rows.filter((r) => hasVatReasonOnTaxedRate(r.vatRate, r.vatExemptionCode)).map((r) => r.id);
+  if (taxed.length > 0) throw new ServiceTypesFormError("vatReasonNotExempt", taxed);
   return rows;
 }
 

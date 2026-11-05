@@ -67,3 +67,24 @@ describe("therapist and reception are refused every Tipos de Marcacao write", ()
     }
   }
 });
+
+describe("B10 (strategy 2026-11-05): both writers of the Motivo refuse it on a rate above 0%, before the database", () => {
+  for (const vatRate of [6, 13, 23] as const) {
+    it(`createService refuses ${vatRate}% with a Motivo`, async () => {
+      await expect(
+        createService(as("admin"), { name: "Pilates", durationMin: 50, priceCents: 5000, vatRate, vatExemptionCode: "M07" }),
+      ).rejects.toMatchObject({ field: "vatReasonNotExempt" });
+      expect(H.reached).toBe(0);
+    });
+    it(`saveServiceTypesTable refuses ${vatRate}% with a Motivo`, async () => {
+      await expect(
+        saveServiceTypesTable(as("admin"), [{ ...row, vatRate, vatExemptionCode: "M07" }]),
+      ).rejects.toMatchObject({ field: "vatReasonNotExempt" });
+      expect(H.reached).toBe(0);
+    });
+  }
+  it("createService admits 23% with no Motivo", async () => {
+    await createService(as("admin"), { name: "Pilates", durationMin: 50, priceCents: 5000, vatRate: 23, vatExemptionCode: null });
+    expect(H.reached).toBe(1);
+  });
+});
