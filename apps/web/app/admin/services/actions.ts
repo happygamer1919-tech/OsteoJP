@@ -11,7 +11,7 @@ import {
 } from "@/lib/admin/services";
 import {
   ServiceTypesFormError,
-  formErrorCode,
+  formErrorQuery,
   parseNewServiceType,
   parseServiceTypesTable,
 } from "@/lib/admin/service-types-form";
@@ -85,19 +85,23 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
  * different boxes on the page.
  *
  * IVA 0% with no Motivo (strategy Q5) has its own code, `err:vat_reason`, so
- * the banner says what to choose instead of "an invalid value".
+ * the banner says what to choose instead of "an invalid value", and from the
+ * table it carries the ids of every row at fault (`vr`), which the banner names.
  */
 async function runTypes(param: "mt" | "mn", fn: () => Promise<void>): Promise<never> {
-  let code = "ok";
+  let query = `${param}=ok`;
   try {
     await fn();
   } catch (e) {
-    code =
-      e instanceof ServiceTypesFormError ? formErrorCode(e) : isAdminError(e) ? `err:${e.code}` : "err";
+    // A refused form cell; Q5's names the rows at fault (`vr`), see formErrorQuery.
+    query =
+      e instanceof ServiceTypesFormError
+        ? formErrorQuery(param, e)
+        : `${param}=${isAdminError(e) ? `err:${e.code}` : "err"}`;
   }
   revalidatePath("/admin/services");
   updateTag("agenda-reference-data");
-  redirect(`/admin/services?${param}=${code}`);
+  redirect(`/admin/services?${query}`);
 }
 
 export async function saveServiceTypesTableAction(formData: FormData): Promise<void> {

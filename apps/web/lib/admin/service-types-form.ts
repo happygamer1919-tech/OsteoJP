@@ -41,7 +41,11 @@ import {
 } from "@osteojp/db";
 
 export class ServiceTypesFormError extends Error {
-  constructor(readonly field: string) {
+  /** For "vatReasonRequired" from the table: the ids of EVERY row at fault. */
+  constructor(
+    readonly field: string,
+    readonly rowIds: readonly string[] = [],
+  ) {
     super(`invalid ${field}`);
     this.name = "ServiceTypesFormError";
   }
@@ -53,6 +57,33 @@ export class ServiceTypesFormError extends Error {
  */
 export function formErrorCode(e: ServiceTypesFormError): "err:vat_reason" | "err:invalid" {
   return e.field === "vatReasonRequired" ? "err:vat_reason" : "err:invalid";
+}
+
+const UUID = /^[0-9a-f-]{36}$/i;
+
+/**
+ * The query string a refused form redirects with: the code, and for Q5 the
+ * ids of the rows at fault (`vr`), so the banner can name the types. Ids, not
+ * names: the page looks each one up, so nothing typed travels in the URL.
+ */
+export function formErrorQuery(param: "mt" | "mn", e: ServiceTypesFormError): string {
+  const code = formErrorCode(e);
+  const ids = e.rowIds.filter((id) => UUID.test(id));
+  return ids.length > 0 && code === "err:vat_reason" ? `${param}=${code}&vr=${ids.join(",")}` : `${param}=${code}`;
+}
+
+/** The names of the `vr` rows, in the order posted, unknown ids skipped. */
+export function vatReasonRowNames(raw: string | undefined, nameById: ReadonlyMap<string, string>): string[] {
+  const ids = [...new Set((raw ?? "").split(",").filter((id) => UUID.test(id)))];
+  return ids.flatMap((id) => {
+    const n = nameById.get(id);
+    return n === undefined ? [] : [n];
+  });
+}
+
+/** The Q5 banner: the message, then which types to fix when they are known. */
+export function vatReasonBanner(message: string, rowsLabel: string, names: readonly string[]): string {
+  return names.length === 0 ? message : `${message} ${rowsLabel} ${names.join(", ")}.`;
 }
 
 /** The colour a colour input shows for a type with none chosen (Fisiozero's white). */
@@ -192,13 +223,14 @@ export function parseServiceTypesTable(entries: Entries): ServiceTypeRow[] {
   const ids = m.get("row") ?? [];
   if (ids.length === 0) throw new ServiceTypesFormError("rows");
   if (new Set(ids).size !== ids.length) throw new ServiceTypesFormError("rows");
-  return ids.map((id) => {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ServiceTypesFormError("rows");
+  const rows: ServiceTypeRow[] = ids.map((id) => {
+    if (!UUID.test(id)) throw new ServiceTypesFormError("rows");
     return {
       id,
       name: parseName(first(m, `name__${id}`)),
       priceCents: parsePriceCents(first(m, `price__${id}`)),
-      ...vatPair(first(m, `vat__${id}`), first(m, `vatReason__${id}`)),
+      vatRate: parseVatRate(first(m, `vat__${id}`)),
+      vatExemptionCode: parseVatExemptionCode(first(m, `vatReason__${id}`)),
       isActive: m.has(`active__${id}`),
       color: parseColor(first(m, `color__${id}`), m.has(`noColor__${id}`)),
       smsReminders: m.has(`sms__${id}`),
@@ -207,6 +239,11 @@ export function parseServiceTypesTable(entries: Entries): ServiceTypeRow[] {
       seenUpdatedAtMs: parseSeenUpdatedAt(first(m, `seen__${id}`)),
     };
   });
+  // Q5 after every row is read, so the refusal names EVERY row at fault: the
+  // save posts the whole table, and the admin must see which rows block it.
+  const missing = rows.filter((r) => r.vatRate === 0 && r.vatExemptionCode === null).map((r) => r.id);
+  if (missing.length > 0) throw new ServiceTypesFormError("vatReasonRequired", missing);
+  return rows;
 }
 
 /** The new-type row under the table ("Inserir Novo Tipo de Marcacao"). */

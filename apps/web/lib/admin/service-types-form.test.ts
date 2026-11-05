@@ -13,6 +13,9 @@ import {
   parseVatRate,
   assertVatReason,
   formErrorCode,
+  formErrorQuery,
+  vatReasonBanner,
+  vatReasonRowNames,
 } from "./service-types-form";
 
 const A = "11111111-1111-4111-8111-111111111111";
@@ -231,6 +234,59 @@ describe("the Tipos de Marcacao table form", () => {
     it("a bad rate or code is still 'vat' / 'vatReason', not the Q5 refusal", () => {
       expect(refused(() => parseServiceTypesTable(row(A, { [`vat__${A}`]: "22", [`vatReason__${A}`]: "" })))).toBe("vat");
       expect(refused(() => parseServiceTypesTable(row(A, { [`vatReason__${A}`]: "M03" })))).toBe("vatReason");
+    });
+
+    it("the table's refusal carries EVERY row at fault, so the banner can name them all", () => {
+      const caught = (fn: () => unknown): ServiceTypesFormError => {
+        try {
+          fn();
+        } catch (e) {
+          if (e instanceof ServiceTypesFormError) return e;
+        }
+        throw new Error("not refused");
+      };
+      const both = caught(() =>
+        parseServiceTypesTable([
+          ...row(A, { [`vatReason__${A}`]: "" }),
+          ...row(B, { [`vatReason__${B}`]: "" }),
+        ]),
+      );
+      expect([both.field, both.rowIds]).toEqual(["vatReasonRequired", [A, B]]);
+      // A rename on A does not hide that B is the row at fault.
+      const onlyB = caught(() =>
+        parseServiceTypesTable([...row(A, { [`name__${A}`]: "Novo nome" }), ...row(B, { [`vatReason__${B}`]: "" })]),
+      );
+      expect(onlyB.rowIds).toEqual([B]);
+      // Another bad cell still wins: it is reported as it always was.
+      expect(
+        refused(() =>
+          parseServiceTypesTable([...row(A, { [`vatReason__${A}`]: "" }), ...row(B, { [`price__${B}`]: "abc" })]),
+        ),
+      ).toBe("price");
+    });
+
+    it("the redirect names the rows by id (vr), only for Q5 and only real uuids", () => {
+      expect(formErrorQuery("mt", new ServiceTypesFormError("vatReasonRequired", [A, B]))).toBe(
+        `mt=err:vat_reason&vr=${A},${B}`,
+      );
+      expect(formErrorQuery("mn", new ServiceTypesFormError("vatReasonRequired"))).toBe("mn=err:vat_reason");
+      expect(formErrorQuery("mt", new ServiceTypesFormError("vatReasonRequired", ["x&y=1"]))).toBe("mt=err:vat_reason");
+      expect(formErrorQuery("mt", new ServiceTypesFormError("price", [A]))).toBe("mt=err:invalid");
+    });
+
+    it("the banner names the types at fault, skipping ids the page does not know", () => {
+      const names = new Map([
+        [A, "Fisioterapia"],
+        [B, "Reavaliação"],
+      ]);
+      expect(vatReasonRowNames(`${A},${B}`, names)).toEqual(["Fisioterapia", "Reavaliação"]);
+      expect(vatReasonRowNames(`${B},${A},${B}`, names)).toEqual(["Reavaliação", "Fisioterapia"]);
+      expect(vatReasonRowNames(`33333333-3333-4333-8333-333333333333,${A},junk`, names)).toEqual(["Fisioterapia"]);
+      expect(vatReasonRowNames(undefined, names)).toEqual([]);
+      expect(vatReasonBanner("Msg.", "Tipos de Marcação a corrigir:", ["Fisioterapia", "Reavaliação"])).toBe(
+        "Msg. Tipos de Marcação a corrigir: Fisioterapia, Reavaliação.",
+      );
+      expect(vatReasonBanner("Msg.", "Tipos de Marcação a corrigir:", [])).toBe("Msg.");
     });
 
     it("the refusal has its own banner code; every other bad cell stays err:invalid", () => {

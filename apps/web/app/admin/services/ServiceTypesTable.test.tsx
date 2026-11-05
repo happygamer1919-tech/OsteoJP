@@ -88,15 +88,15 @@ describe("Q9: FollowUP is not on the screen", () => {
 describe("Q8: OsteoJP's own notes, never Fisiozero's", () => {
   it("prints the two notes under the table, in the words strategy gave", () => {
     expect(pt["admin.serviceTypes.note1"]).toBe(
-      "Nota 1: As marcações não guardam preço: o valor cobrado é o que consta da fatura emitida.",
+      "As marcações não guardam preço: o valor cobrado é o que consta da fatura emitida.",
     );
-    expect(pt["admin.serviceTypes.note2"]).toBe(
-      "Nota 2: As estatísticas contam apenas as faturas emitidas, não as marcações.",
-    );
+    expect(pt["admin.serviceTypes.note2"]).toBe("As estatísticas contam apenas as faturas emitidas, não as marcações.");
     expect(en["admin.serviceTypes.note1"]).toBe(
-      "Note 1: Appointments store no price: the amount charged is the one on the issued invoice.",
+      "Appointments store no price: the amount charged is the one on the issued invoice.",
     );
-    expect(en["admin.serviceTypes.note2"]).toBe("Note 2: Statistics count issued invoices only, not appointments.");
+    expect(en["admin.serviceTypes.note2"]).toBe("Statistics count issued invoices only, not appointments.");
+    // The two sentences only: no "Nota 1:" / "Note 1:" label.
+    expect(text(html)).not.toMatch(/Not[ae] [12]:/);
     const notes = text(html).split('data-testid="service-types-notes"')[1] ?? "";
     expect(notes).toContain(pt["admin.serviceTypes.note1"]);
     expect(notes).toContain(pt["admin.serviceTypes.note2"]);
@@ -123,10 +123,26 @@ describe("Q5 and Q6: next to the IVA columns", () => {
       "VAT rates and exemption reasons are confirmed by the accountant before any invoicing uses them.",
     );
     expect(en["admin.serviceTypes.vatReasonRule"]).toBeTruthy();
-    expect(pt["admin.serviceTypes.vatReasonRequired"]).toBeTruthy();
-    expect(en["admin.serviceTypes.vatReasonRequired"]).toBeTruthy();
-    expect(pt["admin.serviceTypes.newVatReasonRequired"]).toBeTruthy();
-    expect(en["admin.serviceTypes.newVatReasonRequired"]).toBeTruthy();
+  });
+
+  it("the refusal names both ways out: choose a Motivo, or set IVA back to the unset value", () => {
+    const unset = pt["admin.serviceTypes.vatUnset"];
+    expect(unset).toBe("--");
+    expect(en["admin.serviceTypes.vatUnset"]).toBe(unset);
+    expect(pt["admin.serviceTypes.vatReasonRequired"]).toBe(
+      `Com IVA 0% é obrigatório escolher o Motivo IVA, ou voltar a pôr o IVA em "${unset}". Nada foi guardado.`,
+    );
+    expect(en["admin.serviceTypes.vatReasonRequired"]).toBe(
+      `A 0% VAT rate needs a VAT reason, or set VAT back to "${unset}". Nothing was saved.`,
+    );
+    expect(pt["admin.serviceTypes.newVatReasonRequired"]).toBe(
+      `O novo Tipo de Marcação tem IVA 0%: escolha um Motivo IVA ou volte a pôr o IVA em "${unset}". Nada foi inserido.`,
+    );
+    expect(en["admin.serviceTypes.newVatReasonRequired"]).toBe(
+      `The new appointment type has 0% VAT: choose a VAT reason or set VAT back to "${unset}". Nothing was inserted.`,
+    );
+    expect(pt["admin.serviceTypes.vatReasonRows"]).toBe("Tipos de Marcação a corrigir:");
+    expect(en["admin.serviceTypes.vatReasonRows"]).toBe("Appointment types to fix:");
   });
 
   it("the new-type row's IVA starts unset, not 0%", () => {

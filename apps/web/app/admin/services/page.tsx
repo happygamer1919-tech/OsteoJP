@@ -18,6 +18,7 @@ import {
   parsePackStatusFilter,
 } from "@/lib/admin/pack-filters";
 import { listLocations } from "@/lib/admin/locations";
+import { vatReasonBanner, vatReasonRowNames } from "@/lib/admin/service-types-form";
 import { ServiceTypesTable } from "./ServiceTypesTable";
 import { PacksSection } from "./packs-section";
 
@@ -26,7 +27,7 @@ const s = getStrings(DEFAULT_LOCALE);
 export default async function ServicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; mp?: string; mt?: string; mn?: string; pf?: string }>;
+  searchParams: Promise<{ m?: string; mp?: string; mt?: string; mn?: string; pf?: string; vr?: string }>;
 }) {
   const actor = await requireRequestContext();
   const [
@@ -50,7 +51,7 @@ export default async function ServicesPage({
     listPackLocationPrices(actor),
     listPackOfferings(actor),
   ]);
-  const { m, mp, mt, mn, pf } = await searchParams;
+  const { m, mp, mt, mn, pf, vr } = await searchParams;
 
   // Active locations only; overrides keyed by `${serviceId}:${locationId}`.
   const activeLocations = locations.filter((l) => l.isActive);
@@ -85,8 +86,17 @@ export default async function ServicesPage({
     // have their own messages, one per refusal.
     mt === "ok" ? { ok: true, text: s["admin.serviceTypes.saved"] }
     : mt === "err:invalid" ? { ok: false, text: s["admin.serviceTypes.invalid"] }
-    // Q5: IVA 0% with no Motivo. Its own message, naming what to choose.
-    : mt === "err:vat_reason" ? { ok: false, text: s["admin.serviceTypes.vatReasonRequired"] }
+    // Q5: IVA 0% with no Motivo. Its own message, naming the way out and
+    // every type at fault: the save posts the whole table.
+    : mt === "err:vat_reason"
+      ? {
+          ok: false,
+          text: vatReasonBanner(
+            s["admin.serviceTypes.vatReasonRequired"],
+            s["admin.serviceTypes.vatReasonRows"],
+            vatReasonRowNames(vr, serviceNameById),
+          ),
+        }
     : mt === "err:stale" ? { ok: false, text: s["admin.serviceTypes.stale"] }
     : mt === "err:has_packs" ? { ok: false, text: s["admin.services.archiveHasPacks"] }
     : mt === "err:not_found" ? { ok: false, text: s["admin.serviceTypes.notFound"] }

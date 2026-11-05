@@ -33,12 +33,12 @@ test("Tipos de Marcação: a new type, every column edited, one save, read back 
   await expect(page.locator('select[name^="followUp"]')).toHaveCount(0);
   // Q8: OsteoJP's own notes, not Fisiozero's.
   await expect(
-    page.getByText("Nota 1: As marcações não guardam preço: o valor cobrado é o que consta da fatura emitida.", {
+    page.getByText("As marcações não guardam preço: o valor cobrado é o que consta da fatura emitida.", {
       exact: true,
     }),
   ).toBeVisible();
   await expect(
-    page.getByText("Nota 2: As estatísticas contam apenas as faturas emitidas, não as marcações.", { exact: true }),
+    page.getByText("As estatísticas contam apenas as faturas emitidas, não as marcações.", { exact: true }),
   ).toBeVisible();
 
   // The new-type row: name, price, IVA (unset until chosen), Motivo, and
@@ -133,7 +133,10 @@ test("Tipos de Marcação: IVA 0% with no Motivo saves nothing and says so (Q5)"
     newRow.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
   ]);
   await expect(
-    page.getByText("O novo Tipo de Marcação tem IVA 0% e precisa de um Motivo IVA. Nada foi inserido.", { exact: true }),
+    page.getByText(
+      'O novo Tipo de Marcação tem IVA 0%: escolha um Motivo IVA ou volte a pôr o IVA em "--". Nada foi inserido.',
+      { exact: true },
+    ),
   ).toBeVisible();
   await expect(page.locator(`input[name^="name__"][value="${name}"]`)).toHaveCount(0);
 
@@ -147,9 +150,13 @@ test("Tipos de Marcação: IVA 0% with no Motivo saves nothing and says so (Q5)"
   const row = typeRow(page, name);
   await row.locator('select[name^="vat__"]').selectOption("0");
   await row.locator('select[name^="vatReason__"]').selectOption("");
-  await Promise.all([page.waitForURL(/mt=err:vat_reason/), page.getByRole("button", { name: SAVE }).click()]);
+  await Promise.all([page.waitForURL(/mt=err:vat_reason&vr=/), page.getByRole("button", { name: SAVE }).click()]);
+  // The banner names the type at fault: the save posts every row.
   await expect(
-    page.getByText("Com IVA 0% é obrigatório escolher o Motivo IVA. Nada foi guardado.", { exact: true }),
+    page.getByText(
+      `Com IVA 0% é obrigatório escolher o Motivo IVA, ou voltar a pôr o IVA em "--". Nada foi guardado. Tipos de Marcação a corrigir: ${name}.`,
+      { exact: true },
+    ),
   ).toBeVisible();
   await page.goto("/admin/services");
   await expect(typeRow(page, name).locator('select[name^="vat__"]')).toHaveValue("");
