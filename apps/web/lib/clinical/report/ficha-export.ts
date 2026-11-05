@@ -11,6 +11,8 @@ import {
   selectFichaExport,
   type FichaExportSection,
 } from "./ficha-export-core";
+import type { ExportOverride, ExportRow, OverrideAuditEntry } from "./export-overrides";
+import { readExportRows } from "./export-rows";
 import { generateRegistoReportPdf, registoReadScope } from "./generate";
 import { renderSectionPagePdf, type SectionHeading } from "./pdf";
 
@@ -101,6 +103,11 @@ export type FichaReportPdf = {
   sections: number;
   /** How many registos of the patient the caller reads that it does not hold. */
   leftOut: number;
+  /**
+   * RODICA-export-edit-before-download: the registos the export printed with
+   * another date, hour or heading, in the file's order. Absent when none.
+   */
+  overridden?: OverrideAuditEntry[];
 };
 
 /**
@@ -143,19 +150,28 @@ export async function renderPatientFichaReport(
   ctx: RequestContext,
   selection: FichaExportSelection,
   locale: Locale,
+  overrides?: ReadonlyMap<string, ExportOverride>,
 ): Promise<FichaReportPdf | null> {
   assertCan(ctx.role, "clinical_records:read");
   const scope = await registoReadScope(ctx);
   const parts: Uint8Array[] = [];
   const recordIds: string[] = [];
+  const overridden: OverrideAuditEntry[] = [];
   let sections = 0;
   let leftOut = selection.leftOut;
   for (const section of selection.sections) {
     const printed: Uint8Array[] = [];
     for (const recordId of section.recordIds) {
       try {
-        printed.push((await generateRegistoReportPdf(ctx, recordId, locale, scope)).bytes);
+        // RODICA-export-edit-before-download: this registo's date, hour and
+        // heading for this file, when the dialog changed them.
+        const override = overrides?.get(recordId.toLowerCase());
+        const one = override
+          ? await generateRegistoReportPdf(ctx, recordId, locale, scope, override)
+          : await generateRegistoReportPdf(ctx, recordId, locale, scope);
+        printed.push(one.bytes);
         recordIds.push(recordId);
+        if (one.overridden) overridden.push(one.overridden);
       } catch (e) {
         if (isClinicalError(e) && (e.code === "not_found" || e.code === "not_printable")) {
           leftOut += 1;
@@ -176,5 +192,24 @@ export async function renderPatientFichaReport(
     recordIds,
     sections,
     leftOut,
+    ...(overridden.length > 0 ? { overridden } : {}),
   };
+}
+
+/**
+ * RODICA-export-edit-before-download: THE DIALOG'S ROWS for "Exportar ficha":
+ * every registo the file would print, in the file's order, under the name of
+ * its section, with the date, hour and heading it prints when nothing is
+ * changed (export-rows.ts). Reads only.
+ */
+export function readPatientFichaExportRows(
+  ctx: RequestContext,
+  selection: FichaExportSelection,
+  locale: Locale,
+): Promise<ExportRow[]> {
+  return readExportRows(
+    ctx,
+    selection.sections.map((section) => ({ group: sectionHeading(section, locale).title, recordIds: section.recordIds })),
+    locale,
+  );
 }

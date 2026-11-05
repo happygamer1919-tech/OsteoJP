@@ -67,7 +67,10 @@ export async function listPacks(actor: RequestContext): Promise<PackView[]> {
         isActive: servicePacks.isActive,
       })
       .from(servicePacks)
-      .orderBy(asc(servicePacks.name)),
+      // Creation order, as Fisiozero's "LISTA DE PACKS" lists them (owner
+      // request 2026-11-02). Name breaks a tie between two packs created in
+      // the same instant (a seed).
+      .orderBy(asc(servicePacks.createdAt), asc(servicePacks.name)),
   );
 }
 
@@ -188,6 +191,48 @@ export async function updatePack(actor: RequestContext, id: string, input: PackI
       .returning({ id: servicePacks.id });
     if (!rows[0]) throw new AdminError("not_found");
     await writeAudit(tx, actor, { action: "pack.update", entityType: "service_pack", entityId: id });
+  });
+}
+
+/**
+ * The inline price edit on the Fisiozero-style pack list: the price and nothing
+ * else.
+ *
+ * ITS OWN FUNCTION, NOT `updatePack` WITH THE OTHER FIELDS RE-SENT. The list row
+ * carries only a price box, so routing it through `updatePack` would mean
+ * hidden inputs echoing the name, base service, location and session count as
+ * they were when the page rendered, and a save would quietly put back anything
+ * another admin changed in between. Writing one column cannot do that.
+ *
+ * The price is the pacote's TOTAL for all its sessions (`service_packs.price_cents`,
+ * as the catalogue seed and DECISIONS record it), in cents. It touches no
+ * patient instance: an instance carries no price of its own.
+ */
+export async function updatePackPrice(
+  actor: RequestContext,
+  id: string,
+  priceCents: number,
+): Promise<void> {
+  assertCan(actor.role, "services:write");
+  if (!id) throw new AdminError("invalid", "pack id is required");
+  if (!Number.isInteger(priceCents) || priceCents < 0) {
+    throw new AdminError("invalid", "pack price must be a non-negative integer (cents)");
+  }
+  await runScoped(actor, async (tx) => {
+    const rows = await tx
+      .update(servicePacks)
+      .set({ priceCents })
+      .where(eq(servicePacks.id, id))
+      .returning({ id: servicePacks.id });
+    if (!rows[0]) throw new AdminError("not_found");
+    // The same action every other pack edit writes; the metadata names the
+    // one field that moved and never the amount.
+    await writeAudit(tx, actor, {
+      action: "pack.update",
+      entityType: "service_pack",
+      entityId: id,
+      metadata: { fields: ["price"] },
+    });
   });
 }
 
