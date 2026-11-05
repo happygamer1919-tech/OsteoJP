@@ -141,6 +141,26 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /\*\*Q-R36W-1\. Which nights after Friday 11-13\.\*\*/);
   assert.match(doc, /^- blocked_what: /m);
   assert.match(doc, /^- recommendation: /m);
+  // R4 of 38345ed2: the cost as the pinned program counts it.
+  assert.match(read(EMIT), /^export const EXECUTIONS_PER_EVENT = 26;$/m);
+  assert.ok(doc.includes("G1 counts 26 executions for every appointment in scope") && 769 * 26 < 20000 && 770 * 26 >= 20000);
+  assert.doesNotMatch(doc, /at most 8 executions|costs 8\b/);
+  // Which G2 and which last line LASTOK rests on.
+  assert.ok(doc.includes("the G2 of the last sitting that HAD a canary passed"));
+  assert.ok(doc.includes("**Wednesday 11-04's G2** (the second pass has no canary)"));
+  assert.ok(doc.includes("`SECOND PASS, CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the <K> appointments this operation sent. The second pass is over.`"));
+  assert.ok(read(R36DOC).includes('echo "SECOND PASS, CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the ${K} appointments this operation sent. The second pass is over."'));
+  assert.ok(read(R36DOC).includes('echo "CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the ${K} appointments this operation sent. The sends of the sitting are over."'));
+  // A night halted on main moved: fail-closed, and PRIORK only from a printed total, on the lead's ruling.
+  assert.ok(doc.includes("**The next night is fail-closed.** By its own rule LASTOK cannot be `yes` after such a night"));
+  assert.ok(doc.includes("If no send block of the night ended clean, there is no such number: the lead rules, and nothing is pasted until he does."));
+  // held-for-apply is required, not optional.
+  assert.ok(doc.includes("with the label `held-for-apply` REQUIRED, on from before the READY line until the last weekly sitting's GREEN report."));
+  assert.doesNotMatch(doc, /if SOLO wants it/);
+  // The marker check, said exactly.
+  assert.ok(doc.includes("A marker that is empty, or holds a different row count, stops the block."));
+  assert.ok(doc.includes("is vacuous on a weekly night") && doc.includes("(`saved_again`)"));
+  assert.match(read(EMIT), /return "saved_again";/);
 });
 
 test("exactly four blocks, each with its last line, each parsing under bash -n and zsh -n", (t) => {
@@ -181,7 +201,7 @@ const SEND_HALT = /\|\| \{ touch \/tmp\/r36w-last-send\.ok \|\| \{ echo "STOP: [
 const STRAY_HALT = /\|\| \{ echo "STOP: [^"]+"; echo "\$\{STRAY\}"; exit 1; \}$/;
 const MUST_HALT = [
   /^cd /, /\bgit /, /^rm /, /^touch /, /\| tee /, /\bnode /, /^set -o allexport/, /^shasum /,
-  /^(REC|HD|STRAY|TIP|PRNOW|DOC|TOP|SIDE|SW|SE|SG|SM|NOW|RDOW|NIGHT|EC|N|K|PK|MS|G3L|G4L|SL|RECENT|BEGAN|BEGANT|MAINSHA|MREC|MNOW|HB|TCH|SR)=\$\(/, /^NEXTDAY=\$\(TZ=/,
+  /^(REC|HD|STRAY|TIP|PRNOW|DOC|TOP|SIDE|SW|SE|SG|SM|NOW|RDOW|NIGHT|EC|N|K|KA|PK|MS|G3L|GA|G4L|SL|RECENT|BEGAN|BEGANT|MAINSHA|MREC|MNOW|HB|TCH|SR)=\$\(/, /^NEXTDAY=\$\(TZ=/,
   /^test /, /^\[ /, /^grep /, /^echo "[^"]*" \| grep /, /^echo .* > \/tmp\//,
 ];
 function unguardedLines(block) {
@@ -208,9 +228,9 @@ test("EVERY HALT IS EXPLICIT: each command a later step relies on carries its ow
     }
     for (const line of lines) if (line.includes('echo "STOP: ')) assert.match(line, /exit 1; (\}|fi|\}; fi)$/, line.slice(0, 120));
     // The only arithmetic is on numbers a grep has already proven whole.
-    for (const line of lines.filter((l) => l.includes("$(("))) assert.match(line, /^(KMIN=\$\(\( \$\{PK\} \+ 5 \)\)|TONIGHT=\$\(\( \$\{K\} - \$\{PK\} \)\)|.*TDIF=\$\(\( \$\{TL\} - \$\{TE\} \)\).*)$/, line.slice(0, 80));
+    for (const line of lines.filter((l) => l.includes("$(("))) assert.match(line, /^(KMIN=\$\(\( \$\{PK\} \+ 5 \)\)|TOTAL=\$\(\( \$\{PK\} \+ 5 \)\)|TOTAL=\$\(\( \$\{K\} \+ \$\{KA\} \)\)|TONIGHT=\$\(\( \$\{K\} - \$\{PK\} \)\)|.*TDIF=\$\(\( \$\{TL\} - \$\{TE\} \)\).*)$/, line.slice(0, 80));
   }
-  for (const planted of ["git fetch origin --prune", "node x.mjs | tee /tmp/r36w-x.out", "PRNOW=$(git ls-remote origin x | cut -f1)", "PK=$(cat /tmp/r36w-priork.ok)", "test -f /tmp/r36w-head.sha", "[ a = b ]", "grep -qxF x /tmp/r36w-x.out", 'echo "${TIP}" > /tmp/r36w-head.sha', "touch /tmp/r36w-canary.ok", "shasum -a 256 -c x"]) {
+  for (const planted of ["git fetch origin --prune", "node x.mjs | tee /tmp/r36w-x.out", "PRNOW=$(git ls-remote origin x | cut -f1)", "PK=$(cat /tmp/r36w-priork.ok)", "GA=$(grep -xE x /tmp/r36w-rest-send.out)", "KA=$(echo x | sed -E y)", "test -f /tmp/r36w-head.sha", "[ a = b ]", "grep -qxF x /tmp/r36w-x.out", 'echo "${TIP}" > /tmp/r36w-head.sha', "touch /tmp/r36w-canary.ok", "shasum -a 256 -c x"]) {
     assert.equal(unguardedLines(planted).length, 1, planted);
   }
 });
@@ -392,9 +412,10 @@ const dbRow = (n) => ({
   emit_events: 1,
   t0: new Date(SITTING_T0),
 });
-function fakeReader(rows) {
+/** A fake database: the rows that start after the read (the selection's own `starts_at > t0`), read at `t0`. */
+function fakeReader(rows, t0 = SITTING_T0) {
   return async () => ({
-    selection: async () => ({ tenantId: TENANT, t0: new Date(SITTING_T0), rows }),
+    selection: async () => ({ tenantId: TENANT, t0: new Date(t0), rows: rows.filter((r) => r.starts_at.getTime() > t0) }),
     recheck: async (_t, id) => {
       const r = rows.find((x) => x.id === id);
       return { starts_at: r.starts_at, status: r.status, patient_deleted: false, unaccepted_request: false, last_emit_at: r.last_emit_at };
@@ -407,8 +428,10 @@ const shadowHeartbeat = async () => ({
   read: async () => ({ tenants: 1, latestMode: "shadow", latestAgeS: 600, shadowLast3h: 12, notShadowLast7d: 0 }),
   close: async () => {},
 });
-/** Friday 11-13 21:30 Lisbon: nine days after the first sending run's read. */
+/** Friday 11-13 21:30 Lisbon: nine days after the first sending run's read. The weekly reads are made at it. */
 const FRIDAY_NOW = SITTING_T0 + 9 * DAY;
+/** A visit beyond Wednesday's 28 days, inside Friday's: 29 to 35 days after Wednesday's read, 20 to 26 after Friday's. */
+const newRow = (m) => ({ ...dbRow(0), id: apptId(100 + m), starts_at: new Date(SITTING_T0 + (28 + m) * DAY + 10 * HOUR), status: "scheduled" });
 
 /** One run of the program in-process against a sink, as a weekly block makes it. */
 async function weeklyStep(sink, home, rows, extra) {
@@ -421,7 +444,7 @@ async function weeklyStep(sink, home, rows, extra) {
       home,
       openHeartbeat: shadowHeartbeat,
       rearm: realRearm,
-      openReader: fakeReader(rows),
+      openReader: fakeReader(rows, FRIDAY_NOW),
       sleep: async () => {},
       now: () => FRIDAY_NOW,
     });
@@ -439,11 +462,11 @@ test("the settled-marker check at a week's distance: an empty marker, a row of u
     const marker = `${sink}.marker.json`;
     const home = join(dir, "home");
     mkdirSync(home);
-    const go = () => weeklyStep(sink, home, [dbRow(1)], ["--max", "200", "--second-pass"]);
+    const go = () => weeklyStep(sink, home, [dbRow(10)], ["--max", "200", "--second-pass"]);
     let r = await go();
     assert.equal(r.halt?.code, 1);
     assert.match(r.halt.message, /holds no sending run/);
-    const entry = (state) => ({ readAt: new Date(SITTING_T0).toISOString(), marginMs: 690000, state: "done", rows: [{ id: apptId(1), startsAt: new Date(SITTING_T0 + 4 * DAY + 10 * HOUR).toISOString(), state }] });
+    const entry = (state) => ({ readAt: new Date(SITTING_T0).toISOString(), marginMs: 690000, state: "done", rows: [{ id: apptId(10), startsAt: new Date(SITTING_T0 + 13 * DAY + 10 * HOUR).toISOString(), state }] });
     writeFileSync(marker, JSON.stringify({ history: [entry("attempted")] }));
     r = await go();
     assert.match(r.halt?.message ?? "", /1 row\(s\) of unknown outcome/);
@@ -464,12 +487,14 @@ test("the settled-marker check at a week's distance: an empty marker, a row of u
 
 /**
  * Wednesday's sitting and Thursday's second pass (the shared whole sitting: 15 appointments in the
- * marker), then a weekly sitting over the same 15 and seven more: its first dry run, the canary's
- * dry run and send, THE REST's dry run and send, and the closing dry run.
+ * marker), then, read a real week later (Friday 11-13 21:30), a weekly sitting over the same 15 and
+ * seven visits beyond Wednesday's reach: its first dry run, the canary's dry run and send, THE
+ * REST's dry run and send, and the closing dry run. By Friday five of the 15 have started (the read
+ * no longer returns them) and one starts within 24 hours.
  */
 async function weeklySitting() {
   const { home, sink } = await wholeSitting();
-  const rows = Array.from({ length: 22 }, (_, i) => dbRow(i + 1));
+  const rows = [...Array.from({ length: 15 }, (_, i) => dbRow(i + 1)), ...Array.from({ length: 7 }, (_, i) => newRow(i + 1))];
   const confirm = ["--confirm", "--fix-deployed-sha", SITTING_SHA, "--i-checked-inngest-settings"];
   const steps = {};
   const step = async (name, extra) => {
@@ -488,12 +513,16 @@ async function weeklySitting() {
   return { steps, events };
 }
 
-test("a weekly sitting through the REAL run(): nothing the marker holds is sent again, and every line the blocks look for is there", async () => {
+test("a weekly sitting through the REAL run(), read a week later: G3 still counts every earlier send, started visits included, nothing is sent twice, and the printed totals are the next G3 counts", async () => {
   const { steps, events } = await weeklySitting();
+  // Five of the 15 visits sent on Wednesday and Thursday started between the sittings, one starts within 24 hours.
+  assert.equal(Array.from({ length: 15 }, (_, i) => dbRow(i + 1)).filter((r) => r.starts_at.getTime() <= FRIDAY_NOW).length, 5);
+  assert.equal(Array.from({ length: 15 }, (_, i) => dbRow(i + 1)).filter((r) => r.starts_at.getTime() > FRIDAY_NOW && r.starts_at.getTime() <= FRIDAY_NOW + DAY).length, 1);
+  for (let m = 1; m <= 7; m++) assert.ok(newRow(m).starts_at.getTime() > SITTING_T0 + 28 * DAY && newRow(m).starts_at.getTime() <= FRIDAY_NOW + 28 * DAY, `new row ${m}`);
   const G3 = (k) => `G3 LEDGER ROWS FOR APPOINTMENTS THIS OPERATION SENT, INSIDE THE MARGIN OF THEIR RUN: 0  (appointments checked: ${k}; handed to a provider: 0; not checkable: 0; expected 0)`;
   assert.ok(steps.wDry.includes(G3(15)), steps.wDry.join("\n"));
   assert.ok(steps.wDry.includes("ELIGIBLE: 7"));
-  assert.ok(steps.wDry.includes("skipped: already sent by an earlier run (marker): 15"));
+  assert.ok(steps.wDry.includes("skipped: already sent by an earlier run (marker): 9"), "the nine still more than 24 hours ahead");
   assert.ok(steps.wDry.includes("marker   second pass: the first sitting is settled (no row of unknown outcome, no lock)"));
   assert.ok(steps.wCanaryDry.includes(G3(15)));
   assert.ok(steps.wCanaryDry.some((l) => l.startsWith("THIS RUN: 5 of 7")));
@@ -506,7 +535,12 @@ test("a weekly sitting through the REAL run(): nothing the marker holds is sent 
   const ids = events.map((e) => e.data.appointmentId);
   assert.equal(ids.length, 22);
   assert.equal(new Set(ids).size, 22);
-  assert.deepEqual(ids.slice(15).sort(), Array.from({ length: 7 }, (_, i) => apptId(16 + i)).sort());
+  assert.deepEqual(ids.slice(15).sort(), Array.from({ length: 7 }, (_, i) => apptId(101 + i)).sort());
+  // The totals the canary and THE REST print (PRIORK plus 5; the dry run's K plus this run's rows) are the next reads' G3 counts.
+  const k = (lines) => Number(/appointments checked: (\d+);/.exec(lines.find((l) => l.startsWith("G3 LEDGER ROWS")))[1]);
+  const after = (lines) => Number(/^G3 AFTER THIS RUN: 0 {2}\(appointments checked: (\d+);/.exec(lines.find((l) => l.startsWith("G3 AFTER THIS RUN")))[1]);
+  assert.equal(15 + 5, k(steps.wRestDry));
+  assert.equal(k(steps.wRestDry) + after(steps.wRestSend), k(steps.wClosing));
   const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
   for (const [k, v] of Object.entries(steps)) for (const l of v) assert.doesNotMatch(l, uuid, `${k}: ${l}`);
 });
@@ -1004,6 +1038,8 @@ test("the positive controls: the program's calls carry exactly the arguments the
         assert.match(r.out, /^WEEKLY, BEFORE YOU START: every check passed\. ELIGIBLE 7 at this read\. THE WEEKLY CANARY next\.$/m);
         assert.match(r.out, /^the marker: {4}the earlier sittings sent 15 appointments, as the last closing line printed;/m);
       }
+      if (name === "wcanary") assert.match(r.out, /^WEEKLY CANARY SENT: 5 of 5, G4 yes, G3 0\. The marker now holds 20 appointments this operation sent \(15 before this sitting, 5 in the canary\)\./m);
+      if (name === "wrest") assert.match(r.out, /^WEEKLY REST: this run ended clean\. The marker now holds 22 appointments this operation sent \(20 before this run, 2 in it\)\./m);
       if (name === "wclosing") {
         assert.match(r.out, /^WEEKLY CLOSING DRY RUN: ELIGIBLE 0, and G3 reads 0 for the 22 appointments this operation sent, 7 of them in this sitting\. The sends of the sitting are over\. The next weekly dispatch's PRIORK is 22\.$/m);
       }
