@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Wed 2026-11-04 18:33 Lisbon, by SOLO (clock read).
+**Last updated:** Thu 2026-11-05 02:00 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -46,11 +46,11 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 | When | What | State |
 |---|---|---|
 | Wed 11-04 11:18 Lisbon | GREEN: read-only comparison (PR #1691) | DONE: STOPPED, 4 FAIL (V3, V8, V11, V13). No switch. |
-| Wed 11-04 18:00 Lisbon | Merge freeze starts. No merge to main until strategy lifts it. | |
-| Wed 11-04, after 16:00 before 01:29 Toronto (21:00 to 06:29 Lisbon) | GREEN: the fallback re-arm (PR #1690, held 415bd0e9). Owner at the keyboard, 60 to 90 min. Dispatch `~/osteojp-handover/green-dispatch-r36-fallback-1104.txt` | dispatch written, block diff-proven; independent check running |
+| Wed 11-04 18:00 Lisbon | R53 merge freeze | ENDED when GREEN reported the fallback (Thu 01:50 Lisbon) |
+| Wed 11-04, after 16:00 before 01:29 Toronto (21:00 to 06:29 Lisbon) | GREEN: the fallback re-arm (PR #1690, held 415bd0e9). Owner at the keyboard, 60 to 90 min. Dispatch `~/osteojp-handover/green-dispatch-r36-fallback-1104.txt` | DONE CLEAN 22:44 to 01:50 Lisbon: 561 re-armed (canary 5 + 200 + 200 + 156), closing dry run ELIGIBLE 0, G3 0, 0 Failed runs. Canary began 23:36 WET (18:36 EST). Report `~/osteojp-handover/green-report-r36-fallback-20261104.txt` |
 | Thu 11-05, by 11:00 Toronto (16:00 Lisbon) | SOLO's report to strategy (Q2) | |
-| Thu 11-05 night, 25h or more after Wednesday's "canary began", before 01:29 Toronto | GREEN: the fallback's second pass (Q-R36-F5). Dispatch after Wednesday's report (WEDOK) | |
-| Thu 11-05 written and R4-reviewed; GREEN runs Thu or Fri, any hour | A1 diagnostic read of the 4 FAILs (approved). Then A2: the send-mode no-double-send DB test, the compare read's late-pass label and V8 reconciliation, the clean re-run. All four hold: switch the next night after the re-run, earliest Fri 11-06 after 21:50 Lisbon. Any fails: a new two-day shadow window. | builder authoring locally (no push until tonight's report) |
+| Thu 11-05, from 19:40 to 01:29 Toronto (Fri 00:40 to 06:29 Lisbon) | GREEN: the fallback's second pass (Q-R36-F5). The program refuses before Fri 00:37 Lisbon (25h after the canary's read). Merge freeze from the owner's first look until GREEN reports. Dispatch `~/osteojp-handover/green-dispatch-r36-second-pass-1105.txt`, WEDOK=yes | written, block diff-proven; R4 running |
+| Thu 11-05 written and R4-reviewed; GREEN runs Thu or Fri, any hour | A1 diagnostic read of the 4 FAILs (approved), PR #1720 (READY, head a7b33b37, unarmed). Dispatch `~/osteojp-handover/green-dispatch-sweep-diagnostic-1105.txt`. Then A2: the send-mode no-double-send DB test, the compare read's late-pass label and V8 reconciliation, the clean re-run. All four hold: switch the next night after the re-run, earliest Fri 11-06 after 21:50 Lisbon. Any fails: a new two-day shadow window. | PR open; dispatch written; R4 of the dispatch running |
 | ~~Thu 11-05~~ | ~~read of the first sending (#1692)~~ | void: no switch |
 | Thu 11-05 and after | Board freeze, RULINGS.md, GitHub Issues tracker, CLAUDE.md slim (owner approved 11-01) | not started |
 | Sat 11-07 | nothing closes (A3) | |
@@ -77,7 +77,8 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 | #1706 + #1707 | 0111 Sistemas / SubSistemas, and the screen | held |
 | #1708 + #1709 | 0112 weekly blocks, and the screen | held |
 | #1717 | 0113 patient read speed fix | held, draft, 64 DB tests green on the local DB with 0113 applied |
-| #1690 | Fallback reminder re-arm for Wed night | held |
+| #1690 | Fallback reminder re-arm | held until the LAST sitting's GREEN report (Thursday's second pass, or a weekly one) |
+| #1720 | A1 sweep diagnostic read | READY, unarmed, GREEN runs it from its head; not for merge before its report |
 | #1691, #1692, #1679, #1686 | Read-only data operations | dispatch-run by GREEN |
 | #1693 | Portal moves write audit rows and re-plan reminders | draft; after Thursday's read, then the R50 key steps |
 
@@ -88,7 +89,11 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - Never push to an armed PR: disarm, push, wait for green, re-arm.
 - A GATE-CHANGE PR is never armed; it is merged by hand on all green.
 
-## Running now (nothing running as of the time above; the rows below are a record)
+## Running now
+- Thu 11-05 ~02:00 Lisbon: two R4 reviewers (Thursday's second-pass dispatch; the A1 dispatch). Nothing else; BLUE down.
+- The owner asked (Wed ~21:00 Toronto) to run all of Rodica's changes overnight. Answered: the three held migrations keep their nights (11-10 to 11-12, strategy-set, R9); tonight SOLO finishes the Thursday dispatch, the strategy report, the READY passes of the night docs, then drafts pack payments and clinic closures as held Tier C if time allows. The owner's 15 answers are the unblocker.
+
+## Record
 - **Paused Wed 11-04 12:20 Lisbon, RESUMED 18:33 Lisbon.** The A1 builder is finishing its fix round (BLUE down by 20:30 Lisbon). Steps:
   1. Read the builder's pause report (A1 diagnostic read, worktree `~/Projects/GitHub/osteojp-solo-wt/diag-1105`, branch `data/R47-sweep-diagnostic-20261105`, local only; paused at WIP e264e9a4: all 7 fixes written in SQL and test but NOT RUN; doc wording, the owner look at the 11-03 sweep-due-reminders runs, the guard sentence, rehearsal and sidecar still to do; pins do not match yet; BLUE down). R4 round 1 was NOT PASS (2 MAJOR: filter heartbeats by mode; F1 never REFUTED from run-id decoding alone; 4 MINOR, 1 NIT). Finish the fix round, then R4 round 2. Check BLUE is down.
   2. Tonight, owner window 16:00 to 01:29 Toronto (21:00 to 06:29 Lisbon): the owner says "starting the fallback"; SOLO re-checks no PR is armed and replies "freeze confirmed, none armed" with the Lisbon time. Then GREEN runs `~/osteojp-handover/green-dispatch-r36-fallback-1104.txt` (R4 SHIP AFTER FIXES, fixed, sha256 93e26661).
