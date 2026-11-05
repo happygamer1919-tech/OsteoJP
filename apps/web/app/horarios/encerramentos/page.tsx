@@ -8,7 +8,6 @@ import { listAffectedVisits, listClosures } from "@/lib/admin/closed-days";
 import { CLOSED_DAY_KINDS, MAX_LABEL_CHARS } from "@/lib/scheduling/closed-days-core";
 import { closedDayKindLabel, closedDayReason } from "@/lib/scheduling/closed-day-labels";
 import { formatTimeOfDay, lisbonParts, todayInLisbon } from "@/lib/scheduling/time";
-import { TimeFieldInput } from "@/components/time-field-input";
 import { DateFieldInput } from "@/components/date-field-input";
 import {
   adminHelp,
@@ -21,6 +20,7 @@ import {
 import { createClosureAction, deleteClosureAction } from "./actions";
 import { closureDates, closureHours, closuresBannerFor, ptDate } from "./banner";
 import { RemoveClosureButton } from "./RemoveClosureButton";
+import { ClosureHoursFields } from "./ClosureHoursFields";
 
 /**
  * ENCERRAMENTOS DA CLINICA - a clinic's dated closures (Tier C 0114).
@@ -178,33 +178,24 @@ export default async function EncerramentosPage({
                 </div>
                 <fieldset className="flex flex-wrap items-end gap-3">
                   <legend className="sr-only">{s["closures.hours"]}</legend>
-                  <label className="flex items-center gap-2 pb-2 text-sm text-v2-text-primary">
-                    <input
-                      type="checkbox"
-                      name="wholeDay"
-                      defaultChecked
-                      className="h-4 w-4 rounded border-v2-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                      data-testid="closure-whole-day"
-                    />
-                    {s["closures.wholeDay"]}
-                  </label>
-                  <span className="flex flex-col gap-1" role="group" aria-label={s["closures.from"]}>
-                    <span className={adminLabel} aria-hidden="true">
-                      {s["closures.from"]}
-                    </span>
-                    <TimeFieldInput name="closedFrom" step={5} hourLabel={s["closures.fromHours"]} minuteLabel={s["closures.fromMinutes"]} />
-                  </span>
-                  <span className="flex flex-col gap-1" role="group" aria-label={s["closures.to"]}>
-                    <span className={adminLabel} aria-hidden="true">
-                      {s["closures.to"]}
-                    </span>
-                    <TimeFieldInput name="closedTo" step={5} hourLabel={s["closures.toHours"]} minuteLabel={s["closures.toMinutes"]} />
-                  </span>
+                  <ClosureHoursFields
+                    labels={{
+                      wholeDay: s["closures.wholeDay"],
+                      wholeDayNote: s["closures.wholeDayNote"],
+                      from: s["closures.from"],
+                      fromHours: s["closures.fromHours"],
+                      fromMinutes: s["closures.fromMinutes"],
+                      to: s["closures.to"],
+                      toHours: s["closures.toHours"],
+                      toMinutes: s["closures.toMinutes"],
+                    }}
+                  />
                   <Button type="submit" variant="primary" size="sm" data-testid="closure-add">
                     {s["closures.add"]}
                   </Button>
                 </fieldset>
                 <p className={adminHelp}>{s["closures.formHelp"]}</p>
+                <p className={adminHelp}>{s["closures.formHelpStarted"]}</p>
               </form>
             </div>
           </GlassPanel>

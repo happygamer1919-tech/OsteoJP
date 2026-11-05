@@ -179,8 +179,11 @@ export function buildDay(
   clinicHours: ClinicHours | null = null,
   /** TIER C 0114. The clinic's DATED closures (holidays, closed days) over
    *  the range, read only when the call is scoped to one clinic, for the same
-   *  reason as `clinicHours`: a closure is true of exactly one clinic. */
-  closedDays: readonly ClosedDayRule[] = [],
+   *  reason as `clinicHours`: a closure is true of exactly one clinic.
+   *  REQUIRED, NOT DEFAULTED, like the portal's closure-table flag: a caller
+   *  added later cannot compile without saying which closures apply, so none
+   *  can build a day that silently ignores them. Pass [] to say "none". */
+  closedDays: readonly ClosedDayRule[],
 ): DayAvailability {
   const dayStart = lisbonMidnightUtc(date).getTime();
   const dayEnd = lisbonMidnightUtc(addDays(date, 1)).getTime();

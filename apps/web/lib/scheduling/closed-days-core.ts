@@ -223,6 +223,24 @@ export type ClosedDayInput = {
   label: string;
 };
 
+/**
+ * The form's hours, read the way the page shows them. "Dia inteiro" ticked:
+ * the hours are IGNORED (the page hides them) and the closure is the whole
+ * day. Unticked: both hours are required; an empty one is refused here, by its
+ * own code, rather than saved as a whole day the person did not ask for.
+ */
+export function closureHoursFromForm(
+  wholeDay: boolean,
+  from: string,
+  to: string,
+): { closedFrom: string; closedTo: string } | { error: "hours_required" } {
+  if (wholeDay) return { closedFrom: "", closedTo: "" };
+  const f = from.trim();
+  const t = to.trim();
+  if (f === "" || t === "") return { error: "hours_required" };
+  return { closedFrom: f, closedTo: t };
+}
+
 /** Days between two "yyyy-mm-dd" dates (b - a), on the calendar, DST-free. */
 export function daysBetween(a: string, b: string): number {
   const [ay, am, ad] = a.split("-").map(Number);

@@ -12,6 +12,8 @@ export function closuresBannerFor(m: string | undefined): { tone: "ok" | "warn" 
   const warn = /^warn:(\d+)$/.exec(m);
   if (warn) return { tone: "warn", text: s["closures.savedWithVisits"].replace("{n}", warn[1]!) };
   switch (m) {
+    case "err:hours_required":
+      return { tone: "err", text: s["closures.error.hoursRequired"] };
     case "err:invalid":
       return { tone: "err", text: s["closures.error.invalid"] };
     case "err:duplicate":

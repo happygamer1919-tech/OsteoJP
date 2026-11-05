@@ -178,7 +178,7 @@ describe("buildDay subtracts dated closures like the lunch closure", () => {
     const day = buildDay("2026-12-23", [tpl(3)], [], [], null, [rule({ startsOn: "2026-12-25", endsOn: "2026-12-25" })]);
     expect(day.closures).toEqual([]);
     expect(day.free).toHaveLength(1);
-    expect(buildDay("2026-12-23", [tpl(3)], [], []).free).toEqual(day.free);
+    expect(buildDay("2026-12-23", [tpl(3)], [], [], null, []).free).toEqual(day.free);
   });
 });
 
@@ -196,7 +196,7 @@ describe("the agenda's list and phone views draw a dated closure on its own date
       dayWindow: { startMin: 8 * 60, endMin: 20 * 60 },
     });
     const tue = days.find((d) => d.date === "2027-01-05")!;
-    expect(tue.rows).toEqual([{ kind: "closure", startMin: 480, endMin: 1200, locationName: "Clinica CB" }]);
+    expect(tue.rows).toEqual([{ kind: "closure", startMin: 480, endMin: 1200, locationName: "Clinica CB", reason: "Natal" }]);
     for (const d of days.filter((x) => x.date !== "2027-01-05")) expect(d.rows).toEqual([]);
   });
 

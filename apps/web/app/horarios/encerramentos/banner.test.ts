@@ -16,7 +16,7 @@ describe("Encerramentos: one sentence per result code", () => {
   });
 
   it("each refusal has its own sentence, and an unknown code is an error, never success", () => {
-    const codes = ["err:invalid", "err:duplicate", "err:already_started", "err:unavailable", "err:not_found"];
+    const codes = ["err:invalid", "err:duplicate", "err:already_started", "err:unavailable", "err:not_found", "err:hours_required"];
     const texts = codes.map((c) => closuresBannerFor(c)!);
     for (const t of texts) expect(t.tone).toBe("err");
     expect(new Set(texts.map((t) => t.text)).size).toBe(codes.length);

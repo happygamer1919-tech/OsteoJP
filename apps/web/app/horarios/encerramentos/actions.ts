@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireRequestContext } from "@/lib/auth/context";
 import { isAdminError } from "@/lib/admin/errors";
 import { createClosures, deleteClosure } from "@/lib/admin/closed-days";
+import { closureHoursFromForm } from "@/lib/scheduling/closed-days-core";
 
 /**
  * ENCERRAMENTOS - the page's two writes. Thin wrappers: each library function
@@ -21,13 +22,20 @@ const str = (fd: FormData, k: string) => String(fd.get(k) ?? "");
 export async function createClosureAction(fd: FormData): Promise<void> {
   const actor = await requireRequestContext();
   let target = `${PAGE}?m=err`;
+  // "Dia inteiro" ticked: the hours are ignored. Unticked: both are required,
+  // and an empty one is refused, never saved as a whole day.
+  const hours = closureHoursFromForm(fd.get("wholeDay") === "on", str(fd, "closedFrom"), str(fd, "closedTo"));
+  if ("error" in hours) {
+    revalidatePath(PAGE);
+    redirect(`${PAGE}?m=err:${hours.error}`);
+  }
   try {
     const res = await createClosures(actor, {
       locationId: str(fd, "locationId"),
       startsOn: str(fd, "startsOn"),
       endsOn: str(fd, "endsOn") || str(fd, "startsOn"),
-      closedFrom: fd.get("wholeDay") === "on" ? "" : str(fd, "closedFrom"),
-      closedTo: fd.get("wholeDay") === "on" ? "" : str(fd, "closedTo"),
+      closedFrom: hours.closedFrom,
+      closedTo: hours.closedTo,
       kind: str(fd, "kind"),
       label: str(fd, "label"),
     });

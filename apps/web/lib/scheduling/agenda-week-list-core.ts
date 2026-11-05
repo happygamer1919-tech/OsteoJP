@@ -94,6 +94,8 @@ export type WeekListRow =
       startMin: number;
       endMin: number;
       locationName: string;
+      /** Tier C 0114: a dated closure's reason (label or kind); absent for the lunch closure. */
+      reason?: string | null;
     };
 
 export type WeekListDay = {
@@ -201,7 +203,13 @@ export function buildWeekListDays(input: BuildWeekListInput): WeekListDay[] {
       const startMin = Math.max(c.startMin, win.startMin);
       const endMin = Math.min(c.endMin, win.endMin);
       if (endMin <= startMin) continue;
-      bucket.push({ kind: "closure", startMin, endMin, locationName: c.locationName });
+      bucket.push({
+        kind: "closure",
+        startMin,
+        endMin,
+        locationName: c.locationName,
+        ...(c.reason ? { reason: c.reason } : {}),
+      });
     }
   }
 

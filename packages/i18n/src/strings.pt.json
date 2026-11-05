@@ -2218,5 +2218,8 @@
   "closures.cannotRemove": "Já começou",
   "closures.remove": "Remover encerramento",
   "closures.removeConfirm": "Remover este encerramento? Os dias voltam a ficar disponíveis para marcação.",
-  "closures.dateRange": "de {de} a {ate}"
+  "closures.dateRange": "de {de} a {ate}",
+  "closures.error.hoursRequired": "Sem Dia inteiro, indique as duas horas (Das e Até).",
+  "closures.wholeDayNote": "Fecha o dia inteiro. Para fechar só parte do dia, desmarque Dia inteiro.",
+  "closures.formHelpStarted": "Um encerramento que começa hoje ou já começou não pode ser removido pela equipa."
 }

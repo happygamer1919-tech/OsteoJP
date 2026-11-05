@@ -2218,5 +2218,8 @@
   "closures.cannotRemove": "Already started",
   "closures.remove": "Remove closure",
   "closures.removeConfirm": "Remove this closure? The days become available for booking again.",
-  "closures.dateRange": "from {de} to {ate}"
+  "closures.dateRange": "from {de} to {ate}",
+  "closures.error.hoursRequired": "Without All day, enter both hours (From and To).",
+  "closures.wholeDayNote": "Closes the whole day. To close only part of the day, untick All day.",
+  "closures.formHelpStarted": "A closure that starts today or has already started cannot be removed by staff."
 }

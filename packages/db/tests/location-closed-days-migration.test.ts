@@ -58,9 +58,24 @@ describe(`pending migration ${FILE}`, () => {
     expect(promoted).toEqual([]);
   });
 
-  it("follows 0113 by name: it sorts after the file that waits for 0112", () => {
-    const sibling = "NEXT-AFTER-0112_patient_id_array_reads.sql";
-    expect([FILE, sibling].sort()).toEqual([sibling, FILE]);
+  it("follows 0113 by name: read from the directories, it is the last pending file and 0114 is free", () => {
+    const after = (f: string) => Number(/^NEXT-AFTER-(\d{4})_/.exec(f)?.[1] ?? NaN);
+    const pending = readdirSync(PENDING_DIR).filter((f) => /^NEXT-AFTER-\d{4}_[a-z0-9_]+\.sql$/.test(f));
+    expect(pending).toContain(FILE);
+    expect(after(FILE)).toBe(113);
+    // Every other pending file on this branch waits for an earlier number,
+    // and this one sorts last, so it promotes after all of them.
+    for (const f of pending) expect(after(f), f).toBeLessThanOrEqual(113);
+    expect([...pending].sort().at(-1)).toBe(FILE);
+    // No promoted migration has taken 0113 or anything after it yet.
+    const promotedNumbers = readdirSync(join(__dirname, "..", "migrations"))
+      .map((f) => /^(\d{4})_.*\.sql$/.exec(f)?.[1])
+      .filter((n): n is string => Boolean(n))
+      .map(Number);
+    expect(promotedNumbers.length).toBeGreaterThan(100);
+    expect(Math.max(...promotedNumbers)).toBeLessThan(114);
+    // A non-pending name is not counted.
+    expect(after("0108_pack_instance_consuming_sessions.sql")).toBeNaN();
   });
 
   it("opens with the two SET LOCAL lines the 0100 gate requires, in order", () => {

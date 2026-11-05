@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDay } from "./day-availability-core";
+import { buildDay as buildDayWithClosures } from "./day-availability-core";
 import { scheduleRuleFor, type AvailabilityTemplate } from "./availability";
+
+/** Tier C 0114: buildDay now REQUIRES the clinic's dated closures. These
+ *  cases are about other rules, so they say "no dated closures" explicitly. */
+type BuildDayArgs = Parameters<typeof buildDayWithClosures>;
+const buildDay = (
+  date: BuildDayArgs[0],
+  templates: BuildDayArgs[1],
+  booked: BuildDayArgs[2],
+  blocks: BuildDayArgs[3] = [],
+  clinicHours: BuildDayArgs[4] = null,
+) => buildDayWithClosures(date, templates, booked, blocks, clinicHours, []);
 
 /**
  * SCHED-09 / SR-37 — the inspector's three labels, and the JP case the dispatch

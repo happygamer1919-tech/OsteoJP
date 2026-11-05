@@ -21,6 +21,7 @@ import {
   closedDayOverlap,
   closedDayPayload,
   closedIntervalOn,
+  closureHoursFromForm,
   daysBetween,
   lisbonDatesTouched,
   type ClosedDayInput,
@@ -201,5 +202,19 @@ describe("closedDayInputError: the form refuses what the table's CHECKs refuse, 
     expect(daysBetween("2027-03-27", "2027-03-29")).toBe(2);
     expect(daysBetween("2027-10-30", "2027-11-01")).toBe(2);
     expect(daysBetween("2027-01-01", "2027-04-03")).toBe(92);
+  });
+});
+
+describe("closureHoursFromForm: Dia inteiro and the hours", () => {
+  it("ticked: the hours are ignored, whatever was typed", () => {
+    expect(closureHoursFromForm(true, "13:00", "20:00")).toEqual({ closedFrom: "", closedTo: "" });
+    expect(closureHoursFromForm(true, "", "")).toEqual({ closedFrom: "", closedTo: "" });
+  });
+
+  it("unticked: both hours are required, an empty one is refused (never saved as a whole day)", () => {
+    expect(closureHoursFromForm(false, "", "")).toEqual({ error: "hours_required" });
+    expect(closureHoursFromForm(false, "13:00", "")).toEqual({ error: "hours_required" });
+    expect(closureHoursFromForm(false, " ", "20:00")).toEqual({ error: "hours_required" });
+    expect(closureHoursFromForm(false, "13:00", "20:00")).toEqual({ closedFrom: "13:00", closedTo: "20:00" });
   });
 });

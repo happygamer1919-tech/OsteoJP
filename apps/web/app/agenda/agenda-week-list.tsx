@@ -203,7 +203,7 @@ function Row({
       >
         <When startMin={row.startMin} endMin={row.endMin} />
         <span className="min-w-0 break-words font-medium uppercase tracking-wide">
-          {s["agenda.clinicClosed"]}
+          {row.reason ? `${s["agenda.clinicClosed"]}: ${row.reason}` : s["agenda.clinicClosed"]}
         </span>
       </div>
     );

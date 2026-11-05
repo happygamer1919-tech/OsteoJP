@@ -108,19 +108,6 @@ export class PackBatchRefused extends Error {
  * reads names the clinic and the last start it accepts, and a boolean cannot.
  * The action maps it by INSTANCE, never by message.
  */
-/**
- * TIER C 0114 - the batch asked for a slot inside the clinic's closure (the
- * lunch closure or a dated one). Thrown, like ClinicHoursRefused, to refuse the
- * WHOLE batch: the clinic being shut is a fact about the request, not about one
- * busy hour. The action maps it by instance to `clinic_closed`.
- */
-export class ClinicClosedRefused extends Error {
-  constructor(readonly closure: ClinicClosurePayload) {
-    super("clinic closed refused");
-    this.name = "ClinicClosedRefused";
-  }
-}
-
 export class ClinicHoursRefused extends Error {
   constructor(
     readonly window: {
@@ -133,6 +120,19 @@ export class ClinicHoursRefused extends Error {
   ) {
     super(`clinic hours refused: ${window.reason}`);
     this.name = "ClinicHoursRefused";
+  }
+}
+
+/**
+ * TIER C 0114 - the batch asked for a slot inside the clinic's closure (the
+ * lunch closure or a dated one). Thrown, like ClinicHoursRefused, to refuse the
+ * WHOLE batch: the clinic being shut is a fact about the request, not about one
+ * busy hour. The action maps it by instance to `clinic_closed`.
+ */
+export class ClinicClosedRefused extends Error {
+  constructor(readonly closure: ClinicClosurePayload) {
+    super("clinic closed refused");
+    this.name = "ClinicClosedRefused";
   }
 }
 

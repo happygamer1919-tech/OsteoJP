@@ -3,7 +3,18 @@ import { planDayByDay, splitGrid, type DayByDayPlan } from "./day-by-day";
 import { planAlternatingWeeks } from "./alternating-weeks";
 import { invertedRows, projectedRows } from "./schedule-window";
 import { coverageViolations, locationsOnDate, type CoverageRow } from "./schedule-coverage";
-import { buildDay } from "./day-availability-core";
+import { buildDay as buildDayWithClosures } from "./day-availability-core";
+
+/** Tier C 0114: buildDay now REQUIRES the clinic's dated closures. These
+ *  cases are about other rules, so they say "no dated closures" explicitly. */
+type BuildDayArgs = Parameters<typeof buildDayWithClosures>;
+const buildDay = (
+  date: BuildDayArgs[0],
+  templates: BuildDayArgs[1],
+  booked: BuildDayArgs[2],
+  blocks: BuildDayArgs[3] = [],
+  clinicHours: BuildDayArgs[4] = null,
+) => buildDayWithClosures(date, templates, booked, blocks, clinicHours, []);
 
 /**
  * SCHED-04 (ITEM B) - the day-by-day grid.

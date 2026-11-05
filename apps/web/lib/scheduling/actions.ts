@@ -1975,6 +1975,22 @@ export async function updateAppointment(
           acceptedPedidos = affected.filter((a) => a.status === "scheduled" && pedidoIds.has(a.id));
         }
 
+        // TIER C 0114 - ACCEPTING A PEDIDO FROM THE DRAWER IS ACCEPTING IT, SO
+        // IT REFUSES A CLOSURE EXACTLY AS confirmAppointmentRequest DOES. A
+        // pedido made before a closure was entered must not become a confirmed
+        // visit inside it through this door either. Outside the allowConflict
+        // gate: "Guardar mesmo assim" never reaches a closure (owner, C1).
+        for (const a of acceptedPedidos) {
+          const cl = await checkClinicClosure(tx, {
+            locationId: a.locationId,
+            startsAt: a.startsAt,
+            endsAt: a.endsAt,
+          });
+          if (!cl.ok) {
+            return { ok: false, error: "clinic_closed", clinicClosure: clinicClosurePayload(cl) };
+          }
+        }
+
         // Only run the column update when there is a column to change; a
         // notes-only edit (W12-13) touches no `appointments` column.
         if (Object.keys(set).length > 0) {

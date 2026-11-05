@@ -139,6 +139,109 @@ describe("every clinic-closure reader is accounted for", () => {
   });
 });
 
+/* ======================================================================== */
+/* THE DOORS, ACROSS EVERY FILE OF apps/web/lib AND apps/web/app            */
+/* ======================================================================== */
+
+const WEB_ROOTS = ["apps/web/lib", "apps/web/app"];
+
+/** Every top-level function of a source, by name, with its body. */
+function functionsOf(src: string): { name: string; body: string }[] {
+  const re = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/gm;
+  const starts = [...src.matchAll(re)].map((m) => ({ name: m[1]!, at: m.index! }));
+  return starts.map((f, i) => ({ name: f.name, body: src.slice(f.at, starts[i + 1]?.at ?? src.length) }));
+}
+
+const webFiles = WEB_ROOTS.flatMap((r) => walk(join(REPO, r))).map((p) => ({
+  file: relative(REPO, p).split("\\").join("/"),
+  src: stripComments(readFileSync(p, "utf8")),
+}));
+
+/** `file#function` for every function, in any web file, whose body matches. */
+function doorsMatching(re: RegExp): string[] {
+  return webFiles
+    .flatMap(({ file, src }) => functionsOf(src).filter((f) => re.test(f.body)).map((f) => `${file}#${f.name}`))
+    .sort();
+}
+
+const CLOSURE_CHECK = /checkClinicClosure\s*\(/;
+
+/** The definitions themselves, which are not doors. */
+const DEFINITIONS = new Set([
+  "apps/web/lib/scheduling/clinic-closure-enforcement.ts#checkClinicClosure",
+  "apps/web/lib/scheduling/clinic-closure-enforcement.ts#checkClinicWindow",
+  "apps/web/lib/scheduling/clinic-closure-enforcement.ts#clinicClosurePayload",
+  "apps/web/lib/scheduling/pedido-acceptance.ts#acceptedPedidoTarget",
+]);
+
+/**
+ * PEDIDO ACCEPTANCE DOORS THAT DO NOT CHECK CLOSURES YET, PINNED BY NAME.
+ * lib/scheduling/pedido-acceptance.ts lists four doors that accept a portal
+ * pedido. Two live under lib/reminders, the reminder path that must not change
+ * while the reminder sweep runs in shadow (strategy R9). They are deferred, not
+ * forgotten: this list must equal the doors that skip the check EXACTLY, so a
+ * fifth door that skips it fails here, and so does fixing one of these two
+ * without taking it off the list. Until both check closures, converting the
+ * interim "Feriado" person blocks into closures (owner answer C6) must wait:
+ * a Feriado time_off block refuses at all four doors today, a closure at two.
+ */
+const DEFERRED_ACCEPTANCE_DOORS: Record<string, string> = {
+  "apps/web/lib/reminders/inbound-store.ts#resolveReviewItem": "reminder path, after the sweep switch (R9)",
+  "apps/web/lib/reminders/inbound-reply.ts#applyInboundReply": "reminder path, after the sweep switch (R9)",
+};
+
+describe("every door, in every web file, refuses a closure", () => {
+  it("the function splitter finds functions (not vacuous)", () => {
+    expect(functionsOf("export async function a() {}\nfunction b() {}\nexport function c() {}").map((f) => f.name)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(webFiles.length).toBeGreaterThan(200);
+  });
+
+  it("every function that checks the clinic's hours also checks its closures", () => {
+    const doors = doorsMatching(/checkClinicWindow\s*\(/).filter((d) => !DEFINITIONS.has(d));
+    expect(doors.length).toBeGreaterThanOrEqual(5);
+    const skipping = doors.filter((d) => {
+      const [file, name] = d.split("#");
+      const fn = functionsOf(webFiles.find((w) => w.file === file)!.src).find((f) => f.name === name)!;
+      return !CLOSURE_CHECK.test(fn.body);
+    });
+    expect(skipping, "a door checks the clinic's hours but not its closures").toEqual([]);
+  });
+
+  it("every function that ACCEPTS a portal pedido checks closures, but for the two pinned deferred doors", () => {
+    const acceptors = doorsMatching(/acceptedPedidoTarget\s*\(/).filter((d) => !DEFINITIONS.has(d));
+    expect(acceptors.length).toBeGreaterThanOrEqual(4);
+    const skipping = acceptors.filter((d) => {
+      const [file, name] = d.split("#");
+      const fn = functionsOf(webFiles.find((w) => w.file === file)!.src).find((f) => f.name === name)!;
+      return !CLOSURE_CHECK.test(fn.body);
+    });
+    expect(skipping).toEqual(Object.keys(DEFERRED_ACCEPTANCE_DOORS).sort());
+    for (const reason of Object.values(DEFERRED_ACCEPTANCE_DOORS)) expect(reason).toMatch(/R9/);
+  });
+
+  it("the drawer and the Pedidos queue are acceptance doors that DO check (they are not on the deferred list)", () => {
+    const acceptors = doorsMatching(/acceptedPedidoTarget\s*\(/);
+    expect(acceptors).toContain("apps/web/lib/scheduling/actions.ts#updateAppointment");
+    expect(acceptors).toContain("apps/web/lib/scheduling/actions.ts#confirmAppointmentRequest");
+  });
+
+  it("every caller of buildDay is the one availability read, which passes the dated closures", () => {
+    const callers = doorsMatching(/\bbuildDay\s*\(/).filter((d) => !d.endsWith("#buildDay"));
+    expect(callers).toEqual(["apps/web/lib/scheduling/day-availability.ts#getTherapistAvailability"]);
+    const src = webFiles.find((w) => w.file === "apps/web/lib/scheduling/day-availability.ts")!.src;
+    expect(src).toMatch(/buildDay\(date, templates, bookedRows, blockRows, clinicHours, closedDays\)/);
+  });
+
+  it("every web file that reads a lunch-closure helper is on the reader census above", () => {
+    const users = webFiles.filter(({ src }) => READS_LUNCH.test(src)).map((w) => w.file);
+    for (const f of users) expect(f in CLOSURE_READERS || f in NOT_A_BOOKING_READER, f).toBe(true);
+  });
+});
+
 describe("every staff booking door refuses a closure", () => {
   const ACTIONS = stripComments(readFileSync(join(__dirname, "actions.ts"), "utf8"));
   const BATCH = stripComments(readFileSync(join(__dirname, "batch.ts"), "utf8"));
