@@ -2,7 +2,7 @@
 
 **This file is the source of truth for SOLO's terminal work.** It lives at `ops/STATE.md` on the branch `ops/SOLO-00-state`, which never merges into main. The branch starts from main so that the pre-push secret scan can run. At the Sunday repo maintenance it is re-made from the new main, with the `ops/` folder copied over and no merge. That means updating it needs no PR, runs no CI and is not blocked by a merge freeze.
 
-**Last updated:** Thu 2026-11-05 02:45 Lisbon, by SOLO (clock read).
+**Last updated:** Thu 2026-11-05 03:13 Lisbon, by SOLO (clock read).
 
 ## How a new session resumes
 
@@ -90,6 +90,7 @@ Those stay in `~/osteojp-handover/` on the Mac. This file may only say that such
 - A GATE-CHANGE PR is never armed; it is merged by hand on all green.
 
 ## Running now
+- Thu 03:13 Lisbon: nothing running. Merged overnight: #1721, #1722, #1723. #1724 Q6 data op held at eddda7c9 (R4 two rounds, cap; SQL rehearsed on BLUE, blocks whole owed at the READY head; questions Q6-A to Q6-E to strategy, night proposed Thu 11-19). Pack payments and clinic closures NOT started: they wait for strategy's B4 and the owner's answers in their design notes.
 - Thu ~02:45 Lisbon, done overnight: #1721 DECISIONS merged; #1722 packs sort and #1723 board armed (CI); #1705 Tipos (Q4-Q9, Q6 note) R4 PASS, fixed at caa3b6bb, held; #1706 0111 Q12 accent-blind index (sha e9afe529 at 1950d3e3) R4 PASS; #1707 3ec4766b (NFC, Q13), held; 0111 night doc pins moved, verdict 8 pinned from a local apply (md5 8c26eb6e), doc 3c837e8b; READY pass of 0109/0110/0112 R4 PASS (#1682 2a32af7d, docs 8c28a80b / 96b0e7b7 / 37fce597); #1724 Q6 data op held, R4 round 2 running.
 - BLOCKED (R5, owner decision): the independent re-rehearsal of 0111 through its blocks; the classifier refused its setup (scratch worktree + eval of 0110 block B, "Unverifiable Deletion Scope"). Not retried.
 - Thu ~02:20 Lisbon: strategy answered the 15 Fisiozero questions (owner-delegated). DECISIONS PR #1721 (armed, docs). Builders: Sistemas Q12 accent-blind unique index in 0111 (#1706, changes its bytes: R4 + re-rehearsal + new sha256 + 0111 doc pins owed) and Q13 text (#1707), on BLUE; Tipos screen Q5 (0% needs Motivo, server), Q8 own notes, Q9 hide FollowUp, Q6 accountant note (#1705, no DB); Packs em uso sort by last use (new branch); Q6 data op (0% + M07 on existing types) authored as a held Tier C doc, night proposed Mon 11-16 (B9). Q4 and Q7 stripe: cards/later PR. Second-pass dispatch R4 PASS (sha 100ae9c2); A1 dispatch R4 fixed (ec38fe78). Thursday report drafted `~/osteojp-handover/solo-to-strategy-20261105-thursday.md` (B1 to B9).
