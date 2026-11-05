@@ -39,3 +39,15 @@ export async function listSharedResourcesTx(tx: DbTx): Promise<SharedResource[]>
 export async function listSharedResources(ctx: RequestContext): Promise<SharedResource[]> {
   return runScoped(ctx, (tx) => listSharedResourcesTx(tx));
 }
+
+/**
+ * U6: `AgendaOptions.tenantSharedResourceIds` for the viewer. A therapist gets
+ * the id of every active shared resource in the tenant, the same list
+ * `cloneAppointment`'s create rule reads, so the screen hides "Marcar
+ * novamente" exactly where the server refuses it. Other roles get undefined:
+ * the rule never refuses them, so the read is not made.
+ */
+export async function tenantSharedResourceIdsFor(ctx: RequestContext): Promise<string[] | undefined> {
+  if (ctx.role !== "therapist") return undefined;
+  return (await listSharedResources(ctx)).map((r) => r.id);
+}

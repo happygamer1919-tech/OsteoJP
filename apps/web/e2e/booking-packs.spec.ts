@@ -58,9 +58,8 @@ test("book a pacote: register, derived balance, surfacing, and NO manual adjust 
   // 1. Create a fresh 10-session pack on Osteopatia, offered at all locations.
   await page.goto("/admin/services");
   const packName = `E2E Pacote C ${Date.now()}`;
-  const addPack = page
-    .locator("form")
-    .filter({ has: page.getByRole("button", { name: "Adicionar pacote" }) });
+  // The "Novo PACK" inline form (Fisiozero layout, 2026-11-02).
+  const addPack = page.locator('[data-testid="new-pack-form"]');
   await addPack.locator('input[name="name"]').fill(packName);
   await addPack.locator('select[name="baseServiceId"]').selectOption({ label: SERVICE.name });
   await addPack.locator('input[name="sessionCount"]').fill("10");
@@ -68,7 +67,7 @@ test("book a pacote: register, derived balance, surfacing, and NO manual adjust 
   // locationId select defaults to "Todos os locais" (all locations).
   await Promise.all([
     page.waitForURL(/mp=ok/),
-    addPack.getByRole("button", { name: "Adicionar pacote" }).click(),
+    addPack.getByRole("button", { name: "Inserir" }).click(),
   ]);
 
   // 2. Book the pack (registration): no active instance → banner shows "Novo pacote".
@@ -128,4 +127,37 @@ test("book a pacote: register, derived balance, surfacing, and NO manual adjust 
   //    a balance that moved because an appointment was booked on another screen
   //    looks like the number changing on its own.
   await expect(page.getByText(/contadas a partir das marcações/i)).toBeVisible();
+
+  // 7. "Packs em uso" (2026-11-02): the same pacote is listed as running, with
+  //    RESERVADAS 2 and LIVRES 8, and the pack cell reads "[name] • [total]€".
+  await page.goto(`/patients/packs?q=${encodeURIComponent(PATIENTS.ana.name)}`);
+  const inUse = page.locator('[data-testid="packs-in-use-row"]').filter({ hasText: packName }).first();
+  await expect(inUse).toBeVisible();
+  await expect(inUse).toContainText(`${packName} • 390€`);
+  const cells = inUse.locator("td");
+  await expect(cells.nth(4)).toHaveText("2");
+  await expect(cells.nth(5)).toHaveText("8");
+
+  // 8. PACK-FICHA-01 (2026-11-05): the same pacote INSIDE THE PATIENT'S FICHA,
+  //    reached the way reception reaches it: open the ficha, press the "Packs"
+  //    tab. Same numbers as "Packs em uso", without the NOME UTENTE column, so
+  //    RESERVADAS and LIVRES are cells 3 and 4. The session list opens from the
+  //    pack cell and dates both bookings.
+  await page.goto(`/patients/${PATIENTS.ana.id}`);
+  await Promise.all([
+    page.waitForURL(/tab=packs/),
+    page.getByRole("tab", { name: "Packs", exact: true }).click(),
+  ]);
+  const fichaRow = page
+    .locator('[data-testid="patient-packs-running-table"] [data-testid="packs-in-use-row"]')
+    .filter({ hasText: packName })
+    .first();
+  await expect(fichaRow).toBeVisible();
+  await expect(fichaRow).toContainText(`${packName} • 390€`);
+  const fichaCells = fichaRow.locator("td");
+  await expect(fichaCells.nth(3)).toHaveText("2");
+  await expect(fichaCells.nth(4)).toHaveText("8");
+  await fichaRow.locator("summary").click();
+  await expect(fichaRow.locator("ol li")).toHaveCount(2);
+  await expect(page.getByText("Pagamento: em breve")).toBeVisible();
 });

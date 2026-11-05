@@ -5,8 +5,10 @@ import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { writeAudit } from "./audit";
 import { AdminError } from "./errors";
 import {
+  parseBirthdayIndication,
   parseTenantConfig,
   validateConfigInput,
+  type BirthdayIndicationConfig,
   type TenantConfig,
   type TenantConfigInput,
 } from "./settings-config";
@@ -23,6 +25,8 @@ type TenantSettingsJson = {
   locale?: unknown;
   reminders?: unknown;
   billing?: unknown;
+  /** Indicação de Aniversários; read through parseBirthdayIndication. */
+  birthdayIndication?: unknown;
   notes?: string;
 };
 
@@ -31,6 +35,7 @@ export type TenantSettingsView = {
   nif: string;
   contacts: TenantContacts;
   config: TenantConfig;
+  birthdayIndication: BirthdayIndicationConfig;
 };
 
 export type TenantSettingsInput = {
@@ -61,6 +66,7 @@ export async function getTenantSettings(actor: RequestContext): Promise<TenantSe
     contacts: { email: c.email ?? "", phone: c.phone ?? "", address: c.address ?? "" },
     // Tolerant parse: existing tenants with no config blob read back full defaults.
     config: parseTenantConfig(settings),
+    birthdayIndication: parseBirthdayIndication(settings),
   };
 }
 
@@ -110,6 +116,41 @@ export async function updateTenantSettings(
       entityId: actor.tenantId,
       // PII-free: field names only, never the values.
       metadata: { fields: ["name", "nif", "contacts", "locale", "reminders", "billing"] },
+    });
+  });
+}
+
+/**
+ * Indicação de Aniversários: turns the birthday icon in the staff top bar on
+ * or off. Its own save, like the delete password, so the switch never rides on
+ * the main settings form. Owner and admin only (`settings:manage`), and the
+ * row is written under the actor's own claims, where `tenants_manager_update`
+ * (0094) admits owner and admin only.
+ */
+export async function setBirthdayHeaderIcon(
+  actor: RequestContext,
+  enabled: boolean,
+): Promise<void> {
+  assertCan(actor.role, "settings:manage");
+  if (typeof enabled !== "boolean") {
+    throw new AdminError("invalid", "invalid settings field: birthdayIndication");
+  }
+
+  await runScoped(actor, async (tx) => {
+    // Read-merge-write under a row lock, as updateTenantSettings does, so a
+    // save of another key of the blob is never written over.
+    const current = await tx.select({ settings: tenants.settings }).from(tenants).for("update");
+    if (!current[0]) throw new AdminError("not_found", "tenant row not visible in this context");
+    const existing = (current[0].settings ?? {}) as TenantSettingsJson;
+    const birthdayIndication: BirthdayIndicationConfig = { headerIcon: enabled };
+    await tx.update(tenants).set({ settings: { ...existing, birthdayIndication } });
+
+    await writeAudit(tx, actor, {
+      action: "tenant.update",
+      entityType: "tenant",
+      entityId: actor.tenantId,
+      // PII-free: the field name only.
+      metadata: { fields: ["birthdayIndication"] },
     });
   });
 }

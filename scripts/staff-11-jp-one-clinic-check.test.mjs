@@ -64,8 +64,12 @@ test("the deciding predicate is the portal's: active at the clinic, inside the d
   // THIS ARM USED TO ASSERT THE OPPOSITE - that the portal read NO date window - and it
   // is what caught PORTAL-ROSTER (2026-09-18) the moment the window landed, with the
   // message "the portal now reads a date window; the check's deciding count must follow
-  // it". It did follow it. The arm is kept pointing the same way round: it fails if the
-  // two ever disagree again, in either direction.
+  // it". It did follow it. What this arm pins is the SHAPE only: both read a valid_from
+  // and a valid_until bound, and the check decides on its windowed count. It does not
+  // compare the dates the bounds are tested against, so it stayed green while the portal
+  // read a 14-day horizon (R15) and the check read today alone. That parity (the same
+  // OPEN_SLOTS_HORIZON_DAYS, and the same two window conditions as the portal's text) is
+  // held by scripts/staff-11-horizon-parity.test.mjs (R52), not here.
   const start = STORE.indexOf("async listBookableTherapists");
   assert.ok(start >= 0, "listBookableTherapists not found in apps/api/lib/appointments/store.ts");
   const end = STORE.indexOf("order by u.full_name", start);

@@ -69,6 +69,9 @@ const EXPECTED: Record<string, { calls: number; verdict: Verdict; why: string }>
   "lib/patients/documents.ts#documentVisibilityScope#therapistPatientReadScope": {
     calls: 1, verdict: "read", why: "The four Documentos readers: list, imported list, preview, download. attachments RLS is tenant-only, so this is the whole narrowing.",
   },
+  "lib/patients/birthdays.ts#listTodaysBirthdays#therapistPatientReadScope": {
+    calls: 1, verdict: "read", why: "Indicação de Aniversários: today's birthday patients in the top bar, names and links to the ficha. The /patients list's own reach (scopeConditions); it writes nothing.",
+  },
   "lib/patients/list-queries.ts#scopeConditions#therapistPatientReadScope": {
     calls: 1, verdict: "read", why: "The /patients list, its search box and its stat strip.",
   },
