@@ -74,3 +74,10 @@ export * from "./src/guest-intake-staff";
 // read and the creation form both gate on the same answer, and each keeping its
 // own check is how they would come to disagree about whether the table exists.
 export * from "./src/rgpd-acceptance-schema";
+
+// PACK PAYMENTS (0115, pending) - whether the payment table and the agreed
+// price column exist yet. Exported from the package for the reason
+// `shared-resource` above is: Packs em uso, the payment page and Vender pack
+// all gate on the same answer, and each keeping its own check is how they would
+// come to disagree about whether a payment can be recorded.
+export * from "./src/pack-payments-schema";

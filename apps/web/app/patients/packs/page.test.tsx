@@ -32,7 +32,17 @@ vi.mock("@/lib/packs/in-use-read", () => ({
   listPacksInUse: (...a: unknown[]) => (listPacksInUse as (...x: unknown[]) => unknown)(...a),
 }));
 
+type Summary = import("@/lib/packs/payments").PackPaymentSummary;
+let payments: Map<string, Summary> | null = null;
+let month: { cents: number; first: string; last: string } | null = null;
+const readPackPaymentSummaries = vi.fn(async () => payments);
+vi.mock("@/lib/packs/payments-read", () => ({
+  readPackPaymentSummaries: (...a: unknown[]) => (readPackPaymentSummaries as (...x: unknown[]) => unknown)(...a),
+  readPacksReceivedThisMonth: async () => month,
+}));
+
 vi.mock("@osteojp/ui", () => ({
+  StatusBadge: ({ children }: { children?: ReactNode }) => createElement("span", null, children as ReactNode),
   GlassPanel: ({ children }: { children?: ReactNode }) => createElement("section", null, children as ReactNode),
   EmptyState: ({ title }: { title?: ReactNode }) => createElement("div", null, title as ReactNode),
 }));
@@ -41,6 +51,7 @@ vi.mock("../_components/search-box", () => ({ SearchBox: () => createElement("fo
 const { default: PacksInUsePage } = await import("./page");
 const { s } = await import("@/lib/i18n");
 const { PACKS_IN_USE_READ_CAP } = await import("@/lib/packs/in-use");
+const { summarizePackPayments } = await import("@/lib/packs/payments");
 type PackInUseView = import("@/lib/packs/in-use").PackInUseView;
 
 const render = async (sp: Record<string, string> = {}) =>
@@ -58,7 +69,92 @@ const sortLink = (html: string, key: string): string => {
 beforeEach(() => {
   role = "admin";
   page = { totalInUse: 0, rows: [], truncated: false };
+  payments = null;
+  month = null;
   listPacksInUse.mockClear();
+  readPackPaymentSummaries.mockClear();
+});
+
+const view = (id: string, name: string): PackInUseView => ({
+  instanceId: id,
+  patientId: `p-${id}`,
+  patientName: name,
+  packName: "Pack",
+  packPriceCents: 45000,
+  sessionsTotal: 10,
+  purchasedAt: new Date("2026-10-01T10:00:00Z"),
+  reserved: 1,
+  free: 9,
+  done: 1,
+  upcoming: 0,
+  legacyConsumed: 0,
+  sessions: [],
+  lastUsedAt: null,
+});
+
+describe("Packs em uso page, pack payments", () => {
+  it("a THERAPIST: no payment read at all, no filter, no Vender pack, no total, no 'em breve' (P4)", async () => {
+    role = "therapist";
+    page = { totalInUse: 1, rows: [view("a", "Ana")], truncated: false };
+    const html = await render();
+    expect(readPackPaymentSummaries).not.toHaveBeenCalled();
+    expect(html).not.toContain("packs-in-use-pay-filter");
+    expect(html).not.toContain("packs-in-use-sell");
+    expect(html).not.toContain("packs-in-use-received-month");
+    expect(html).not.toContain(s["packsInUse.paymentSoon"]);
+  });
+
+  it("a money role BEFORE the sitting (the read answers null): 'Pagamento: em breve' and nothing else", async () => {
+    role = "reception";
+    page = { totalInUse: 1, rows: [view("a", "Ana")], truncated: false };
+    const html = await render({ pagamento: "por-receber" });
+    expect(readPackPaymentSummaries).toHaveBeenCalledWith(expect.objectContaining({ role: "reception" }), ["a"]);
+    expect(html).toContain(s["packsInUse.paymentSoon"]);
+    expect(html).not.toContain("packs-in-use-pay-filter");
+    expect(html).not.toContain("packs-in-use-sell");
+    // The filter cannot apply without payments: every row is still shown.
+    expect(html).toContain(">Ana</a>");
+  });
+
+  it("after the sitting: the filter, Vender pack, the month total marked internal and not fiscal", async () => {
+    role = "reception";
+    page = { totalInUse: 1, rows: [view("a", "Ana")], truncated: false };
+    payments = new Map([["a", summarizePackPayments(45000, null, [])]]);
+    month = { cents: 12050, first: "2026-11-01", last: "2026-11-30" };
+    const html = await render();
+    expect(html).toContain("packs-in-use-pay-filter");
+    expect(html).toContain('href="/patients/packs/vender"');
+    expect(html).toContain("novembro de 2026");
+    expect(html).toContain("(registo interno, não fiscal): 120,50€");
+    expect(html).not.toContain(s["packsInUse.paymentSoon"]);
+    expect(html).toContain(s["packsInUse.footnotePayments"]);
+  });
+
+  it("'€ POR RECEBER' keeps only the pacotes with money to receive, and the sort links keep the filter", async () => {
+    role = "admin";
+    page = { totalInUse: 3, rows: [view("a", "Ana"), view("b", "Bruno"), view("c", "Carla")], truncated: false };
+    payments = new Map([
+      ["a", summarizePackPayments(45000, null, [])],
+      ["b", summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 45000, receivedOn: "2026-11-01", stylusRef: "FR 1E/1" }])],
+      ["c", summarizePackPayments(null, null, [])],
+    ]);
+    const html = await render({ pagamento: "por-receber" });
+    expect(html).toContain(">Ana</a>");
+    expect(html).not.toContain(">Bruno</a>");
+    expect(html).not.toContain(">Carla</a>");
+    expect(html).toContain(s["packsInUse.countPorReceber"].replace("{n}", "1"));
+    expect(sortLink(html, "lastUse")).toContain("pagamento=por-receber");
+    const filterOn = html.match(/<a [^>]*data-pay-filter="por-receber"[^>]*>/)![0];
+    expect(filterOn).toContain('aria-current="true"');
+  });
+
+  it("a therapist's ?pagamento=por-receber is ignored: no payments, so no filter", async () => {
+    role = "therapist";
+    page = { totalInUse: 1, rows: [view("a", "Ana")], truncated: false };
+    const html = await render({ pagamento: "por-receber" });
+    expect(html).toContain(">Ana</a>");
+    expect(html).toContain(s["packsInUse.count"].replace("{n}", "1"));
+  });
 });
 
 describe("Packs em uso page", () => {

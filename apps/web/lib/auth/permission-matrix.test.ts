@@ -67,6 +67,10 @@ const DENIED: Record<Role, Capability[]> = {
     // would be granting themselves that patient's entire appointment history,
     // which is precisely what reception is in the loop to decide.
     "care_team:manage",
+    // PACK PAYMENTS (P4, 2026-11-05): therapists see no amounts.
+    "pack_payments:read",
+    "pack_payments:record",
+    "pack_payments:correct",
   ],
   reception: [
     // NO clinical access at all
@@ -87,6 +91,8 @@ const DENIED: Record<Role, Capability[]> = {
     "settings:read",
     "settings:manage",
     "audit_log:read",
+    // PACK PAYMENTS (P4): a correction is owner and admin only.
+    "pack_payments:correct",
   ],
 };
 
@@ -227,6 +233,27 @@ describe("matrix lock — granted capabilities (escalation guard)", () => {
     expect(can("therapist", "reminders:log_read")).toBe(false);
     expect(can("therapist", "sms_replies:read")).toBe(false);
     expect(can("reception", "clinical_records:read")).toBe(false);
+  });
+
+  it("PACK PAYMENTS (P4): owner, admin and reception read and record; a correction is owner and admin; a therapist holds none", () => {
+    // Owner answers of 2026-11-05 to the U4 b design note. The therapist line is
+    // the one that matters, asserted beside the capabilities a therapist DOES
+    // hold and this feature could have ridden (the SEC-01 shape).
+    for (const role of ["owner", "admin", "reception"] as const) {
+      expect(can(role, "pack_payments:read"), role).toBe(true);
+      expect(can(role, "pack_payments:record"), role).toBe(true);
+    }
+    expect(can("owner", "pack_payments:correct")).toBe(true);
+    expect(can("admin", "pack_payments:correct")).toBe(true);
+    expect(can("reception", "pack_payments:correct")).toBe(false);
+    expect(can("therapist", "appointments:read")).toBe(true);
+    expect(can("therapist", "patients:read")).toBe(true);
+    for (const cap of ["pack_payments:read", "pack_payments:record", "pack_payments:correct"] as const) {
+      expect(can("therapist", cap), cap).toBe(false);
+    }
+    // It rides nothing fiscal: no invoices capability moved.
+    expect(can("therapist", "invoices:issue")).toBe(false);
+    expect(can("reception", "invoices:void")).toBe(false);
   });
 
   it("PL-09 Phase 5: reception manages schedules but holds NO tenant settings", () => {

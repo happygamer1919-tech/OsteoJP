@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0114_pack_payments.sql` | `0114` (the clinic closures item, authored on its own branch `db/LOC-CLOSED-0114-clinic-closures`). It depends on no object `0114` creates; it follows `0114` because strategy numbered the two in that order (2026-11-05, B4: "Clinic-wide closures (0114), then pack payments (0115)") and apply order equals file order | 2026-11-05, branch `db/PACK-PAY-0115-pack-payments` | this branch's pull request, held; takes `0115` at its promotion, after `0114` is applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
