@@ -95,15 +95,26 @@ grant usage, select
 --   GUARDED, so the file is valid on both sides of the promotion: on a
 --   database without the tables this block does nothing. A table added to the
 --   list here must be one whose own migration revokes service_role.
---   public.health_systems (0111) and public.therapist_weekly_blocks (0112) are two: each migration revokes ALL from service_role by name.
+--   public.health_systems (0111) is one: its migration revokes ALL from service_role by name.
 do $seed_revoke$
 declare
   t text;
 begin
-  foreach t in array array['public.reminder_claims', 'public.reminder_sweep_passes', 'public.health_systems', 'public.therapist_weekly_blocks'] loop
+  foreach t in array array['public.reminder_claims', 'public.reminder_sweep_passes', 'public.health_systems'] loop
     if to_regclass(t) is not null then
       execute format('revoke all on table %s from service_role', t);
     end if;
   end loop;
 end
 $seed_revoke$;
+
+-- public.therapist_weekly_blocks (0112): its migration revokes ALL from service_role by name
+-- too. It has its own guarded block, so the list above stays byte for byte #1706's and the
+-- two pull requests merge clean.
+do $seed_revoke_0112$
+begin
+  if to_regclass('public.therapist_weekly_blocks') is not null then
+    execute 'revoke all on table public.therapist_weekly_blocks from service_role';
+  end if;
+end
+$seed_revoke_0112$;
