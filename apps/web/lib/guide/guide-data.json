@@ -10094,13 +10094,7 @@
               "strong": "Tipo de Marcações / Tabelas de Preços"
             },
             {
-              "text": " tem uma linha por tipo de marcação, com "
-            },
-            {
-              "strong": "FollowUP"
-            },
-            {
-              "text": ", "
+              "text": " tem uma linha por tipo: "
             },
             {
               "strong": "Preço"
@@ -10118,19 +10112,19 @@
               "strong": "Motivo IVA"
             },
             {
-              "text": ", o interruptor de ativo, a cor, as etiquetas "
+              "text": ", interruptor de ativo, cor, "
             },
             {
               "strong": "SMS"
             },
             {
-              "text": " e "
+              "text": ", "
             },
             {
               "strong": "AGENDA"
             },
             {
-              "text": ", e a "
+              "text": " e "
             },
             {
               "strong": "Duração (min)"
@@ -10144,19 +10138,27 @@
         {
           "spans": [
             {
-              "text": "Para criar um tipo: na linha por baixo da tabela, preencha "
+              "text": "Com IVA 0%, o "
             },
             {
-              "strong": "Novo Tipo de Marcação"
+              "strong": "Motivo IVA"
             },
             {
-              "text": ", o preço, o IVA, o motivo e a "
+              "text": " é obrigatório. Os valores de IVA e Motivo são confirmados pelo contabilista antes de qualquer faturação os usar. A etiqueta "
             },
             {
-              "strong": "Duração (min)"
+              "strong": "SMS"
             },
             {
-              "text": ", e clique em "
+              "text": " ainda não tem efeito nos lembretes."
+            }
+          ],
+          "type": "para"
+        },
+        {
+          "spans": [
+            {
+              "text": "Para criar um tipo: preencha a linha por baixo da tabela e clique em "
             },
             {
               "strong": "Inserir Novo Tipo de Marcação"
@@ -10179,12 +10181,12 @@
           "items": [
             [
               {
-                "text": "Altere na tabela o que for preciso, em quantas linhas quiser, e clique uma vez no botão de guardar alterações, por baixo da tabela. Se outra pessoa guardou entretanto, nada é guardado: recarregue a página."
+                "text": "Altere na tabela o que for preciso e clique uma vez no botão de guardar. Se outra pessoa guardou entretanto, nada é guardado: recarregue a página."
               }
             ],
             [
               {
-                "text": "Para deixar de oferecer um tipo, desligue o interruptor da linha e guarde. Um tipo usado por um pacote não pode ser desligado."
+                "text": "Para deixar de oferecer um tipo, desligue o interruptor e guarde. Um tipo usado por um pacote não pode ser desligado."
               }
             ],
             [
@@ -10195,7 +10197,7 @@
                 "strong": "Preços por local"
               },
               {
-                "text": ", escreva o preço e clique em "
+                "text": " e clique em "
               },
               {
                 "strong": "Guardar preços"
@@ -10215,13 +10217,21 @@
                 "strong": "Gerir"
               },
               {
-                "text": ", na linha do tipo."
+                "text": "."
               }
             ]
           ],
           "kind": "ol",
           "start": 1,
           "type": "list"
+        },
+        {
+          "spans": [
+            {
+              "text": "Notas da tabela: as marcações não guardam preço (vale o da fatura emitida) e as estatísticas contam apenas as faturas emitidas."
+            }
+          ],
+          "type": "para"
         },
         {
           "spans": [
@@ -10254,7 +10264,7 @@
       "see": [],
       "shots": null,
       "title": "Serviços e preços",
-      "words": 184
+      "words": 196
     },
     {
       "answers": [],
