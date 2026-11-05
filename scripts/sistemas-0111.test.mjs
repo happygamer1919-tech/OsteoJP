@@ -5,10 +5,10 @@
 // GREEN block runs from the pull request's HELD head, never from main; and BEFORE YOU START refuses a copy
 // of the document whose first line still says NOT READY.
 //
-// This file is 0111's test (scripts/sistemas-0111.test.mjs, #1682 at 2a32af7d) re-keyed by
+// This file is 0109's test (scripts/location-saturday-hours-0109.test.mjs, #1682 at 2a32af7d) re-keyed by
 // machine: the number, the files, the pins, the journal position, the carries and the verdict profiles
 // changed, the held head moved to origin/db/RODICA-sistemas-subsistemas, and the parts that belong to one migration
-// (its shape, its comments, the readings both check files share) written for this one. 0111 was written
+// (its shape, its comments, the readings both check files share) written for this one. 0109 was written
 // at its number; this migration is PROMOTED on the stack above #1704 (strategy's C3, 2026-11-05),
 // so this file also holds the promotion's block A' (the stacked merge) to its pins and proves its halts by
 // the same fault injection, and it holds THE CHAIN GATE: BEFORE YOU START refuses to start unless
@@ -50,9 +50,8 @@ const DOC = "docs/migration-apply-0111.md";
 const SIDECAR = "docs/migration-apply-0111.sha256";
 const GATE_FILE = "scripts/migration-timeouts.test.mjs";
 const BRANCH = "origin/db/RODICA-sistemas-subsistemas";
-const CHECK_NAME = "locations_saturday_hours_valid";
 /** The document's first line until SOLO's READY line removes it. */
-export const NOT_READY_LINE = "NOT READY: awaiting the re-rehearsal of the Q12 bytes (#1706 head 1950d3e3, migration sha256 e9afe529, verdict 8's index definition read there), the promotion (block B), the document set in the repository (block C), the fault-injection script test, the narrow re-check of fix round 3, and SOLO's READY line. The R4 re-check (11-03, SHIP / SHIP AFTER FIXES) and the independent rehearsal of the then-final bytes (11-04 00:06, REHEARSED OK on BLUE, transcripts rh1104-transcripts/) are done, both on the OLD migration bytes (ae7cad96 / 4f493188); fix round 3 applied 11-04 (unset line, CI check); narrow re-check of those lines pending";
+export const NOT_READY_LINE = "NOT READY: awaiting the R4 re-check of the 2026-11-05 R4 fixes, the independent rehearsal of the whole chain on the final bytes (C3), and SOLO's READY line (block D). For 0111 that rehearsal is a HARD READY condition: it reads verdict 8's index definition on the final bytes, which only a builder's local apply has read so far. Done: the stacked promotion, the document set in the repository, the fault-injection script test, and the R4 of the chain-night changes (PASS).";
 
 /** The pins of files this branch does not own, as they read on main when the document was written. */
 export const EXTERNAL_PINS = Object.freeze({
@@ -2127,7 +2126,7 @@ const aval = (name) => (new RegExp(`^${name}=(\\S+)$`, "m").exec(APRIME) ?? [])[
 const APRIME_SUCCESS = "BLOCK A DONE (stacked). Paste block B.";
 /** The lines of block A' that a later step relies on, each of which must carry its own explicit halt. */
 const APRIME_MUST_HALT = [
-  /^git -C "\$\{REPO\}" (fetch|merge-base|show|worktree)\b/, /^(PT|MP|MT|TIP|PS|MD|STRAY)=\$\(/, /^\[ /, /^echo "\$\{\w+\}" \| grep -q/,
+  /^git -C "\$\{REPO\}" (fetch|merge-base|show|worktree|diff)\b/, /^(PT|MP|MT|TIP|PS|MD|STRAY|LD|D1|D2)=\$\(/, /^\[ /, /^echo "\$\{\w+\}" \| grep -q/,
   /^cd /, /^node -e /, /\| node -e /, /^git merge-base --is-ancestor /, /^git merge --no-ff /,
 ];
 export function aprimeUnguarded(block) {
@@ -2171,7 +2170,7 @@ test("BLOCK A' (THE STACKED MERGE): it reads no pull request's state; it pins th
   // Every check of the lower head and of the held head comes before anything is changed.
   const at = (s) => { const i = APRIME.indexOf(s); assert.ok(i >= 0, s); return i; };
   const wt = at('worktree add --detach "${WT}" "${TIP}"');
-  for (const s of ['git -C "${REPO}" merge-base --is-ancestor "${PREVHEAD}" "${PT}" ||', '[ "${MP}" = "${SHAPREV}" ] ||', '[ "${MT}" = "${SHAPREV}" ] ||', '"${PREVIDX}" "${PREVTAG}" "${PREVWHEN}" ||', '[ "${PS}" = "${SHA}" ] ||']) assert.ok(at(s) < wt, s);
+  for (const s of ['git -C "${REPO}" merge-base --is-ancestor "${PREVHEAD}" "${PT}" ||', '[ "${MP}" = "${SHAPREV}" ] ||', '[ "${MT}" = "${SHAPREV}" ] ||', '[ -z "${LD}" ] ||', '"${PREVIDX}" "${PREVTAG}" "${PREVWHEN}" ||', '[ "${PS}" = "${SHA}" ] ||']) assert.ok(at(s) < wt, s);
   // And after the merges, on disk: the previous migration's bytes, the journal's newest entry and the pending file.
   const done = at(APRIME_SUCCESS);
   for (const s of ['git merge-base --is-ancestor origin/main HEAD ||', 'git merge-base --is-ancestor "${PREVHEAD}" HEAD ||', '[ "${MD}" = "${SHAPREV}" ] ||', '"${PREVIDX}" "${PREVTAG}" "${PREVWHEN}" "${JOURNAL}" ||']) assert.ok(at(s) > at("\ndone\n") && at(s) < done, s);
@@ -2235,7 +2234,7 @@ case "$1" in
     unexpected "$@";;
   merge-base) [ "$2" = --is-ancestor ] || unexpected "$@"
     if [ "$3" = "$AH_PREVHEAD" ] && [ "$4" = "$AH_PT" ]; then [ "$AH_LOWER" = moved ] && exit 1; exit 0; fi
-    if [ "$3" = "$AH_TIP" ] && [ "$4" = HEAD ]; then exit 0; fi
+    if [ "$3" = "$AH_TIP" ] && [ "$4" = HEAD ]; then [ "$AH_TIPANC" = no ] && exit 1; exit 0; fi
     if [ "$3" = origin/main ] && [ "$4" = HEAD ]; then [ -f "$d/in.main" ] && exit 0; exit 1; fi
     if [ "$3" = "$AH_PREVHEAD" ] && [ "$4" = HEAD ]; then [ -f "$d/in.prev" ] && exit 0; exit 1; fi
     unexpected "$@";;
@@ -2246,7 +2245,8 @@ case "$1" in
   worktree) [ "$2" = add ] && [ "$3" = --detach ] && [ "$5" = "$AH_TIP" ] || unexpected "$@"
     ${R("mkdir")} -p "$4" && ${R("cp")} -R "$AH_FIX/wt/." "$4/" && echo "$5" > "$d/head"; exit 0;;
   status) [ "$2" = --porcelain ] || unexpected "$@"; exit 0;;
-  diff) if [ "$AH_DIFF" = markers ]; then printf '+<<<<<<< HEAD\\n+>>>>>>> other\\n'; fi; exit 0;;
+  diff) if [ "$2" = --name-only ]; then [ -n "$AH_LOWERDIFF" ] && printf '%s\\n' "$AH_LOWERDIFF"; exit 0; fi
+    if [ "$AH_DIFF" = markers ]; then printf '+<<<<<<< HEAD\\n+>>>>>>> other\\n'; fi; exit 0;;
   merge) [ "$2" = --no-ff ] || unexpected "$@"
     for a in "$@"; do last="$a"; done
     case "$last" in origin/main) : > "$d/in.main"; echo "$AH_M1" > "$d/head";; "$AH_PREVHEAD") : > "$d/in.prev"; echo "$AH_M2" > "$d/head";; *) unexpected "$@";; esac
@@ -2299,7 +2299,7 @@ async function aprimeRun(base, shell, runId, opts = {}) {
     PATH: `${join(base, "bin")}:${SYSTEM_PATH}`, HOME: run, LANG: "C", LC_ALL: "C",
     AH_RUN: run, AH_FIX: join(base, "fix"), AH_PREVBR: "db/RODICA-services-vat-colour", AH_BR: BRANCH.replace(/^origin\//, ""),
     AH_PREVHEAD: A_SHA.PREVHEAD, AH_PT: A_SHA.PT, AH_TIP: A_SHA.TIP, AH_M1: A_SHA.MERGE1, AH_M2: A_SHA.MERGE2,
-    AH_FAIL: opts.fault?.call ?? "", AH_FAIL_MODE: opts.fault?.mode ?? "", AH_LOWER: opts.lower ?? "", AH_DIFF: opts.diff ?? "",
+    AH_FAIL: opts.fault?.call ?? "", AH_FAIL_MODE: opts.fault?.mode ?? "", AH_LOWER: opts.lower ?? "", AH_DIFF: opts.diff ?? "", AH_LOWERDIFF: opts.lowerDiff ?? "", AH_TIPANC: opts.tipAncestor ?? "",
   };
   const block = aprimeLocalize(APRIME.replace(`PREVHEAD=${aval("PREVHEAD")}`, `PREVHEAD=${A_SHA.PREVHEAD}`), run);
   const r = await runShell(shell, block, env, run);
@@ -2392,6 +2392,7 @@ test("BLOCK A', run whole: a lower commit that is gone, a stale lower copy, a lo
       j.entries.push({ ...j.entries[j.entries.length - 1], idx: j.entries.length, tag: "9999_later", when: 1 + j.entries[j.entries.length - 1].when });
       writeFileSync(join(fix, "prevhead", JOURNAL), `${JSON.stringify(j, null, 2)}\n`);
     }, /^STOP: the journal at a{40} does not end with 0110_\w+ at idx \d+, when \d+, of \d+ plus one entries\. Nothing was changed$/],
+    ["the lower head changed a migration file after the pinned commit", { lowerDiff: "packages/db/migrations/meta/_journal.json" }, undefined, /^STOP: the lower held head b{40} changed a migration file, a mirror or a pending file after a{40} \[packages\/db\/migrations\/meta\/_journal\.json\], so this stack would hold a stale copy\. /],
     ["the pending file at the held head differs", {}, (fix) => writeFileSync(join(fix, "tip", aval("PEND")), `${migration}\n`), /^STOP: the pending file at the held head is not the approved body \[[0-9a-f]{64}\]\. Nothing was changed$/],
   ]) {
     await withAprime(async (base) => {
@@ -2434,6 +2435,10 @@ test("BLOCK A', run again after a conflict: it resumes in the same worktree, ref
       const open = await aprimeRun(base, shell, `${shell}-resume-open`, { setup: seeded("open") });
       assert.equal(open.code, 1, open.out);
       assert.match(open.out, /^STOP: a merge is still in progress in .*; resolve it by marker LINES and commit it, then paste this block again$/m);
+      const stray = await aprimeRun(base, shell, `${shell}-resume-not-descending`, { setup: seeded("done"), tipAncestor: "no" });
+      assert.equal(stray.code, 1, stray.out);
+      assert.match(stray.out, /^STOP: .* is there and its HEAD does not descend from the held head c{40}\. Nothing was changed$/m);
+      assert.ok(!stray.calls.some((c) => c.id.startsWith("git#") && gitVerb(c) === "merge"), "it merged after the STOP");
       const marked = await aprimeRun(base, shell, `${shell}-resume-markers`, { setup: seeded("done"), diff: "markers" });
       assert.equal(marked.code, 1, marked.out);
       assert.match(marked.out, /^STOP: the merge at HEAD added conflict marker lines against both of its parents, so a conflict was committed unresolved\. Nothing was promoted$/m);
@@ -2472,4 +2477,33 @@ test("THE CARRIES ARE REQUIRED: the post-check refuses to guess a missing -v, be
   const passed = [...blockWith(gdoc, STAGE2).matchAll(/-v (\w+)="\$\{[A-Z]+\}"/g)].map((m) => m[1]).sort();
   assert.deepEqual(passed, required);
   assert.ok(post.indexOf("\\endif") < post.indexOf("SET LOCAL row_security = off;"), "a guard comes after the first statement");
+});
+
+test("THE CHAIN NIGHT'S WINDOW, both dispatch blocks whole, on the real calendar: 202611080000 / 202611090629 / 202611090800 passes Sunday 14:00, 22:00 and 23:59 and Monday 00:00, 02:00 and 06:29, and STOPs Saturday 21:00 and Monday 06:30; Monday's fallback passes Monday 21:00 and Tuesday 06:29", async () => {
+  const CHAIN = { WOPEN: "202611080000", WSTART: "202611090629", WEND: "202611090800" };
+  const MONDAY = { WOPEN: "202611092100", WSTART: "202611100629", WEND: "202611100800" };
+  const at = (d, ymd, hhmm) => ({ dhhmm: `${d}${hhmm}`, dow: String(d), stamp: `${ymd}${hhmm}`, next: ymdShift(ymd, 1), prev: ymdShift(ymd, -1), window: "", clinics: "0 of 2", zone: "WET", fill: {} });
+  const points = [
+    ["Sunday 14:00", at(7, "20261108", "1400"), CHAIN, "pass"], ["Sunday 22:00", at(7, "20261108", "2200"), CHAIN, "pass"], ["Sunday 23:59", at(7, "20261108", "2359"), CHAIN, "pass"],
+    ["Monday 00:00", at(1, "20261109", "0000"), CHAIN, "pass"], ["Monday 02:00", at(1, "20261109", "0200"), CHAIN, "pass"], ["Monday 06:29", at(1, "20261109", "0629"), CHAIN, "pass"],
+    ["Saturday 21:00", at(6, "20261107", "2100"), CHAIN, /so this is not the night the dispatch names/],
+    ["Monday 06:30", at(1, "20261109", "0630"), CHAIN, /is closed by the weekday table but outside strategy's start windows/],
+    ["Monday 21:00, the fallback", at(1, "20261109", "2100"), MONDAY, "pass"], ["Tuesday 06:29, the fallback", at(2, "20261110", "0629"), MONDAY, "pass"],
+    ["Sunday 22:00 under the fallback", at(7, "20261108", "2200"), MONDAY, /so this is not the night the dispatch names/],
+  ];
+  await withHarness(async (base) => {
+    for (const shell of shellsHere()) {
+      for (const name of ["bys", "clock"]) {
+        for (const [label, clock, fill, want] of points) {
+          const r = await runOnce(harnessConfig(gdoc, name, clock, shell, base, { fill }), `${shell}-chain-window-${name}-${clock.stamp}-${fill.WOPEN}`, null);
+          const tag = `${shell} ${name} at ${label}`;
+          if (want === "pass") assert.equal(r.code, 0, `${tag}: ${r.out.slice(-700)}`);
+          else {
+            assertStops(r, name, want, tag);
+            assert.deepEqual(credentialCalls(r), [], tag);
+          }
+        }
+      }
+    }
+  });
 });
