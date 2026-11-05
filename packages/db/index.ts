@@ -82,3 +82,9 @@ export * from "./src/rgpd-acceptance-schema";
 // keeping its own check is how they would come to disagree about whether a
 // weekly rule can block anything.
 export * from "./src/weekly-blocks-schema";
+
+// TIPOS DE MARCACAO - the allowed values of the five services columns the
+// pending migration NEXT-AFTER-0109_services_booking_type_fields adds (VAT
+// rate, exemption reason, follow-up, colour). Exported from the package because
+// the schema CHECKs, the admin screen and its server action must name one list.
+export * from "./src/service-type-fields";
