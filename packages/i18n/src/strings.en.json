@@ -1491,6 +1491,7 @@
   "packsSell.packOption": "{name} ({n} sessions) • list price today {amount}€",
   "packsSell.noPacks": "There are no active packs in the pack list.",
   "packsSell.submit": "Sell the pack",
+  "packsInUse.truncatedPorReceber": "Shows only the {n} most recent packs with money to receive: the count is a floor and the search looks only within those {n} most recent packs.",
   "packsInUse.porReceberEmptyTitle": "No pack with money to receive",
   "packsInUse.porReceberEmptyBody": "Every pack with an agreed price is paid.",
   "packsPay.errReasonLong": "The reason has at most 500 characters.",

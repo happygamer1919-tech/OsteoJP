@@ -156,6 +156,8 @@ describe("Packs em uso page, pack payments", () => {
     ]);
     const html = await render({ pagamento: "por-receber", q: "  " });
     expect(listReceivableInstanceIds).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }));
+    // NIT 3: the in-use read is not run and thrown away.
+    expect(listPacksInUse).not.toHaveBeenCalled();
     expect(listPacksByIds).toHaveBeenCalledWith(expect.objectContaining({ role: "admin" }), ["a", "d"], "");
     expect(html).toContain(">Ana</a>");
     expect(html).toContain(">Duarte</a>");
@@ -172,7 +174,8 @@ describe("Packs em uso page, pack payments", () => {
     receivables = { ids: [], truncated: true };
     const html = await render({ pagamento: "por-receber" });
     expect(html).toContain('data-testid="packs-in-use-truncated"');
-    expect(html).toContain(s["packsInUse.truncated"].replace("{n}", "1000"));
+    expect(html).toContain(s["packsInUse.truncatedPorReceber"].replaceAll("{n}", "1000"));
+    expect(s["packsInUse.truncatedPorReceber"]).toMatch(/pesquisa procura apenas nesses \{n\} packs mais recentes/);
     expect(html).toContain(s["packsInUse.porReceberEmptyTitle"]);
   });
 

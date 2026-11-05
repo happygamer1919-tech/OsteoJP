@@ -125,6 +125,7 @@ d(`pack payments: shape, gates, policies, set once [${SIDE}]`, () => {
   const inst = randomUUID(); // no agreed price
   const priced = randomUUID(); // agreed price set
   const otherInst = randomUUID(); // other tenant, priced
+  const otherBare = randomUUID(); // other tenant, NO price: the cross-tenant price arm and its control
   const lineA = randomUUID();
   const lineA2 = randomUUID();
   const lineB = randomUUID();
@@ -163,7 +164,8 @@ d(`pack payments: shape, gates, policies, set once [${SIDE}]`, () => {
     await sql`insert into patient_pack_instances (id, tenant_id, patient_id, pack_id, sessions_total, sessions_remaining)
               values (${inst}, ${tenant}, ${patient}, ${pack}, 10, 10),
                      (${priced}, ${tenant}, ${patient}, ${pack}, 10, 10),
-                     (${otherInst}, ${other}, ${otherPatient}, ${otherPack}, 10, 10)`;
+                     (${otherInst}, ${other}, ${otherPatient}, ${otherPack}, 10, 10),
+                     (${otherBare}, ${other}, ${otherPatient}, ${otherPack}, 10, 10)`;
     await sql`insert into pack_instance_agreed_prices (pack_instance_id, tenant_id, agreed_price_cents, created_by)
               values (${priced}, ${tenant}, 40000, ${reception}), (${otherInst}, ${other}, 30000, ${otherAdmin})`;
     await sql`insert into pack_instance_payments (id, tenant_id, pack_instance_id, location_id, kind, amount_cents, received_on, method, stylus_ref, created_by)
@@ -360,7 +362,7 @@ d(`pack payments: shape, gates, policies, set once [${SIDE}]`, () => {
     expect(await asIns("reception", reception, { created_by: admin })).toBe("42501");
     expect(await asIns("reception", reception, {})).toBe("42501");
     // Another tenant's instance, named from inside the caller's tenant.
-    expect(await asIns("reception", reception, { pack_instance_id: otherInst, created_by: reception })).toBe("42501");
+    expect(await asIns("reception", reception, { pack_instance_id: otherBare, created_by: reception })).toBe("42501");
     // SET ONCE: the instance that already has a price.
     expect(await asIns("reception", reception, { pack_instance_id: priced, created_by: reception })).toBe("23505");
     // Two in one transaction: the second is the key violation.
@@ -375,7 +377,10 @@ d(`pack payments: shape, gates, policies, set once [${SIDE}]`, () => {
     expect(await ownerTry(sql, (tx) => tx`insert into pack_instance_payments ${tx(lineCols({ pack_instance_id: otherInst }))}`)).toBe("ok");
     expect(await ownerTry(sql, (tx) => tx`insert into pack_instance_payments ${tx(lineCols({ location_id: otherLoc }))}`)).toBe("ok");
     expect(
-      await ownerTry(sql, (tx) => tx`insert into pack_instance_agreed_prices (pack_instance_id, tenant_id, agreed_price_cents) values (${inst}, ${tenant}, 1)`),
+      // The same row the price matrix's cross-tenant arm sends (the other
+      // tenant's UNPRICED instance, named under this tenant): the owning
+      // connection accepts it, so that arm's 42501 is the policy's.
+      await ownerTry(sql, (tx) => tx`insert into pack_instance_agreed_prices (pack_instance_id, tenant_id, agreed_price_cents) values (${otherBare}, ${tenant}, 1)`),
     ).toBe("ok");
   });
 

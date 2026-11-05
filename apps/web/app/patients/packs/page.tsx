@@ -69,36 +69,34 @@ export default async function PacksInUsePage({
   const q = (raw ?? "").trim();
   const sort = parsePacksInUseSort(Array.isArray(sp.sort) ? sp.sort[0] : sp.sort);
 
-  const page = await listPacksInUse(ctx, q);
-  const { totalInUse, truncated } = page;
   const moneyRole = can(ctx.role, "pack_payments:read");
-  const inUsePayments = moneyRole
-    ? await readPackPaymentSummaries(
-        ctx,
-        page.rows.map((r) => r.instanceId),
-      )
-    : null;
-  const porReceber = inUsePayments !== null && parsePorReceberFilter(first(sp.pagamento));
   // "€ POR RECEBER" is NOT a filter over the pacotes in use: a pacote with every
   // session spent and money still owed has left that list and is exactly the one
   // to chase. It reads every pacote with money to receive (bounded), as the
-  // viewer, and draws those rows with the same numbers.
-  const receivables = porReceber ? await listReceivableInstanceIds(ctx) : null;
+  // viewer, draws those rows with the same numbers, and does NOT run the in-use
+  // read at all. The receivables read answers null for a therapist and before
+  // the sitting, and the page then falls back to the ordinary list.
+  const receivables =
+    moneyRole && parsePorReceberFilter(first(sp.pagamento)) ? await listReceivableInstanceIds(ctx) : null;
+  const porReceber = receivables !== null;
   const receivableRows = receivables ? await listPacksByIds(ctx, receivables.ids, q) : null;
-  const payments = receivableRows
+  const page = porReceber ? null : await listPacksInUse(ctx, q);
+  const baseRows = receivableRows ?? page?.rows ?? [];
+  const payments = moneyRole
     ? await readPackPaymentSummaries(
         ctx,
-        receivableRows.map((r) => r.instanceId),
+        baseRows.map((r) => r.instanceId),
       )
-    : inUsePayments;
+    : null;
   const month = payments ? await readPacksReceivedThisMonth(ctx) : null;
   const canSell = payments !== null && can(ctx.role, "pack_payments:record");
   // Both reads return every row the page shows (bounded, not paginated), so the
   // filter and the sort run here, on the server, over the full list. The
   // filter re-checks "due" on the rows drawn, so the list and its badges agree.
-  const shown = receivableRows && payments ? filterPorReceber(receivableRows, payments) : page.rows;
+  const shown = porReceber && payments ? filterPorReceber(baseRows, payments) : baseRows;
   const rows = sortPacksInUse(shown, sort);
-  const shownTruncated = porReceber ? (receivables?.truncated ?? false) : truncated;
+  const totalInUse = page?.totalInUse ?? 0;
+  const shownTruncated = porReceber ? receivables.truncated : (page?.truncated ?? false);
   const shownCap = porReceber ? RECEIVABLES_READ_CAP : PACKS_IN_USE_READ_CAP;
 
   return (
@@ -162,7 +160,7 @@ export default async function PacksInUsePage({
 
       {shownTruncated && (
         <p className="text-sm text-v2-text-secondary" role="status" data-testid="packs-in-use-truncated">
-          {s["packsInUse.truncated"].replace("{n}", String(shownCap))}
+          {s[porReceber ? "packsInUse.truncatedPorReceber" : "packsInUse.truncated"].replaceAll("{n}", String(shownCap))}
         </p>
       )}
 

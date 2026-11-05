@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+
+const dialect = new PgDialect();
 
 /**
  * sellPack ("Vender pack"), without a database: who may sell, the schema guard,
@@ -16,6 +20,7 @@ const st = vi.hoisted(() => ({
   inserts: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
   audits: [] as Array<Record<string, unknown>>,
   runs: 0,
+  events: [] as string[],
 }));
 
 vi.mock("@osteojp/db", async (importOriginal) => {
@@ -34,10 +39,19 @@ function chain(): unknown {
 }
 
 const fakeTx = {
-  select: () => chain(),
+  execute: async (q: SQL) => {
+    const r = dialect.sqlToQuery(q);
+    st.events.push(`execute:${r.sql}|${JSON.stringify(r.params)}`);
+    return [];
+  },
+  select: () => {
+    st.events.push("select");
+    return chain();
+  },
   insert: (table: unknown) => ({
     values: (values: Record<string, unknown>) => {
       st.inserts.push({ table, values });
+      st.events.push("insert");
       const done = Promise.resolve([{ id: "new-inst" }]);
       return { returning: () => done, then: done.then.bind(done) };
     },
@@ -56,7 +70,7 @@ vi.mock("@/lib/admin/audit", () => ({
   },
 }));
 
-const { sellPack } = await import("./sell");
+const { sellPack, sellPackLock } = await import("./sell");
 const { packInstanceAgreedPrices, patientPackInstances } = await import("@osteojp/db");
 
 const PAT = "33333333-3333-4333-8333-333333333333";
@@ -71,6 +85,7 @@ beforeEach(() => {
   st.inserts = [];
   st.audits = [];
   st.runs = 0;
+  st.events = [];
 });
 
 describe("sellPack", () => {
@@ -157,5 +172,31 @@ describe("sellPack", () => {
     st.selects = [[{ id: PAT, deletedAt: null }], [{ id: PACK, sessionCount: 5, isActive: true }], []];
     expect(await sellPack(actor("owner"), { ...sale, agreedPriceCents: 0 })).toEqual({ ok: true, instanceId: "new-inst" });
     expect(st.inserts[1]!.values.agreedPriceCents).toBe(0);
+  });
+
+  it("THE LOCK: one advisory transaction lock per (tenant, patient, pacote), taken AFTER the reads and BEFORE the running-pack check and the inserts", async () => {
+    st.selects = [
+      [{ id: PAT, deletedAt: null }],
+      [{ id: PACK, sessionCount: 10, isActive: true }],
+      [],
+    ];
+    expect(await sellPack(actor("reception"), sale)).toEqual({ ok: true, instanceId: "new-inst" });
+    const lockAt = st.events.findIndex((e) => e.startsWith("execute:select pg_advisory_xact_lock(hashtextextended("));
+    expect(lockAt).toBe(2);
+    expect(st.events).toEqual(["select", "select", st.events[2], "select", "insert", "insert"]);
+    expect(st.events[2]).toContain(JSON.stringify([`pack-sell:t-1:${PAT}:${PACK}`]));
+  });
+
+  it("the lock key is the canonical ids: the same ids in another case take the SAME lock; another pacote another", () => {
+    const params = (q: SQL) => dialect.sqlToQuery(q).params;
+    expect(params(sellPackLock("T-1", PAT.toUpperCase(), PACK.toUpperCase()))).toEqual(params(sellPackLock("t-1", PAT, PACK)));
+    expect(params(sellPackLock("t-1", PAT, PACK))).not.toEqual(params(sellPackLock("t-1", PAT, "55555555-5555-4555-8555-555555555555")));
+    expect(dialect.sqlToQuery(sellPackLock("t-1", PAT, PACK)).sql).toBe("select pg_advisory_xact_lock(hashtextextended($1, 0))");
+  });
+
+  it("no lock is taken when the sale is refused before the check (no patient, no pacote)", async () => {
+    st.selects = [[]];
+    await sellPack(actor("reception"), sale);
+    expect(st.events.some((e) => e.startsWith("execute:"))).toBe(false);
   });
 });

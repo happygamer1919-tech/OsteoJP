@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
 import {
   packInstanceAgreedPrices,
@@ -61,6 +61,29 @@ export type SellPackResult =
 
 const linkedCount = sql<number>`${sql.raw(packLinkedCountSql('"patient_pack_instances"."id"'))}`;
 
+/**
+ * THE LOCK AROUND CHECK-THEN-INSERT: one per (tenant, patient, pacote), never
+ * table-wide. Two simultaneous sales of the same pacote to the same patient
+ * would otherwise both read "no running instance" and both insert; with it,
+ * the second waits for the first's COMMIT and then reads the instance the first
+ * created. pg_advisory_xact_lock (released at commit or rollback, so an error
+ * cannot leave it held on a pooled connection), as clinical/episodes.ts and
+ * scheduling/slot-lock.ts do. The ids are lower-cased before hashing, so the
+ * same ids typed in another case take the SAME lock.
+ *
+ * WHAT IT DOES NOT COVER, said plainly: the booking path (`bookPackSessionTx`)
+ * opens an instance on a first pacote booking without this lock, so a sale and
+ * a first booking of the same pacote at the same instant can still both create
+ * one. That race existed between two bookings before this file and is not
+ * widened by it; it is listed in the PR body as a known limit of the default.
+ *
+ * Exported so a test can read its payload.
+ */
+export function sellPackLock(tenantId: string, patientId: string, packId: string): SQL {
+  const payload = `pack-sell:${tenantId.toLowerCase()}:${patientId.toLowerCase()}:${packId.toLowerCase()}`;
+  return sql`select pg_advisory_xact_lock(hashtextextended(${payload}, 0))`;
+}
+
 export async function sellPack(
   actor: RequestContext,
   input: { patientId: string; packId: string; agreedPriceCents: number },
@@ -90,6 +113,10 @@ export async function sellPack(
         .where(eq(servicePacks.id, input.packId))
         .limit(1);
       if (!pack || !pack.isActive) return { ok: false as const, reason: "pack" as const };
+
+      // Held until this transaction ends: the check below and the INSERT after
+      // it run with no other sale of this pacote to this patient in between.
+      await tx.execute(sellPackLock(actor.tenantId, input.patientId, input.packId));
 
       const held = await tx
         .select({

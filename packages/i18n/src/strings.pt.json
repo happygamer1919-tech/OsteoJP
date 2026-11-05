@@ -1491,6 +1491,7 @@
   "packsSell.packOption": "{name} ({n} sessões) • tabela hoje {amount}€",
   "packsSell.noPacks": "Não há packs ativos na lista de packs.",
   "packsSell.submit": "Vender pack",
+  "packsInUse.truncatedPorReceber": "Mostra só os {n} packs por receber mais recentes: a contagem é um mínimo e a pesquisa procura apenas nesses {n} packs mais recentes.",
   "packsInUse.porReceberEmptyTitle": "Nenhum pack por receber",
   "packsInUse.porReceberEmptyBody": "Todos os packs com preço acordado estão pagos.",
   "packsPay.errReasonLong": "O motivo tem no máximo 500 caracteres.",
