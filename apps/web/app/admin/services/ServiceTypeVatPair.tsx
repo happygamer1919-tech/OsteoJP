@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useRef, type ReactNode } from "react";
 
 /**
  * Tipos de Marcacao: the IVA and Motivo IVA selects of one type.
@@ -43,7 +43,12 @@ export function ServiceTypeVatPair({
   /** Set in the table: each select gets its own cell. Unset in the new-type row. */
   cellClassName?: string;
 }) {
-  const [reasonValue, setReasonValue] = useState(reason ?? "");
+  // The Motivo select stays UNCONTROLLED. React resets a form after every form
+  // action (requestFormReset); a controlled select has no default option to
+  // reset to, so its DOM value would drop to the placeholder while its state
+  // kept the code, and the next untouched save would post an empty Motivo for
+  // every row. The rate's onChange clears it through the ref instead.
+  const reasonRef = useRef<HTMLSelectElement>(null);
   const cell = (child: ReactNode) => (cellClassName ? <td className={cellClassName}>{child}</td> : child);
   return (
     <Fragment>
@@ -53,7 +58,7 @@ export function ServiceTypeVatPair({
           form={form}
           defaultValue={rate === null ? "" : String(rate)}
           onChange={(e) => {
-            if (Number(e.target.value) > 0) setReasonValue("");
+            if (Number(e.target.value) > 0 && reasonRef.current) reasonRef.current.value = "";
           }}
           aria-label={rateLabel}
           className={`w-20 ${inputClassName}`}
@@ -71,8 +76,8 @@ export function ServiceTypeVatPair({
         <select
           name={reasonName}
           form={form}
-          value={reasonValue}
-          onChange={(e) => setReasonValue(e.target.value)}
+          ref={reasonRef}
+          defaultValue={reason ?? ""}
           aria-label={reasonLabel}
           className={`w-44 ${inputClassName}`}
         >

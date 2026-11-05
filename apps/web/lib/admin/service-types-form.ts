@@ -80,7 +80,7 @@ const UUID = /^[0-9a-f-]{36}$/i;
 export function formErrorQuery(param: "mt" | "mn", e: ServiceTypesFormError): string {
   const code = formErrorCode(e);
   const ids = e.rowIds.filter((id) => UUID.test(id));
-  return ids.length > 0 && code !== "err:invalid" ?`${param}=${code}&vr=${ids.join(",")}` : `${param}=${code}`;
+  return ids.length > 0 && code !== "err:invalid" ? `${param}=${code}&vr=${ids.join(",")}` : `${param}=${code}`;
 }
 
 /** The names of the `vr` rows, in the order posted, unknown ids skipped. */

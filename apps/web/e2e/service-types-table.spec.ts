@@ -5,7 +5,8 @@
  * cor" box, the SMS and AGENDA tags, one "Guardar alterações" button for the
  * whole table, and the new-type row. Strategy's answers of 2026-11-04: no
  * FollowUP (Q9), IVA 0% needs a Motivo (Q5), OsteoJP's own two notes in place
- * of Fisiozero's (Q8). Runs as admin (default storageState).
+ * of Fisiozero's (Q8). Strategy's B10 of 2026-11-05: a Motivo only on IVA 0%.
+ * Runs as admin (default storageState).
  *
  * NEEDS THE PENDING MIGRATION (NEXT-AFTER-0109_services_booking_type_fields):
  * on a database without the five columns the page itself cannot load.
@@ -160,6 +161,90 @@ test("Tipos de Marcação: IVA 0% with no Motivo saves nothing and says so (Q5)"
   ).toBeVisible();
   await page.goto("/admin/services");
   await expect(typeRow(page, name).locator('select[name^="vat__"]')).toHaveValue("");
+});
+
+test("Tipos de Marcação: a rate above 0% clears the Motivo, and a Motivo on 23% saves nothing and says so (B10)", async ({
+  page,
+}) => {
+  await page.goto("/admin/services");
+  const name = `E2E Tipo b10 ${Date.now()}`;
+  const newRow = page.getByTestId("service-types-new-row");
+  // The new-type row: a Motivo chosen at 0% is cleared when the rate goes to 23%.
+  await newRow.locator('select[name="vat"]').selectOption("0");
+  await newRow.locator('select[name="vatReason"]').selectOption("M07");
+  await newRow.locator('select[name="vat"]').selectOption("23");
+  await expect(newRow.locator('select[name="vatReason"]')).toHaveValue("");
+
+  await newRow.locator('input[name="name"]').fill(name);
+  await newRow.locator('select[name="vat"]').selectOption("0");
+  await newRow.locator('select[name="vatReason"]').selectOption("M07");
+  await newRow.locator('input[name="durationMin"]').fill("30");
+  await Promise.all([
+    page.waitForURL(/mn=ok/),
+    newRow.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
+  ]);
+
+  // In the table: 23% on a row with a Motivo clears the picker.
+  const row = typeRow(page, name);
+  await expect(row.locator('select[name^="vatReason__"]')).toHaveValue("M07");
+  await row.locator('select[name^="vat__"]').selectOption("23");
+  await expect(row.locator('select[name^="vatReason__"]')).toHaveValue("");
+
+  // The server stays the authority: a Motivo put back on 23% is refused, and
+  // the banner names the type.
+  await row.locator('select[name^="vatReason__"]').selectOption("M07");
+  await Promise.all([
+    page.waitForURL(/mt=err:vat_reason_not_exempt&vr=/),
+    page.getByRole("button", { name: SAVE }).click(),
+  ]);
+  await expect(
+    page.getByText(
+      `Só o IVA 0% leva Motivo IVA. Retire o Motivo ou ponha o IVA a 0%. Nada foi guardado. Tipos de Marcação a corrigir: ${name}.`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.goto("/admin/services");
+  await expect(typeRow(page, name).locator('select[name^="vat__"]')).toHaveValue("0");
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
+});
+
+test("Tipos de Marcação: two saves in a row WITHOUT a reload keep every Motivo", async ({ page }) => {
+  // React resets a form after each form action. A Motivo picker that lost its
+  // stored value on that reset would post an empty Motivo on the second save,
+  // and a 0% row would then be refused by Q5.
+  await page.goto("/admin/services");
+  const name = `E2E Tipo twice ${Date.now()}`;
+  const newRow = page.getByTestId("service-types-new-row");
+  await newRow.locator('input[name="name"]').fill(name);
+  await newRow.locator('input[name="price"]').fill("30.00");
+  await newRow.locator('select[name="vat"]').selectOption("0");
+  await newRow.locator('select[name="vatReason"]').selectOption("M07");
+  await newRow.locator('input[name="durationMin"]').fill("30");
+  await Promise.all([
+    page.waitForURL(/mn=ok/),
+    newRow.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
+  ]);
+
+  const tableSave = async () => {
+    // The redirect lands on the same ?mt=ok URL both times, so wait on the POST.
+    const posted = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/admin/services"));
+    await page.getByRole("button", { name: SAVE }).click();
+    await posted;
+    await expect(page).toHaveURL(/mt=ok/);
+    await expect(page.getByText("Tipos de Marcação guardados.", { exact: true })).toBeVisible();
+  };
+
+  // Save 1 changes the price; save 2 touches nothing.
+  await typeRow(page, name).locator('input[name^="price__"]').fill("31.00");
+  await tableSave();
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
+  await tableSave();
+  await expect(page).not.toHaveURL(/err:vat_reason/);
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
+
+  await page.goto("/admin/services");
+  await expect(typeRow(page, name).locator('input[name^="price__"]')).toHaveValue("31.00");
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
 });
 
 test("Tipos de Marcação: a page drawn before somebody else's save is refused and does not revert it", async ({

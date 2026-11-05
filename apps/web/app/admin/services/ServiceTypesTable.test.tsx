@@ -145,6 +145,22 @@ describe("Q5 and Q6: next to the IVA columns", () => {
     expect(en["admin.serviceTypes.vatReasonRows"]).toBe("Appointment types to fix:");
   });
 
+  it("B10: the Motivo picker stays UNCONTROLLED, so React's reset after a save restores the stored code", () => {
+    // A controlled select has no default option: after the form action's reset
+    // its DOM value drops to the placeholder and the next untouched save posts
+    // an empty Motivo for every row (R4, reproduced in headless Chromium).
+    const src = readFileSync(join(__dirname, "ServiceTypeVatPair.tsx"), "utf-8");
+    // The select's own attributes: from its name up to its first option.
+    const at = src.indexOf("name={reasonName}");
+    expect(at).toBeGreaterThan(-1);
+    const reasonSelect = src.slice(at, src.indexOf("<option", at));
+    expect(reasonSelect).toContain('defaultValue={reason ?? ""}');
+    expect(reasonSelect).toContain("ref={reasonRef}");
+    expect(reasonSelect).not.toMatch(/\svalue=\{/);
+    expect(src).not.toMatch(/useState/);
+    expect(src).toContain('reasonRef.current.value = ""');
+  });
+
   it("B10: the mirror refusal names both ways out: clear the Motivo, or set IVA to 0%", () => {
     expect(pt["admin.serviceTypes.vatReasonNotExempt"]).toBe(
       "Só o IVA 0% leva Motivo IVA. Retire o Motivo ou ponha o IVA a 0%. Nada foi guardado.",
