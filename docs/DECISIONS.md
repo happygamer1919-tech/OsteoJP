@@ -5641,3 +5641,32 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   paths show, instead of the generic failure.
 - **Not hidden:** refusals that depend on the hour chosen in the drawer, and
   the location refusals, which keep their own sentences.
+
+## 2026-11-04 - The 15 open questions of Rodica's Fisiozero batch (owner-delegated answers, given by strategy)
+
+The owner delegated these answers to strategy; strategy gave them on 2026-11-04. They are recorded here as owner-delegated answers. The build follows them. Where an answer changes a held migration's bytes, that migration is re-reviewed (R4), re-rehearsed on its final bytes and given a new sha256 before its night.
+
+**Ficha export (live, #1702): kept as built.**
+1. A session with no linked appointment shows "sem hora".
+2. The text field replaces only the "Conteúdo importado" heading; the read-only note under it stays.
+3. An episode export has one row per session.
+
+**Tipos de Marcação (0110, #1704 and #1705).**
+4. SMS "off" on a type stops only that type's SMS; email reminders continue. This changes the send path (Tier B), so it is built and merged only after the reminder sweep is switched on (R9). It is a card until then; the screen says the switch has no effect on reminders yet.
+5. 0% IVA requires a Motivo (one of the 33 exemption codes). The save is refused without one. Enforced by the server action, not by the migration, so 0110's bytes do not change.
+6. The existing types take Fisiozero's values (0% and M07). This is a GREEN data operation on its own closed-hours night after 0110 (a new Tier C item; the night is proposed to strategy). The screen notes that JP's accountant confirms the values before any Stylus invoicing reads them.
+7. A type's colour shows as a stripe only, never as a block's fill. The agenda stripe is its own pull request after 0110.
+8. Fisiozero's "Nota 1" and "Nota 2" are not copied: they are not true here. OsteoJP's own wording: appointments store no price (the amount charged is the one on the issued invoice), and statistics count issued invoices only.
+9. Open, for Rodica: what Fisiozero's "FollowUp 2 dias" does. The field is hidden until she answers; its column stays.
+
+**Sistemas / SubSistemas (0111, #1706 and #1707).**
+10. The list is managed by owner and admin; reception and therapists pick from it.
+11. A Sistema is deactivated, never deleted.
+12. "Médis" and "Medis" are the same name: uniqueness ignores accents and case. 0111 is unapplied, so the rule goes into its unique index.
+13. The price-switch text gains "(ainda sem efeito)" until insurer pricing exists.
+
+**Bloqueios (0112).**
+14. As ruled in U4(c): clinic-wide closures are a separate Tier C item; per-therapist blocks for now.
+
+**Packs (live, #1703).**
+15. A pack with sessions left stays "a decorrer", with no age limit. The page gains a sort by last use.
