@@ -22,8 +22,8 @@ import {
   weeklyBlocksSchemaPresent,
 } from "../src/weekly-blocks-schema";
 
-const PENDING_DIR = join(__dirname, "..", "migrations-pending");
-const FILE = "NEXT-AFTER-0109_weekly_blocks.sql";
+const PENDING_DIR = join(__dirname, "..", "migrations");
+const FILE = "0112_weekly_blocks.sql";
 const PATH = join(PENDING_DIR, FILE);
 
 /** Strip block and line comments (block comments nest in Postgres; these do not). */
@@ -53,14 +53,14 @@ describe(`pending migration ${FILE}`, () => {
 
   it("sorts AFTER both other files that wait for 0109 (services fields, Sistemas)", () => {
     const siblings = [
-      "NEXT-AFTER-0109_services_booking_type_fields.sql",
-      "NEXT-AFTER-0109_sistemas_subsistemas.sql",
+      "0110_services_booking_type_fields.sql",
+      "0111_sistemas_subsistemas.sql",
     ];
     const sorted = [...siblings, FILE].sort();
     expect(sorted[sorted.length - 1]).toBe(FILE);
     // A control: the comparison is byte order, and a name that sorted first
     // would be caught by the same line.
-    expect(["NEXT-AFTER-0109_aaa.sql", ...siblings].sort()[0]).toBe("NEXT-AFTER-0109_aaa.sql");
+    expect(["0109_aaa.sql", ...siblings].sort()[0]).toBe("0109_aaa.sql");
   });
 
   it("opens with the two SET LOCAL lines the 0100 gate requires, in order", () => {
