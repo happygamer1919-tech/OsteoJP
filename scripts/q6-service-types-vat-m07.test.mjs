@@ -126,11 +126,13 @@ const SUCCESS = {
 
 test("the sidecar pins the document, and the document says NOT READY, records its rehearsal and what is NOT REHEARSED", () => {
   assert.equal(read(SIDECAR), `${sha256(doc)}  ${DOC}\n`);
-  assert.match(doc.split("\n")[0], /^NOT READY: reworked for the per-type list 2026-11-05, R4 [^\n]*?, the blocks whole NOT REHEARSED[^\n]*?, the night Thu 2026-11-19 conditional on Q6-D/);
+  assert.match(doc.split("\n")[0], /^NOT READY: reworked for the per-type list 2026-11-05, R4 [^\n]*?, the blocks [^\n]*?REHEARSED[^\n]*?, the night Thu 2026-11-19 conditional on Q6-D/);
   assert.match(doc, /\n## Rehearsal\n/);
   assert.match(doc, /\n### SQL checked by the author, 2026-11-05/);
   assert.match(doc, /\n## NOT REHEARSED\n\n- \*\*The blocks whole\.\*\*/);
-  assert.match(doc, /\*\*The target guard's production path\*\*/);
+  assert.match(doc, /\*\*The target guard's pass branch and the production path\*\*/);
+  assert.match(doc, /\n### Independent rehearsal, Thu 2026-11-05, 14:13 to 14:18 WET, on `35d44346`: REHEARSED OK/);
+  assert.match(doc, /\*\*The delta after that head, THE PRE-CHECK's ids-file STOP moved above its clean-up, is NOT YET REHEARSED\*\*/);
   for (const f of [DOC, READ, PRE, WRITE, POST, UNDO, SELF]) {
     assert.ok(!read(f).includes(String.fromCharCode(0x2014)), `${f} carries an em dash`);
   }
@@ -1104,7 +1106,9 @@ test("the 33 exemption codes the SQL carries are the application's 33 and 0110's
   const migDisk = [join(ROOT, "packages/db/migrations-pending"), join(ROOT, "packages/db/migrations")]
     .filter((d) => existsSync(d))
     .flatMap((d) => readdirSync(d).filter((n) => /services_booking_type_fields\.sql$/.test(n)).map((n) => join(d, n)));
-  const mig = migDisk.length === 1 ? { text: readFileSync(migDisk[0], "utf8"), from: migDisk[0] } : migDisk.length === 0 ? fromRef("packages/db/migrations-pending/NEXT-AFTER-0109_services_booking_type_fields.sql") : null;
+  const mig = migDisk.length === 1 ? { text: readFileSync(migDisk[0], "utf8"), from: migDisk[0] }
+    : migDisk.length === 0 ? (fromRef("packages/db/migrations/0110_services_booking_type_fields.sql") ?? fromRef("packages/db/migrations-pending/NEXT-AFTER-0109_services_booking_type_fields.sql"))
+    : null;
   assert.ok(app, `the application's code list could not be read, from disk or from ${SRC1704} (git fetch origin db/RODICA-services-vat-colour)`);
   assert.ok(mig, `0110 could not be read (exactly one file), from disk or from ${SRC1704}`);
   assert.deepEqual([...app.text.matchAll(/\{ code: "(M[0-9]{2})"/g)].map((x) => x[1]), CODES33, `${app.from}: VAT_EXEMPTION_CODES differ from the 33 this op carries`);
@@ -1246,7 +1250,8 @@ test("the list's sha256 is checked before production is read, and again before T
   assert.ok(pre.includes(`\nLIST=${LIST_PATH}\nSNAP=${SNAP_PATH}\n`), "the pre-check does not name the list file and its snapshot");
   const lines = pre.split("\n");
   const lastPending = lines.findLastIndex((l) => /^echo "\$\{(HELD|DOCSHA|RUNDAY|MIGNIGHT|Q6DAT|LISTSHA|DISAGREEOK)\}" \| grep -qxE /.test(l));
-  assert.match(lines[lastPending + 1], /^rm -f \/tmp\/q6-head\.sha \/tmp\/q6-night\.ok \/tmp\/q6-pre\.ok \/tmp\/q6-pre\.out \/tmp\/q6-target-a\.out \/tmp\/q6-list\.csv \|\| \{/, "the last sitting's records are not cleared by the first command after the PENDING checks");
+  assert.match(lines[lastPending + 1], /^test ! -e \$\{IDS\} \|\| \{ echo "STOP: the ids file of THE WRITE already exists/, "the ids-file STOP is not the first command after the PENDING checks, before the clean-up");
+  assert.match(lines[lastPending + 2], /^rm -f \/tmp\/q6-head\.sha \/tmp\/q6-night\.ok \/tmp\/q6-pre\.ok \/tmp\/q6-pre\.out \/tmp\/q6-target-a\.out \/tmp\/q6-list\.csv \|\| \{/, "the last sitting's records are not cleared right after the PENDING checks and the ids-file STOP");
   for (const s of ["umask 077 || {", "cp ${LIST} ${SNAP} || {", '[ -n "${PERM}" ] || {', "LS=$(shasum -a 256 ${SNAP} | cut -d' ' -f1) || {", '[ "${LS}" = "${LISTSHA}" ] || {', "echo \"${LISTSHA}\" | grep -qxE '[0-9a-f]{64}' || {", '[ "${BADC}" = 0 ] || {']) {
     assert.ok(at(s) > 0, `the pre-check lacks: ${s}`);
     for (const later of ["\ncd /Users/ivan/Projects/GitHub/osteojp-prod-apply", "\nSN=$(sntp", "\ngit fetch", "\nnode ${GUARD}", "\npsql "]) {
@@ -1622,6 +1627,7 @@ const SCENARIOS = {
     ["a line \\. in the list, which would end the load early", { listText: LIST_TEXT.replace(`${IDS[1]},23,\n`, `${IDS[1]},23,\n\\.\n`), listsha: sha256(LIST_TEXT.replace(`${IDS[1]},23,\n`, `${IDS[1]},23,\n\\.\n`)) }, /1 lines of the list hold a backslash or a control character/],
     ["a tab in the list", { listText: LIST_TEXT.replace(`${IDS[1]},23,`, `${IDS[1]},23,\t`), listsha: sha256(LIST_TEXT.replace(`${IDS[1]},23,`, `${IDS[1]},23,\t`)) }, /1 lines of the list hold a backslash or a control character/],
     ["an earlier pass's carry, and the confirmation after RUNDAY", { staleCarry: true, q6dat: "202611201000" }, /not before 20261119 12:00 Lisbon/],
+    ["a pre-check pasted again after a committed write: the records THE POST-CHECK needs survive", { staleCarry: true, idsExist: true }, /the ids file of THE WRITE already exists/],
     ["an earlier pass's carry, and the confirmation at 12:00", { staleCarry: true, q6dat: "202611191200" }, /not before 20261119 12:00 Lisbon/],
     ["an earlier pass's carry, and RUNDAY not after 0110", { staleCarry: true, mignight: "20261119" }, /not a night after the night 0110 was applied/],
     ["no list_disagrees_staff_set line", { variant: "nodis" }, /no list_disagrees_staff_set line/],
@@ -1743,7 +1749,8 @@ for (const shell of shells) {
           if (s.psqlExit === undefined && s.variant === undefined && s.ids === undefined && s.rfile === undefined && !s.afterPsql) {
             assert.ok(!r.calls.some((c) => c.startsWith("psql#")), `${name}: ${label}: psql ran`);
           }
-          if (s.staleCarry) assert.deepEqual(r.tmpLeft, [], `${name}: ${label}: an earlier pass's records survived the STOP: ${r.tmpLeft}`);
+          if (s.staleCarry && !s.idsExist) assert.deepEqual(r.tmpLeft, [], `${name}: ${label}: an earlier pass's records survived the STOP: ${r.tmpLeft}`);
+          if (s.staleCarry && s.idsExist) assert.deepEqual([...r.tmpLeft].sort(), ["q6-head.sha", "q6-list.csv", "q6-night.ok", "q6-pre.ok"], `${name}: ${label}: the STOP removed records THE POST-CHECK needs: ${r.tmpLeft}`);
           if (name === "pre" && (s.q6dat || s.listsha || s.noList)) {
             assert.ok(!r.calls.some((c) => /^(git|node|psql|sntp)#/.test(c)), `${name}: ${label}: a call reached git, the network or production first: ${r.calls}`);
           }
