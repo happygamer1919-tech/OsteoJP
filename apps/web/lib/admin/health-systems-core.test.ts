@@ -21,6 +21,15 @@ describe("Sistemas / SubSistemas: names", () => {
     expect(normalizeHealthSystemName("   ")).toBe("");
   });
 
+  it("composes a decomposed paste to NFC, so it is stored composed and folds like the precomposed name", () => {
+    const decomposed = "Médis";
+    expect(decomposed).not.toBe("Médis");
+    expect(normalizeHealthSystemName(decomposed)).toBe("Médis");
+    expect(healthSystemNameKey(decomposed)).toBe(healthSystemNameKey("Médis"));
+    expect(healthSystemNameKey(decomposed)).toBe("medis");
+    expect(healthSystemNameKey(" SAÚDE  ")).toBe("saude");
+  });
+
   it("compares ignoring case, whitespace and accents (ruling Q12)", () => {
     expect(healthSystemNameKey(" adse ")).toBe(healthSystemNameKey("ADSE"));
     expect(healthSystemNameKey("SAMS  Quadros")).toBe(healthSystemNameKey("sams quadros"));

@@ -41,9 +41,17 @@ export function foldHealthSystemAccents(text: string): string {
   return out;
 }
 
-/** Trim and collapse every run of whitespace to one space. "" when nothing is left. */
+/**
+ * Compose to NFC, then trim and collapse every run of whitespace to one space.
+ * "" when nothing is left.
+ *
+ * NFC FIRST: a pasted "Me" + combining acute + "dis" becomes the single letter
+ * the accent map holds, so it folds. The index's translate() works on stored
+ * characters and cannot compose a combining mark itself, so THE SQL SIDE RELIES
+ * ON THE APPLICATION STORING NFC: every write goes through this function.
+ */
 export function normalizeHealthSystemName(raw: string): string {
-  return raw.replace(/\s+/g, " ").trim();
+  return raw.normalize("NFC").replace(/\s+/g, " ").trim();
 }
 
 /** The comparison key the unique index uses: the normalized name, lower case, accents folded. */
