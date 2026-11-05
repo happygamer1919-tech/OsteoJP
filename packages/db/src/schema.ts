@@ -311,6 +311,25 @@ export const locations = pgTable(
     /* NOT blockable-around.                                              */
     middayClosedFrom: time("midday_closed_from"),
     middayClosedTo: time("midday_closed_to"),
+    /* ================================================================== */
+    /* HOR-02 - `saturday_opens_at` AND `saturday_closes_at` (migration   */
+    /* 0109) ARE DELIBERATELY NOT DECLARED HERE.                          */
+    /* ================================================================== */
+    /* A column declared on this table is named by every Drizzle select   */
+    /* of `locations` that lists no fields, and by every insert. 0109 is  */
+    /* a held migration: this code ships to databases that do not have    */
+    /* the columns yet, where such a query fails with 42703 and takes     */
+    /* every booking read down with it. So the staff app reads them by    */
+    /* name, only after asking the catalogue whether BOTH exist, in       */
+    /* packages/db/src/location-saturday.ts (HOR-01), which says the same */
+    /* from its side. Declaring them here is a later change, once 0109 is */
+    /* applied everywhere this code runs.                                 */
+    /*                                                                    */
+    /* Saturday is its own pair (owner, 2026-10-31: "Saturday hours per   */
+    /* clinic: 9am to 1pm", while weekdays open at 08:00), both NULL or   */
+    /* both set with closing after opening: CHECK                         */
+    /* locations_saturday_hours_valid, in the migration only.             */
+    /* ================================================================== */
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
