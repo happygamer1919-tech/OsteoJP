@@ -421,7 +421,7 @@ export const WRITE_STANDS = "0111 IS APPLIED and the write stands. Run nothing a
 const WRITE_STANDS_IF = `If stage 1 ended with its line 0111 APPLIED, then ${WRITE_STANDS}`;
 const STOP_TEXT = /echo "STOP: ([^"]+)"/;
 export const STATE_UNKNOWN = "Stage 1 recorded that it applied 0111, and this read does not agree. Treat the state as UNKNOWN. Run nothing again, not stage 0 and not stage 1, and report";
-export const POST_RUN_START = 'psql "${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before=';
+export const POST_RUN_START = 'psql "${DATABASE_URL_DIRECT:?}" -X -P pager=off -v ON_ERROR_STOP=1 -v journal_rows_before=';
 export const POST_RUN_SENTENCE = "If psql's lines say a relation or a column does not exist, this read does not agree with stage 1's marker and the state is UNKNOWN; otherwise this read confirmed nothing and contradicted nothing. Run nothing again, not stage 0 and not stage 1, and report this whole output; the lead rules";
 export const CONTRADICTING_READS = Object.freeze({
   stage2: ['[ "${FAILS}" = 0 ] || ', '[ "${JA}" = "$((J + 1))" ] || ', '[ "${HN}" = 1 ] || '],
@@ -552,7 +552,7 @@ export function argumentProblems(s1, s2) {
   const problems = [];
   const l1 = s1.split("\n");
   const l2 = s2.split("\n");
-  if (!l1.some((l) => l.startsWith(`psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -f ${PRE} -c "rollback" 2>&1 | tee /tmp/0111-precheck.new || `))) {
+  if (!l1.some((l) => l.startsWith(`psql "\${DATABASE_URL_DIRECT:?}" -X -P pager=off -v ON_ERROR_STOP=1 -c "begin read only" -f ${PRE} -c "rollback" 2>&1 | tee /tmp/0111-precheck.new || `))) {
     problems.push("stage 1 does not run the pre-check inside its own begin read only");
   }
   if (!l1.some((l) => l.startsWith(`node packages/db/scripts/verified-migrate.mjs --tag ${TAG} --sha256 \${SHA0111} --expect-pending 1 2>&1 | tee /tmp/0111-apply.out || `))) {
@@ -560,11 +560,11 @@ export function argumentProblems(s1, s2) {
   }
   for (const [v, row] of CARRY_MAP) if (!l2.includes(`${v}=$(carry ${row})`)) problems.push(`stage 2 does not read \${${v}} from the row ${row}`);
   if (!l2.includes(CARRY_FUNCTION)) problems.push("stage 2's carry() does not match a row by its whole name");
-  const want = `psql "\${DATABASE_URL_DIRECT}" -X -P pager=off -v ON_ERROR_STOP=1 ${CARRY_MAP.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0111-postcheck.out || `;
+  const want = `psql "\${DATABASE_URL_DIRECT:?}" -X -P pager=off -v ON_ERROR_STOP=1 ${CARRY_MAP.map(([v, , name]) => `-v ${name}="\${${v}}"`).join(" ")} -c "begin read only" -f ${POST} -c "rollback" 2>&1 | tee /tmp/0111-postcheck.out || `;
   if (!l2.some((l) => l.startsWith(want))) problems.push("stage 2 does not hand the post-check the 10 carries, each under its own name, inside begin read only");
   for (const c of CARRY_CHECKS) if (!l2.some((l) => l.startsWith(c) && EXPLICIT_HALT.test(l))) problems.push(`stage 2 lacks the carry check ${c}`);
   const at = (start) => l2.findIndex((l) => l.startsWith(start));
-  if (CARRY_CHECKS.some((c) => at(c) > at('psql "${DATABASE_URL_DIRECT}" -X -P pager=off'))) problems.push("a carry check follows the post-check it guards");
+  if (CARRY_CHECKS.some((c) => at(c) > at('psql "${DATABASE_URL_DIRECT:?}" -X -P pager=off'))) problems.push("a carry check follows the post-check it guards");
   return problems;
 }
 
@@ -2462,4 +2462,14 @@ test("THE CHAIN GATE (strategy's C1 and C2): BEFORE YOU START, whole, refuses to
       assert.equal(ok.code, 0, ok.out.slice(-600));
     }
   });
+});
+
+test("THE CARRIES ARE REQUIRED: the post-check refuses to guess a missing -v, before any verdict prints, for each carry stage 2 passes", () => {
+  for (const [, , name] of CARRY_MAP) {
+    assert.ok(post.includes(`\\if :{?${name}}\n\\else\n  DO $missing$ BEGIN RAISE EXCEPTION 'STOP: -v ${name} is missing`), `${name}: no missing-variable guard`);
+  }
+  const required = [...post.matchAll(/^\\if :\{\?(\w+)\}$/gm)].map((m) => m[1]).sort();
+  const passed = [...blockWith(gdoc, STAGE2).matchAll(/-v (\w+)="\$\{[A-Z]+\}"/g)].map((m) => m[1]).sort();
+  assert.deepEqual(passed, required);
+  assert.ok(post.indexOf("\\endif") < post.indexOf("SET LOCAL row_security = off;"), "a guard comes after the first statement");
 });
