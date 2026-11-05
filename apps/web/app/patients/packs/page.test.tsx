@@ -41,11 +41,19 @@ vi.mock("../_components/search-box", () => ({ SearchBox: () => createElement("fo
 const { default: PacksInUsePage } = await import("./page");
 const { s } = await import("@/lib/i18n");
 const { PACKS_IN_USE_READ_CAP } = await import("@/lib/packs/in-use");
+type PackInUseView = import("@/lib/packs/in-use").PackInUseView;
 
 const render = async (sp: Record<string, string> = {}) =>
   renderToStaticMarkup(
     (await PacksInUsePage({ searchParams: Promise.resolve(sp) })) as Parameters<typeof renderToStaticMarkup>[0],
   );
+
+/** The opening <a ...> tag of one sort option, whatever its attribute order. */
+const sortLink = (html: string, key: string): string => {
+  const tag = html.match(new RegExp(`<a [^>]*data-sort="${key}"[^>]*>`));
+  if (!tag) throw new Error(`no sort link ${key}`);
+  return tag[0];
+};
 
 beforeEach(() => {
   role = "admin";
@@ -66,6 +74,57 @@ describe("Packs em uso page", () => {
   it("no note when the read was complete", async () => {
     const html = await render();
     expect(html).not.toContain('data-testid="packs-in-use-truncated"');
+  });
+
+  it("renders the sort control, name current by default, keeping the search in both links", async () => {
+    const html = await render({ q: "ana" });
+    expect(html).toContain('data-testid="packs-in-use-sort"');
+    expect(html).toContain(s["packsInUse.sortName"]);
+    expect(html).toContain(s["packsInUse.sortLastUse"]);
+    const byName = sortLink(html, "name");
+    const byLastUse = sortLink(html, "lastUse");
+    expect(byName).toContain('href="/patients/packs?q=ana"');
+    expect(byName).toContain('aria-current="true"');
+    expect(byLastUse).toContain('href="/patients/packs?q=ana&amp;sort=lastUse"');
+    expect(byLastUse).not.toContain("aria-current");
+  });
+
+  it("?sort=lastUse marks it current and orders the rows by last use, never used last", async () => {
+    const NOW = Date.now();
+    const v = (id: string, name: string, last: number | null): PackInUseView => ({
+      instanceId: id,
+      patientId: `p-${id}`,
+      patientName: name,
+      packName: "Pack",
+      packPriceCents: 1000,
+      sessionsTotal: 5,
+      purchasedAt: new Date(NOW - 100 * 86_400_000),
+      reserved: 1,
+      free: 4,
+      done: 1,
+      upcoming: 0,
+      legacyConsumed: 0,
+      sessions: [],
+      lastUsedAt: last === null ? null : new Date(NOW - last * 86_400_000),
+    });
+    // The read returns the default order (A to Z); the page re-sorts.
+    page = {
+      totalInUse: 3,
+      rows: [v("a", "Ana", null), v("b", "Bruno", 30), v("c", "Carla", 2)],
+      truncated: false,
+    };
+    const html = await render({ sort: "lastUse" });
+    expect(sortLink(html, "lastUse")).toContain('aria-current="true"');
+    expect(sortLink(html, "name")).not.toContain("aria-current");
+    const order = ["Ana", "Bruno", "Carla"].map((n) => html.indexOf(`>${n}</a>`));
+    expect(order.every((i) => i > 0)).toBe(true);
+    expect(order[2]).toBeLessThan(order[1]!);
+    expect(order[1]).toBeLessThan(order[0]!);
+  });
+
+  it("an unknown ?sort= falls back to the default order", async () => {
+    const html = await render({ sort: "bogus" });
+    expect(sortLink(html, "name")).toContain('aria-current="true"');
   });
 
   it("passes the trimmed search to the read and prints the count heading", async () => {
