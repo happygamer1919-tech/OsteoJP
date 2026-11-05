@@ -279,6 +279,52 @@ export function buildPacksInUse(
   return { totalInUse: inUse.length, rows: shown, truncated: false };
 }
 
+/**
+ * PACK-FICHA-01: ONE patient's pacotes, for the "Packs" tab of their ficha.
+ *
+ * Reception looks for a patient's pacotes inside the patient's file, as on
+ * Fisiozero. The tab shows the same numbers as "Packs em uso" (the same
+ * `summarizePackInstance`), split in two: the pacotes still running (the same
+ * `isPackInUse` rule as the page) and the ones that are finished. Both are
+ * newest purchase first, which is the order a single patient's pacotes are
+ * read in.
+ */
+export type PatientPacksPage = {
+  running: PackInUseView[];
+  finished: PackInUseView[];
+  /** True when the read stopped at PATIENT_PACKS_READ_CAP pacotes. */
+  truncated: boolean;
+};
+
+/**
+ * THE PATIENT READ IS BOUNDED TOO. A patient holds a handful of pacotes; this
+ * cap only stops a runaway (each pacote costs one call of 0108's function).
+ */
+export const PATIENT_PACKS_READ_CAP = 200;
+
+/** Newest purchase first; the id breaks a tie so the order is total. */
+export function comparePatientPacks(a: PackInUseView, b: PackInUseView): number {
+  return b.purchasedAt.getTime() - a.purchasedAt.getTime() || a.instanceId.localeCompare(b.instanceId);
+}
+
+export function buildPatientPacks(
+  patientId: string,
+  rows: readonly PackInstanceRow[],
+  sessionsByInstance: ReadonlyMap<string, readonly PackSession[]>,
+  now: Date,
+): Omit<PatientPacksPage, "truncated"> {
+  const views = rows
+    // Belt and braces: the read already filters on the patient. A row of any
+    // other patient never reaches the tab, whatever the read returned.
+    .filter((r) => r.patientId === patientId)
+    .map((r) => summarizePackInstance(r, sessionsByInstance.get(r.instanceId) ?? [], now))
+    .sort(comparePatientPacks);
+  return {
+    running: views.filter(isPackInUse),
+    finished: views.filter((v) => !isPackInUse(v)),
+  };
+}
+
 /** "450" for whole euros, "237,50" otherwise. No currency sign: the caller adds "€". */
 export function formatEurosShort(cents: number): string {
   if (cents % 100 === 0) return String(cents / 100);

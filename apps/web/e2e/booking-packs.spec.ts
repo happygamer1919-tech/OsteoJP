@@ -137,4 +137,27 @@ test("book a pacote: register, derived balance, surfacing, and NO manual adjust 
   const cells = inUse.locator("td");
   await expect(cells.nth(4)).toHaveText("2");
   await expect(cells.nth(5)).toHaveText("8");
+
+  // 8. PACK-FICHA-01 (2026-11-05): the same pacote INSIDE THE PATIENT'S FICHA,
+  //    reached the way reception reaches it: open the ficha, press the "Packs"
+  //    tab. Same numbers as "Packs em uso", without the NOME UTENTE column, so
+  //    RESERVADAS and LIVRES are cells 3 and 4. The session list opens from the
+  //    pack cell and dates both bookings.
+  await page.goto(`/patients/${PATIENTS.ana.id}`);
+  await Promise.all([
+    page.waitForURL(/tab=packs/),
+    page.getByRole("tab", { name: "Packs", exact: true }).click(),
+  ]);
+  const fichaRow = page
+    .locator('[data-testid="patient-packs-running-table"] [data-testid="packs-in-use-row"]')
+    .filter({ hasText: packName })
+    .first();
+  await expect(fichaRow).toBeVisible();
+  await expect(fichaRow).toContainText(`${packName} • 390€`);
+  const fichaCells = fichaRow.locator("td");
+  await expect(fichaCells.nth(3)).toHaveText("2");
+  await expect(fichaCells.nth(4)).toHaveText("8");
+  await fichaRow.locator("summary").click();
+  await expect(fichaRow.locator("ol li")).toHaveCount(2);
+  await expect(page.getByText("Pagamento: em breve")).toBeVisible();
 });
