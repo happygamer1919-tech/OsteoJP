@@ -145,11 +145,176 @@ describe("every clinic-closure reader is accounted for", () => {
 
 const WEB_ROOTS = ["apps/web/lib", "apps/web/app"];
 
-/** Every top-level function of a source, by name, with its body. */
-function functionsOf(src: string): { name: string; body: string }[] {
-  const re = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/gm;
-  const starts = [...src.matchAll(re)].map((m) => ({ name: m[1]!, at: m.index! }));
-  return starts.map((f, i) => ({ name: f.name, body: src.slice(f.at, starts[i + 1]?.at ?? src.length) }));
+/* ------------------------------------------------------------------------ */
+/* A SMALL FUNCTION FINDER. It finds function declarations (any depth),      */
+/* `const x = (async) (...) =>` / `= function (...)` expressions, and class  */
+/* or object methods, each with its body found by BRACE MATCHING (strings    */
+/* and template literals skipped), never by "up to the next function". A     */
+/* call to a door marker is then attributed to the OUTERMOST function that   */
+/* contains it, and a call inside no found function is reported, so a shape  */
+/* the finder does not know fails loudly instead of being attributed to the  */
+/* function above it.                                                        */
+/* ------------------------------------------------------------------------ */
+
+type Fn = { name: string; start: number; end: number; body: string };
+
+const NOT_A_METHOD = new Set([
+  "if", "for", "while", "switch", "catch", "return", "function", "else", "do", "with",
+  "new", "typeof", "await", "yield", "throw", "case", "void", "delete", "in", "of",
+]);
+
+/** Index just past the string or template literal starting at `i`. */
+function skipLiteral(src: string, i: number): number {
+  const q = src[i]!;
+  let k = i + 1;
+  while (k < src.length) {
+    const c = src[k]!;
+    if (c === "\\") {
+      k += 2;
+      continue;
+    }
+    if (q === "`" && c === "$" && src[k + 1] === "{") {
+      k = matchClose(src, k + 1) + 1;
+      continue;
+    }
+    if (c === q) return k + 1;
+    if (q !== "`" && c === "\n") return k + 1;
+    k++;
+  }
+  return k;
+}
+
+/** Index of the bracket closing the one at `open` ("(", "{" or "["). */
+function matchClose(src: string, open: number): number {
+  const pairs: Record<string, string> = { "(": ")", "{": "}", "[": "]" };
+  const stack = [pairs[src[open]!]!];
+  let k = open + 1;
+  while (k < src.length && stack.length > 0) {
+    const c = src[k]!;
+    if (c === "'" || c === '"' || c === "`") {
+      k = skipLiteral(src, k);
+      continue;
+    }
+    if (c in pairs) stack.push(pairs[c]!);
+    else if (c === stack[stack.length - 1]) stack.pop();
+    if (stack.length === 0) return k;
+    k++;
+  }
+  return src.length - 1;
+}
+
+/**
+ * The end (exclusive) of the function whose parameter list opens at `paren`,
+ * or null when what follows the parameters is not a function body (a call, an
+ * overload signature).
+ */
+function bodyEnd(src: string, paren: number, arrow: boolean): number | null {
+  let k = matchClose(src, paren) + 1;
+  const firstAfter = src.slice(k).match(/^\s*(\S)/)?.[1];
+  if (firstAfter === undefined) return null;
+  if (arrow ? !(firstAfter === ":" || src.slice(k).trimStart().startsWith("=>")) : !(firstAfter === ":" || firstAfter === "{")) {
+    return null;
+  }
+  let angle = 0;
+  while (k < src.length) {
+    const c = src[k]!;
+    if (src.startsWith("=>", k)) {
+      if (arrow && angle === 0) {
+        k += 2;
+        while (/\s/.test(src[k] ?? "")) k++;
+        if (src[k] === "{") return matchClose(src, k) + 1;
+        // An expression body: up to the end of the statement at depth 0.
+        while (k < src.length && src[k] !== ";" && !(src[k] === "\n" && /^\n\s*(export|const|let|function|async|\})/.test(src.slice(k)))) {
+          if ("({[".includes(src[k]!)) k = matchClose(src, k);
+          else if (`'"\``.includes(src[k]!)) {
+            k = skipLiteral(src, k);
+            continue;
+          }
+          k++;
+        }
+        return k;
+      }
+      k += 2;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      k = skipLiteral(src, k);
+      continue;
+    }
+    if (c === "<") angle++;
+    else if (c === ">") angle = Math.max(0, angle - 1);
+    else if (c === "(" || c === "[") k = matchClose(src, k);
+    else if (c === ";" && angle === 0) return null;
+    else if (c === "{" && angle === 0) {
+      const close = matchClose(src, k);
+      const next = src.slice(close + 1).match(/^\s*(=>|\S)/)?.[1];
+      // A type literal in a return type is followed by the body, an arrow or
+      // a type operator; a body is followed by the next statement.
+      if (next === "{" || next === "=>" || next === "|" || next === "&") {
+        k = close + 1;
+        continue;
+      }
+      if (arrow) {
+        k = close + 1;
+        continue;
+      }
+      return close + 1;
+    }
+    k++;
+  }
+  return null;
+}
+
+/** Every function the finder recognises in a (comment-stripped) source. */
+function functionsOf(src: string): Fn[] {
+  const shapes: { re: RegExp; arrow: boolean }[] = [
+    // function declarations and named function expressions, at any depth
+    { re: /(?:^|[\s;{}(,=])(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*(?:<[^>()]*>)?\s*(\()/g, arrow: false },
+    // const x = (async) (...) => ...   /   const x = (async) <T>(...) => ...
+    { re: /(?:^|[\s;{}])(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=;]+)?=\s*(?:async\s*)?(?:<[^>()]*>)?\s*(\()/g, arrow: true },
+    // const x = (async) function (...) { ... }
+    { re: /(?:^|[\s;{}])(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::[^=;]+)?=\s*(?:async\s+)?function\s*\*?\s*\w*\s*(?:<[^>()]*>)?\s*(\()/g, arrow: false },
+    // class and object-literal methods
+    { re: /\n[ \t]+(?:(?:public|private|protected|static|async|override|readonly|get|set)\s+)*(\w+)\s*(?:<[^>()]*>)?\s*(\()/g, arrow: false },
+  ];
+  const out: Fn[] = [];
+  const seen = new Set<number>();
+  for (const { re, arrow } of shapes) {
+    for (const m of src.matchAll(re)) {
+      const name = m[1]!;
+      if (re === shapes[3]!.re && NOT_A_METHOD.has(name)) continue;
+      const paren = m.index! + m[0].length - 1;
+      if (seen.has(paren)) continue;
+      const end = bodyEnd(src, paren, arrow);
+      if (end === null) continue;
+      seen.add(paren);
+      const start = m.index! + (m[0].length - m[0].trimStart().length);
+      out.push({ name, start, end, body: src.slice(start, end) });
+    }
+  }
+  return out.sort((x, y) => x.start - y.start);
+}
+
+/**
+ * For every call of `marker` in `src`: the OUTERMOST found function containing
+ * it (the door), or an orphan when no found function contains it.
+ */
+function doorsIn(file: string, src: string, marker: RegExp): { doors: Map<string, Fn>; orphans: number[] } {
+  const fns = functionsOf(src);
+  const doors = new Map<string, Fn>();
+  const orphans: number[] = [];
+  const re = new RegExp(marker.source, "g");
+  for (const m of src.matchAll(re)) {
+    const at = m.index!;
+    const containing = fns.filter((f) => f.start <= at && at < f.end);
+    if (containing.length === 0) {
+      orphans.push(src.slice(0, at).split("\n").length);
+      continue;
+    }
+    const outer = containing.reduce((o, f) => (f.start < o.start || (f.start === o.start && f.end > o.end) ? f : o));
+    doors.set(`${file}#${outer.name}`, outer);
+  }
+  return { doors, orphans };
 }
 
 const webFiles = WEB_ROOTS.flatMap((r) => walk(join(REPO, r))).map((p) => ({
@@ -157,11 +322,21 @@ const webFiles = WEB_ROOTS.flatMap((r) => walk(join(REPO, r))).map((p) => ({
   src: stripComments(readFileSync(p, "utf8")),
 }));
 
-/** `file#function` for every function, in any web file, whose body matches. */
+/** Every door of `marker` across the web files, and every orphan call. */
+function scan(marker: RegExp): { doors: Map<string, Fn>; orphans: string[] } {
+  const doors = new Map<string, Fn>();
+  const orphans: string[] = [];
+  for (const { file, src } of webFiles) {
+    const r = doorsIn(file, src, marker);
+    for (const [k, v] of r.doors) doors.set(k, v);
+    for (const line of r.orphans) orphans.push(`${file}:${line}`);
+  }
+  return { doors, orphans };
+}
+
+/** `file#function` for every door, in any web file, of this marker. */
 function doorsMatching(re: RegExp): string[] {
-  return webFiles
-    .flatMap(({ file, src }) => functionsOf(src).filter((f) => re.test(f.body)).map((f) => `${file}#${f.name}`))
-    .sort();
+  return [...scan(re).doors.keys()].sort();
 }
 
 const CLOSURE_CHECK = /checkClinicClosure\s*\(/;
@@ -191,34 +366,71 @@ const DEFERRED_ACCEPTANCE_DOORS: Record<string, string> = {
 };
 
 describe("every door, in every web file, refuses a closure", () => {
-  it("the function splitter finds functions (not vacuous)", () => {
-    expect(functionsOf("export async function a() {}\nfunction b() {}\nexport function c() {}").map((f) => f.name)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
+  it("the finder sees declarations, arrow and function expressions, and methods, each with its own body", () => {
+    const src = [
+      "export async function a(x: { y: string }): Promise<{ z: number }> { return { z: 1 }; }",
+      "function b() { const inner = () => 1; return inner(); }",
+      "export const c = async (tx: unknown): Promise<void> => { await go(tx); };",
+      "const d = function (q) { return q; };",
+      "class K {",
+      "  async e(p: string): Promise<string> { return p; }",
+      "  static f() { if (x) { g(); } }",
+      "}",
+      "foo(1);",
+    ].join("\n");
+    const names = functionsOf(src).map((f) => f.name);
+    expect(names).toEqual(expect.arrayContaining(["a", "b", "inner", "c", "d", "e", "f"]));
+    expect(names).not.toContain("foo");
+    expect(names).not.toContain("if");
+    const c = functionsOf(src).find((f) => f.name === "c")!;
+    expect(c.body).toContain("await go(tx)");
+    expect(c.body).not.toContain("function (q)");
     expect(webFiles.length).toBeGreaterThan(200);
   });
 
+  it("PLANTED OFFENDER (red): an arrow-function door is found as itself, not credited to the function above it", () => {
+    const fixture = [
+      "export async function earlier(tx: unknown) {",
+      "  await checkClinicClosure(tx, a);",
+      "}",
+      "export const acceptViaArrow = async (tx: unknown) => {",
+      "  return acceptedPedidoTarget(a.id, a.startsAt, a.practitionerId);",
+      "};",
+      "class Q {",
+      "  async acceptViaMethod(tx: unknown): Promise<unknown> {",
+      "    return acceptedPedidoTarget(b.id, b.startsAt, b.practitionerId);",
+      "  }",
+      "}",
+    ].join("\n");
+    const { doors, orphans } = doorsIn("fixture.ts", fixture, /acceptedPedidoTarget\s*\(/);
+    const skipping = [...doors].filter(([, f]) => !CLOSURE_CHECK.test(f.body)).map(([k]) => k).sort();
+    expect(skipping).toEqual(["fixture.ts#acceptViaArrow", "fixture.ts#acceptViaMethod"]);
+    expect(orphans).toEqual([]);
+  });
+
+  it("PLANTED ORPHAN (red): a door call in a shape the finder does not know is reported, never attributed", () => {
+    const fixture = ["export async function earlier() { await checkClinicClosure(tx, a); }", "const t = acceptedPedidoTarget(a.id, s, p);"].join("\n");
+    expect(doorsIn("fixture.ts", fixture, /acceptedPedidoTarget\s*\(/).orphans).toEqual([2]);
+  });
+
+  it("CLEAN TREE (green): no door call in any web file sits outside a found function", () => {
+    expect(scan(/acceptedPedidoTarget\s*\(/).orphans).toEqual([]);
+    expect(scan(/checkClinicWindow\s*\(/).orphans).toEqual([]);
+  });
+
   it("every function that checks the clinic's hours also checks its closures", () => {
-    const doors = doorsMatching(/checkClinicWindow\s*\(/).filter((d) => !DEFINITIONS.has(d));
-    expect(doors.length).toBeGreaterThanOrEqual(5);
-    const skipping = doors.filter((d) => {
-      const [file, name] = d.split("#");
-      const fn = functionsOf(webFiles.find((w) => w.file === file)!.src).find((f) => f.name === name)!;
-      return !CLOSURE_CHECK.test(fn.body);
-    });
+    const { doors } = scan(/checkClinicWindow\s*\(/);
+    const live = [...doors].filter(([k]) => !DEFINITIONS.has(k));
+    expect(live.length).toBeGreaterThanOrEqual(5);
+    const skipping = live.filter(([, f]) => !CLOSURE_CHECK.test(f.body)).map(([k]) => k);
     expect(skipping, "a door checks the clinic's hours but not its closures").toEqual([]);
   });
 
   it("every function that ACCEPTS a portal pedido checks closures, but for the two pinned deferred doors", () => {
-    const acceptors = doorsMatching(/acceptedPedidoTarget\s*\(/).filter((d) => !DEFINITIONS.has(d));
-    expect(acceptors.length).toBeGreaterThanOrEqual(4);
-    const skipping = acceptors.filter((d) => {
-      const [file, name] = d.split("#");
-      const fn = functionsOf(webFiles.find((w) => w.file === file)!.src).find((f) => f.name === name)!;
-      return !CLOSURE_CHECK.test(fn.body);
-    });
+    const { doors } = scan(/acceptedPedidoTarget\s*\(/);
+    const live = [...doors].filter(([k]) => !DEFINITIONS.has(k));
+    expect(live.length).toBeGreaterThanOrEqual(4);
+    const skipping = live.filter(([, f]) => !CLOSURE_CHECK.test(f.body)).map(([k]) => k).sort();
     expect(skipping).toEqual(Object.keys(DEFERRED_ACCEPTANCE_DOORS).sort());
     for (const reason of Object.values(DEFERRED_ACCEPTANCE_DOORS)) expect(reason).toMatch(/R9/);
   });

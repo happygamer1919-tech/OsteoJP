@@ -63,6 +63,8 @@ const ROW = {
 
 let pedidoIds: string[] = [];
 let updates = 0;
+/** The rows a series read (scope "following" or "series") returns. */
+let seriesMembers: unknown[] = [];
 
 function fakeTx() {
   return {
@@ -78,6 +80,9 @@ function fakeTx() {
         leftJoin: () => chain,
         where: () => chain,
         limit: async () => [ROW],
+        // The series read awaits `.where(...)` directly.
+        then: (ok: (v: unknown) => unknown, bad: (e: unknown) => unknown) =>
+          Promise.resolve(seriesMembers).then(ok, bad),
       };
       return chain;
     },
@@ -104,6 +109,7 @@ const CLOSED = {
 beforeEach(() => {
   pedidoIds = [];
   updates = 0;
+  seriesMembers = [];
   vi.clearAllMocks();
   mockCtx.mockResolvedValue(actor);
   mockClosure.mockResolvedValue({ ok: true });
@@ -147,6 +153,29 @@ describe("Tier C 0114: accepting a pedido from the drawer refuses a closure", ()
     const r = await updateAppointment("appt-1", { status: "confirmed" });
     expect(r.ok).toBe(true);
     expect(updates).toBeGreaterThan(0);
+    // The acceptance still emits, exactly as before this card.
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("a series (scope following): only the SECOND accepted pedido is inside a closure, and the whole save is refused", async () => {
+    const second = {
+      ...ROW,
+      id: "appt-2",
+      startsAt: new Date("2027-01-01T10:00:00.000Z"),
+      endsAt: new Date("2027-01-01T11:00:00.000Z"),
+    };
+    const first = { ...ROW, startsAt: new Date("2026-12-31T10:00:00.000Z"), endsAt: new Date("2026-12-31T11:00:00.000Z") };
+    seriesMembers = [first, second];
+    pedidoIds = ["appt-1", "appt-2"];
+    mockClosure.mockImplementation(async (_tx, a) =>
+      a.startsAt.getTime() === second.startsAt.getTime() ? CLOSED : { ok: true },
+    );
+    const r = await updateAppointment("appt-1", { status: "confirmed" }, { scope: "following" });
+    expect(r.ok === false && r.error).toBe("clinic_closed");
+    expect(mockClosure).toHaveBeenCalledTimes(2);
+    expect(mockClosure.mock.calls.map((c) => c[1].startsAt)).toEqual([first.startsAt, second.startsAt]);
+    expect(updates).toBe(0);
+    expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("a staff booking (not a pedido) moving to confirmed is not asked", async () => {
