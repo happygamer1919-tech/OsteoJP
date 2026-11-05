@@ -202,8 +202,15 @@ export function ServiceTypesTable({
                 const switchHelp = switchLocked
                   ? `${s["admin.services.archiveBlockedBy"]} ${archiveBlockedReason(archiveBlocking)}`
                   : s["admin.serviceTypes.deactivate"];
+                // Keyed on the stored row's updated_at as well as its id: a saved
+                // change remounts the row. The table's controls are uncontrolled,
+                // React resets the form after each save, and a reset restores the
+                // defaults set when the control MOUNTED. Without a remount, a row
+                // saved from 0% to 23% would be reset to show 0% (and the old
+                // Motivo, price, colour, SMS and AGENDA), and the next untouched
+                // save would write the old values back.
                 return (
-                  <Fragment key={svc.id}>
+                  <Fragment key={`${svc.id}:${svc.updatedAt.getTime()}`}>
                     <tr className={adminTrBorder} data-service-id={svc.id}>
                       {/* The row header: a screen reader announces the type's
                           name with every cell of the row. */}

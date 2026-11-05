@@ -22,6 +22,28 @@ const typeRow = (page: Page, name: string) =>
     .filter({ has: page.locator(`input[name^="name__"][value="${name}"]`) })
     .first();
 
+/** What the page saw for a row (its stored updated_at); it changes when a save of that row lands. */
+const seenOf = (page: Page, name: string) => typeRow(page, name).locator('input[name^="seen__"]').inputValue();
+
+/**
+ * The table's one save button, for a save that stays on ?mt=ok (no reload in
+ * between). The redirect lands on the same URL every time, so the URL cannot
+ * tell one save from the next: wait on the POST, and when the save changes the
+ * row `changed`, on that row's `seen__` changing (the re-rendered row is on the
+ * page).
+ */
+async function tableSaveOnSameUrl(page: Page, changed?: string): Promise<void> {
+  const before = changed === undefined ? null : await seenOf(page, changed);
+  const posted = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/admin/services"));
+  await page.getByRole("button", { name: SAVE }).click();
+  await posted;
+  await expect(page).toHaveURL(/mt=ok/);
+  await expect(page.getByText("Tipos de Marcação guardados.", { exact: true })).toBeVisible();
+  if (changed !== undefined && before !== null) {
+    await expect(typeRow(page, changed).locator('input[name^="seen__"]')).not.toHaveValue(before);
+  }
+}
+
 test("Tipos de Marcação: a new type, every column edited, one save, read back after reload", async ({ page }) => {
   await page.goto("/admin/services");
 
@@ -225,26 +247,50 @@ test("Tipos de Marcação: two saves in a row WITHOUT a reload keep every Motivo
     newRow.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
   ]);
 
-  const tableSave = async () => {
-    // The redirect lands on the same ?mt=ok URL both times, so wait on the POST.
-    const posted = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/admin/services"));
-    await page.getByRole("button", { name: SAVE }).click();
-    await posted;
-    await expect(page).toHaveURL(/mt=ok/);
-    await expect(page.getByText("Tipos de Marcação guardados.", { exact: true })).toBeVisible();
-  };
-
-  // Save 1 changes the price; save 2 touches nothing.
+  // Each save changes the price and nothing else. If save 2 posted an empty
+  // Motivo, Q5 would refuse it and the price would stay 31.00 after the reload.
   await typeRow(page, name).locator('input[name^="price__"]').fill("31.00");
-  await tableSave();
+  await tableSaveOnSameUrl(page, name);
   await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
-  await tableSave();
+  await typeRow(page, name).locator('input[name^="price__"]').fill("32.00");
+  await tableSaveOnSameUrl(page, name);
   await expect(page).not.toHaveURL(/err:vat_reason/);
-  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
 
   await page.goto("/admin/services");
-  await expect(typeRow(page, name).locator('input[name^="price__"]')).toHaveValue("31.00");
+  await expect(typeRow(page, name).locator('input[name^="price__"]')).toHaveValue("32.00");
   await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("M07");
+});
+
+test("Tipos de Marcação: a row saved from 0% to 23% stays 23% on the next save without a reload", async ({ page }) => {
+  // React resets the form after each save to the values each control had when
+  // it MOUNTED. A row that is not remounted after its save would show 0% and
+  // M07 again, and the next untouched save would write them back.
+  await page.goto("/admin/services");
+  const name = `E2E Tipo remount ${Date.now()}`;
+  const newRow = page.getByTestId("service-types-new-row");
+  await newRow.locator('input[name="name"]').fill(name);
+  await newRow.locator('select[name="vat"]').selectOption("0");
+  await newRow.locator('select[name="vatReason"]').selectOption("M07");
+  await newRow.locator('input[name="durationMin"]').fill("30");
+  await Promise.all([
+    page.waitForURL(/mn=ok/),
+    newRow.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
+  ]);
+
+  await typeRow(page, name).locator('select[name^="vat__"]').selectOption("23");
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("");
+  await tableSaveOnSameUrl(page, name);
+  await expect(typeRow(page, name).locator('select[name^="vat__"]')).toHaveValue("23");
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("");
+
+  // Save 2 touches nothing: the row must not change at all.
+  const seen = await seenOf(page, name);
+  await tableSaveOnSameUrl(page);
+
+  await page.goto("/admin/services");
+  await expect(typeRow(page, name).locator('select[name^="vat__"]')).toHaveValue("23");
+  await expect(typeRow(page, name).locator('select[name^="vatReason__"]')).toHaveValue("");
+  expect(await seenOf(page, name)).toBe(seen);
 });
 
 test("Tipos de Marcação: a page drawn before somebody else's save is refused and does not revert it", async ({

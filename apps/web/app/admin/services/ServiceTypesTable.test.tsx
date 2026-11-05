@@ -161,6 +161,15 @@ describe("Q5 and Q6: next to the IVA columns", () => {
     expect(src).toContain('reasonRef.current.value = ""');
   });
 
+  it("each row is keyed on its id AND its stored updated_at, so a saved row remounts", () => {
+    // React resets the form after a save to the defaults set at MOUNT. Keyed on
+    // the id alone, a row saved from 0%/M07 to 23% is reset to show 0%/M07 and
+    // the next untouched save writes them back (R4, headless Chromium).
+    const src = readFileSync(join(__dirname, "ServiceTypesTable.tsx"), "utf-8");
+    expect(src).toContain("<Fragment key={`${svc.id}:${svc.updatedAt.getTime()}`}>");
+    expect(src).not.toContain("<Fragment key={svc.id}>");
+  });
+
   it("B10: the mirror refusal names both ways out: clear the Motivo, or set IVA to 0%", () => {
     expect(pt["admin.serviceTypes.vatReasonNotExempt"]).toBe(
       "Só o IVA 0% leva Motivo IVA. Retire o Motivo ou ponha o IVA a 0%. Nada foi guardado.",
