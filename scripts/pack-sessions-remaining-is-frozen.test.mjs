@@ -138,6 +138,11 @@ const ALLOWED = new Set([
   // narrows that one. The file lands with the pack payments pull request; this
   // guard checks no file's existence, so the entry can merge first.
   "apps/web/lib/packs/sell.ts",
+  // sell.ts's unit test: it ASSERTS that the INSERT writes the purchase-time
+  // value (the full total) and nothing else, which is the opposite of drift and
+  // the same case as the backfill-identity tests above. It never UPDATEs the
+  // column; it reads only the fake INSERT's recorded values.
+  "apps/web/lib/packs/sell.test.ts",
   // The fixture for pack payments: pack-instance-payments.db.test.ts INSERTS
   // brand-new instances so the payment lines and the set-once agreed price have
   // a pacote to belong to, because the column is NOT NULL with no default. It
