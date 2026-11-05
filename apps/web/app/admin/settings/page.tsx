@@ -6,8 +6,9 @@ import {
   REMINDER_LEAD_TIME_OPTIONS,
   BILLING_CURRENCIES,
 } from "@/lib/admin/settings-config";
-import { changeDeletePasswordAction, saveSettings } from "./actions";
+import { changeDeletePasswordAction, saveBirthdayIndicationAction, saveSettings } from "./actions";
 import {
+  adminHelp,
   adminInput,
   adminLabel,
   adminLegend,
@@ -44,6 +45,52 @@ export default async function SettingsPage({
           {banner.text}
         </p>
       )}
+
+      {/* Indicação de Aniversários (Fisiozero parity): Fisiozero's FIRST panel
+          under Definições gerais, so it is first here too. One row, the label
+          and grey sub-text on the left, the switch on the right. Its own form,
+          like the delete password below, so it never rides on the main save.
+          No client JavaScript: the switch is a submit button with
+          role="switch" that posts the value it changes to (the ficha's survey
+          switch is the same control). */}
+      <GlassPanel>
+        <form action={saveBirthdayIndicationAction} className="flex flex-col gap-3">
+          <h3 className="text-lg text-v2-text-primary">{s["admin.settings.sectionBirthdays"]}</h3>
+          <input
+            type="hidden"
+            name="birthdayHeaderIcon"
+            value={settings.birthdayIndication.headerIcon ? "false" : "true"}
+          />
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <span id="birthday-header-icon-label" className={adminLabel}>
+                {s["admin.settings.birthdayHeaderIcon"]}
+              </span>
+              <span id="birthday-header-icon-hint" className={adminHelp}>
+                {s["admin.settings.birthdayHeaderIconHint"]}
+              </span>
+            </div>
+            <button
+              type="submit"
+              role="switch"
+              aria-checked={settings.birthdayIndication.headerIcon}
+              aria-labelledby="birthday-header-icon-label"
+              aria-describedby="birthday-header-icon-hint"
+              data-testid="settings-birthday-header-icon"
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 ${
+                settings.birthdayIndication.headerIcon ? "bg-accent-2-600" : "bg-neutral-300"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute left-0.5 top-0.5 size-4 rounded-full bg-surface shadow-sm transition-transform duration-fast ease-standard ${
+                  settings.birthdayIndication.headerIcon ? "translate-x-4" : ""
+                }`}
+              />
+            </button>
+          </div>
+        </form>
+      </GlassPanel>
 
       <GlassPanel>
         <form action={saveSettings} className="flex flex-col gap-6">

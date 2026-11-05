@@ -38,7 +38,11 @@ import type { ActionResult, AgendaAppointment, ConflictInfo } from "@/lib/schedu
 // against `PACK_CONSUMING_STATUSES`, and importing `@osteojp/db` from a
 // "use client" module pulls the `postgres` driver into the browser bundle - the
 // page then does not build. That core file carries the full reasoning.
-export { isEligibleForScheduleAgain, isPastConsuming } from "@/lib/scheduling/schedule-again-core";
+export {
+  isEligibleForScheduleAgain,
+  isPastConsuming,
+  scheduleAgainForbidden,
+} from "@/lib/scheduling/schedule-again-core";
 
 const CONFLICT_HEADING: Record<ConflictInfo["kind"], keyof typeof s> = {
   therapist: "agenda.conflictTherapist",
@@ -77,12 +81,12 @@ function ConflictSummary({ items }: { items: ConflictInfo[] }) {
  * the button into the "mesmo assim" override) or a plain message. Pure, so the
  * node render tests can pin it without a click.
  *
- * SCHED-15. Six refusal codes get their own treatment and everything else takes
- * the generic sentence. `conflict` is the only one the override may reach, and
- * the only one that returns `conflicts`. The other five are facts about the
- * slot, the clinic or the actor that pressing again cannot change, and offering
- * "mesmo assim" for them would be the §1.3 shape: a refusal wearing the face of
- * one you can press past.
+ * SCHED-15. Seven refusal codes get their own treatment and everything else
+ * takes the generic sentence. `conflict` is the only one the override may
+ * reach, and the only one that returns `conflicts`. The other six are facts
+ * about the slot, the clinic or the actor that pressing again cannot change,
+ * and offering "mesmo assim" for them would be the §1.3 shape: a refusal
+ * wearing the face of one you can press past.
  */
 export function scheduleAgainRefusal(
   result: Extract<ActionResult<unknown>, { ok: false }>,
@@ -109,6 +113,13 @@ export function scheduleAgainRefusal(
   // same reason as the closure above.
   if (result.error === "outside_clinic_hours") {
     return { message: outsideClinicHoursMessage(result.clinicWindow) };
+  }
+  // SCHED-17 (U6): the visit's shared resource (NESA) is not installed at its
+  // clinic, or the clinic is not one of the actor's. The sentence the create
+  // and edit paths already show for it (refusal-message.ts), not the generic
+  // failure.
+  if (result.error === "shared_resource_location") {
+    return { message: s["appointment.sharedResourceLocation"] };
   }
   // `location_not_assigned`: the clinic is outside the actor's scope.
   // `forbidden` (R52): the actor may not book on this visit's practitioners,

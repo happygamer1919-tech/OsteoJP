@@ -1,7 +1,9 @@
 "use client";
 import { useState, useTransition } from "react";
 import { Button } from "@osteojp/ui";
-import { downloadEpisodeReportUrlAction } from "./episode-pdf-actions";
+import type { ExportOverride } from "@/lib/clinical/report/export-overrides";
+import { downloadEpisodeReportUrlAction, readEpisodeExportRowsAction } from "./episode-pdf-actions";
+import { ExportEditDialog } from "./export-edit-dialog";
 
 /**
  * EPI-01b, piece 3: "PDF do episódio" on an episode group of the Registos tab.
@@ -11,6 +13,10 @@ import { downloadEpisodeReportUrlAction } from "./episode-pdf-actions";
  * it; while the action runs the button holds still, and a refusal or a failure
  * shows one error line. WHICH groups show it is the page's gate
  * (`episodeExportCount`); the labels are the page's, as for "+ Avaliação".
+ *
+ * RODICA-export-edit-before-download (owner ruling 2026-11-02): a press opens
+ * the export dialog (export-edit-dialog.tsx) and nothing downloads until it
+ * answers, as "Exportar ficha" does (ficha-export-button.tsx).
  */
 export function EpisodePdfButton({
   patientId,
@@ -27,11 +33,19 @@ export function EpisodePdfButton({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   function onClick() {
     setError(false);
+    setAsking(true);
+  }
+
+  function exportWith(overrides: ExportOverride[] | null) {
+    setAsking(false);
     startTransition(async () => {
-      const { url } = await downloadEpisodeReportUrlAction(patientId, episodeId);
+      const { url } = overrides
+        ? await downloadEpisodeReportUrlAction(patientId, episodeId, overrides)
+        : await downloadEpisodeReportUrlAction(patientId, episodeId);
       if (!url) {
         setError(true);
         return;
@@ -59,6 +73,14 @@ export function EpisodePdfButton({
         <p role="alert" className="text-xs text-error" data-testid="record-group-episode-pdf-error">
           {errorLabel}
         </p>
+      )}
+      {asking && (
+        <ExportEditDialog
+          onClose={() => setAsking(false)}
+          loadRows={() => readEpisodeExportRowsAction(patientId, episodeId)}
+          onExport={exportWith}
+          testId="record-group-episode-pdf-dialog"
+        />
       )}
     </div>
   );

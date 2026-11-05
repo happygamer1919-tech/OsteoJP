@@ -22,6 +22,7 @@ vi.mock("@/lib/clinical/report/episode-export", () => ({
   readEpisodeExportSelection: vi.fn(),
   renderEpisodeReport: vi.fn(),
   recordEpisodeExport: vi.fn(),
+  readSelectionExportRows: vi.fn(),
 }));
 vi.mock("@/lib/clinical/document-rate-limit", () => ({ documentGenerationAllowed: vi.fn() }));
 vi.mock("@/lib/clinical/storage", () => ({ ATTACHMENTS_BUCKET: "clinical-attachments" }));
@@ -32,15 +33,17 @@ import { requireRequestContext } from "@/lib/auth/context";
 import { documentGenerationAllowed } from "@/lib/clinical/document-rate-limit";
 import {
   readEpisodeExportSelection,
+  readSelectionExportRows,
   recordEpisodeExport,
   renderEpisodeReport,
 } from "@/lib/clinical/report/episode-export";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { downloadEpisodeReportUrlAction } from "./episode-pdf-actions";
+import { downloadEpisodeReportUrlAction, readEpisodeExportRowsAction } from "./episode-pdf-actions";
 
 const mockCtx = vi.mocked(requireRequestContext);
 const mockSelection = vi.mocked(readEpisodeExportSelection);
 const mockRender = vi.mocked(renderEpisodeReport);
+const mockRows = vi.mocked(readSelectionExportRows);
 const mockAudit = vi.mocked(recordEpisodeExport);
 const mockCeiling = vi.mocked(documentGenerationAllowed);
 const mockAdmin = vi.mocked(createSupabaseAdminClient);
@@ -399,5 +402,99 @@ describe("downloadEpisodeReportUrlAction: a failure logs one line naming the ste
   it("a malformed id logs nothing here", async () => {
     await downloadEpisodeReportUrlAction("../../admin", EPISODE);
     expect(logged).not.toHaveBeenCalled();
+  });
+});
+
+// RODICA-export-edit-before-download (owner ruling 2026-11-02): the export
+// dialog's values, checked before any read and against the action's own
+// selection; a refusal produces nothing; what changed reaches the audit row.
+describe("downloadEpisodeReportUrlAction: the dialog's overrides (RODICA-export-edit-before-download)", () => {
+  const U1 = "7777cccc-7777-4777-8777-77777777aa01";
+  const U2 = "7777cccc-7777-4777-8777-77777777aa02";
+  const OUTSIDE = "7777cccc-7777-4777-8777-77777777aa09";
+  const uuidSelection = { ...selection, recordIds: [U1, U2] };
+  const ONE = { recordId: U1, date: "2026-11-02", time: "15:45", text: "Texto extra" };
+  const ENTRY = {
+    recordId: U1,
+    originalDate: "2026-11-01",
+    originalTime: "09:00",
+    exportedDate: "2026-11-02",
+    exportedTime: "15:45",
+    textChanged: true,
+  };
+
+  beforeEach(() => {
+    mockSelection.mockImplementation(async () => {
+      steps.push("selection");
+      return uuidSelection;
+    });
+  });
+
+  it.each([
+    ["a bad date", [{ ...ONE, date: "2026-13-01" }]],
+    ["a bad hour", [{ ...ONE, time: "9:5" }]],
+    ["a text over the limit", [{ ...ONE, text: "x".repeat(201) }]],
+    ["the same registo twice", [ONE, ONE]],
+    ["not a list", "x"],
+  ])("%s: refused before any read, and nothing produced or spent", async (_label, overrides) => {
+    expect(await downloadEpisodeReportUrlAction(PATIENT, EPISODE, overrides)).toEqual({ url: null });
+    expect(mockSelection).not.toHaveBeenCalled();
+    expect(mockCeiling).not.toHaveBeenCalled();
+    expectNothingProduced();
+  });
+
+  it("a registo the export does not hold: refused after the read, before the ceiling", async () => {
+    expect(await downloadEpisodeReportUrlAction(PATIENT, EPISODE, [{ ...ONE, recordId: OUTSIDE }])).toEqual({ url: null });
+    expect(steps).toEqual(["selection"]);
+    expectNothingProduced();
+  });
+
+  it("valid overrides reach the render keyed by registo, and what changed reaches the audit row", async () => {
+    mockRender.mockImplementation(async () => {
+      steps.push("render");
+      return { ...pdf, overridden: [ENTRY] };
+    });
+    expect(await downloadEpisodeReportUrlAction(PATIENT, EPISODE, [ONE])).toEqual({ url: SIGNED });
+    expect(steps).toEqual(["selection", "ceiling", "render", "admin", "upload", "sign", "audit"]);
+    const byRecord = mockRender.mock.calls[0]![3];
+    expect([...byRecord!.entries()]).toEqual([[U1, ONE]]);
+    expect(mockRender.mock.calls[0]![1]).toBe(uuidSelection);
+    expect(mockAudit.mock.calls[0]![1]).toMatchObject({ overridden: [ENTRY] });
+  });
+
+  it("no overrides: the render and the audit are asked exactly as before", async () => {
+    await downloadEpisodeReportUrlAction(PATIENT, EPISODE);
+    expect(mockRender.mock.calls[0]).toHaveLength(3);
+    expect(mockAudit.mock.calls[0]![1]).not.toHaveProperty("overridden");
+  });
+});
+
+describe("readEpisodeExportRowsAction: the dialog's rows (RODICA-export-edit-before-download)", () => {
+  const ROWS = [{ recordId: "r1", group: null, version: 1, date: "2026-11-01", time: "09:00", text: "" }];
+
+  it("the rows of the export's own selection, as the caller; no ceiling, nothing produced", async () => {
+    mockRows.mockResolvedValue(ROWS);
+    expect(await readEpisodeExportRowsAction(PATIENT, EPISODE)).toEqual({ rows: ROWS });
+    const [askedCtx, askedSelection, askedLocale] = mockRows.mock.calls[0]!;
+    expect(askedCtx).toEqual(await mockCtx.mock.results[0]!.value);
+    expect(askedSelection).toBe(selection);
+    expect(askedLocale).toBe("pt");
+    expect(mockCeiling).not.toHaveBeenCalled();
+    expectNothingProduced();
+  });
+
+  it("RECEPTION, nothing to export, no row, a throw: { rows: null }", async () => {
+    allGood("reception");
+    expect(await readEpisodeExportRowsAction(PATIENT, EPISODE)).toEqual({ rows: null });
+    expect(mockSelection).not.toHaveBeenCalled();
+    allGood();
+    mockSelection.mockResolvedValue(null);
+    expect(await readEpisodeExportRowsAction(PATIENT, EPISODE)).toEqual({ rows: null });
+    allGood();
+    mockRows.mockResolvedValue([]);
+    expect(await readEpisodeExportRowsAction(PATIENT, EPISODE)).toEqual({ rows: null });
+    mockRows.mockRejectedValue(new Error("Zzz Paciente Inventado"));
+    expect(await readEpisodeExportRowsAction(PATIENT, EPISODE)).toEqual({ rows: null });
+    expect(String(logged.mock.calls.at(-1)![0])).not.toContain("Inventado");
   });
 });

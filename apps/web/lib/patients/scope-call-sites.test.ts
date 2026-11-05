@@ -91,6 +91,13 @@ const EXPECTED: Record<string, { calls: number; covered: boolean; why: string }>
       "Documentos readers (therapist, located receptionist, and an unassigned admin as the control), but it is " +
       "a rendered-SQL test, not a class fixture. A DIFFERENT COLUMN from every covered site: attachments.patient_id.",
   },
+  "lib/patients/birthdays.ts": {
+    calls: 1,
+    covered: true,
+    why:
+      "birthdays.db.test.ts - listTodaysBirthdays (the top-bar birthday icon) over the same four classes, as an assigned admin, an assigned " +
+      "receptionist, an unassigned admin and the owner. Composed exactly as scopeConditions composes it, on patients.id.",
+  },
   "lib/patients/queries.ts": {
     calls: 3,
     covered: true,
@@ -162,7 +169,7 @@ describe("patientLocationScope - the call sites are enumerated, not remembered",
         .filter((v) => v.covered === covered)
         .reduce((n, v) => n + v.calls, 0);
     expect({ covered: calls(true), uncovered: calls(false) }).toEqual({
-      covered: 8,
+      covered: 9,
       uncovered: 6,
     });
   });

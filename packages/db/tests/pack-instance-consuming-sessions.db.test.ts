@@ -467,17 +467,40 @@ d("0108: the consuming sessions of one pack instance", () => {
     });
   });
 
-  it("patients_select is the expression the function's patient term states (0096's)", async () => {
+  it("patients_select is the expression the function's patient term states (0096's), or 0113's same-rows form of it", async () => {
     // The function restates this policy's USING. If the policy changes, this
     // fails, and the function is changed with it in the same migration.
+    //
+    // THE ONE TEXT ADMITTED BESIDE 0096's, AND THE RULING IT RESTS ON. Strategy's
+    // U3 (2026-11-03): "Fix every one that shows the same growth in the SAME
+    // migration." 0113 (pending as NEXT-AFTER-0112_patient_id_array_reads.sql,
+    // held on #1717) rewrites each patient-set membership of patients_select as a
+    // hashed IN and does NOT touch this function, for two reasons:
+    //   - the function showed no growth: 10 to 14 ms for reception at clinic CB
+    //     when the tenant went from 16,500 to 33,000 patients (one patient per
+    //     call), measured 2026-11-03 on BLUE, recorded in
+    //     /Users/ivan/osteojp-handover/rls-array-cost-20261103/real-scale-16500-33000.md;
+    //   - the frozen gate scripts/pack-instance-consuming-sessions-0108.test.mjs
+    //     refuses any pending file that names it.
+    // The two forms select the same patients (patient-id-array-reads.db.test.ts,
+    // on #1717, proves it per role), and the per-principal test above ("rows
+    // exactly when patients_select shows the patient") holds this function to
+    // whichever policy is INSTALLED. So the body must stay 0108's, and the policy
+    // may be 0096's or exactly 0113's: one future text, and no other.
     const [row] = await sql.begin(async (tx) => {
       await tx`set local search_path = public`;
       return tx`select p.polcmd::text || '/' || p.polpermissive::text || '/'
                        || array_to_string(array(select pg_get_userbyid(r) from unnest(p.polroles) r order by 1), ',')
-                       || ' ' || md5(pg_get_expr(p.polqual, p.polrelid)) as shape
+                       || ' ' || md5(pg_get_expr(p.polqual, p.polrelid)) as shape,
+                       (select md5(prosrc) from pg_proc where oid = to_regprocedure(${FN})) as body
                   from pg_policy p
                  where p.polrelid = 'public.patients'::regclass and p.polname = 'patients_select'`;
     });
-    expect(row!.shape).toBe("r/true/authenticated de612f10145303302884747fa10b6c66");
+    expect([
+      // 0096's policy with 0108's body: main today.
+      { shape: "r/true/authenticated de612f10145303302884747fa10b6c66", body: "1f45d0f0b99392c7de28f6bbea8ae45f" },
+      // 0113's policy with 0108's body: after 0113 is promoted and applied.
+      { shape: "r/true/authenticated f029fc6cf0e8372c39d13700bffbc3c7", body: "1f45d0f0b99392c7de28f6bbea8ae45f" },
+    ]).toContainEqual({ shape: row!.shape, body: row!.body });
   });
 });

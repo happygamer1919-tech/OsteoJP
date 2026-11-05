@@ -278,6 +278,16 @@ function drawAnnulmentMark(doc: PDFDocument, fonts: Fonts, label: string, annull
 }
 
 /**
+ * RODICA-export-edit-before-download: "Data da consulta" with the hour next to
+ * the date ("20/05/2026, 10:30"), or the date alone when there is no hour.
+ */
+export function consultationWhen(model: Pick<ClinicalReportModel, "record">): string | null {
+  const { consultationDate, consultationTime } = model.record;
+  if (!consultationDate) return null;
+  return consultationTime ? `${consultationDate}, ${consultationTime}` : consultationDate;
+}
+
+/**
  * Render a finalized clinical record to PDF bytes. The model has already passed
  * the print gate (buildClinicalReportModel → assertPrintable).
  */
@@ -311,7 +321,7 @@ export async function renderClinicalReportPdf(
 
   // Record block.
   cur.text(s["report.record.heading"], { size: 11, bold: true, color: INK });
-  cur.field(s["report.record.consultationDate"], model.record.consultationDate);
+  cur.field(s["report.record.consultationDate"], consultationWhen(model));
   cur.field(s["report.record.episode"], model.record.episodeId);
   cur.field(s["report.record.version"], String(model.record.version));
   cur.gap(2);
@@ -322,12 +332,21 @@ export async function renderClinicalReportPdf(
     // page's heading and read-only notice, then each stored key under the name
     // it is stored with, or the page's own line when nothing is stored.
     const keys = STORED_KEYS[model.stored.origin];
-    cur.text(s[keys.title], { size: 11, bold: true, color: INK });
+    // RODICA-export-edit-before-download: the heading an export gave this
+    // file, when it gave one ("" draws none); else the page's own title.
+    const title = model.contentHeading ?? s[keys.title];
+    if (title) cur.text(title, { size: 11, bold: true, color: INK });
     cur.text(s[keys.help], { size: 9, color: MUTED });
     cur.gap(6);
     if (model.stored.entries.length === 0) cur.text(s[keys.empty], { size: 10 });
     for (const entry of model.stored.entries) cur.field(entry.name, entry.value);
   } else {
+    // RODICA-export-edit-before-download: a form draws no heading of its own;
+    // a text an export gave this file is drawn above the body.
+    if (model.contentHeading) {
+      cur.text(model.contentHeading, { size: 11, bold: true, color: INK });
+      cur.gap(4);
+    }
     // Clinical body sections, in template order.
     for (const key of REPORT_BODY_KEYS) {
       const field = model.body.find((b) => b.key === key);
