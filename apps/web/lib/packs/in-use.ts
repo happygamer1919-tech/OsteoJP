@@ -64,7 +64,37 @@ export type PackInUseView = {
   legacyConsumed: number;
   /** The linked sessions in time order; numbered after the legacy ones. */
   sessions: PackSession[];
+  /**
+   * "Última utilização": the start of the latest linked session whose time
+   * has passed (see `lastPackUse`). Null when no linked session has passed yet.
+   */
+  lastUsedAt: Date | null;
 };
+
+/**
+ * "Última utilização" (Q15, 2026-11-04), stated once.
+ *
+ * A pacote session is used by an appointment linked to the instance
+ * (`appointments.pack_instance_id`) in a consuming status: not cancelled,
+ * no-shows included, the same visits `packSessionsConsumed` counts. Nothing
+ * records WHEN a session was taken off the pacote, so the use is dated by the
+ * visit's own start. The last use is the latest such start that is not in the
+ * future (`startsAt <= now`, the same line that splits Realizadas from Por
+ * Realizar). A visit still ahead is a booking, not a use.
+ *
+ * Sessions spent before appointments were linked to pacotes (legacy_consumed,
+ * 0067) carry no date at all, so they give no last use. A pacote whose only
+ * use is legacy, or that has nothing but future bookings, reads null.
+ */
+export function lastPackUse(sessions: readonly PackSession[], now: Date): Date | null {
+  let last: Date | null = null;
+  for (const x of sessions) {
+    const t = x.startsAt.getTime();
+    if (t > now.getTime()) continue;
+    if (last === null || t > last.getTime()) last = x.startsAt;
+  }
+  return last;
+}
 
 export function summarizePackInstance(
   row: PackInstanceRow,
@@ -95,6 +125,7 @@ export function summarizePackInstance(
     upcoming,
     legacyConsumed: row.legacyConsumed,
     sessions: ordered,
+    lastUsedAt: lastPackUse(ordered, now),
   };
 }
 
@@ -169,6 +200,48 @@ export function comparePacksInUse(a: PackInUseView, b: PackInUseView): number {
   );
 }
 
+/**
+ * The page's sort. "name" is the default order above (NOME UTENTE A to Z);
+ * "lastUse" is "Última utilização" (Q15): the most recent use first, every
+ * pacote never used (no dated use, see `lastPackUse`) after all the used ones.
+ */
+export type PacksInUseSort = "name" | "lastUse";
+
+/** The `?sort=` value, read safely: anything but "lastUse" is the default. */
+export function parsePacksInUseSort(raw: string | undefined): PacksInUseSort {
+  return raw === "lastUse" ? "lastUse" : "name";
+}
+
+/**
+ * Most recent use first; never used last. Equal last uses (and the never-used
+ * group) keep the default order, so the result is total and does not depend on
+ * the order the rows arrived in.
+ */
+export function comparePacksByLastUse(a: PackInUseView, b: PackInUseView): number {
+  const ta = a.lastUsedAt?.getTime() ?? null;
+  const tb = b.lastUsedAt?.getTime() ?? null;
+  if (ta !== tb) {
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    return tb - ta;
+  }
+  return comparePacksInUse(a, b);
+}
+
+/** The URL for one sort option; the default sort is left out of it. */
+export function packsSortHref(q: string, sort: PacksInUseSort): string {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (sort !== "name") params.set("sort", sort);
+  const qs = params.toString();
+  return qs ? `/patients/packs?${qs}` : "/patients/packs";
+}
+
+/** A sorted copy; the input is not touched. */
+export function sortPacksInUse(rows: readonly PackInUseView[], sort: PacksInUseSort): PackInUseView[] {
+  return [...rows].sort(sort === "lastUse" ? comparePacksByLastUse : comparePacksInUse);
+}
+
 export type PacksInUsePage = {
   /** "N PACKS a decorrer": every pacote in use the viewer can see, search or not. */
   totalInUse: number;
@@ -186,9 +259,10 @@ export type PacksInUsePage = {
  * first) are read, and each costs one call of 0108's function. Fisiozero
  * showed 127 running; ten times that is far above the clinic's size, so the
  * cap changes nothing it does today and only stops a runaway, such as
- * imported pacotes with sessions left over that will never be used. WHICH
- * pacotes should stop counting as "a decorrer" (by age, say) is a product
- * question for the owner, not a cap: docs/design/QUESTIONS.md, Q-PACKS-IN-USE-1.
+ * imported pacotes with sessions left over that will never be used. It is NOT
+ * an age limit, and there is none: Q15 (2026-11-04, answering
+ * Q-PACKS-IN-USE-1) ruled that a pacote with sessions left stays "a decorrer"
+ * however old it is. The "Última utilização" sort is how old ones are found.
  */
 export const PACKS_IN_USE_READ_CAP = 1000;
 
