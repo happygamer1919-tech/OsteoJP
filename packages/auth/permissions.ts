@@ -212,7 +212,28 @@ export type Capability =
   // carries a patient's comment, and neither of those says who may read one.
   // Sending a survey by hand is a separate capability that arrives with the
   // send button.
-  | "surveys:read";
+  | "surveys:read"
+  // PACK PAYMENTS (owner answers of 2026-11-05 to the U4 b design note, P4):
+  // the money side of a pacote - its agreed price and the lines of money
+  // received, refunded or corrected. An INTERNAL record, never a fiscal one:
+  // Stylus stays the fiscal system (S1) and pacote sales are never posted to it
+  // automatically (S2).
+  //
+  // ITS OWN CAPABILITIES, NOT `invoices:*`. The roles happen to match "Issue
+  // invoices" today (owner, admin, reception), but riding `invoices:issue`
+  // would couple a pacote's internal money record to the per-visit charge the
+  // Stylus posting design reads, which is exactly what ruling B4 forbids ("never
+  // touch an invoices table"). And it is not `appointments:read` or
+  // `patients:read`: every role holds those, a therapist included, and P4 says
+  // therapists see no amounts.
+  //
+  // THREE, NOT ONE. Reading amounts, recording a payment or a refund (and
+  // typing the agreed price, at the sale or at the first payment), and a
+  // correction are different acts; the correction is owner and admin only, as
+  // the pending migration's INSERT policy also says.
+  | "pack_payments:read"
+  | "pack_payments:record"
+  | "pack_payments:correct";
 
 const ALL_CAPABILITIES: readonly Capability[] = [
   "patients:read",
@@ -256,6 +277,9 @@ const ALL_CAPABILITIES: readonly Capability[] = [
   // capability owner lacks.
   "care_team:manage",
   "surveys:read",
+  "pack_payments:read",
+  "pack_payments:record",
+  "pack_payments:correct",
 ];
 
 export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
@@ -318,6 +342,12 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // SAT-01 (S7): the survey list. Location-blind grant; 0102's policies scope
     // sends and answers to appointments at this admin's clinics.
     "surveys:read",
+    // PACK PAYMENTS (P4): admin reads, records and corrects pacote money. The
+    // pending migration's policies: owner, admin and reception read and record;
+    // a correcao by owner and admin only.
+    "pack_payments:read",
+    "pack_payments:record",
+    "pack_payments:correct",
   ]),
 
   // Therapist (clinician): patient + appointment work, full clinical-record
@@ -433,6 +463,11 @@ export const PERMISSIONS: Record<Role, ReadonlySet<Capability>> = {
     // SAT-01 (S7): the survey list, for appointments at reception's clinics
     // (0102's policies).
     "surveys:read",
+    // PACK PAYMENTS (P4): reception takes the money at the desk, so it reads
+    // and records it, refunds included. NOT pack_payments:correct: a
+    // correction is owner and admin only (the pending migration's INSERT policy).
+    "pack_payments:read",
+    "pack_payments:record",
   ]),
 };
 

@@ -56,6 +56,7 @@ import { listPatientPackInstances } from "../../../lib/packs/instances";
 // PACK-FICHA-01: this patient's pacotes, as "Packs em uso" reads them.
 import { PACKS_IN_USE_CAPABILITIES } from "../../../lib/packs/in-use";
 import { listPatientPacks } from "../../../lib/packs/in-use-read";
+import { readPackPaymentSummaries } from "@/lib/packs/payments-read";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
 import { NotesTab } from "./notes-tab";
@@ -585,6 +586,17 @@ export default async function PatientProfilePage({
     tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
   // Packs tab (PACK-FICHA-01): read only when it is the tab being shown.
   const patientPacksPage = tab === "packs" ? await listPatientPacks(ctx, patient.id) : null;
+  // Pack payments: the money roles (pack_payments:read) see each pacote's
+  // payment state and a link to its payments page; a therapist sees neither
+  // (P4), and the read is not even made for them.
+  const packMoneyRole = can(ctx.role, "pack_payments:read");
+  const patientPackPayments =
+    patientPacksPage && packMoneyRole
+      ? await readPackPaymentSummaries(
+          ctx,
+          [...patientPacksPage.running, ...patientPacksPage.finished].map((v) => v.instanceId),
+        )
+      : null;
   // Notas tab: unified note history (W12-13) — appointment_notes (patient-level
   // + per-appointment) merged with the legacy patient_note_revisions (0030).
   const noteRevisions = tab === "notas" ? await listPatientNotes(ctx, id) : [];
@@ -836,7 +848,11 @@ export default async function PatientProfilePage({
 
       {tab === "packs" && patientPacksPage && (
         <div role="tabpanel" id="tabpanel-packs" aria-label={s["patients.tabPacks"]}>
-          <PatientPacksTab page={patientPacksPage} />
+          <PatientPacksTab
+            page={patientPacksPage}
+            payments={patientPackPayments}
+            showPaymentSoon={packMoneyRole && patientPackPayments === null}
+          />
         </div>
       )}
 

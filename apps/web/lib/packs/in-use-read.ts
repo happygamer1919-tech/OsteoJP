@@ -16,7 +16,11 @@ import {
   PATIENT_PACKS_READ_CAP,
   buildPacksInUse,
   buildPatientPacks,
+  comparePacksInUse,
   isInUseCandidate,
+  matchesPatientSearch,
+  summarizePackInstance,
+  type PackInUseView,
   type PackInstanceRow,
   type PackSession,
   type PacksInUsePage,
@@ -258,5 +262,66 @@ export async function listPatientPacks(
       return { ...buildPatientPacks(patientId, kept, sessionsByInstance, now), truncated };
     },
     "db:patient-packs",
+  );
+}
+
+/**
+ * PACK PAYMENTS, "€ POR RECEBER": the pacotes named by the receivables read
+ * (lib/packs/payments-read.ts, every pacote with money still to receive, in use
+ * or not), as the same rows Packs em uso draws, with the same numbers.
+ *
+ * The same boundary as the two reads above: the same capabilities, the
+ * viewer's own session, the join to `patients` (soft-deleted ones out, as on
+ * Packs em uso), 0108's function for the sessions. The ids only NARROW what the
+ * viewer may read; an id the viewer cannot read returns nothing. NO in-use
+ * filter: a pacote with every session spent and money still owed is exactly
+ * the one this list exists for. Bounded by the caller's id list, which the
+ * receivables read already caps.
+ */
+export async function listPacksByIds(
+  actor: RequestContext,
+  instanceIds: readonly string[],
+  query: string,
+  opts: { now?: Date } = {},
+): Promise<PackInUseView[]> {
+  for (const c of PACKS_IN_USE_CAPABILITIES) assertCan(actor.role, c);
+  if (instanceIds.length === 0) return [];
+  const now = opts.now ?? new Date();
+  // The outer column is named explicitly, as everywhere in this file.
+  const idList = sql.join(
+    instanceIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  return runScoped(
+    actor,
+    async (tx) => {
+      const rows: PackInstanceRow[] = await tx
+        .select({
+          instanceId: patientPackInstances.id,
+          patientId: patientPackInstances.patientId,
+          patientName: patients.fullName,
+          packName: servicePacks.name,
+          packPriceCents: servicePacks.priceCents,
+          sessionsTotal: patientPackInstances.sessionsTotal,
+          legacyConsumed: patientPackInstances.legacyConsumed,
+          purchasedAt: patientPackInstances.purchasedAt,
+        })
+        .from(patientPackInstances)
+        .innerJoin(
+          patients,
+          and(
+            eq(patients.id, patientPackInstances.patientId),
+            eq(patients.tenantId, patientPackInstances.tenantId),
+          ),
+        )
+        .innerJoin(servicePacks, eq(servicePacks.id, patientPackInstances.packId))
+        .where(and(isNull(patients.deletedAt), sql`"patient_pack_instances"."id" = any(array[${idList}])`));
+      const sessionsByInstance = await readConsumingSessions(tx, rows);
+      return rows
+        .map((r) => summarizePackInstance(r, sessionsByInstance.get(r.instanceId) ?? [], now))
+        .filter((v) => matchesPatientSearch(v.patientName, query))
+        .sort(comparePacksInUse);
+    },
+    "db:packs-by-ids",
   );
 }

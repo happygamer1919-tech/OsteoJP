@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { summarizePackInstance, type PackInstanceRow } from "@/lib/packs/in-use";
 import { s } from "@/lib/i18n";
+import { summarizePackPayments, type PackPaymentSummary } from "@/lib/packs/payments";
 import { PacksInUseTable, formatPackDateTime, packTitle } from "./packs-in-use-table";
 
 /**
@@ -64,9 +65,57 @@ describe("PacksInUseTable", () => {
     expect(render(base, [])).toContain("01/10/2026");
   });
 
-  it("PAGAMENTO is an empty cell: no payment is invented", () => {
+  it("PAGAMENTO is an empty cell without payments (a therapist, or before the sitting): no payment is invented", () => {
     const html = render(base, []);
     expect(html).toMatch(/<td[^>]*data-testid="packs-in-use-payment"[^>]*><\/td>/);
+    expect(html).not.toContain("packs-in-use-received");
+    expect(html).not.toContain("packs-in-use-paid-on");
+  });
+
+  const withPayments = (p: PackPaymentSummary) =>
+    renderToStaticMarkup(
+      createElement(PacksInUseTable, {
+        rows: [summarizePackInstance(base, [], NOW)],
+        payments: new Map([["inst-1", p]]),
+      }),
+    );
+
+  it("a partly paid pacote: 'Por receber' as a word, what is owed, 'Recebido: 120€' under the pacote, no 'Pagou a'", () => {
+    const html = withPayments(
+      summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 12000, receivedOn: "2026-10-02", stylusRef: "FR 1E/1" }]),
+    );
+    expect(html).toContain('data-pay-state="due"');
+    expect(html).toContain(`>${s["packsInUse.payStateDue"]}<`);
+    expect(html).toContain(s["packsInUse.outstanding"].replace("{amount}", "330"));
+    expect(html).toContain(s["packsInUse.received"].replace("{amount}", "120"));
+    expect(html).not.toContain("packs-in-use-paid-on");
+    expect(html).toContain('href="/patients/packs/inst-1/pagamentos"');
+    expect(html).not.toContain("packs-in-use-no-stylus");
+  });
+
+  it("a paid pacote: 'Recebido' and 'Pagou a dd/mm/aaaa' under the patient", () => {
+    const html = withPayments(
+      summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 45000, receivedOn: "2026-10-02", stylusRef: null }]),
+    );
+    expect(html).toContain('data-pay-state="paid"');
+    expect(html).toContain(s["packsInUse.paidOn"].replace("{date}", "02/10/2026"));
+    expect(html).toContain(s["packsInUse.noStylusRef"].replace("{n}", "1"));
+  });
+
+  it("an overpaid pacote is flagged 'Recebido a mais' with the excess", () => {
+    const html = withPayments(
+      summarizePackPayments(45000, null, [{ kind: "pagamento", amountCents: 50000, receivedOn: "2026-10-02", stylusRef: "FR 1E/1" }]),
+    );
+    expect(html).toContain('data-pay-state="paid"');
+    expect(html).toContain(s["packsInUse.overpaid"].replace("{amount}", "50"));
+    expect(withPayments(summarizePackPayments(45000, null, []))).not.toContain("packs-in-use-overpaid");
+  });
+
+  it("an unpriced pacote reads 'Preço por indicar', never 'Por receber' from the catalogue price", () => {
+    const html = withPayments(summarizePackPayments(null, null, []));
+    expect(html).toContain('data-pay-state="unpriced"');
+    expect(html).toContain(s["packsInUse.payStateUnpriced"]);
+    expect(html).not.toContain(s["packsInUse.outstanding"].split(":")[0]!);
   });
 
   it("RESERVADAS and LIVRES are the balance", () => {

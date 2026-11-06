@@ -615,6 +615,118 @@ export const patientPackInstances = pgTable(
   ],
 );
 
+// PACK PAYMENTS (0115 by strategy's ruling of 2026-11-05, B4; owner answers of
+// 2026-11-05 to the U4 b design note). An APPEND-ONLY internal record of the
+// money received for one pacote instance: pagamento > 0, reembolso < 0,
+// correcao <> 0 with a reason. Not a fiscal document (Stylus stays the fiscal
+// system, S1) and never read by the invoices, Faturacao or Painel figures (P7).
+// From the PENDING migration migrations-pending/NEXT-AFTER-0114_pack_payments.sql,
+// so both tables below exist only on a database that file was applied to: every
+// reader and writer asks `packPaymentsSchemaPresent` (./pack-payments-schema.ts)
+// first.
+//
+// THE AGREED PRICE IS A SIDE TABLE, NOT A COLUMN ON `patientPackInstances` (the
+// lead's decision on review, 2026-11-05): its own policies keep it from every
+// therapist, its primary key makes it set-once, and patient_pack_instances'
+// grants and policies stay exactly as they are. A missing row means nobody has
+// stated the price, which is not zero.
+export const packInstanceAgreedPrices = pgTable(
+  "pack_instance_agreed_prices",
+  {
+    packInstanceId: uuid("pack_instance_id")
+      .primaryKey()
+      .references(() => patientPackInstances.id),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    agreedPriceCents: integer("agreed_price_cents").notNull(), // minor units (cents), never float
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    check(
+      "pack_instance_agreed_prices_amount_range",
+      sql`${t.agreedPriceCents} BETWEEN 0 AND 10000000`,
+    ),
+  ],
+);
+
+export const packInstancePayments = pgTable(
+  "pack_instance_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id),
+    packInstanceId: uuid("pack_instance_id")
+      .notNull()
+      .references(() => patientPackInstances.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    kind: text("kind").notNull(),
+    amountCents: integer("amount_cents").notNull(), // minor units (cents), never float; signed by kind
+    receivedOn: date("received_on").notNull(),
+    method: text("method"),
+    stylusRef: text("stylus_ref"),
+    reason: text("reason"),
+    correctsId: uuid("corrects_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    index("pack_instance_payments_tenant_instance_idx").on(t.tenantId, t.packInstanceId),
+    index("pack_instance_payments_tenant_received_idx").on(t.tenantId, t.receivedOn),
+    unique("pack_instance_payments_id_instance_uq").on(t.id, t.packInstanceId),
+    foreignKey({
+      name: "pack_instance_payments_corrects_fkey",
+      columns: [t.correctsId, t.packInstanceId],
+      foreignColumns: [t.id, t.packInstanceId],
+    }),
+    check(
+      "pack_instance_payments_kind_known",
+      sql`${t.kind} IN ('pagamento', 'reembolso', 'correcao')`,
+    ),
+    check(
+      "pack_instance_payments_amount_bounded",
+      sql`${t.amountCents} BETWEEN -10000000 AND 10000000`,
+    ),
+    check(
+      "pack_instance_payments_method_known",
+      sql`${t.method} IS NULL OR ${t.method} IN ('numerario', 'mbway', 'multibanco', 'cartao', 'transferencia', 'outro')`,
+    ),
+    check(
+      "pack_instance_payments_stylus_ref_shape",
+      sql`${t.stylusRef} IS NULL OR (btrim(${t.stylusRef}) <> '' AND char_length(${t.stylusRef}) <= 40)`,
+    ),
+    check(
+      "pack_instance_payments_reason_shape",
+      sql`${t.reason} IS NULL OR (btrim(${t.reason}) <> '' AND char_length(${t.reason}) <= 500)`,
+    ),
+    check("pack_instance_payments_received_on_floor", sql`${t.receivedOn} >= DATE '2020-01-01'`),
+    check(
+      "pack_instance_payments_amount_sign",
+      sql`(${t.kind} = 'pagamento' AND ${t.amountCents} > 0) OR (${t.kind} = 'reembolso' AND ${t.amountCents} < 0) OR (${t.kind} = 'correcao' AND ${t.amountCents} <> 0)`,
+    ),
+    check(
+      "pack_instance_payments_method_required",
+      sql`${t.kind} = 'correcao' OR ${t.method} IS NOT NULL`,
+    ),
+    check(
+      "pack_instance_payments_reason_required",
+      sql`${t.kind} = 'pagamento' OR ${t.reason} IS NOT NULL`,
+    ),
+    check(
+      "pack_instance_payments_payment_answers_nothing",
+      sql`${t.kind} <> 'pagamento' OR ${t.correctsId} IS NULL`,
+    ),
+    check(
+      "pack_instance_payments_not_self",
+      sql`${t.correctsId} IS NULL OR ${t.correctsId} <> ${t.id}`,
+    ),
+  ],
+);
+
 /**
  * 0067 — RECUPERACAO DE UTENTES. Two tables, and neither of them sends anything.
  *
