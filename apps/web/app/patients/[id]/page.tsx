@@ -589,11 +589,16 @@ export default async function PatientProfilePage({
   // used a pacote session. The SAME read as the Packs tab (listPatientPacks:
   // the viewer's own session, 0108's consuming sessions), for the same roles,
   // so the number cannot differ from the Packs tab's or "Packs em uso"'s.
-  // Skipped when the list is empty: there is no row to label.
+  // Skipped when the list is empty: there is no row to label. Only the labels
+  // of rows on THIS list reach the browser (R4 MINOR 1): a visit the viewer's
+  // list does not show sends no appointment id.
   const consultasPackSessions =
     tab === "consultas" && canSeePacks && patientAppointments.length > 0
       ? await listPatientPacks(ctx, patient.id).then((p) =>
-          packSessionLabels([...p.running, ...p.finished]),
+          packSessionLabels(
+            [...p.running, ...p.finished],
+            new Set(patientAppointments.map((a) => a.id)),
+          ),
         )
       : {};
   // Notas tab: unified note history (W12-13) — appointment_notes (patient-level

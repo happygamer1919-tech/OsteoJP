@@ -359,11 +359,20 @@ export type PackSessionLabel = {
 
 export function packSessionLabels(
   views: readonly Pick<PackInUseView, "packName" | "sessionsTotal" | "legacyConsumed" | "sessions">[],
+  /**
+   * When given, only these appointments get a label. The numbering still
+   * counts every consuming visit, so N does not change; the filter only keeps
+   * the ids of visits the caller's list does not show out of what it sends on
+   * (R4 MINOR 1 on PR #1743: a therapist's narrowed list must not carry a
+   * colleague's appointment ids to the browser).
+   */
+  onlyIds?: ReadonlySet<string>,
 ): Record<string, PackSessionLabel> {
   const out: Record<string, PackSessionLabel> = {};
   for (const v of views) {
     const ordered = [...v.sessions].sort(comparePackSessions);
     ordered.forEach((x, i) => {
+      if (onlyIds && !onlyIds.has(x.appointmentId)) return;
       // One appointment links to at most one instance (a single FK column),
       // so a second entry cannot occur; the first one stands if it ever did.
       if (Object.prototype.hasOwnProperty.call(out, x.appointmentId)) return;

@@ -468,6 +468,20 @@ describe("packSessionLabels: the Sessão N de M numbering", () => {
     });
   });
 
+  it("onlyIds keeps the labels of listed visits only, and does not renumber them", () => {
+    const v = summarizePackInstance(
+      row({ packName: "Osteopatia 5", sessionsTotal: 5, legacyConsumed: 1 }),
+      [s("a", "2026-10-01T09:00:00Z"), s("b", "2026-10-08T09:00:00Z"), s("c", "2026-10-15T09:00:00Z")],
+      NOW,
+    );
+    // "b" is a visit the caller's list does not show: no label, no id sent on.
+    expect(packSessionLabels([v], new Set(["a", "c", "not-a-session"]))).toEqual({
+      a: { packName: "Osteopatia 5", sessionNumber: 2, sessionsTotal: 5 },
+      c: { packName: "Osteopatia 5", sessionNumber: 4, sessionsTotal: 5 },
+    });
+    expect(packSessionLabels([v], new Set())).toEqual({});
+  });
+
   it("a cancelled visit leaves no gap: it takes no number and the next visit closes up", () => {
     // Four visits were booked; the second ("x-cancelled") was cancelled, so it
     // is not a consuming session and the read never returns it.
