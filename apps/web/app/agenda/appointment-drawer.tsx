@@ -106,6 +106,11 @@ export type ModalState =
       // guess beyond reach. Each id is validated against `options` by
       // agenda/page.tsx before it gets here, so it always has a matching
       // <option> (STAFF-01).
+      // AGENDA-NEW-LOC-01: a create opened by hand from the agenda (the Nova
+      // marcação button or an empty slot) carries the toolbar's clinic here,
+      // with no service, when the viewer may book into it
+      // (lib/scheduling/new-booking-location.ts). Either way it is an initial
+      // value, never a hand-made Localização change (userChangedLocation).
       prefill?: { serviceId: string | null; locationId: string | null };
       // BOOK-CONFIRM (S-1004-A, R40): the guest request this drawer was opened
       // for. Handed to the booking action, which links the appointment to it.
@@ -250,6 +255,8 @@ export function AppointmentDrawer({
     // W6-03: a deep-linked create preselects the locked patient.
     const lockedPatient = state.mode === "create" ? state.lockedPatient : undefined;
     // GUEST-06: a converted guest request also preselects service + clinic.
+    // AGENDA-NEW-LOC-01: a hand-opened create carries the agenda's clinic the
+    // same way; without either, Localização is the first bookable clinic.
     const prefill = state.mode === "create" ? state.prefill : undefined;
     // AND ITS DURATION, because the two are ONE fact. Picking a service through
     // the <Select> runs `onServiceChange`, which sets durationMin from the

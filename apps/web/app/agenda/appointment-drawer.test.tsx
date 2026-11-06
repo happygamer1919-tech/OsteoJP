@@ -87,6 +87,7 @@ import { scheduleAgainRefusal } from "./schedule-again-drawer";
 import { s } from "@/lib/i18n";
 import { therapistChangeOptions } from "@/lib/scheduling/therapist-change";
 import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
+import { newBookingPrefill } from "@/lib/scheduling/new-booking-location";
 
 const options: AgendaOptions = { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
 
@@ -597,6 +598,91 @@ describe("AppointmentDrawer - one machine per clinic under one name (NESA-SCOPE)
     );
     expect(html).toContain('<option value="ana" selected="">Ana Lisboa</option>');
     expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA</option>']);
+  });
+
+  // AGENDA-NEW-LOC-01: the agenda filtered to one clinic hands a hand-opened
+  // create that clinic through `prefill` (agenda-new-booking-location.test.tsx
+  // pins what the agenda hands over). These pin what the drawer does with it.
+  describe("Nova marcação from an agenda filtered to one clinic (AGENDA-NEW-LOC-01)", () => {
+    const BRUNO = { id: "bruno", label: "Bruno Castelo" };
+    /** BOTH(CB) plus a CB-only colleague, so people scoping is visible. */
+    const WITH_CB_PERSON: AgendaOptions = {
+      ...BOTH(CB),
+      therapistLocationIds: { ...shared.therapistLocationIds, [BRUNO.id]: [CB] },
+      therapists: [...BOTH(CB).therapists, BRUNO],
+      allTherapists: [...(BOTH(CB).allTherapists ?? []), BRUNO],
+    };
+    const RECEPTION = { role: "reception" as const, userId: "recep-1" };
+    const locationOptions = (html: string) =>
+      html.match(/<option value="loc-[a-z]+"[^>]*>[^<]*<\/option>/g) ?? [];
+    const fromAgendaOn = (filter: string | null, opts: AgendaOptions = WITH_CB_PERSON) =>
+      newBookingPrefill(filter, opts.bookableLocations);
+
+    it("the agenda on LV: Localização opens on LV, though CB is the first bookable clinic", () => {
+      const html = render({ mode: "create", prefill: fromAgendaOn(LV) }, false, RECEPTION, WITH_CB_PERSON);
+      expect(locationOptions(html)).toEqual([
+        '<option value="loc-cb">OsteoJP (CB)</option>',
+        '<option value="loc-lv" selected="">OsteoJP (LV)</option>',
+      ]);
+    });
+
+    it("the agenda on LV, from an empty slot: LV as well", () => {
+      const html = render(
+        { mode: "create", slot: { date: "2026-11-10", time: "15:30" }, prefill: fromAgendaOn(LV) },
+        false,
+        RECEPTION,
+        WITH_CB_PERSON,
+      );
+      expect(html).toContain('<option value="loc-lv" selected="">OsteoJP (LV)</option>');
+    });
+
+    it("the agenda on LV: Terapeuta offers NESA (LV) and not NESA (CB)", () => {
+      const html = render({ mode: "create", prefill: fromAgendaOn(LV) }, false, RECEPTION, WITH_CB_PERSON);
+      expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA (LV)</option>']);
+    });
+
+    it("a prefilled clinic is not a hand-made change: the people are NOT scoped to LV (W12-23)", () => {
+      // Bruno works at CB only. Scoping to LV would drop him; W12-23 scopes the
+      // people only after the user changes Localização, so he is still offered
+      // and the "nobody at this clinic" state is not shown.
+      const html = render({ mode: "create", prefill: fromAgendaOn(LV) }, false, RECEPTION, WITH_CB_PERSON);
+      expect(html).toContain('<option value="bruno">Bruno Castelo</option>');
+      expect(html).toContain('<option value="ana">Ana Lisboa</option>');
+    });
+
+    it("Todas as localizações: no prefill, Localização stays on the first bookable clinic (CB) and its NESA", () => {
+      expect(fromAgendaOn(null)).toBeUndefined();
+      const html = render({ mode: "create" }, false, RECEPTION, WITH_CB_PERSON);
+      expect(html).toContain('<option value="loc-cb" selected="">OsteoJP (CB)</option>');
+      expect(machineOptions(html)).toEqual(['<option value="nesa-cb">NESA (CB)</option>']);
+    });
+
+    it("a filter clinic the viewer cannot book into falls back to the first bookable clinic", () => {
+      const cbOnly: AgendaOptions = { ...WITH_CB_PERSON, bookableLocations: [{ id: CB, label: "OsteoJP (CB)" }] };
+      const prefill = fromAgendaOn(LV, cbOnly);
+      expect(prefill).toBeUndefined();
+      const html = render({ mode: "create", prefill }, false, RECEPTION, cbOnly);
+      expect(html).toContain("OsteoJP (CB)");
+      expect(html).not.toContain('value="loc-lv"');
+    });
+
+    it("the deep link's prefill wins: a guest request for CB opens on CB", () => {
+      // The deep link hands the drawer the page's guest prefill, never the
+      // toolbar's clinic (pinned in agenda-new-booking-location.test.tsx), so
+      // whatever the agenda shows, the guest's clinic is the one painted.
+      const html = render(
+        {
+          mode: "create",
+          lockedPatient: { value: "patient-1", label: "Paciente Sintetico" },
+          prefill: { serviceId: null, locationId: CB },
+        },
+        false,
+        RECEPTION,
+        BOTH(LV),
+      );
+      expect(html).toContain('<option value="loc-cb" selected="">OsteoJP (CB)</option>');
+      expect(machineOptions(html)).toEqual(['<option value="nesa-cb">NESA (CB)</option>']);
+    });
   });
 });
 
