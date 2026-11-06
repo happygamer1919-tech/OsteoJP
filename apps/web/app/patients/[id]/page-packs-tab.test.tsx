@@ -8,7 +8,9 @@
  *   - `?tab=packs` reads THIS patient's pacotes, with the viewer's own
  *     context, and draws the tab panel with them;
  *   - no other tab makes that read;
- *   - the Marcações tab keeps its existing pacote card.
+ *   - the Marcações tab keeps its existing pacote card;
+ *   - PACK-LABEL-01: the Marcações tab makes the SAME read, once, when it has
+ *     rows, and draws "<pacote>: Sessão N de M" under the rows it numbers.
  * What each role is GIVEN by the read is the database's, measured in
  * `lib/packs/in-use-read.db.test.ts`.
  */
@@ -32,6 +34,7 @@ const h = vi.hoisted(() => ({
     finished: unknown[];
     truncated: boolean;
   },
+  appointments: [] as unknown[],
 }));
 
 vi.mock("next/navigation", () => ({
@@ -103,9 +106,13 @@ vi.mock("../../../lib/invoices/queries", () => ({ listActiveLocations: async () 
 vi.mock("../../../lib/patients/documents", () => ({ listPatientDocuments: async () => [] }));
 vi.mock("../../../lib/scheduling/data", () => ({
   getAgendaOptions: async () => ({ therapists: [], locations: [], bookableLocations: [], services: [], packs: [] }),
-  listPatientAppointments: async () => [],
+  listPatientAppointments: async () => h.appointments,
 }));
 vi.mock("../../../lib/auth/viewer-locations", () => ({ bookingLocationScope: async () => null }));
+// A therapist's Marcações tab reads the tenant's machines (U6); no database here.
+vi.mock("../../../lib/scheduling/shared-resources", () => ({
+  tenantSharedResourceIdsFor: async (ctx: { role: string }) => (ctx.role === "therapist" ? [] : undefined),
+}));
 vi.mock("../../../lib/packs/instances", () => ({
   listPatientPackInstances: async () => [
     {
@@ -176,6 +183,7 @@ const view = {
 beforeEach(() => {
   h.reads = [];
   h.page = { running: [], finished: [], truncated: false };
+  h.appointments = [];
 });
 
 describe("the Packs tab in the ficha", () => {
@@ -209,6 +217,8 @@ describe("the Packs tab in the ficha", () => {
     expect(html).toContain(s["patientPacks.emptyTitle"]);
   });
 
+  // With no marcações (the default here) the Marcações tab has no row to
+  // label, so it skips the read too; PACK-LABEL-01's read is pinned below.
   it("no other tab makes the read or draws the panel", async () => {
     for (const tab of ["resumo", "consultas", "notas", "registos", "documentos", "faturacao"]) {
       const html = await render("owner", { tab });
@@ -221,5 +231,81 @@ describe("the Packs tab in the ficha", () => {
     const html = await render("reception", { tab: "consultas" });
     expect(html).toContain("Zzz Pack Marcacoes");
     expect(html).not.toContain(PANEL);
+  });
+});
+
+/**
+ * PACK-LABEL-01: the pacote session line on the Marcações tab, through the
+ * real page. "a1" and "a2" are the consuming sessions of `view` (the read's
+ * answer); "a3" is a cancelled visit, which the read never returns.
+ */
+describe("the pacote session line on Marcações (PACK-LABEL-01)", () => {
+  const appt = (id: string, startsAt: string, status: string) => ({
+    id,
+    patientId: PATIENT_ID,
+    patientName: "Zzz Paciente Pack Teste",
+    practitionerId: "33333333-3333-4333-8333-333333333333",
+    practitionerName: "Zzz Terapeuta",
+    colorKey: null,
+    patientTwoId: null,
+    patientTwoName: null,
+    practitionerTwoId: null,
+    practitionerTwoName: null,
+    locationId: "55555555-5555-4555-8555-555555555555",
+    locationName: "Zzz Clinica",
+    serviceId: null,
+    serviceName: null,
+    room: null,
+    startsAt,
+    endsAt: startsAt,
+    status,
+    notes: null,
+    recurrenceRule: null,
+    recurrenceParentId: null,
+    confirmationState: "pending",
+    confirmationReceivedAt: null,
+    confirmationChannel: null,
+    hasNote: true,
+    createdBy: null,
+    createdByName: null,
+    createdAt: null,
+  });
+  const LINE = 'data-testid="marcacao-pack-session"';
+
+  it.each(ROLES)("%s: one read of THIS patient's pacotes, a line under each numbered row only", async (role) => {
+    h.page = { running: [view], finished: [], truncated: false };
+    h.appointments = [
+      appt("a2", "2026-11-20T09:00:00.000Z", "scheduled"),
+      appt("a3", "2026-11-01T09:00:00.000Z", "cancelled"),
+      appt("a1", "2026-10-20T09:00:00.000Z", "completed"),
+    ];
+    const html = await render(role, { tab: "consultas" });
+    expect(h.reads).toHaveLength(1);
+    expect(h.reads[0]!.patientId).toBe(PATIENT_ID);
+    expect(h.reads[0]!.ctx).toEqual(expect.objectContaining({ role }));
+    expect(html.split(LINE).length - 1).toBe(2);
+    const row = (id: string) => {
+      const i = html.indexOf(`data-appointment-id="${id}"`);
+      const j = html.indexOf('data-testid="consulta-row"', i);
+      return html.slice(i, j === -1 ? undefined : j);
+    };
+    expect(row("a1")).toContain("Zzz Pack Fisioterapia 10: Sessão 1 de 10");
+    expect(row("a2")).toContain("Zzz Pack Fisioterapia 10: Sessão 2 de 10");
+    expect(row("a3")).not.toContain(LINE);
+    expect(html).not.toContain(PANEL);
+  });
+
+  it("a finished pacote numbers its visits too", async () => {
+    h.page = { running: [], finished: [view], truncated: false };
+    h.appointments = [appt("a1", "2026-10-20T09:00:00.000Z", "completed")];
+    const html = await render("reception", { tab: "consultas" });
+    expect(html).toContain("Zzz Pack Fisioterapia 10: Sessão 1 de 10");
+  });
+
+  it("no pacotes: no line on any row", async () => {
+    h.appointments = [appt("a1", "2026-10-20T09:00:00.000Z", "completed")];
+    const html = await render("reception", { tab: "consultas" });
+    expect(h.reads).toHaveLength(1);
+    expect(html).not.toContain(LINE);
   });
 });

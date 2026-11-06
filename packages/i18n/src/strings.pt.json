@@ -1840,6 +1840,7 @@
   "packs.used": "usadas",
   "packs.remaining": "restantes",
   "packs.usedOfTotal": "{used} de {total} usadas",
+  "packs.sessionLine": "{pack}: Sessão {n} de {total}",
   "appointment.packAvailableNotice": "Este utente tem sessões por usar",
   "appointment.packAvailableUse": "Marcar com este pacote",
   "followup.errorTitle": "Não foi possível carregar a recuperação de utentes",

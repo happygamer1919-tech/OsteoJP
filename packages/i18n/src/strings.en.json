@@ -1840,6 +1840,7 @@
   "packs.used": "used",
   "packs.remaining": "remaining",
   "packs.usedOfTotal": "{used} of {total} used",
+  "packs.sessionLine": "{pack}: Session {n} of {total}",
   "appointment.packAvailableNotice": "This patient has unused sessions",
   "appointment.packAvailableUse": "Book against this pack",
   "followup.errorTitle": "Could not load the patient follow-up list",

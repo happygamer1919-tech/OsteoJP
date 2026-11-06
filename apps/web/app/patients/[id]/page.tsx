@@ -54,7 +54,7 @@ import { bookingLocationScope } from "../../../lib/auth/viewer-locations";
 import { ownCancelRefusal } from "../../../lib/scheduling/cancel-authority";
 import { listPatientPackInstances } from "../../../lib/packs/instances";
 // PACK-FICHA-01: this patient's pacotes, as "Packs em uso" reads them.
-import { PACKS_IN_USE_CAPABILITIES } from "../../../lib/packs/in-use";
+import { PACKS_IN_USE_CAPABILITIES, packSessionLabels } from "../../../lib/packs/in-use";
 import { listPatientPacks } from "../../../lib/packs/in-use-read";
 import { listPatientNotes } from "../../../lib/patients/note-revisions";
 import { NotesComposer } from "./notes-composer";
@@ -585,6 +585,17 @@ export default async function PatientProfilePage({
     tab === "consultas" ? await listPatientPackInstances(ctx, id) : [];
   // Packs tab (PACK-FICHA-01): read only when it is the tab being shown.
   const patientPacksPage = tab === "packs" ? await listPatientPacks(ctx, patient.id) : null;
+  // PACK-LABEL-01: "<pacote>: Sessão N de M" under each Marcações row that
+  // used a pacote session. The SAME read as the Packs tab (listPatientPacks:
+  // the viewer's own session, 0108's consuming sessions), for the same roles,
+  // so the number cannot differ from the Packs tab's or "Packs em uso"'s.
+  // Skipped when the list is empty: there is no row to label.
+  const consultasPackSessions =
+    tab === "consultas" && canSeePacks && patientAppointments.length > 0
+      ? await listPatientPacks(ctx, patient.id).then((p) =>
+          packSessionLabels([...p.running, ...p.finished]),
+        )
+      : {};
   // Notas tab: unified note history (W12-13) — appointment_notes (patient-level
   // + per-appointment) merged with the legacy patient_note_revisions (0030).
   const noteRevisions = tab === "notas" ? await listPatientNotes(ctx, id) : [];
@@ -830,6 +841,7 @@ export default async function PatientProfilePage({
               viewer: { role: ctx.role, userId: ctx.userId },
               canHardDelete,
             }}
+            packSessions={consultasPackSessions}
           />
         </div>
       )}
