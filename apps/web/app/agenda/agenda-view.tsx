@@ -43,6 +43,7 @@ import {
   toggleServiceSelection,
   writeServiceFilter,
 } from "@/lib/scheduling/agenda-service-filter";
+import { newBookingPrefill } from "@/lib/scheduling/new-booking-location";
 import { withSharedResourceOptions } from "@/lib/scheduling/shared-resource-guard";
 import type {
   AgendaAppointment,
@@ -321,6 +322,21 @@ export function AgendaView({
   }
 
   const step = view === "week" ? 7 : 1;
+
+  /* AGENDA-NEW-LOC-01 - A HAND-OPENED NOVA MARCACAO STARTS AT THE CLINIC ON
+   * SCREEN. The one door for the Nova marcação button and an empty-slot click:
+   * with the toolbar on one clinic the viewer may book into, Localização opens
+   * on it; under "Todas as localizações" it keeps the first bookable clinic
+   * (newBookingPrefill). The deep link above passes its own prefill and does
+   * not come through here, so a guest request's clinic still wins. */
+  function openCreate(slot?: { date: string; time: string }) {
+    const clinic = newBookingPrefill(filters.locationId, options.bookableLocations);
+    setModal({
+      mode: "create",
+      ...(slot ? { slot } : {}),
+      ...(clinic ? { prefill: clinic } : {}),
+    });
+  }
 
   /* AGENDA-FILTER-SERVICE - WHICH BOOKINGS ARE ON SCREEN.
    *
@@ -770,7 +786,7 @@ export function AgendaView({
                 - it cannot be pushed to a new line, and it cannot be squeezed. */}
             <button
               type="button"
-              onClick={() => setModal({ mode: "create" })}
+              onClick={() => openCreate()}
               className="inline-flex h-10 flex-none items-center gap-2 whitespace-nowrap rounded-v2 bg-v2-green-700 px-4 text-sm font-semibold text-text-inverse transition duration-fast ease-standard motion-safe:active:scale-[0.97] hover:bg-v2-green-800 active:bg-v2-green-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 max-sm:px-2"
             >
               <Plus size={20} strokeWidth={1.75} aria-hidden="true" className="flex-none max-sm:hidden" />
@@ -817,7 +833,7 @@ export function AgendaView({
         clinicWindow={clinicWindow}
         closure={closure}
         onSelectAppointment={(appt) => setModal({ mode: "edit", appt })}
-        onSelectSlot={(date, time) => setModal({ mode: "create", slot: { date, time } })}
+        onSelectSlot={(date, time) => openCreate({ date, time })}
         /* SCHED-22 - THE BAND OPENS THE BLOCK THAT MADE IT.
            It routes to /horarios with the block named, which is the deep link
            SCHED-21 already built for the inspector's Editar. One destination,
