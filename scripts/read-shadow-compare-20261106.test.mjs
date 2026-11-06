@@ -18,6 +18,9 @@
 //     needs every short heartbeat short by exactly its ties; LR sits after S8, needs all four of
 //     its conditions, is in R32's set, and every LR row is printed with its appointment id;
 //   * nothing of the withdrawn F4 read or NC is left (no setting, no file, no label);
+//   * THE START WRITERS (R4 round 3): every writer of appointments in apps/ and packages/ is in
+//     the read's classified list at `lr`, and each class holds (R recorded, C rule 1, N never
+//     writes a start, L never runs against production); a new or moved writer fails it;
 //   * the document's first line is NOT READY; no em dash in the document, the read or the tests;
 //   * the document pins the real read, guard and module; the sidecar pins the document;
 //   * the read writes nothing, controls no transaction, and reads the clock once;
@@ -298,11 +301,15 @@ test("LR's four conditions are written as strategy ruled them, each read from re
     "and (r.clause <> 'moved' or not m.pedido_origin\n              or coalesce((select v.to_status from lr_ev v\n                            where v.appointment_id = r.appointment_id and v.tenant_id = r.tenant_id\n                              and v.created_at <= r.created_at\n                            order by v.created_at desc, v.k desc limit 1) not in ('scheduled', 'unknown'), false))",
     "order by r.created_at desc, r.id desc limit 1) pl on true",
     // ... and that save planned the run FOR THE MARK'S START (the R4 review's round 2).
-    "(pl.plan_at is not null\n          and coalesce(ps.plan_start = m.iso_start, false)\n          and not ps.start_changed) as c4",
+    "(pl.plan_at is not null\n          and coalesce(ps.plan_start = m.iso_start, false)\n          and not ps.start_changed\n          and not ux.portal_notified\n          and not ux.importer_touched\n          and not ps.portal_window) as c4",
     "select case when pl.plan_clause in ('booked', 'moved') then pl.plan_to_start\n                  else (select b.to_start from rearm_rows b\n                         where b.tenant_id = m.tenant_id and b.appointment_id = m.appointment_id\n                           and b.clause in ('booked', 'moved') and b.created_at <= pl.plan_at\n                         order by b.created_at desc, b.id desc limit 1) end as plan_start,",
-    "exists (select 1 from rearm_rows n\n                      where n.tenant_id = m.tenant_id and n.appointment_id = m.appointment_id\n                        and n.clause = 'moved' and n.from_start is distinct from n.to_start\n                        and n.created_at > pl.plan_at and n.created_at <= m.due_at) as start_changed) ps on true",
+    "exists (select 1 from rearm_rows n\n                      where n.tenant_id = m.tenant_id and n.appointment_id = m.appointment_id\n                        and n.clause = 'moved' and n.from_start is distinct from n.to_start\n                        and n.created_at > pl.plan_at and n.created_at <= m.due_at) as start_changed,",
+    // ... and no start change the recorded rows cannot order (the R4 review's round 3, rule 1).
+    "pl.plan_at < m.due_at as portal_window) ps on true",
+    "select exists (select 1 from public.staff_notifications sn\n                      where sn.tenant_id = m.tenant_id and sn.appointment_id = m.appointment_id\n                        and sn.kind = 'rescheduled' and sn.occurred_at <= m.due_at) as portal_notified,",
+    "exists (select 1 from public.migration_staging_rows s\n                      where s.tenant_id = m.tenant_id and s.imported_entity_id = m.appointment_id) as importer_touched) ux on true",
   ]) assert.ok(lr.includes(piece), `LR condition 4 lost: ${piece}`);
-  assert.doesNotMatch(lr.slice(lr.indexOf("and not ps.start_changed) as c4")).replace(/--[^\n]*/g, ""), /public\.audit_log|toStatus|hasSchedulingEvent/, "condition 4 reads audit rows of its own instead of the sending saves");
+  assert.doesNotMatch(lr.slice(lr.indexOf("and not ps.portal_window) as c4")).replace(/--[^\n]*/g, ""), /public\.audit_log|toStatus|hasSchedulingEvent/, "condition 4 reads audit rows of its own instead of the sending saves");
   // `rearm_rows` carries every move row, sending or not, with both of its starts: condition 4's start change reads them all.
   assert.ok(sql.includes("when l.action = 'appointment.reschedule' then 'moved'"), "rearm_rows no longer reads every move row as `moved`");
   assert.ok(sql.includes("l.metadata->>'fromStartsAt' as from_start,\n           l.metadata->>'startsAt' as to_start"), "rearm_rows no longer carries both starts of a row");
@@ -353,13 +360,92 @@ test("LR's four conditions are written as strategy ruled them, each read from re
   assert.ok(sql.includes("  select 26, 'LR (lost run), mark due '"));
   assert.ok(sql.includes("   where p.category like 'LR %'\n"));
   assert.ok(sql.includes("  select 27, 'shadow-only UNEXPLAINED, not LR, mark due '"));
-  for (const n of ["1", "2", "3", "4"]) assert.ok(sql.includes(`case when not l.c${n} then '${n} `), `row 27 does not name condition ${n}`);
+  for (const n of ["1", "2", "3"]) assert.ok(sql.includes(`case when not l.c${n} then '${n} `), `row 27 does not name condition ${n}`);
+  assert.ok(sql.includes("case when not l.c4 then concat_ws('; ',\n                  case when l.plan_at is null then '4 no save"), "row 27 does not name condition 4");
+  for (const arm of ["case when l.portal_notified then '4 ", "case when l.importer_touched then '4 ", "case when l.portal_window then '4 "]) {
+    assert.ok(sql.includes(arm), `row 27 does not name rule 1's arm ${arm}`);
+  }
   // Nothing of the F4 read or NC is left.
   for (const gone of ["r47_f4_answer", "f4_appointment_id", "nc_in", "nc_outcome", "F4_ANSWER"]) {
     assert.ok(!sql.includes(gone), `the read still carries ${gone}`);
     assert.ok(!doc.includes(gone), `the document still carries ${gone}`);
   }
   assert.doesNotMatch(doc, /read-f4-contact|shadow-compare-nc|## F4 READ/, "the document still names the F4 read or the NC agreement test");
+});
+
+test("THE START WRITERS: every writer of appointments in apps/ and packages/ is in the read's list, classified, and each class holds", () => {
+  // The list in the SQL comment at `lr` (R4 round 3): one line per writer, file:line, class, words.
+  const listed = [...sql.matchAll(/^ *--   W (\S+:\d+)  ([RCNL])  (.+)$/gm)].map((m) => ({ at: m[1], cls: m[2], what: m[3] }));
+  assert.ok(listed.length > 0, "the read carries no list of start writers");
+  // Every writer, from the source: a Drizzle insert or update of `appointments` (split lines
+  // included), a supabase-js insert, update or upsert, and raw SQL `update` or `insert into` the
+  // table, in any source file under apps/ and packages/ (migrations and owner-run scripts included).
+  // Tests, Playwright specs and their e2e helpers and seeds, and test folders are not writers.
+  // A comment line writes nothing.
+  const files = spawnSync("git", ["-C", ROOT, "ls-files", "apps", "packages"], { encoding: "utf8" }).stdout.split("\n")
+    .filter((f) => /\.(ts|tsx|mts|cts|js|mjs|cjs|sql)$/.test(f) && !/\.(test|spec)\.|(^|\/)(e2e|tests|__tests__)\//.test(f));
+  const PATTERNS = [
+    /\.(?:update|insert)\(\s*(?:schema\.)?appointments\s*\)/g,
+    /from\(\s*["'`]appointments["'`]\s*\)\s*\.(?:insert|update|upsert)\(/g,
+    /\b(?:update|insert\s+into)\s+(?:public\.)?"?appointments"?(?![A-Za-z0-9_])/gi,
+  ];
+  const found = new Map();
+  for (const f of files) {
+    const text = read(f);
+    const lines = text.split("\n");
+    for (const p of PATTERNS) for (const m of text.matchAll(p)) {
+      const ln = text.slice(0, m.index).split("\n").length;
+      if (/^\s*(\/\/|\*|\/\*|--)/.test(lines[ln - 1])) continue;
+      found.set(`${f}:${ln}`, { f, text, index: m.index, raw: !m[0].startsWith(".") && !m[0].startsWith("from(") });
+    }
+  }
+  assert.deepEqual([...found.keys()].sort(), listed.map((w) => w.at).sort(),
+    "a writer of appointments appeared or moved: classify it in the read's list at `lr` (R, C, N or L) and re-derive condition 4");
+  for (const w of listed) {
+    const src = found.get(w.at);
+    if (w.cls === "N") {
+      // It never writes the start: the statement, up to its WHERE, names neither column.
+      const rest = src.text.slice(src.index);
+      const end = src.raw ? rest.search(/\bwhere\b/i) : rest.indexOf(".where(");
+      assert.ok(end > 0, `${w.at} has no WHERE after it`);
+      assert.doesNotMatch(rest.slice(0, end), /starts_?at|ends_?at/i, `${w.at} is listed N but writes a start`);
+    } else if (w.cls === "R") {
+      // Recorded: the audit row it cites is written where the list says.
+      const cite = w.what.match(/\(([a-z-]+\.ts):(\d+)\)$/);
+      assert.ok(cite, `${w.at} is listed R without the audit row's line`);
+      const line = read(`${dirname(src.f)}/${cite[1]}`).split("\n")[Number(cite[2]) - 1];
+      assert.match(line, /writeAppointmentAudit\(tx, \{|action: "appointment\.reschedule",/, `${w.at}: ${cite[1]}:${cite[2]} is not the audit row it cites`);
+    } else if (w.cls === "C") {
+      // Treated conservatively: the arm of rule 1 it names is in condition 4.
+      for (const arm of w.what.match(/\b1[abc]\b/g) || []) {
+        const piece = { "1a": "and not ux.portal_notified\n", "1b": "and not ps.portal_window) as c4", "1c": "and not ux.importer_touched\n" }[arm];
+        assert.ok(sql.includes(piece), `${w.at} names rule ${arm}, which condition 4 does not apply`);
+      }
+      assert.match(w.what, /\b1[abc]\b/, `${w.at} is listed C without naming the arm of rule 1 that covers it`);
+    } else {
+      // Never against production: the file carries its refusal.
+      assert.match(src.text, /LOCAL ONLY, AND IT REFUSES|refuseProdApplyCwd\(import\.meta\.url\)/, `${w.at} is listed L but carries no refusal`);
+    }
+  }
+  // updateAppointment writes `.set(set)`: `set` takes only service, room and status.
+  const actions = read("apps/web/lib/scheduling/actions.ts");
+  assert.doesNotMatch(actions, /\bset\.(startsAt|endsAt)\b|\bset\[/, "updateAppointment's set can carry a start");
+  // The portal move is the one writer C names for 1a and 1b, and the code it cites is unchanged.
+  const store = read("apps/api/lib/appointments/store.ts").split("\n");
+  assert.equal(store[1079], "  async rescheduleOwn(principal, id, { startsAt, endsAt }): Promise<void> {");
+  assert.equal(store[1115], "        .set({ startsAt, endsAt })");
+  assert.equal(store[1121], '            inArray(appointments.status, ["scheduled", "confirmed"]),', "rescheduleOwn's status guard moved: re-derive rule 1b");
+  assert.match(read("apps/api/lib/appointments/booking.ts"), /const MUTABLE_STATUSES: ReadonlySet<AppointmentStatus> = new Set\(\[\n  "scheduled",\n  "confirmed",\n\]\);/, "the portal's movable estados changed: re-derive rule 1b");
+  const booking = read("apps/api/lib/appointments/booking.ts").split("\n");
+  assert.equal(booking[781], "  await emitPatientChange({", "booking.ts:782 is not the portal move's notification");
+  assert.equal(booking[782], '    kind: "rescheduled",');
+  assert.match(read("apps/api/lib/appointments/cutoff.ts"), /^export const CANCELLATION_CUTOFF_HOURS = 24;$/m, "the portal's cutoff is not 24 hours: re-derive rule 1b");
+  const centre = read("apps/api/lib/notifications/centre.ts").split("\n");
+  assert.equal(centre[159], "  if (recipients.length === 0) {", "centre.ts:160 is not the zero-recipient branch rule 1b cites");
+  assert.equal(centre[176], "    .insert(staffNotifications)", "centre.ts:177 is not the notification's insert rule 1a reads");
+  const upsert = read("packages/db/src/migration/upsert.ts").split("\n");
+  assert.equal(upsert[831], "  await markImported(tx, tenantId, ledger.stagingRowId, row!.id);", "upsert.ts:832 is not the importer's ledger write rule 1c reads");
+  assert.equal(upsert[399], "          await markImportedMany(", "upsert.ts:400 is not the chunked ledger write rule 1c reads");
 });
 
 test("LATE-PASS needs the empty slot, exactly two heartbeats in the next slot, and a run time in the empty slot; verdict 3's REVIEW needs every gap to be one", () => {
@@ -1127,6 +1213,24 @@ const MON = "2026-11-02";
 const TUE = "2026-11-03";
 const EMPTY_WANT = { 0: "OK", 1: "OK", 2: "VACUOUS", ...allDays(3, "FAIL"), ...Object.fromEntries(["6", "7", "8", "9", "10", "13", "15", "16"].map((k) => [k, "VACUOUS"])), ...allDays(11, "VACUOUS"), ...allDays(12, "VACUOUS") };
 const re = (s) => s.replace(/[()]/g, "\\$&");
+/**
+ * Row 27's words for rule 1b (R4 round 3), as a RegExp source: the patient could have moved the
+ * visit in the portal after its planning save (`planner`, "<clause> at <Lisbon time>").
+ */
+const PORTAL_4 = (planner) => `4 the patient could have moved it in the portal after the planning save \\(${planner}\\) and at or before the mark, and that move writes no audit row`;
+const NOTIFIED_4 = "4 a move by the patient in the portal at or before the mark, recorded only by a staff notification that cannot be ordered against the audit rows";
+const IMPORTED_4 = "4 the importer wrote this visit \\(a staging row names it\\), and it writes the start with no audit row";
+/**
+ * Rule 1b turned off, for the cases that isolate LR's other predicates: with it on, every mark whose
+ * planning save is before it fails condition 4, so no other predicate could be seen to decide.
+ * The read as it ships is what every other case runs.
+ */
+const RULE_1B = "          and not ps.portal_window) as c4";
+const RULE_1B_DEF = "             pl.plan_at < m.due_at as portal_window) ps on true";
+const RULE_1B_OFF = (s) => {
+  assert.equal(s.split(RULE_1B_DEF).length, 2, "rule 1b is not defined exactly once");
+  return s.replace(RULE_1B_DEF, "             false as portal_window) ps on true");
+};
 
 /** A claim of the sleeping job, created Monday, with its ledger row; its start's mark on the case's day. */
 const earlyClaim = (id, start, { early = true, sent = true, released = false } = {}) => `
@@ -1247,24 +1351,24 @@ const CASES = [
     info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(S8_LABEL)}`)], [16, /\(S8 1\)/]],
   },
   {
-    name: "S8 negative: the same move 31 seconds before the mark: not S8; no claim, no ledger row, planned by that move, so LR",
+    name: "S8 negative: the same move 31 seconds before the mark: not S8; no claim, no ledger row, planned by that move, but the patient could have moved it in the portal in those 31 seconds (rule 1b): UNEXPLAINED",
     seed: [
       visit(appt(0xb6), "2026-11-04 12:45", { bookedAt: "2026-11-04 13:00" }),
       moved(appt(0xb6), "2026-11-02 12:44:29", "2026-11-04 12:45", "2026-11-04 13:00"),
       shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
     ].join("\n"),
-    want: only({ [`11 ${MON}`]: "REVIEW" }),
-    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /planned by a save that sends appointment\/scheduled \(moved\) at 2026-11-02 12:44:29/]],
+    want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)], [27, new RegExp(`${appt(0xb6)} \\| LR failed on: ${PORTAL_4("moved at 2026-11-02 12:44:29")} \\| `)]],
   },
   {
-    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: not S8; it sends nothing either, so the run was planned by the booking: LR, confirmed",
+    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: not S8; it sends nothing either, so the run was planned by the booking, and rule 1b reads the window after the booking: UNEXPLAINED",
     seed: [
       visit(appt(0xb6), "2026-11-04 12:45"),
       audit(appt(0xb6), "appointment.update", "2026-11-02 12:44:50", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
       shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
     ].join("\n"),
-    want: only({ [`11 ${MON}`]: "REVIEW" }),
-    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /estado at the mark confirmed; .*planned by a save that sends appointment\/scheduled \(booked\) at 2026-10-01 09:00:00/]],
+    want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)], [27, new RegExp(`${appt(0xb6)} \\| LR failed on: ${PORTAL_4("booked at 2026-10-01 09:00:00")} \\| `)]],
   },
   { name: "a move that keeps the start, after the mark and before the pass: it does not count (R33), the shadow takes it, `both`", seed: KEPT(true), want: only({}) },
   {
@@ -1379,11 +1483,11 @@ const CASES = [
     info: [[16, /with a label outside the set 0; window-edge labels on a partial day, not judged 1/]],
   },
   {
-    name: "shadow only: the sleeping job's claim and ledger row for Tuesday's 24h SMS at 10:00 removed: a booked visit with neither is LR's shape",
+    name: "shadow only: the sleeping job's claim and ledger row for Tuesday's 24h SMS at 10:00 removed: a booked visit with neither is LR's shape, and rule 1b keeps it UNEXPLAINED",
     seed: `delete from public.reminder_dispatches where appointment_id = '${appt(5)}' and channel = 'sms';
            delete from public.reminder_claims where appointment_id = '${appt(5)}' and kind = 'claim' and offset_id = '24h';`,
-    want: only({ [`12 ${TUE}`]: "REVIEW" }),
-    info: [[50, new RegExp(`${appt(5)} \\| ${re(LR_LABEL)}`)], [26, new RegExp(`^LR \\(lost run\\), mark due 2026-11-03 10:00 24h sms \\| ${appt(5)} \\| `)]],
+    want: only({ [`12 ${TUE}`]: "FAIL", 13: "FAIL" }),
+    info: [[50, new RegExp(`${appt(5)} \\| UNEXPLAINED`)], [27, new RegExp(`^shadow-only UNEXPLAINED, not LR, mark due 2026-11-03 10:00 24h sms \\| ${appt(5)} \\| LR failed on: ${PORTAL_4("booked at 2026-10-01 09:00:00")} \\| `)]],
   },
   {
     name: "shadow only, the claim alone removed: the ledger row stays, so S4 (a ledger row with no claim), not LR",
@@ -1828,6 +1932,114 @@ update public.reminder_sweep_passes set recorded_count = recorded_count - 1 wher
   { name: "END_DAY 2026-11-04 read on Wednesday 08:00: the end day is not closed, verdict 1 FAILs", seed: "", end: "2026-11-04", want: { ...only({ 1: "FAIL" }), "3 2026-11-04": "FAIL", "11 2026-11-04": "VACUOUS", "12 2026-11-04": "VACUOUS" } },
 );
 
+// Every case above on LR's shape isolates one of LR's other predicates, so it runs with rule 1b off.
+for (const c of CASES) {
+  if (!c.mutate && typeof c.seed === "string" && c.seed.includes(LR_APPT)) {
+    c.rewrite = RULE_1B_OFF;
+    c.name += " (rule 1b off)";
+  }
+}
+
+// ---- The R4 review of 2026-11-06, round 3 (MAJOR): a start change no audit row records. Closed as a class: rule 1. ----
+
+/**
+ * A staff notification as persistingConsumer writes it (apps/api/lib/notifications/centre.ts:176 to
+ * 195): `kind`, the two starts and the instant the patient acted. The throwaway drops the table's
+ * foreign keys to people first (no synthetic person is made).
+ */
+const staffNote = (when, from, to, { kind = "rescheduled", id = LR_APPT } = {}) => `
+do $$ declare c text; begin
+  for c in select conname from pg_constraint where conrelid = 'public.staff_notifications'::regclass and contype = 'f' loop
+    execute format('alter table public.staff_notifications drop constraint %I', c);
+  end loop;
+end $$;
+insert into public.staff_notifications (tenant_id, recipient_user_id, kind, appointment_id, patient_id, previous_starts_at, new_starts_at, occurred_at)
+  values ('${TENANT}', gen_random_uuid(), '${kind}', '${id}', gen_random_uuid(), ${at(from)}, ${at(to)}, ${at(when)});`;
+/** The importer's ledger row naming a visit it wrote (upsert.ts, markImported). */
+const stagingRow = (id, source = "synthetic-1") => `
+insert into public.migration_staging_rows (tenant_id, batch_id, source_system, entity_type, source_id, status, imported_entity_id)
+  values ('${TENANT}', gen_random_uuid(), 'synthetic', 'appointment', '${source}', 'imported', '${id}');`;
+/**
+ * The reviewer's seed (round 3): an online request booked for 11-20 11:00 (the portal writes no
+ * booking row); moved by staff while unaccepted to A, the mark's start (it sends nothing); moved by
+ * the patient in the portal to B (no audit row, no event); accepted in Pedidos (it sends B: the run
+ * is planned for B); B's 48h mark taken by the run and by the shadow; moved by the patient back to
+ * A before A's mark. The recorded rows read the acceptance as planning A, and A is the start now:
+ * the old condition 4 accepted it. `notes` writes the two portal moves' staff notifications.
+ */
+const LR_A = "2026-11-04 11:00";
+const LR_B = "2026-11-04 09:00";
+const ROUND3 = ({ notes = true } = {}) => LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false, status: "confirmed" }, extra: [
+  moved(LR_APPT, "2026-10-20 09:00", LR_A, "2026-11-20 11:00"),
+  notes ? staffNote("2026-10-21 09:00", LR_A, LR_B) : "",
+  audit(LR_APPT, "appointment.update", "2026-10-22 09:00", PEDIDOS_ACCEPT),
+  both(LR_APPT, "48h", LR_B),
+  notes ? staffNote("2026-11-02 10:00", LR_B, LR_A) : "",
+] });
+const ROUND3_PLANNER = "accepted_in_pedidos at 2026-10-22 09:00:00";
+const BOOKED_PLANNER = "booked at 2026-10-01 09:00:00";
+
+CASES.push(
+  {
+    name: "LR rule 1b: a booked visit's 48h mark the shadow took, with no claim and no ledger row, sendable, its start unchanged, under the read as it ships: the patient could have moved it in the portal after its booking, so UNEXPLAINED, condition 4",
+    seed: LR_SHAPE(),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR(PORTAL_4(BOOKED_PLANNER)),
+  },
+  {
+    name: "LR negative 4h (round 3, the reviewer's seed): a request moved by staff to A while unaccepted, by the patient to B, accepted in Pedidos (sends B), B's run sent, moved by the patient back to A: not LR, condition 4, rules 1a and 1b",
+    seed: ROUND3(),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR(`${NOTIFIED_4}; ${PORTAL_4(ROUND3_PLANNER)}`),
+  },
+  {
+    name: "LR negative 4h, rule 1a alone (rule 1b off): the portal moves' staff notifications keep it out",
+    seed: ROUND3(),
+    rewrite: RULE_1B_OFF,
+    want: LR_UNEXPLAINED,
+    info: NOT_LR(NOTIFIED_4),
+  },
+  {
+    name: "LR negative 4i (round 3, the reviewer's seed with no staff notification, as when the notification resolves no recipient): not LR, condition 4, rule 1b",
+    seed: ROUND3({ notes: false }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR(PORTAL_4(ROUND3_PLANNER)),
+  },
+  {
+    name: "LR 4i with rule 1b off: the old false accept, which rule 1b exists for (no recorded row shows the portal moves)",
+    seed: ROUND3({ notes: false }),
+    rewrite: RULE_1B_OFF,
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, new RegExp(`^LR \\(lost run\\), mark due 2026-11-02 11:00 48h email \\| ${LR_APPT} \\| no claim, no ledger row; estado at the mark confirmed; start at the mark is the start now; planned by a save that sends appointment\\/scheduled \\(accepted_in_pedidos\\) at 2026-10-22 09:00:00 \\| `)]],
+  },
+  {
+    name: "LR negative 4j (round 3): a visit the importer wrote (a staging row names it): not LR, condition 4, rules 1c and 1b",
+    seed: LR_SHAPE({ extra: [stagingRow(LR_APPT)] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR(`${IMPORTED_4}; ${PORTAL_4(BOOKED_PLANNER)}`),
+  },
+  {
+    name: "LR negative 4j, rule 1c alone (rule 1b off): the importer's row keeps it out",
+    seed: LR_SHAPE({ extra: [stagingRow(LR_APPT)] }),
+    rewrite: RULE_1B_OFF,
+    want: LR_UNEXPLAINED,
+    info: NOT_LR(IMPORTED_4),
+  },
+  {
+    name: "LR (round 3, rule 1b off): a staff notification of another kind before the mark, portal moves away and back only after it, another visit's portal move before it, and a staging row of another visit: none is this mark's unrecorded start change: LR",
+    seed: LR_SHAPE({ extra: [
+      staffNote("2026-11-01 18:00", LR_A, LR_A, { kind: "confirmed" }),
+      staffNote("2026-11-02 12:00", LR_A, "2026-11-04 14:00"),
+      staffNote("2026-11-02 12:05", "2026-11-04 14:00", LR_A),
+      staffNote("2026-11-01 18:00", "2026-11-02 10:00", "2026-11-02 15:00", { id: appt(1) }),
+      stagingRow(appt(1)),
+    ] }),
+    rewrite: RULE_1B_OFF,
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, new RegExp(`\\| ${LR_APPT} \\| no claim, no ledger row; estado at the mark scheduled; .*\\(booked\\) at 2026-10-01 09:00:00 \\| `)]],
+  },
+);
+
 const MUTANTS_1106 = [
   ["LATE-PASS without the run time", "                    and x.run_slot = d.slot)\n),\nhb_day3 as (", "                    and true)\n),\nhb_day3 as (", "LATE-PASS negative: the late pass's run time in slot 10:15"],
   ["verdict 3's REVIEW arm takes any gap", "when v.tenants_ok + v.tenants_late = v.tenants then 'REVIEW'", "when true then 'REVIEW'", "LATE-PASS negative: a failed pass"],
@@ -1856,7 +2068,7 @@ const MUTANTS_1106 = [
   ["LR condition 4 counts any audit row, on the hand-confirmed booked visit", "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from rearm_rows r\n", "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from (select l.id, l.tenant_id, l.entity_id as appointment_id, l.created_at, 'any'::text as clause, null::text as to_start from public.audit_log l) r\n", "LR: confirmed by hand before the mark", null, [26, /\(booked\) at 2026-10-01 09:00:00/]],
   // Round 2: the planning save planned the run FOR THE MARK'S START.
   ["LR condition 4 without the start match", "          and coalesce(ps.plan_start = m.iso_start, false)\n", "          and true\n", "LR negative 4f"],
-  ["LR condition 4 without the start change after the planning save", "          and not ps.start_changed) as c4", "          and true) as c4", "LR negative 4g"],
+  ["LR condition 4 without the start change after the planning save", "          and not ps.start_changed\n", "          and true\n", "LR negative 4g"],
   ["LR condition 4 reads no start for a status save that sends", "then pl.plan_to_start\n                  else (select b.to_start from rearm_rows b", "then pl.plan_to_start\n                  else (select null::text from rearm_rows b", "LR (round 2's twin)"],
   ["LR condition 4 reads a status save's start at the mark, not at the save", "and b.clause in ('booked', 'moved') and b.created_at <= pl.plan_at", "and b.clause in ('booked', 'moved') and b.created_at <= m.due_at", "LR negative 4e", null, NOT_LR("4 the last save that sends appointment\\/scheduled at or before the mark \\(accepted_in_pedidos at 2026-10-10 09:00:00\\) did not plan the run for the mark's start: the start in effect after it is another or cannot be read and a recorded start change after it, at or before the mark")[1]],
   ["LR condition 4's start change counts a move that keeps the start", "and n.clause = 'moved' and n.from_start is distinct from n.to_start", "and n.clause = 'moved'", "LR: a request booked for the mark's start, a move that keeps"],
@@ -1866,9 +2078,19 @@ const MUTANTS_1106 = [
   ["LR condition 4 reads the estado after the move", "                              and v.created_at <= r.created_at\n", "                              and true\n", "LR negative 4c"],
   ["LR condition 4 counts a move with no recorded estado", "not in ('scheduled', 'unknown'), false))", "not in ('scheduled', 'unknown'), true))", "LR negative 4c"],
   ["LR condition 4 counts a move of a request whose estado was not established", "not in ('scheduled', 'unknown'), false))", "not in ('scheduled'), false))", "LR negative 4d"],
-  ["row 26 prints the EARLIEST sending save, not the planner", "order by r.created_at desc, r.id desc limit 1) pl on true", "order by r.created_at, r.id limit 1) pl on true", "S8 negative: the same move 31 seconds", null, [26, /\(moved\) at 2026-11-02 12:44:29/]],
+  ["rows 26 and 27 print the EARLIEST sending save, not the planner", "order by r.created_at desc, r.id desc limit 1) pl on true", "order by r.created_at, r.id limit 1) pl on true", "S8 negative: the same move 31 seconds", null, [27, /\(moved at 2026-11-02 12:44:29\)/]],
   ["pcl drops LR condition 2", "and lr.c1 and lr.c2 and lr.c3 and lr.c4)", "and lr.c1 and lr.c3 and lr.c4)", "LR negative 2: cancelled before the mark"],
   ["pcl drops LR condition 4", "and lr.c1 and lr.c2 and lr.c3 and lr.c4)", "and lr.c1 and lr.c2 and lr.c3)", "LR negative 4"],
+  // Round 3: rule 1, each arm and each of its bounds.
+  ["rule 1b dropped from condition 4", RULE_1B, "          and true) as c4", "LR rule 1b: a booked visit's 48h mark"],
+  ["rule 1b dropped from condition 4, on the reviewer's seed with no staff notification", RULE_1B, "          and true) as c4", "LR negative 4i"],
+  ["rule 1b reads an empty window", RULE_1B_DEF, "             pl.plan_at > m.due_at as portal_window) ps on true", "LR negative 4i"],
+  ["rule 1a dropped", "          and not ux.portal_notified\n", "          and true\n", "LR negative 4h, rule 1a alone"],
+  ["rule 1a reads a staff notification of any kind", "and sn.kind = 'rescheduled' and sn.occurred_at <= m.due_at", "and sn.occurred_at <= m.due_at", "LR (round 3, rule 1b off)"],
+  ["rule 1a reads a portal move after the mark", "and sn.kind = 'rescheduled' and sn.occurred_at <= m.due_at", "and sn.kind = 'rescheduled'", "LR (round 3, rule 1b off)"],
+  ["rule 1a reads another visit's notification", "where sn.tenant_id = m.tenant_id and sn.appointment_id = m.appointment_id", "where sn.tenant_id = m.tenant_id", "LR (round 3, rule 1b off)"],
+  ["rule 1c dropped", "          and not ux.importer_touched\n", "          and true\n", "LR negative 4j, rule 1c alone"],
+  ["rule 1c reads another visit's staging row", "where s.tenant_id = m.tenant_id and s.imported_entity_id = m.appointment_id", "where s.tenant_id = m.tenant_id", "LR (round 3, rule 1b off)"],
   ["LR outside R32's set", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5')", "LR: a booked visit's 48h mark"],
 ];
 
@@ -1915,6 +2137,7 @@ for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
   CASES.push({
     name: `MUTANT: ${what}, on "${caseName}"`,
     seed: base.seed,
+    rewrite: base.rewrite,
     deployed: base.deployed,
     end: base.end,
     clock: base.clock,
@@ -1977,6 +2200,7 @@ test("the read on a local database: every verdict flips on its own seeded fault,
       admin(`create database ${CASE_DB} template ${BASE}`);
       if (c.seed) ok(psql(dbUrl(CASE_DB), [], c.seed));
       let text = withClock(c.clock ?? READ_CLOCK);
+      if (c.rewrite) text = c.rewrite(text);
       if (c.mutate) {
         const mutated = c.mutate(text);
         assert.notEqual(mutated, text, `${c.name}: the mutant changed nothing`);

@@ -67,7 +67,12 @@
 --       before the mark planned the run, FOR THE MARK'S START: the start in effect right after the
 --       last such save is the mark's start, and no recorded start change (any move row, sending
 --       or not) falls after it and at or before the mark; a status-only save sends nothing and is
---       ignored. LR is in
+--       ignored; and no start change the recorded rows cannot order is possible (R4 round 3,
+--       rule 1 at `lr`: a portal move's staff notification at or before the mark, a visit the
+--       importer wrote, or ANY time after the planning save and up to the mark, in which the
+--       patient could have moved the visit in the portal with no audit row). Rule 1's last arm
+--       leaves no mark that can read LR in this read: the planning save would have to be AT the
+--       mark, and S8 names every such mark first. LR is in
 --       R32's accepted set and EVERY LR row is printed with its appointment id, mark and planning
 --       save (row 26). A shadow-only mark that fails any condition stays UNEXPLAINED, and row 27
 --       names the conditions it failed.
@@ -838,6 +843,7 @@ lr as (
   -- LR, LOST RUN: the four conditions of strategy's ruling of 2026-11-06 14:20, each on its own
   -- line, each false (never unknown) when the recorded rows cannot establish it.
   select m.*, st.status_at_mark, rc.kind_rec, rc.status_rec, pl.plan_at, pl.plan_clause, ps.plan_start, ps.start_changed,
+         ps.portal_window, ux.portal_notified, ux.importer_touched,
          -- 1. NO CLAIM AND NO LEDGER ROW. No claim of ANY taker (reminder_claims, kind 'claim',
          --    early or not, released or not) for this appointment, offset, channel and start, and no
          --    reminder ledger row of this appointment, offset and channel from 10 minutes before the
@@ -895,9 +901,81 @@ lr as (
          --    a move that sends nothing (a request unaccepted at the move, actions.ts:2342 and 2569
          --    to 2570) changes the start without re-planning, so a run planned before it was for
          --    another start. A start the recorded rows cannot establish is not that start.
+         --    AND NO START CHANGE THE RECORDED ROWS CANNOT ORDER (R4 round 3, closed as a class,
+         --    `ux` and `ps` below). Two writers change `starts_at` with no audit row: the patient's
+         --    own move in the portal and the importer. Either can make the planned start stale
+         --    and then equal to the start now (moved away before a sending status save, moved
+         --    back after it), so condition 4 is false when:
+         --      1a. a staff notification of kind `rescheduled` (the portal move's only trace,
+         --          best-effort, apps/api/lib/notifications/centre.ts:176 to 195, from
+         --          booking.ts:782) for this visit has `occurred_at` at or before the mark, at
+         --          any time (before the planning save it can make the planned start stale,
+         --          after it it is a start change; `occurred_at` is the request's instant, taken
+         --          before the write, and is not ordered against the audit rows);
+         --      1b. THE PATIENT COULD HAVE MOVED IT IN THE PORTAL between the planning save and
+         --          the mark: the window after the planning save, up to and including the mark,
+         --          is not empty. That is the whole of `rescheduleOwn`'s rule as recorded rows can
+         --          read it (store.ts:1080 to 1126, booking.ts:728 to 778): every origin, the
+         --          estado `scheduled` or `confirmed` (which condition 2 requires at the mark, an
+         --          instant inside the window), the current start at least 24 hours ahead
+         --          (cutoff.ts, half-open: true at both marks), a clinic not held off online
+         --          booking (an environment value, no row) and a patient session (any patient
+         --          with a phone can open one by code, and no row records it). Rule 1a cannot
+         --          stand alone because the notification is best-effort: it is written only
+         --          after the move commits and resolves no recipient for some visits
+         --          (centre.ts:160 to 174), and a removed staff user's rows cascade away.
+         --          Since the planning save is then AT the mark, and S8 names every mark with a
+         --          re-arming save in the 30 seconds up to it, NO MARK CAN READ LR in this read
+         --          while the portal move writes no audit row;
+         --      1c. the importer wrote the visit (a `migration_staging_rows` row names it in
+         --          `imported_entity_id`, packages/db/src/migration/upsert.ts:400 and 832): its
+         --          insert and its re-upsert (upsert.ts:820) write `starts_at` with no audit row.
+         --    EVERY WRITER OF appointments IN apps/ AND packages/ (tests, e2e helpers and seeds
+         --    excluded), from a grep the test repeats, each classified: R recorded by an audit row
+         --    this read reads; C treated conservatively by rule 1 (or by the missing booking row);
+         --    N never writes `starts_at` or `ends_at`; L never runs against production.
+         --   W apps/api/lib/appointments/store.ts:1009  C  the portal booking: the first start, no booking row (a planner after it reads no start), 1b
+         --   W apps/api/lib/appointments/store.ts:1068  N  cancelOwn: status
+         --   W apps/api/lib/appointments/store.ts:1115  C  rescheduleOwn, the portal move: starts_at and ends_at, no audit row, 1a and 1b
+         --   W apps/web/lib/packs/link.ts:177  N  pack_instance_id
+         --   W apps/web/lib/reminders/confirm-redeem.ts:220  N  status
+         --   W apps/web/lib/reminders/inbound-reply.ts:326  N  status
+         --   W apps/web/lib/reminders/inbound-reply.ts:408  N  status and confirmation fields
+         --   W apps/web/lib/reminders/inbound-store.ts:272  N  status and confirmation fields
+         --   W apps/web/lib/reminders/redeem.ts:223  N  confirmation fields
+         --   W apps/web/lib/reminders/redeem.ts:228  N  status
+         --   W apps/web/lib/scheduling/actions.ts:969  R  createAppointment, appointment.create with startsAt (actions.ts:1028)
+         --   W apps/web/lib/scheduling/actions.ts:988  R  createAppointment's series, appointment.create per row (actions.ts:1028)
+         --   W apps/web/lib/scheduling/actions.ts:1516  R  cloneAppointment, appointment.create with startsAt (actions.ts:1520)
+         --   W apps/web/lib/scheduling/actions.ts:1976  N  updateAppointment: service, room, status (`set`, actions.ts:1577 to 1580)
+         --   W apps/web/lib/scheduling/actions.ts:1989  N  confirmation_state
+         --   W apps/web/lib/scheduling/actions.ts:2497  R  moveAppointment, appointment.reschedule with fromStartsAt and startsAt (actions.ts:2519)
+         --   W apps/web/lib/scheduling/actions.ts:3008  N  status
+         --   W apps/web/lib/scheduling/actions.ts:3243  N  status
+         --   W apps/web/lib/scheduling/actions.ts:3364  N  status
+         --   W apps/web/lib/scheduling/batch.ts:278  R  batchScheduleAppointments, appointment.create with startsAt (batch.ts:310)
+         --   W packages/db/migrations/0005_patient_merge_multilocation.sql:169  N  patient_id
+         --   W packages/db/migrations/0067_followup_packs_and_provenance.sql:69  N  origin
+         --   W packages/db/migrations/0105_clinical_records_episode_key.sql:340  N  patient_id
+         --   W packages/db/scripts/clinic-batch-20260910-simulation.mjs:104  L  local only, refuses a remote target
+         --   W packages/db/scripts/clinic-batch-20260910-simulation.mjs:136  L  local only (room)
+         --   W packages/db/scripts/clinic-batch-20260910-simulation.mjs:137  L  local only (room)
+         --   W packages/db/scripts/clinic-batch-20260910-simulation.mjs:145  L  local only, refuses a remote target
+         --   W packages/db/scripts/staff-10-jp-split-lv.mjs:295  N  practitioner_id
+         --   W packages/db/scripts/staff-10-jp-split-lv.mjs:298  N  practitioner_2_id
+         --   W packages/db/scripts/staff-10-jp-split-lv.mjs:407  N  practitioner_id
+         --   W packages/db/scripts/staff-10-jp-split-lv.mjs:408  N  practitioner_2_id
+         --   W packages/db/seed/appointments-dev.ts:253  L  dev seed, refuses production (seed-guard)
+         --   W packages/db/seed/location-cleanup.ts:104  N  location_id
+         --   W packages/db/src/migration/upsert.ts:609  C  the importer's chunked insert, 1c
+         --   W packages/db/src/migration/upsert.ts:820  C  the importer's re-upsert, 1c
+         --   W packages/db/src/migration/upsert.ts:829  C  the importer's insert, 1c
          (pl.plan_at is not null
           and coalesce(ps.plan_start = m.iso_start, false)
-          and not ps.start_changed) as c4
+          and not ps.start_changed
+          and not ux.portal_notified
+          and not ux.importer_touched
+          and not ps.portal_window) as c4
     from lr_mark m
     left join probe_eval e
       on e.src = 'lost' and e.tenant_id = m.tenant_id and e.appointment_id = m.appointment_id
@@ -986,7 +1064,17 @@ lr as (
              exists (select 1 from rearm_rows n
                       where n.tenant_id = m.tenant_id and n.appointment_id = m.appointment_id
                         and n.clause = 'moved' and n.from_start is distinct from n.to_start
-                        and n.created_at > pl.plan_at and n.created_at <= m.due_at) as start_changed) ps on true
+                        and n.created_at > pl.plan_at and n.created_at <= m.due_at) as start_changed,
+             -- Rule 1b: the window after the planning save, up to and including the mark, is not
+             -- empty, so the patient could have moved the visit in the portal inside it.
+             pl.plan_at < m.due_at as portal_window) ps on true
+    left join lateral (
+      -- Rules 1a and 1c: the start-change traces the read cannot order against the audit rows.
+      select exists (select 1 from public.staff_notifications sn
+                      where sn.tenant_id = m.tenant_id and sn.appointment_id = m.appointment_id
+                        and sn.kind = 'rescheduled' and sn.occurred_at <= m.due_at) as portal_notified,
+             exists (select 1 from public.migration_staging_rows s
+                      where s.tenant_id = m.tenant_id and s.imported_entity_id = m.appointment_id) as importer_touched) ux on true
 ),
 pcl as (
   -- R20's comparison with R8, RK, S8 and LR put on the marks they name; every other label is R20's.
@@ -1647,14 +1735,20 @@ select n, "check", observed, expected, verdict from (
                                                    then ', an online request not accepted at the mark by the recorded rows'
                                                  else '' end || ')' end,
                 case when not l.c3 then '3 the start at the mark is not the start now, or cannot be read' end,
-                case when not l.c4 then '4 '
-                  || case when l.plan_at is null then 'no save that sends appointment/scheduled at or before the mark'
-                          else 'the last save that sends appointment/scheduled at or before the mark (' || l.plan_clause || ' at '
+                case when not l.c4 then concat_ws('; ',
+                  case when l.plan_at is null then '4 no save that sends appointment/scheduled at or before the mark'
+                       when not coalesce(l.plan_start = l.iso_start, false) or l.start_changed
+                         then '4 the last save that sends appointment/scheduled at or before the mark (' || l.plan_clause || ' at '
                                || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS')
                                || ') did not plan the run for the mark''s start: '
                                || concat_ws(' and ',
                                     case when not coalesce(l.plan_start = l.iso_start, false) then 'the start in effect after it is another or cannot be read' end,
-                                    case when l.start_changed then 'a recorded start change after it, at or before the mark' end) end end),
+                                    case when l.start_changed then 'a recorded start change after it, at or before the mark' end) end,
+                  case when l.portal_notified then '4 a move by the patient in the portal at or before the mark, recorded only by a staff notification that cannot be ordered against the audit rows' end,
+                  case when l.importer_touched then '4 the importer wrote this visit (a staging row names it), and it writes the start with no audit row' end,
+                  case when l.portal_window then '4 the patient could have moved it in the portal after the planning save ('
+                                                 || l.plan_clause || ' at ' || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS')
+                                                 || ') and at or before the mark, and that move writes no audit row' end) end),
          'information: verdict 13 FAILs on it', 'INFO'
     from lr l
     join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
