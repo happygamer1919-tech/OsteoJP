@@ -18,6 +18,7 @@ import {
   viewDates,
 } from "@/lib/scheduling/time";
 import { deepLinkWindow } from "@/lib/scheduling/deep-link-window";
+import { tenantSharedResourceIdsFor } from "@/lib/scheduling/shared-resources";
 import { s } from "@/lib/i18n";
 
 import { MarcacoesView, type MarcacoesFilters } from "./marcacoes-view";
@@ -149,8 +150,10 @@ export default async function MarcacoesPage({
   const startUtc = lisbonMidnightUtc(windowed.from);
   const endUtc = lisbonMidnightUtc(addDays(windowed.to, 1));
 
-  const [options, appointments, serviceRows] = await Promise.all([
+  const [agendaOptions, tenantSharedResourceIds, appointments, serviceRows] = await Promise.all([
     getAgendaOptions(actor),
+    // U6: the drawer's "Marcar novamente" follows the server's create rule.
+    tenantSharedResourceIdsFor(actor),
     listAppointments(actor, {
       startUtc,
       endUtc,
@@ -164,6 +167,8 @@ export default async function MarcacoesPage({
     // gate: services:read, held by every role that can reach this page.
     listServices(actor),
   ]);
+
+  const options = { ...agendaOptions, tenantSharedResourceIds };
 
   // Already name-sorted by listServices; map to the minimal {id, name} the
   // filter dropdown needs.

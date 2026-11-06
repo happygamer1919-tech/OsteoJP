@@ -365,6 +365,8 @@ describe("bulkRescheduleAppointments: apply writes what a drawer move writes, pe
       metadata: {
         practitionerId: NEW,
         locationId: LOC,
+        // R33: the start the move left, as the row held it.
+        fromStartsAt: "2031-05-19T14:00:00.000Z",
         startsAt: tenOn(19).toISOString(),
         endsAt: endOn(19).toISOString(),
         scope: "one",

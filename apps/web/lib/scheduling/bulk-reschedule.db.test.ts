@@ -270,6 +270,8 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
       expect(a.metadata).toEqual({
         practitionerId: tNew,
         locationId: loc,
+        // R33: the start the move left, as the row held it (booked at 15:00).
+        fromStartsAt: at(DAYS[i]!, 15).toISOString(),
         startsAt: at(DAYS[i]!, 10).toISOString(),
         endsAt: endOf(at(DAYS[i]!, 10)).toISOString(),
         scope: "one",
@@ -310,7 +312,14 @@ d("APPT-BULK-01: Alterar várias marcações against Postgres", () => {
     const bulk = rs.find((a) => a.entity_id === first)!.metadata as Record<string, unknown>;
     const drawer = rs.find((a) => a.entity_id === second)!.metadata as Record<string, unknown>;
     expect(Object.keys(bulk).sort()).toEqual(Object.keys(drawer).sort());
-    expect({ ...bulk, startsAt: null, endsAt: null }).toEqual({ ...drawer, startsAt: null, endsAt: null });
+    expect({ ...bulk, fromStartsAt: null, startsAt: null, endsAt: null }).toEqual({
+      ...drawer,
+      fromStartsAt: null,
+      startsAt: null,
+      endsAt: null,
+    });
+    // Both record the start they left: each visit's booked 15:00.
+    expect([bulk.fromStartsAt, drawer.fromStartsAt]).toEqual([at(DAYS[0], 15).toISOString(), at(DAYS[1], 15).toISOString()]);
   });
 
   it("a therapist's working hours refuse every row; nothing is written, even with the tick", async () => {

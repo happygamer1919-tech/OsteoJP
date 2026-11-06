@@ -125,6 +125,31 @@ const ALLOWED = new Set([
   // 0108's own pull request; this guard checks no file's existence, so the entry
   // can merge first.
   "packages/db/tests/pack-instance-consuming-sessions.db.test.ts",
+  // ======================================================================
+  // PACK PAYMENTS (0115, pending; owner P8 of 2026-11-05: "Vender pack").
+  // ======================================================================
+  // THE SECOND WRITER, and the reason it is a writer at all: until now an
+  // instance was created only by the first pacote booking, so a pacote sold at
+  // the desk had nowhere to record the price agreed for it. sell.ts INSERTS one
+  // brand-new instance with the purchase-time value (the full total), exactly
+  // as bookPackSessionTx does, because the column is NOT NULL with no default.
+  // It never UPDATEs it and never READS it; the test "the second writer only
+  // ever INSERTs it" below narrows this entry the way the instances.ts test
+  // narrows that one. The file lands with the pack payments pull request; this
+  // guard checks no file's existence, so the entry can merge first.
+  "apps/web/lib/packs/sell.ts",
+  // sell.ts's unit test: it ASSERTS that the INSERT writes the purchase-time
+  // value (the full total) and nothing else, which is the opposite of drift and
+  // the same case as the backfill-identity tests above. It never UPDATEs the
+  // column; it reads only the fake INSERT's recorded values.
+  "apps/web/lib/packs/sell.test.ts",
+  // The fixture for pack payments: pack-instance-payments.db.test.ts INSERTS
+  // brand-new instances so the payment lines and the set-once agreed price have
+  // a pacote to belong to, because the column is NOT NULL with no default. It
+  // never UPDATEs and never READS it; what it asserts is the payment table's
+  // policies and grants and the agreed price's set-once rule. Same terms as the
+  // fixture entries above, and no wider.
+  "packages/db/tests/pack-instance-payments.db.test.ts",
 ]);
 
 function sources() {
@@ -185,6 +210,35 @@ test("the ONE allowed writer only ever INSERTs it, never UPDATEs it", () => {
     false,
     "apps/web/lib/packs/instances.ts UPDATEs sessions_remaining. It may only INSERT it.",
   );
+});
+
+test("the second writer (Vender pack) only ever INSERTs it, never UPDATEs it", () => {
+  // The same narrowing as the test above, for apps/web/lib/packs/sell.ts. That
+  // file writes the column by raw SQL (the agreed price it writes beside it is
+  // not declared on the drizzle table until after its migration is applied),
+  // so the UPDATE shapes are checked in both forms. Until the file lands it is
+  // absent, and an absent file writes nothing.
+  const path = join(ROOT, "apps/web/lib/packs/sell.ts");
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return;
+  }
+  const src = stripComments(raw);
+  assert.equal(
+    /\.set\(/.test(src),
+    false,
+    "apps/web/lib/packs/sell.ts calls .set(: it may only INSERT a brand-new instance.",
+  );
+  assert.equal(
+    /\bupdate\s+("?public"?\.)?"?patient_pack_instances\b/i.test(src),
+    false,
+    "apps/web/lib/packs/sell.ts UPDATEs patient_pack_instances: it may only INSERT a brand-new instance.",
+  );
+  // Control: the two predicates fire on the shapes they exist to catch.
+  assert.ok(/\.set\(/.test("tx.update(patientPackInstances).set({ sessionsRemaining: 1 })"));
+  assert.ok(/\bupdate\s+("?public"?\.)?"?patient_pack_instances\b/i.test('UPDATE public."patient_pack_instances" SET sessions_remaining = 1'));
 });
 
 test("the schema comment naming this file is still true", () => {

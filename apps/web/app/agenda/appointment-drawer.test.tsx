@@ -1,4 +1,6 @@
 /* eslint-disable react/display-name -- lightweight inline @osteojp/ui stand-ins for a render test; display names add nothing here */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -81,8 +83,11 @@ vi.mock("@osteojp/ui", () => {
 });
 
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
+import { scheduleAgainRefusal } from "./schedule-again-drawer";
+import { s } from "@/lib/i18n";
 import { therapistChangeOptions } from "@/lib/scheduling/therapist-change";
 import { loadAppointmentDrawer } from "@/lib/scheduling/drawer-load";
+import { newBookingPrefill } from "@/lib/scheduling/new-booking-location";
 
 const options: AgendaOptions = { therapists: [], locations: [], bookableLocations: [], services: [], packs: [] };
 
@@ -594,6 +599,91 @@ describe("AppointmentDrawer - one machine per clinic under one name (NESA-SCOPE)
     expect(html).toContain('<option value="ana" selected="">Ana Lisboa</option>');
     expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA</option>']);
   });
+
+  // AGENDA-NEW-LOC-01: the agenda filtered to one clinic hands a hand-opened
+  // create that clinic through `prefill` (agenda-new-booking-location.test.tsx
+  // pins what the agenda hands over). These pin what the drawer does with it.
+  describe("Nova marcação from an agenda filtered to one clinic (AGENDA-NEW-LOC-01)", () => {
+    const BRUNO = { id: "bruno", label: "Bruno Castelo" };
+    /** BOTH(CB) plus a CB-only colleague, so people scoping is visible. */
+    const WITH_CB_PERSON: AgendaOptions = {
+      ...BOTH(CB),
+      therapistLocationIds: { ...shared.therapistLocationIds, [BRUNO.id]: [CB] },
+      therapists: [...BOTH(CB).therapists, BRUNO],
+      allTherapists: [...(BOTH(CB).allTherapists ?? []), BRUNO],
+    };
+    const RECEPTION = { role: "reception" as const, userId: "recep-1" };
+    const locationOptions = (html: string) =>
+      html.match(/<option value="loc-[a-z]+"[^>]*>[^<]*<\/option>/g) ?? [];
+    const fromAgendaOn = (filter: string | null, opts: AgendaOptions = WITH_CB_PERSON) =>
+      newBookingPrefill(filter, opts.bookableLocations);
+
+    it("the agenda on LV: Localização opens on LV, though CB is the first bookable clinic", () => {
+      const html = render({ mode: "create", prefill: fromAgendaOn(LV) }, false, RECEPTION, WITH_CB_PERSON);
+      expect(locationOptions(html)).toEqual([
+        '<option value="loc-cb">OsteoJP (CB)</option>',
+        '<option value="loc-lv" selected="">OsteoJP (LV)</option>',
+      ]);
+    });
+
+    it("the agenda on LV, from an empty slot: LV as well", () => {
+      const html = render(
+        { mode: "create", slot: { date: "2026-11-10", time: "15:30" }, prefill: fromAgendaOn(LV) },
+        false,
+        RECEPTION,
+        WITH_CB_PERSON,
+      );
+      expect(html).toContain('<option value="loc-lv" selected="">OsteoJP (LV)</option>');
+    });
+
+    it("the agenda on LV: Terapeuta offers NESA (LV) and not NESA (CB)", () => {
+      const html = render({ mode: "create", prefill: fromAgendaOn(LV) }, false, RECEPTION, WITH_CB_PERSON);
+      expect(machineOptions(html)).toEqual(['<option value="nesa-lv">NESA (LV)</option>']);
+    });
+
+    it("a prefilled clinic is not a hand-made change: the people are NOT scoped to LV (W12-23)", () => {
+      // Bruno works at CB only. Scoping to LV would drop him; W12-23 scopes the
+      // people only after the user changes Localização, so he is still offered
+      // and the "nobody at this clinic" state is not shown.
+      const html = render({ mode: "create", prefill: fromAgendaOn(LV) }, false, RECEPTION, WITH_CB_PERSON);
+      expect(html).toContain('<option value="bruno">Bruno Castelo</option>');
+      expect(html).toContain('<option value="ana">Ana Lisboa</option>');
+    });
+
+    it("Todas as localizações: no prefill, Localização stays on the first bookable clinic (CB) and its NESA", () => {
+      expect(fromAgendaOn(null)).toBeUndefined();
+      const html = render({ mode: "create" }, false, RECEPTION, WITH_CB_PERSON);
+      expect(html).toContain('<option value="loc-cb" selected="">OsteoJP (CB)</option>');
+      expect(machineOptions(html)).toEqual(['<option value="nesa-cb">NESA (CB)</option>']);
+    });
+
+    it("a filter clinic the viewer cannot book into falls back to the first bookable clinic", () => {
+      const cbOnly: AgendaOptions = { ...WITH_CB_PERSON, bookableLocations: [{ id: CB, label: "OsteoJP (CB)" }] };
+      const prefill = fromAgendaOn(LV, cbOnly);
+      expect(prefill).toBeUndefined();
+      const html = render({ mode: "create", prefill }, false, RECEPTION, cbOnly);
+      expect(html).toContain("OsteoJP (CB)");
+      expect(html).not.toContain('value="loc-lv"');
+    });
+
+    it("the deep link's prefill wins: a guest request for CB opens on CB", () => {
+      // The deep link hands the drawer the page's guest prefill, never the
+      // toolbar's clinic (pinned in agenda-new-booking-location.test.tsx), so
+      // whatever the agenda shows, the guest's clinic is the one painted.
+      const html = render(
+        {
+          mode: "create",
+          lockedPatient: { value: "patient-1", label: "Paciente Sintetico" },
+          prefill: { serviceId: null, locationId: CB },
+        },
+        false,
+        RECEPTION,
+        BOTH(LV),
+      );
+      expect(html).toContain('<option value="loc-cb" selected="">OsteoJP (CB)</option>');
+      expect(machineOptions(html)).toEqual(['<option value="nesa-cb">NESA (CB)</option>']);
+    });
+  });
 });
 
 describe("AppointmentDrawer — therapist self-lock on create (PL-10)", () => {
@@ -809,6 +899,45 @@ describe("AppointmentDrawer — Marcar novamente (SCHED-15)", () => {
   });
 });
 
+// R52: what the Marcar novamente drawer shows when the server refuses with
+// `forbidden` (for example a therapist copying a colleague's visit). The web
+// tests run in node with no DOM, so there is no click to drive: the decision
+// is the pure `scheduleAgainRefusal`, and the wiring that turns its answer into
+// the screen is read off the component's source.
+describe("ScheduleAgainDrawer - a forbidden refusal (R52)", () => {
+  it("shows the no-permission sentence, not the generic failure", () => {
+    const r = scheduleAgainRefusal({ ok: false, error: "forbidden" });
+    expect(r).toEqual({ message: "Não tem permissão para esta ação." });
+    expect(r).not.toEqual({ message: s["patients.scheduleAgainError"] });
+  });
+
+  it("offers no override: it returns no conflicts, the only thing that turns the button into 'mesmo assim'", () => {
+    expect("conflicts" in scheduleAgainRefusal({ ok: false, error: "forbidden" })).toBe(false);
+    // The control: a real conflict DOES return them, so the line above is not
+    // true of every refusal by construction.
+    expect(scheduleAgainRefusal({ ok: false, error: "conflict", conflicts: [] })).toEqual({ conflicts: [] });
+  });
+
+  it("is wired: the drawer routes every refusal through it, and only `conflicts` changes the button", () => {
+    const src = readFileSync(join(__dirname, "schedule-again-drawer.tsx"), "utf8");
+    expect(src).toContain("const refusal = scheduleAgainRefusal(result);");
+    expect(src).toContain('if ("conflicts" in refusal) setConflicts(refusal.conflicts);');
+    expect(src).toContain("else setError(refusal.message);");
+    expect(src).toContain('confirmLabel={conflicts ? s["appointment.saveAnyway"] : s["patients.scheduleAgainConfirm"]}');
+    // The component itself never reads the refusal code: a branch added before
+    // the call (offering the override on `forbidden`, say) would read
+    // `result.error` and turn this red. Comments are stripped first, so text
+    // left in a comment cannot stand in for code.
+    const component = src
+      .slice(src.indexOf("export function ScheduleAgainDrawer"))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(src.indexOf("export function ScheduleAgainDrawer")).toBeGreaterThan(0);
+    expect(component).not.toContain("result.error");
+    expect(component).toContain("const refusal = scheduleAgainRefusal(result);");
+  });
+});
+
 // SKEW-01 PR 2: the loader is made while rendering but STARTED only by the first
 // read that asks for it, from an effect. A render that sent it would send it on
 // every re-render, and twice per render in development.
@@ -937,5 +1066,66 @@ describe("AppointmentDrawer - the ficha's Terapeuta field offers this panel's li
     expect(
       panelTherapistOptions(render({ mode: "edit", appt: eva[1] }, false, RECEPTION, eva[2]), EVA.id),
     ).toContainEqual(EVA);
+  });
+});
+
+// U6: the drawer's "Marcar novamente" is hidden exactly where cloneAppointment
+// would answer `forbidden` (R52): a therapist on a colleague's visit. Both
+// arms, for every role. Every hidden arm first proves the edit panel rendered.
+describe("AppointmentDrawer - Marcar novamente follows the server's create rule (U6)", () => {
+  const SELF = "therapist-1";
+  const COLLEAGUE = "therapist-2";
+  const NESA = "nesa-cb";
+  const shown = (role: Role, practitionerId: string, tenantSharedResourceIds?: string[], practitionerTwoId: string | null = null) => {
+    const html = render(
+      { mode: "edit", appt: { ...editAppt, practitionerId, practitionerTwoId } },
+      false,
+      { role, userId: SELF },
+      { ...options, tenantSharedResourceIds },
+    );
+    expect(html).toContain("appt-1");
+    return html.includes("Marcar novamente");
+  };
+
+  it("a therapist is offered it on their own visit", () => {
+    expect(shown("therapist", SELF, [NESA])).toBe(true);
+  });
+
+  it("a therapist is NOT offered it on a colleague's visit", () => {
+    expect(shown("therapist", COLLEAGUE, [NESA])).toBe(false);
+    expect(shown("therapist", COLLEAGUE, [])).toBe(false);
+  });
+
+  it("a therapist is offered it on a shared resource's (NESA) visit", () => {
+    expect(shown("therapist", NESA, [NESA])).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it on any visit", (role) => {
+    for (const id of [SELF, COLLEAGUE, NESA]) expect(shown(role, id), id).toBe(true);
+  });
+
+  // SCHED-29: the server also answers `forbidden` to a therapist whose copy
+  // would carry a PERSON as Terapeuta 2, or the primary named twice.
+  it("a therapist is NOT offered it on their own visit whose Terapeuta 2 is a person or themselves", () => {
+    expect(shown("therapist", SELF, [NESA], COLLEAGUE)).toBe(false);
+    expect(shown("therapist", SELF, [NESA], SELF)).toBe(false);
+    expect(shown("therapist", NESA, [NESA], NESA)).toBe(false);
+  });
+
+  it("a therapist IS offered it on their own visit with NESA as Terapeuta 2", () => {
+    expect(shown("therapist", SELF, [NESA], NESA)).toBe(true);
+  });
+
+  it.each(["reception", "admin", "owner"] as const)("%s is offered it whoever Terapeuta 2 is", (role) => {
+    for (const two of [COLLEAGUE, SELF, NESA]) expect(shown(role, SELF, [NESA], two), two).toBe(true);
+  });
+});
+
+describe("ScheduleAgainDrawer - a shared-resource location refusal (U6)", () => {
+  it("shows the shared-resource sentence the create path shows, not the generic failure", () => {
+    const r = scheduleAgainRefusal({ ok: false, error: "shared_resource_location" });
+    expect(r).toEqual({ message: s["appointment.sharedResourceLocation"] });
+    expect(r).not.toEqual({ message: s["patients.scheduleAgainError"] });
+    expect("conflicts" in r).toBe(false);
   });
 });

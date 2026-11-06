@@ -13,7 +13,7 @@ import { clinicClosedMessage } from "@/lib/scheduling/clinic-closed-message";
 import { outsideClinicHoursMessage } from "@/lib/scheduling/clinic-hours-message";
 import { conflictPatientLabel } from "@/lib/scheduling/patient-label";
 import { formatTimeOfDay, lisbonDateTimeToUtc } from "@/lib/scheduling/time";
-import type { AgendaAppointment, ConflictInfo } from "@/lib/scheduling/types";
+import type { ActionResult, AgendaAppointment, ConflictInfo } from "@/lib/scheduling/types";
 
 /**
  * SCHED-15 — "Marcar novamente", ONE component behind BOTH entry points.
@@ -38,7 +38,11 @@ import type { AgendaAppointment, ConflictInfo } from "@/lib/scheduling/types";
 // against `PACK_CONSUMING_STATUSES`, and importing `@osteojp/db` from a
 // "use client" module pulls the `postgres` driver into the browser bundle - the
 // page then does not build. That core file carries the full reasoning.
-export { isEligibleForScheduleAgain, isPastConsuming } from "@/lib/scheduling/schedule-again-core";
+export {
+  isEligibleForScheduleAgain,
+  isPastConsuming,
+  scheduleAgainForbidden,
+} from "@/lib/scheduling/schedule-again-core";
 
 const CONFLICT_HEADING: Record<ConflictInfo["kind"], keyof typeof s> = {
   therapist: "agenda.conflictTherapist",
@@ -70,6 +74,62 @@ function ConflictSummary({ items }: { items: ConflictInfo[] }) {
       ))}
     </span>
   );
+}
+
+/**
+ * What the drawer shows for a refused clone: the conflict banner (which turns
+ * the button into the "mesmo assim" override) or a plain message. Pure, so the
+ * node render tests can pin it without a click.
+ *
+ * SCHED-15. Seven refusal codes get their own treatment and everything else
+ * takes the generic sentence. `conflict` is the only one the override may
+ * reach, and the only one that returns `conflicts`. The other six are facts
+ * about the slot, the clinic or the actor that pressing again cannot change,
+ * and offering "mesmo assim" for them would be the §1.3 shape: a refusal
+ * wearing the face of one you can press past.
+ */
+export function scheduleAgainRefusal(
+  result: Extract<ActionResult<unknown>, { ok: false }>,
+): { conflicts: ConflictInfo[] } | { message: string } {
+  if (result.error === "conflict") return { conflicts: result.conflicts ?? [] };
+  if (result.error === "outside_availability") {
+    const w = result.availabilityWindows ?? [];
+    return {
+      message:
+        w.length === 0
+          ? s["appointment.outsideAvailabilityNoWindows"]
+          : `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityWindows"]} ` +
+            w.map((x) => `${x.startTime}-${x.endTime}`).join(", "),
+    };
+  }
+  // 0085. The clinic is shut at that hour. A plain message, NOT the conflict
+  // banner: that banner turns the button into "mesmo assim", and the server
+  // raises this outside the override. Before this branch the refusal fell
+  // through to the generic sentence below - and before the server check
+  // existed, the clone was simply written.
+  if (result.error === "clinic_closed") return { message: clinicClosedMessage(result.clinicClosure) };
+  // AGENDA-2100. The clone's new hour is outside the clinic's day - before it
+  // opens, or later than the last start it accepts. A plain message for the
+  // same reason as the closure above.
+  if (result.error === "outside_clinic_hours") {
+    return { message: outsideClinicHoursMessage(result.clinicWindow) };
+  }
+  // SCHED-17 (U6): the visit's shared resource (NESA) is not installed at its
+  // clinic, or the clinic is not one of the actor's. The sentence the create
+  // and edit paths already show for it (refusal-message.ts), not the generic
+  // failure.
+  if (result.error === "shared_resource_location") {
+    return { message: s["appointment.sharedResourceLocation"] };
+  }
+  // `location_not_assigned`: the clinic is outside the actor's scope.
+  // `forbidden` (R52): the actor may not book on this visit's practitioners,
+  // for example a therapist copying a colleague's visit or a visit whose
+  // Terapeuta 2 they may not book, or the actor lacks the permission at all.
+  // Both are "no permission", not the generic failure.
+  if (result.error === "location_not_assigned" || result.error === "forbidden") {
+    return { message: s["errors.forbidden"] };
+  }
+  return { message: s["patients.scheduleAgainError"] };
 }
 
 export function ScheduleAgainDrawer({
@@ -133,40 +193,9 @@ export function ScheduleAgainDrawer({
       onClose();
       return;
     }
-    // SCHED-15. Four refusals get their own sentence and everything else takes
-    // the generic one. `conflict` is the only one the override may reach: the
-    // other three are facts about the slot, the clinic or the actor that
-    // pressing again cannot change, and offering "mesmo assim" for them would be
-    // the §1.3 shape — a refusal wearing the face of one you can press past.
-    if (result.error === "conflict") {
-      setConflicts(result.conflicts ?? []);
-    } else if (result.error === "outside_availability") {
-      const w = result.availabilityWindows ?? [];
-      setError(
-        w.length === 0
-          ? s["appointment.outsideAvailabilityNoWindows"]
-          : `${s["appointment.outsideAvailability"]} ${s["appointment.outsideAvailabilityWindows"]} ` +
-            w.map((x) => `${x.startTime}-${x.endTime}`).join(", "),
-      );
-    } else if (result.error === "clinic_closed") {
-      // 0085. The clinic is shut at that hour. A plain message, NOT the
-      // conflict banner: that banner turns the button into "Marcar mesmo
-      // assim", and the server raises this outside the override. Before this
-      // branch the refusal fell through to the generic sentence below - and
-      // before the server check existed, the clone was simply written.
-      setError(clinicClosedMessage(result.clinicClosure));
-    } else if (result.error === "outside_clinic_hours") {
-      // AGENDA-2100. The clone's new hour is outside the clinic's day - before
-      // it opens, or later than the last start it accepts. A plain message for
-      // the same reason as the closure above: the server raises it outside the
-      // override, so "Marcar mesmo assim" cannot reach it and must not be
-      // offered.
-      setError(outsideClinicHoursMessage(result.clinicWindow));
-    } else if (result.error === "location_not_assigned") {
-      setError(s["errors.forbidden"]);
-    } else {
-      setError(s["patients.scheduleAgainError"]);
-    }
+    const refusal = scheduleAgainRefusal(result);
+    if ("conflicts" in refusal) setConflicts(refusal.conflicts);
+    else setError(refusal.message);
   }
 
   return (

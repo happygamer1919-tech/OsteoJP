@@ -35,15 +35,19 @@
  * THE POSITIVE CONTROL IS NOT A COURTESY. WITHOUT IT THIS FILE PASSES EMPTY.
  * ==========================================================================
  * "These strings are absent" is trivially true of a login page, a 500, a
- * redirect, or a renamed span label. Every marker asserted ABSENT for reception
- * is asserted PRESENT for admin first, from the same route on the same run, so a
- * marker that stopped meaning anything fails the control instead of silently
- * passing the arm. PORTAL-REHYDRATE 1.3, criterion F: a guard proves a test ran;
- * only the assertion proves it tested the right subject.
+ * redirect, or a renamed span label. Every named marker asserted ABSENT for
+ * reception is asserted PRESENT for admin first, from the same route on the same
+ * run, so a marker that stopped meaning anything fails the control instead of
+ * silently passing the arm. The broad `db:` search has its own control in the
+ * same admin test: the helper that finds nothing for reception must find the two
+ * /patients labels for admin, through the decoded flight payload.
+ * PORTAL-REHYDRATE 1.3, criterion F: a guard proves a test ran; only the
+ * assertion proves it tested the right subject.
  */
 
 import { test, expect, type Page } from "@playwright/test";
 import { STORAGE } from "./fixtures";
+import { scanSpanLabels, splitPayload } from "./helpers/flight-span-labels";
 
 /**
  * STRINGS THAT MUST APPEAR IN AN ADMIN'S PAYLOAD AND MUST NOT APPEAR IN A
@@ -55,7 +59,7 @@ import { STORAGE } from "./fixtures";
  * tail "de desempenho" is true of both encodings, so the negative arm cannot
  * pass merely because the accented form was spelled differently.
  *
- * THE THREE `db:` LABELS ARE THE ONES /patients EMITS ON EVERY LOAD. The
+ * THE TWO `db:` LABELS ARE THE ONES /patients EMITS ON EVERY LOAD. The
  * stat-strip MISS mark is deliberately NOT here: it appears only on a cache
  * miss, so requiring it in the positive control would make this file fail on a
  * warm cache for a reason that has nothing to do with who may read what.
@@ -99,6 +103,30 @@ test.describe("the timing panel is granted, not hidden", () => {
         ).toContain(marker);
       }
 
+      // THE BROAD SEARCH'S CONTROL. The reception arm's `db:` scan passes on an
+      // empty result, and a scanner that matches nothing returns exactly that. So
+      // the same scanner, on an admin's measured payload, must find the labels
+      // /patients emits, and find them in the DECODED FLIGHT TEXT, which proves
+      // the push() chunks were found and parsed rather than skipped.
+      const scan = scanSpanLabels(payload);
+      expect(
+        scan.flightChunks,
+        "no self.__next_f.push chunk was decoded from an ADMIN's payload: the scanner has " +
+          "fallen back to raw bytes, so Next changed how it writes the flight payload",
+      ).toBeGreaterThan(0);
+      for (const label of ["db:patients-list", "db:patients-filter-locations"]) {
+        expect(
+          scan.flightLabels,
+          `the span scanner did not find "${label}" in an ADMIN's decoded flight payload. ` +
+            "The reception arm's empty result means nothing until this passes.",
+        ).toContain(label);
+        // And in `labels`, the field the reception arm reads.
+        expect(
+          scan.labels,
+          `"${label}" is missing from scan.labels for an ADMIN, the field the reception arm reads`,
+        ).toContain(label);
+      }
+
       // And it is a real, reachable panel rather than four strings in a script.
       await expect(page.getByRole("region", { name: "Medição de desempenho" })).toHaveCount(1);
     });
@@ -110,10 +138,15 @@ test.describe("the timing panel is granted, not hidden", () => {
     test("an admin who did NOT ask gets no panel and no span", async ({ page }) => {
       const payload = await payloadOf(page, "/patients");
       await expect(page.getByRole("heading", { name: "Pacientes", exact: true })).toBeVisible();
+      const { flight } = splitPayload(payload);
       for (const marker of PANEL_MARKERS) {
         expect(payload, `"${marker}" reached an admin who did not ask for the panel`).not.toContain(
           marker,
         );
+        expect(
+          flight,
+          `"${marker}" reached an admin who did not ask, split across flight chunks`,
+        ).not.toContain(marker);
       }
       await expect(page.getByRole("region", { name: "Medição de desempenho" })).toHaveCount(0);
     });
@@ -140,13 +173,21 @@ test.describe("the timing panel is granted, not hidden", () => {
       ).toBeVisible();
       expect(new URL(page.url()).pathname).toBe("/patients");
 
+      // Searched twice: the raw bytes, and the decoded flight text, where a
+      // marker the serialiser split across two push() chunks is whole again.
+      const { flight } = splitPayload(payload);
       for (const marker of PANEL_MARKERS) {
-        expect(
-          payload,
-          `a RECEPTION principal was served "${marker}". The panel element must never be ` +
-            "created for them, so the spans are never serialised - if this fires, the numbers " +
-            "are in the browser and a hidden element is not a withheld one.",
-        ).not.toContain(marker);
+        for (const [where, text] of [
+          ["payload", payload],
+          ["decoded flight payload", flight],
+        ] as const) {
+          expect(
+            text,
+            `a RECEPTION principal was served "${marker}" (${where}). The panel element must ` +
+              "never be created for them, so the spans are never serialised - if this fires, the " +
+              "numbers are in the browser and a hidden element is not a withheld one.",
+          ).not.toContain(marker);
+        }
       }
 
       // The weaker check, kept because it is the one a person can reproduce by
@@ -157,12 +198,18 @@ test.describe("the timing panel is granted, not hidden", () => {
     test("no store is opened for them: the payload carries no db: span of any name", async ({
       page,
     }) => {
-      // BROADER THAN THE NAMED LIST ON PURPOSE. The test above pins four labels
-      // that exist today; this one fires on a span nobody has written yet. A
-      // future query labelled `db:something-new` would be invisible to a
-      // hard-coded list and is caught here on the day it is added.
+      // BROADER THAN THE NAMED LIST ON PURPOSE. The test above pins four strings
+      // that exist today; this one fires on any `db:` span label, including one
+      // added later, as long as it keeps the `db:` prefix. A span named without
+      // that prefix (a `mark:` or `stat-strip:` label, say) is not caught here,
+      // and the named list above catches only the four strings it names.
       const payload = await payloadOf(page, "/patients?medicao=1");
-      const leaked = [...payload.matchAll(/db:[a-z0-9-]+/gi)].map((m) => m[0]);
+      // The scanner decodes the inline flight chunks first, then searches the
+      // HTML and the decoded text for any `db:` label shape. It drops only a
+      // flight row header: a hex row id at a row start, then `db:` and an
+      // uppercase row tag ("\n1db:I[..." is row "1db", an import row, the #1701
+      // false positive). See helpers/flight-span-labels.ts and its unit test.
+      const leaked = scanSpanLabels(payload).labels;
       expect(
         [...new Set(leaked)],
         "span labels reached a receptionist's payload - collectFor was given an audience it " +

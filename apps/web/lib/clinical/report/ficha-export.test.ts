@@ -325,3 +325,55 @@ describe("renderPatientFichaReport: a heading page per section, then each regist
     expect(mockMerge).not.toHaveBeenCalled();
   });
 });
+
+// RODICA-export-edit-before-download (owner ruling 2026-11-02): the export
+// dialog's values reach the registo they name, in whatever section it sits,
+// and nothing else; what the engine changed is collected for the audit row.
+describe("renderPatientFichaReport: the export dialog's overrides", () => {
+  const selection: FichaExportSelection = {
+    patientId: PATIENT,
+    sections: [
+      { kind: "imported", label: "Fisioterapia", recordIds: ["r1", "r2"] },
+      { kind: "none", label: null, recordIds: ["r3"] },
+    ],
+    leftOut: 0,
+  };
+  const OVR = { recordId: "r3", date: "2026-11-02", time: "15:45", text: "Texto extra" };
+  const ENTRY = {
+    recordId: "r3",
+    originalDate: "2026-11-01",
+    originalTime: null,
+    exportedDate: "2026-11-02",
+    exportedTime: "15:45",
+    textChanged: true,
+  };
+
+  beforeEach(() => {
+    mockScope.mockResolvedValue({ value: undefined });
+    mockSection.mockResolvedValue(new Uint8Array([200]));
+    mockMerge.mockResolvedValue(new Uint8Array([9]));
+    mockGenerate.mockImplementation(async (_ctx, _id, _locale, _scope, override) => ({
+      bytes: new Uint8Array([1]),
+      filename: "x.pdf",
+      ...(override ? { overridden: ENTRY } : {}),
+    }));
+  });
+
+  it("the registo named gets its override; the others are printed with the call they always got", async () => {
+    const pdf = await renderPatientFichaReport(owner, selection, "pt", new Map([["r3", OVR]]));
+    expect(mockGenerate.mock.calls.map((c) => [c[1], c.length])).toEqual([
+      ["r1", 4],
+      ["r2", 4],
+      ["r3", 5],
+    ]);
+    expect(mockGenerate.mock.calls[2]![4]).toEqual(OVR);
+    expect(pdf!.overridden).toEqual([ENTRY]);
+    // Every registo is still in the file: an override changes values, never which registos.
+    expect(pdf!.recordIds).toEqual(["r1", "r2", "r3"]);
+  });
+
+  it("no overrides: no entry on the file", async () => {
+    const pdf = await renderPatientFichaReport(owner, selection, "pt");
+    expect(pdf).not.toHaveProperty("overridden");
+  });
+});
