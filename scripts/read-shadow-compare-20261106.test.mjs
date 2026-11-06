@@ -47,6 +47,12 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
+/** `git grep` over the tracked files of this checkout; its lines, sorted. No match is an empty list. */
+const gitGrep = (...args) => {
+  const r = spawnSync("git", ["-C", ROOT, "grep", ...args], { encoding: "utf8" });
+  assert.ok(r.status === 0 || r.status === 1, `git grep failed: ${r.stderr}`);
+  return r.stdout.split("\n").filter(Boolean).sort();
+};
 
 const DOC_PATH = "docs/read-shadow-compare-20261106.md";
 const SIDECAR = "docs/read-shadow-compare-20261106.sha256";
@@ -218,7 +224,9 @@ test("LR's four conditions are written as strategy ruled them, each read from re
   for (const piece of [
     "coalesce(m.visit_now and m.visit_created < m.due_at",
     "and (st.status_at_mark in ('scheduled', 'confirmed')",
-    "and not (st.status_at_mark in ('scheduled', 'scheduled or confirmed') and m.pedido_origin), false) as c2,",
+    "and (not m.pedido_origin\n                       or (st.status_at_mark = 'confirmed' and rc.kind_rec = 'change' and rc.status_rec = 'confirmed')), false) as c2,",
+    "and v.created_at <= m.due_at\n               order by v.created_at desc, v.k desc limit 1) as kind_rec,",
+    "and v.created_at <= m.due_at\n               order by v.created_at desc, v.k desc limit 1) as status_rec) rc on true",
     "and v.kind = 'change' and v.created_at > m.due_at\n                        order by v.created_at, v.k limit 1)",
     "and v.created_at <= m.due_at\n                      order by v.created_at desc, v.k desc limit 1)",
   ]) assert.ok(lr.includes(piece), `LR condition 2 lost: ${piece}`);
@@ -228,7 +236,41 @@ test("LR's four conditions are written as strategy ruled them, each read from re
     "from public.patient_audit_log pa",
     "then z.to_status else 'unknown' end as to_status",
     "join lr_mark m on m.appointment_id = l.entity_id and m.tenant_id = l.tenant_id",
+    // Both key spellings, for every row (confirmAppointmentRequest writes snake case).
+    "select coalesce(l.metadata->>'toStatus', l.metadata->>'to_status') as ts,\n                 coalesce(l.metadata->>'fromStatus', l.metadata->>'from_status') as fs) s",
+    "when s.ts is not null then s.fs",
+    "when s.ts is not null then s.ts",
+    "or s.ts is not null\n",
+    "when l.action = 'appointment.confirm.sms_code' then 'confirmed'",
+    "or (l.action = 'appointment.confirm.sms_code' and l.metadata->>'reason' is null)",
   ]) assert.ok(ev.includes(piece), `LR's estado history lost: ${piece}`);
+  assert.equal((ev.replace(/--[^\n]*/g, "").match(/metadata->>'(toStatus|to_status|fromStatus|from_status)'/g) || []).length, 4,
+    "lr_ev reads a status key outside the two coalesces, so one spelling could be read alone");
+  // The writers of a status change the comment names, each on main as cited.
+  const actions = read("apps/web/lib/scheduling/actions.ts").split("\n");
+  assert.equal(actions[3022], '            from_status: "scheduled",', "actions.ts:3023 is not confirmAppointmentRequest's snake-case from_status");
+  assert.equal(actions[3023], '            to_status: "confirmed",', "actions.ts:3024 is not confirmAppointmentRequest's snake-case to_status");
+  assert.equal(actions[3027], '            via: "portal_request_confirm",');
+  for (const w of ["actions.ts:2031 to 2047  updateAppointment", "actions.ts:3018 to 3028  confirmAppointmentRequest", "actions.ts:3248 to 3257  correctAppointmentEstadoAction",
+    "actions.ts:3374 to 3412  the cancel", "inbound-reply.ts:155     applyInboundReply", "inbound-store.ts:372     resolveReviewItem",
+    "confirm-redeem.ts:220 to 230  the confirm code", "redeem.ts:228 and 297    the patient's link cancel", "store.ts:1064 to 1078, `cancelOwn`", "upsert.ts:820"]) {
+    assert.ok(ev.includes(w), `lr_ev's comment does not name the status writer ${w}`);
+  }
+  // Every status-key writer in the application is one the comment names: the keys, grepped.
+  const writers = gitGrep("-n", "-E", "(toStatus|to_status): ", "--", "apps/**/*.ts", ":!*.test.*")
+    .filter((l) => !/\/analytics\.ts:|reminder-population\.ts:|\/inngest\//.test(l))
+    .map((l) => l.split(":").slice(0, 2).join(":"));
+  assert.deepEqual(writers, ["apps/web/lib/scheduling/actions.ts:2045", "apps/web/lib/scheduling/actions.ts:2066", "apps/web/lib/scheduling/actions.ts:3024", "apps/web/lib/scheduling/actions.ts:3257", "apps/web/lib/scheduling/actions.ts:3411"],
+    "a writer of a status key appeared or moved: re-derive lr_ev's list (2066 is the domain event of a completion, not an audit row)");
+  const appointmentUpdates = gitGrep("-n", "\\.update(appointments)", "--", "apps/**/*.ts", "packages/**/*.ts", ":!*.test.*").map((l) => l.split(":").slice(0, 2).join(":"));
+  assert.deepEqual(appointmentUpdates, [
+    "apps/api/lib/appointments/store.ts:1068", "apps/api/lib/appointments/store.ts:1115", "apps/web/lib/packs/link.ts:177",
+    "apps/web/lib/reminders/confirm-redeem.ts:220", "apps/web/lib/reminders/inbound-reply.ts:326", "apps/web/lib/reminders/inbound-reply.ts:408",
+    "apps/web/lib/reminders/inbound-store.ts:272", "apps/web/lib/reminders/redeem.ts:223", "apps/web/lib/reminders/redeem.ts:228",
+    "apps/web/lib/scheduling/actions.ts:1976", "apps/web/lib/scheduling/actions.ts:1989", "apps/web/lib/scheduling/actions.ts:2497",
+    "apps/web/lib/scheduling/actions.ts:3008", "apps/web/lib/scheduling/actions.ts:3243", "apps/web/lib/scheduling/actions.ts:3364",
+    "packages/db/src/migration/upsert.ts:820",
+  ], "a writer of appointments appeared or moved: re-derive lr_ev's list of status writers");
   assert.doesNotMatch(strip(lr + ev), /\ba\.status\b/, "LR reads the estado from the row now");
   // The dispatcher's rule it mirrors, on main.
   const dispatch = read("apps/web/lib/reminders/dispatch.ts").split("\n");
@@ -249,17 +291,33 @@ test("LR's four conditions are written as strategy ruled them, each read from re
     const body = sql.slice(at, sql.indexOf("\n),", at));
     if (body.includes("probe_eval")) assert.match(body, /e\.src = '(pass|subject|shadow|sent)'/, `${reader.trim()} reads probe_eval without naming its source`);
   }
-  // 4. a scheduling save (#1720's classification) at or before the mark.
+  // 4. the last save that SENDS appointment/scheduled at or before the mark: R33's re-arming saves
+  //    (`rearm_rows`, held to RE_ARMING_SAVES above), less a move of a request unaccepted at the move.
   for (const piece of [
-    "select max(l.created_at) as plan_at",
-    "and l.created_at <= m.due_at\n",
-    "(l.action in ('appointment.create', 'appointment.reschedule')\n              or (l.action = 'appointment.update'\n                  and (l.metadata->>'toStatus' in ('scheduled', 'confirmed')\n                       or l.metadata->>'via' = 'portal_request_confirm'))\n              or (l.action = 'appointment.sms_reply_reviewed'\n                  and l.metadata->>'resolution' = 'confirmed' and l.metadata->>'applied' = 'true')\n              or (l.action = 'appointment.patient_sms_reply'\n                  and l.metadata->>'outcome' = 'confirmed'))) pl on true",
+    "select r.created_at as plan_at, r.clause as plan_clause\n        from rearm_rows r\n       where r.tenant_id = m.tenant_id and r.appointment_id = m.appointment_id\n         and r.created_at <= m.due_at\n",
+    "and (r.clause <> 'moved' or not m.pedido_origin\n              or coalesce((select v.to_status from lr_ev v\n                            where v.appointment_id = r.appointment_id and v.tenant_id = r.tenant_id\n                              and v.created_at <= r.created_at\n                            order by v.created_at desc, v.k desc limit 1) not in ('scheduled', 'unknown'), false))",
+    "order by r.created_at desc, r.id desc limit 1) pl on true",
     "(pl.plan_at is not null) as c4",
   ]) assert.ok(lr.includes(piece), `LR condition 4 lost: ${piece}`);
-  // The same predicate as R20's `saves.scheduling` (hasSchedulingEvent), predicate by predicate.
-  const savesPred = sql.slice(sql.indexOf("         (l.action in ('appointment.create', 'appointment.reschedule')\n          or (l.action = 'appointment.update'"), sql.indexOf(" as scheduling\n    from public.audit_log l\n   where l.entity_type = 'appointment'\n     and l.entity_id in (select appointment_id from pair"));
-  const norm = (t) => t.replace(/\s+/g, " ").trim();
-  assert.ok(norm(lr).includes(norm(savesPred)), "condition 4's scheduling save is not R20's hasSchedulingEvent predicate");
+  assert.doesNotMatch(lr.slice(lr.indexOf("(pl.plan_at is not null) as c4")).replace(/--[^\n]*/g, ""), /public\.audit_log|toStatus|hasSchedulingEvent/, "condition 4 reads audit rows of its own instead of the sending saves");
+  // The senders, from the code: every caller of the one sender is named in the comment, with its line.
+  assert.deepEqual(gitGrep("-n", "name: EVENT_APPOINTMENT_SCHEDULED", "--", "apps/**/*.ts", ":!*.test.*").map((l) => l.split(":").slice(0, 2).join(":")),
+    ["apps/web/lib/reminders/index.ts:70"], "appointment/scheduled has another sender in the application");
+  assert.deepEqual(gitGrep("-n", "enqueueAppointmentReminders(", "--", "apps/**/*.ts", ":!*.test.*").map((l) => l.split(":").slice(0, 2).join(":")),
+    ["apps/web/lib/reminders/index.ts:49", "apps/web/lib/scheduling/reminders.ts:139"], "the sender has another caller");
+  const enqueueCalls = gitGrep("-n", "-E", "await (enqueueRemindersAfterCommit|emitAcceptedPedidoReminders)\\(", "--", "apps/**/*.ts", ":!*.test.*")
+    .map((l) => l.split(":").slice(0, 2).join(":"));
+  assert.deepEqual(enqueueCalls, [
+    "apps/web/lib/reminders/inbound-reply.ts:463", "apps/web/lib/reminders/inbound-store.ts:325",
+    "apps/web/lib/scheduling/actions.ts:1107", "apps/web/lib/scheduling/actions.ts:1212", "apps/web/lib/scheduling/actions.ts:1554",
+    "apps/web/lib/scheduling/actions.ts:2142", "apps/web/lib/scheduling/actions.ts:2173", "apps/web/lib/scheduling/actions.ts:2858",
+    "apps/web/lib/scheduling/actions.ts:3089", "apps/web/lib/scheduling/pedido-acceptance.ts:148",
+  ], "a sender of appointment/scheduled appeared or moved: re-derive condition 4's list");
+  for (const c of enqueueCalls) {
+    const short = c.replace(/^.*\//, "");
+    assert.ok(lr.includes(`${short} `) || lr.includes(`${short}  `), `condition 4's comment does not name the sender ${short}`);
+  }
+  assert.equal(read("apps/web/lib/scheduling/actions.ts").split("\n")[2569], "          .filter((t) => !unacceptedPedidoIds.has(t.id))", "actions.ts:2570 is not the move's unaccepted-request filter");
   // Every LR row and every shadow-only mark that is not LR is printed, with which conditions failed.
   assert.ok(sql.includes("  select 26, 'LR (lost run), mark due '"));
   assert.ok(sql.includes("   where p.category like 'LR %'\n"));
@@ -1165,17 +1223,17 @@ const CASES = [
       shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
     ].join("\n"),
     want: only({ [`11 ${MON}`]: "REVIEW" }),
-    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /planned by a scheduling save at 2026-11-02 12:44:29/]],
+    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /planned by a save that sends appointment\/scheduled \(moved\) at 2026-11-02 12:44:29/]],
   },
   {
-    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: not S8; it is a scheduling save by #1720's classification, so LR, confirmed",
+    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: not S8; it sends nothing either, so the run was planned by the booking: LR, confirmed",
     seed: [
       visit(appt(0xb6), "2026-11-04 12:45"),
       audit(appt(0xb6), "appointment.update", "2026-11-02 12:44:50", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
       shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
     ].join("\n"),
     want: only({ [`11 ${MON}`]: "REVIEW" }),
-    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /estado at the mark confirmed; .*planned by a scheduling save at 2026-11-02 12:44:50/]],
+    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /estado at the mark confirmed; .*planned by a save that sends appointment\/scheduled \(booked\) at 2026-10-01 09:00:00/]],
   },
   { name: "a move that keeps the start, after the mark and before the pass: it does not count (R33), the shadow takes it, `both`", seed: KEPT(true), want: only({}) },
   {
@@ -1457,6 +1515,12 @@ const LR_SHAPE = ({ start = "2026-11-04 11:00", visitOpts = {}, extra = [] } = {
 ].join("\n");
 const NOT_LR = (cond) => [[50, new RegExp(`${LR_APPT} \\| UNEXPLAINED`)], [27, new RegExp(`^shadow-only UNEXPLAINED, not LR, mark due 2026-11-02 11:00 48h email \\| ${LR_APPT} \\| LR failed on: ${cond} \\| information: verdict 13 FAILs on it \\| INFO$`)]];
 const LR_UNEXPLAINED = only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" });
+/** confirmAppointmentRequest's row (actions.ts:3018 to 3028): snake-case keys, via portal_request_confirm. */
+const PEDIDOS_ACCEPT = '{"changed":["status"],"scope":"one","from_status":"scheduled","to_status":"confirmed","via":"portal_request_confirm"}';
+const COMPLETED = '{"fromStatus":"confirmed","toStatus":"completed"}';
+/** The confirm code's rows (confirm-redeem.ts:373): a confirmation, and a refusal with its reason. */
+const CODE_CONFIRMED = '{"via":"confirm_code"}';
+const CODE_REFUSED = '{"via":"confirm_code","reason":"double_confirmed_refused"}';
 /** A claim of the sleeping job for appt(0xf8), 48h email; `start` its start, `early` whether early. */
 const lrClaim = (start, created, early) => `
 insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
@@ -1469,16 +1533,16 @@ CASES.push(
     want: only({ [`11 ${MON}`]: "REVIEW" }),
     info: [
       [50, new RegExp(`${LR_APPT} \\| ${re(LR_LABEL)}`)],
-      [26, new RegExp(`^LR \\(lost run\\), mark due 2026-11-02 11:00 48h email \\| ${LR_APPT} \\| no claim, no ledger row; estado at the mark scheduled; start at the mark is the start now; planned by a scheduling save at 2026-10-01 09:00:00 \\| information: in R32's accepted set, SOLO reads every one \\| INFO$`)],
+      [26, new RegExp(`^LR \\(lost run\\), mark due 2026-11-02 11:00 48h email \\| ${LR_APPT} \\| no claim, no ledger row; estado at the mark scheduled; start at the mark is the start now; planned by a save that sends appointment\\/scheduled \\(booked\\) at 2026-10-01 09:00:00 \\| information: in R32's accepted set, SOLO reads every one \\| INFO$`)],
       [16, /with a label outside the set 0; .*LR rows \(in the set, each in row 26\) 1 \| /],
       [11, /both 2; shadow only 1 \(unexplained 0\)/],
     ],
   },
   {
-    name: "LR: confirmed by hand before the mark: the estado at the mark is confirmed, and that save is the last scheduling save: LR",
+    name: "LR: confirmed by hand before the mark: the estado at the mark is confirmed; that save sends nothing, so the booking planned the run: LR",
     seed: LR_SHAPE({ extra: [audit(LR_APPT, "appointment.update", "2026-11-01 18:00", '{"fromStatus":"scheduled","toStatus":"confirmed"}')] }),
     want: only({ [`11 ${MON}`]: "REVIEW" }),
-    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a scheduling save at 2026-11-01 18:00:00/]],
+    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a save that sends appointment\/scheduled \(booked\) at 2026-10-01 09:00:00 \| /]],
   },
   {
     name: "LR: moved away and back after the mark: the start at the mark (the first move's fromStartsAt) is the start now (R33): LR",
@@ -1517,7 +1581,7 @@ CASES.push(
     name: "LR negative 2: an online request not yet accepted at the mark (scheduled, origin patient_portal): not LR",
     seed: LR_SHAPE({ visitOpts: { origin: "patient_portal" } }),
     want: LR_UNEXPLAINED,
-    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: scheduled, an online request not yet accepted\\)"),
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: scheduled, an online request not accepted at the mark by the recorded rows\\)"),
   },
   {
     name: "LR negative 3: moved after the mark to another start: the start at the mark is not the start now: not LR",
@@ -1526,14 +1590,109 @@ CASES.push(
     info: NOT_LR("3 the start at the mark is not the start now, or cannot be read"),
   },
   {
-    name: "LR negative 4: no scheduling save at or before the mark (no booking row; an edit that re-arms nothing before it; a kept-start move and a confirmation after it): not LR",
+    name: "LR negative 4: no save that sends appointment/scheduled at or before the mark (no booking row; an edit that re-arms nothing before it; a kept-start move and a confirmation after it): not LR",
     seed: LR_SHAPE({ visitOpts: { saved: false }, extra: [
       audit(LR_APPT, "appointment.update", "2026-11-01 18:00", '{"via":"agenda"}'),
       moved(LR_APPT, "2026-11-02 12:00", "2026-11-04 11:00", "2026-11-04 11:00"),
       audit(LR_APPT, "appointment.update", "2026-11-02 12:10", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
     ] }),
     want: LR_UNEXPLAINED,
-    info: NOT_LR("4 no scheduling save at or before the mark"),
+    info: NOT_LR("4 no save that sends appointment\\/scheduled at or before the mark"),
+  },
+  // ---- The R4 review of 2026-11-06 (BLOCKER 1, MAJOR 2, MINOR): the request's acceptance, and the planner is a SENDING save. ----
+  {
+    name: "LR negative 2b (the review's seed): an online request moved by staff before the mark, accepted in Pedidos (snake-case keys) after it, completed later: not LR, conditions 2 and 4",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false, status: "completed" }, extra: [
+      moved(LR_APPT, "2026-11-01 17:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+      audit(LR_APPT, "appointment.update", "2026-11-02 12:00", PEDIDOS_ACCEPT),
+      audit(LR_APPT, "appointment.update", "2026-11-03 18:00", COMPLETED),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: scheduled, an online request not accepted at the mark by the recorded rows\\); 4 no save that sends appointment\\/scheduled at or before the mark"),
+  },
+  {
+    name: "LR: the review's seed accepted in Pedidos BEFORE the mark (after the staff move, which sent nothing): accepted at the mark, planned by the acceptance: LR",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false, status: "completed" }, extra: [
+      moved(LR_APPT, "2026-11-01 17:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+      audit(LR_APPT, "appointment.update", "2026-11-01 18:00", PEDIDOS_ACCEPT),
+      audit(LR_APPT, "appointment.update", "2026-11-03 18:00", COMPLETED),
+    ] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a save that sends appointment\/scheduled \(accepted_in_pedidos\) at 2026-11-01 18:00:00 \| /]],
+  },
+  {
+    name: "LR: a booked visit accepted in Pedidos after the mark (a request known by its notification, origin staff): the estado at the mark is the snake-case from_status, scheduled: LR",
+    seed: LR_SHAPE({ extra: [audit(LR_APPT, "appointment.update", "2026-11-02 12:00", PEDIDOS_ACCEPT)] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, /estado at the mark scheduled; start at the mark is the start now; planned by a save that sends appointment\/scheduled \(booked\) at 2026-10-01 09:00:00 \| /]],
+  },
+  {
+    name: "LR negative 2c: an online request booked as scheduled whose next change, after the mark, leaves confirmed: no recorded acceptance at or before the mark: not LR, condition 2",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal" }, extra: [audit(LR_APPT, "appointment.update", "2026-11-03 18:00", COMPLETED)] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: confirmed, an online request not accepted at the mark by the recorded rows\\)"),
+  },
+  {
+    name: "LR negative 2e: an online request whose only row is a booking row recording confirmed: a booking is not an acceptance: not LR, condition 2",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", bookedStatus: "confirmed" } }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: confirmed, an online request not accepted at the mark by the recorded rows\\)"),
+  },
+  {
+    name: "LR negative 4b (the review's seed): no booking row, a hand-set Confirmada before the mark (sends nothing), a kept-start move after it: not LR, condition 4",
+    seed: LR_SHAPE({ visitOpts: { saved: false }, extra: [
+      audit(LR_APPT, "appointment.update", "2026-11-01 18:00", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
+      moved(LR_APPT, "2026-11-02 12:00", "2026-11-04 11:00", "2026-11-04 11:00"),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 no save that sends appointment\\/scheduled at or before the mark"),
+  },
+  {
+    name: "LR negative 4c: an online request moved while unaccepted, then accepted by a confirm code before the mark (neither sends): not LR, condition 4",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false }, extra: [
+      moved(LR_APPT, "2026-11-01 17:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-11-01 18:00", CODE_CONFIRMED),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 no save that sends appointment\\/scheduled at or before the mark"),
+  },
+  {
+    name: "LR: an online request accepted by a confirm code, then moved before the mark (accepted at the move, so the move sends): LR, planned by the move",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false }, extra: [
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-11-01 17:00", CODE_CONFIRMED),
+      moved(LR_APPT, "2026-11-01 18:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+    ] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a save that sends appointment\/scheduled \(moved\) at 2026-11-01 18:00:00 \| /]],
+  },
+  {
+    name: "LR negative 2d: a refused confirm code is no acceptance, and the move after it moves an unaccepted request: not LR, conditions 2 and 4",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false }, extra: [
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-11-01 17:00", CODE_REFUSED),
+      moved(LR_APPT, "2026-11-01 18:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: no recorded row\\); 4 no save that sends appointment\\/scheduled at or before the mark"),
+  },
+  {
+    name: "LR negative 2f: an online request accepted in Pedidos before the mark, moved (it sends), and accepted again after the mark from scheduled: the estado at the mark is scheduled, not LR, condition 2",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false }, extra: [
+      audit(LR_APPT, "appointment.update", "2026-11-01 18:00", PEDIDOS_ACCEPT),
+      moved(LR_APPT, "2026-11-01 19:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+      audit(LR_APPT, "appointment.update", "2026-11-02 12:00", PEDIDOS_ACCEPT),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: scheduled, an online request not accepted at the mark by the recorded rows\\)"),
+  },
+  {
+    name: "LR negative 4d: an online request whose estado at its move is a word the read does not know (not established), accepted by a confirm code before the mark: the move sends nothing, not LR, condition 4",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", saved: false }, extra: [
+      audit(LR_APPT, "appointment.update", "2026-11-01 16:00", '{"fromStatus":"scheduled","toStatus":"tentative"}'),
+      moved(LR_APPT, "2026-11-01 17:00", "2026-11-04 11:00", "2026-11-04 10:00"),
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-11-01 18:00", CODE_CONFIRMED),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 no save that sends appointment\\/scheduled at or before the mark"),
   },
   {
     name: "LATE-PASS: Tuesday's 10:00 pass ran at 10:16:30, its run time in slot 10:00: verdict 3 REVIEW on Tuesday",
@@ -1598,10 +1757,24 @@ const MUTANTS_1106 = [
   ["LR condition 2 takes any estado", "and (st.status_at_mark in ('scheduled', 'confirmed')", "and (true or st.status_at_mark in ('scheduled', 'confirmed')", "LR negative 2: cancelled before the mark"],
   ["LR condition 2 reads the status the change after the mark SET", "                 then (select v.from_status from lr_ev v", "                 then (select v.to_status from lr_ev v", "LR negative 2: cancelled before the mark"],
   ["LR condition 2 takes an unknown status as scheduled", "              then z.to_status else 'unknown' end as to_status", "              then z.to_status else 'scheduled' end as to_status", "LR negative 2: a booking row that records no status"],
-  ["LR condition 2 without the request gate", "and not (st.status_at_mark in ('scheduled', 'scheduled or confirmed') and m.pedido_origin), false) as c2,", "and true, false) as c2,", "LR negative 2: an online request"],
+  ["LR condition 2 without the request gate", "and (not m.pedido_origin\n                       or (st.status_at_mark", "and (true\n                       or (st.status_at_mark", "LR negative 2: an online request"],
+  ["LR condition 2 takes a request as accepted with no recorded acceptance", " and rc.kind_rec = 'change' and rc.status_rec = 'confirmed')), false) as c2,", ")), false) as c2,", "LR negative 2c"],
+  ["LR condition 2 takes a booking row as the recorded acceptance", "and rc.kind_rec = 'change' and rc.status_rec", "and rc.status_rec", "LR negative 2e"],
+  ["LR condition 2 takes a request as accepted when the estado at the mark is not confirmed", "or (st.status_at_mark = 'confirmed' and rc.kind_rec", "or (st.status_at_mark in ('scheduled', 'confirmed') and rc.kind_rec", "LR negative 2f"],
+  ["lr_ev reads only the camelCase toStatus", "select coalesce(l.metadata->>'toStatus', l.metadata->>'to_status') as ts,", "select l.metadata->>'toStatus' as ts,", "LR: the review's seed accepted in Pedidos BEFORE the mark"],
+  ["lr_ev reads only the camelCase fromStatus", "coalesce(l.metadata->>'fromStatus', l.metadata->>'from_status') as fs) s", "l.metadata->>'fromStatus' as fs) s", "LR: a booked visit accepted in Pedidos after the mark"],
+  ["lr_ev without the confirm code", "\n              or (l.action = 'appointment.confirm.sms_code' and l.metadata->>'reason' is null)", "", "LR: an online request accepted by a confirm code"],
+  ["lr_ev's confirm code sets no status", "when l.action = 'appointment.confirm.sms_code' then 'confirmed'", "when l.action = 'appointment.confirm.sms_code' then null", "LR: an online request accepted by a confirm code"],
+  ["lr_ev reads a refused confirm code as a confirmation", "or (l.action = 'appointment.confirm.sms_code' and l.metadata->>'reason' is null)", "or (l.action = 'appointment.confirm.sms_code')", "LR negative 2d"],
   ["LR condition 3 without the start now", "coalesce(e.start_at_mark = m.iso_start and m.start_now = m.iso_start, false) as c3,", "coalesce(e.start_at_mark = m.iso_start, false) as c3,", "LR negative 3"],
-  ["LR condition 4 takes a save after the mark", "         and l.created_at <= m.due_at\n", "         and true\n", "LR negative 4"],
-  ["LR condition 4 counts any audit row", "         and (l.action in ('appointment.create', 'appointment.reschedule')\n              or (l.action = 'appointment.update'", "         and (true\n              or (l.action = 'appointment.update'", "LR negative 4"],
+  ["LR condition 4 takes a save after the mark", "         and r.created_at <= m.due_at\n", "         and true\n", "LR negative 4b"],
+  ["LR condition 4 takes a save after the mark, on the first negative", "         and r.created_at <= m.due_at\n", "         and true\n", "LR negative 4:"],
+  ["LR condition 4 counts any audit row (a status-only save plans)", "select r.created_at as plan_at, r.clause as plan_clause\n        from rearm_rows r\n", "select r.created_at as plan_at, r.clause as plan_clause\n        from (select l.id, l.tenant_id, l.entity_id as appointment_id, l.created_at, 'any'::text as clause from public.audit_log l) r\n", "LR negative 4b"],
+  ["LR condition 4 counts a move of an unaccepted request", "and (r.clause <> 'moved' or not m.pedido_origin\n", "and (true or not m.pedido_origin\n", "LR negative 4c"],
+  ["LR condition 4 reads the estado after the move", "                              and v.created_at <= r.created_at\n", "                              and true\n", "LR negative 4c"],
+  ["LR condition 4 counts a move with no recorded estado", "not in ('scheduled', 'unknown'), false))", "not in ('scheduled', 'unknown'), true))", "LR negative 4c"],
+  ["LR condition 4 counts a move of a request whose estado was not established", "not in ('scheduled', 'unknown'), false))", "not in ('scheduled'), false))", "LR negative 4d"],
+  ["row 26 prints the EARLIEST sending save, not the planner", "order by r.created_at desc, r.id desc limit 1) pl on true", "order by r.created_at, r.id limit 1) pl on true", "S8 negative: the same move 31 seconds", null, [26, /\(moved\) at 2026-11-02 12:44:29/]],
   ["pcl drops LR condition 2", "and lr.c1 and lr.c2 and lr.c3 and lr.c4)", "and lr.c1 and lr.c3 and lr.c4)", "LR negative 2: cancelled before the mark"],
   ["pcl drops LR condition 4", "and lr.c1 and lr.c2 and lr.c3 and lr.c4)", "and lr.c1 and lr.c2 and lr.c3)", "LR negative 4"],
   ["LR outside R32's set", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5')", "LR: a booked visit's 48h mark"],
@@ -1643,7 +1816,7 @@ const MUTANTS = [
   ["R34's cap at 5 hours", "<= s.due_at + interval '3 hours' as is_r34", "<= s.due_at + interval '5 hours' as is_r34", "R34's predicate", null, [36, /\| 4, 3, 1, 2 \|/]],
   ["R34 without the claim before the first save", "and c0.id <> s.id and c0.created_at <= e.first_rearm_at)", "and c0.id <> s.id)", "R34's predicate", null, [36, /\| 4, 3, 1, 2 \|/]],
 ];
-for (const [what, from, to, caseName] of MUTANTS_1106) MUTANTS.push([what, from, to, caseName]);
+for (const m of MUTANTS_1106) MUTANTS.push(m);
 for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
   const base = CASES.find((c) => c.name.startsWith(caseName) && !c.mutate);
   assert.ok(base, `no case named ${caseName}`);

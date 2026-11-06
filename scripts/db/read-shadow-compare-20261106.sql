@@ -59,11 +59,14 @@
 --       UNEXPLAINED (and S8 does not name) for which ALL FOUR hold, each read from recorded rows
 --       (the conditions are written at `lr`): 1. no claim of any taker for that appointment,
 --       offset, channel and start, and no reminder ledger row of it; 2. the visit existed and its
---       estado at the mark was one the dispatcher sends for, read from the audit trail; 3. its start
---       at the mark (#1678's startAtTheMark, `probe_eval`) is its start now and the mark's start
---       (R33 = A); 4. a scheduling save (#1720's classification) at or before the mark planned the
---       run. LR is in R32's accepted set and EVERY LR row is printed with its appointment id and
---       mark (row 26). A shadow-only mark that fails any condition stays UNEXPLAINED, and row 27
+--       estado at the mark was one the dispatcher sends for, read from the audit trail in every
+--       key spelling its writers use, and an online request only once a recorded acceptance is at
+--       or before the mark; 3. its start at the mark (#1678's startAtTheMark, `probe_eval`) is its
+--       start now and the mark's start (R33 = A); 4. a save that SENDS appointment/scheduled (R33's
+--       re-arming saves, `rearm_rows`, less a move of a request still unaccepted at the move) at or
+--       before the mark planned the run; a status-only save sends nothing and is ignored. LR is in
+--       R32's accepted set and EVERY LR row is printed with its appointment id, mark and planning
+--       save (row 26). A shadow-only mark that fails any condition stays UNEXPLAINED, and row 27
 --       names the conditions it failed.
 --
 -- THE DAYS AND THE WINDOW. t0 is the first `shadow` heartbeat at or after DEPLOYED_AT, as before:
@@ -768,10 +771,30 @@ lr_ev as (
   -- LR's condition 2, the recorded history of the visit's estado, of the visit's own tenant: the
   -- booking row (`appointment.create`, whose metadata records the status it was booked with:
   -- apps/web/lib/scheduling/actions.ts:1039 and 1530, batch.ts:320), every row that records a
-  -- status change (`toStatus`, with the status it left in `fromStatus`), the two SMS rows that
-  -- change a status without `toStatus` (inbound-reply.ts and inbound-store.ts move only a
-  -- `scheduled` visit, as R22's `sc` reads them), and the patient's own cancel (redeem.ts,
-  -- patient_audit_log, from scheduled or confirmed). Every status is reduced to a fixed word.
+  -- status change, the two SMS rows and the confirm code that change a status without a status
+  -- key, and the patient's own cancel. EVERY WRITER OF A STATUS CHANGE, from a grep of every
+  -- `.update(appointments)` on origin/main at 806c1bb2, with the keys it writes:
+  --   actions.ts:2031 to 2047  updateAppointment, `appointment.update`: `fromStatus`, `toStatus`
+  --   actions.ts:3018 to 3028  confirmAppointmentRequest (Pedidos), `appointment.update`:
+  --                            `from_status` scheduled, `to_status` confirmed (SNAKE CASE), `via`
+  --                            portal_request_confirm
+  --   actions.ts:3248 to 3257  correctAppointmentEstadoAction, `appointment.estado_correction`:
+  --                            `fromStatus`, `toStatus`
+  --   actions.ts:3374 to 3412  the cancel, `appointment.cancel`: `fromStatus`, `toStatus` cancelled
+  --   inbound-reply.ts:155     applyInboundReply, `appointment.patient_sms_reply`: `outcome`
+  --                            confirmed or cancelled (moves only a `scheduled` visit, :311)
+  --   inbound-store.ts:372     resolveReviewItem, `appointment.sms_reply_reviewed`: `resolution`,
+  --                            `applied` (the UPDATE moves only a `scheduled` visit)
+  --   confirm-redeem.ts:220 to 230  the confirm code, `appointment.confirm.sms_code`: no status
+  --                            key; scheduled to confirmed (the UPDATE's guard), written with no
+  --                            `reason` on success (confirm-redeem.ts:373; a refusal adds one)
+  --   redeem.ts:228 and 297    the patient's link cancel: `patient_audit_log`, action `cancel`,
+  --                            from scheduled or confirmed
+  -- Writers that record NO row, so the trail cannot see them (the mark then reads as the rows
+  -- around it allow, and an estado no row establishes is not sendable): the portal's own cancel
+  -- (apps/api/lib/appointments/store.ts:1064 to 1078, `cancelOwn`) and the importer's re-upsert
+  -- (packages/db/src/migration/upsert.ts:820). Both key spellings are read for every row, so a
+  -- writer's spelling never hides a change. Every status is reduced to a fixed word.
   select z.appointment_id, z.tenant_id, z.created_at, z.k, z.kind,
          case when z.from_status in ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show', 'scheduled or confirmed')
               then z.from_status else 'unknown' end as from_status,
@@ -781,17 +804,22 @@ lr_ev as (
       select l.entity_id as appointment_id, l.tenant_id, l.created_at, l.id::text as k,
              case when l.action = 'appointment.create' then 'booked' else 'change' end as kind,
              case when l.action = 'appointment.create' then null
-                  when l.metadata->>'toStatus' is not null then l.metadata->>'fromStatus'
+                  when s.ts is not null then s.fs
                   else 'scheduled' end as from_status,
              case when l.action = 'appointment.create' then l.metadata->>'status'
-                  when l.metadata->>'toStatus' is not null then l.metadata->>'toStatus'
+                  when s.ts is not null then s.ts
+                  when l.action = 'appointment.confirm.sms_code' then 'confirmed'
                   when l.action = 'appointment.patient_sms_reply' then l.metadata->>'outcome'
                   else l.metadata->>'resolution' end as to_status
         from public.audit_log l
         join lr_mark m on m.appointment_id = l.entity_id and m.tenant_id = l.tenant_id
+        cross join lateral (
+          select coalesce(l.metadata->>'toStatus', l.metadata->>'to_status') as ts,
+                 coalesce(l.metadata->>'fromStatus', l.metadata->>'from_status') as fs) s
        where l.entity_type = 'appointment'
          and (l.action = 'appointment.create'
-              or l.metadata->>'toStatus' is not null
+              or s.ts is not null
+              or (l.action = 'appointment.confirm.sms_code' and l.metadata->>'reason' is null)
               or (l.action = 'appointment.patient_sms_reply' and l.metadata->>'outcome' in ('cancelled', 'confirmed'))
               or (l.action = 'appointment.sms_reply_reviewed' and l.metadata->>'applied' = 'true'
                   and l.metadata->>'resolution' in ('confirmed', 'cancelled')))
@@ -806,7 +834,7 @@ lr_ev as (
 lr as (
   -- LR, LOST RUN: the four conditions of strategy's ruling of 2026-11-06 14:20, each on its own
   -- line, each false (never unknown) when the recorded rows cannot establish it.
-  select m.*, st.status_at_mark, pl.plan_at,
+  select m.*, st.status_at_mark, rc.kind_rec, rc.status_rec, pl.plan_at, pl.plan_clause,
          -- 1. NO CLAIM AND NO LEDGER ROW. No claim of ANY taker (reminder_claims, kind 'claim',
          --    early or not, released or not) for this appointment, offset, channel and start, and no
          --    reminder ledger row of this appointment, offset and channel from 10 minutes before the
@@ -829,21 +857,34 @@ lr as (
          --    sweep.ts:209, applied at sweep.ts:294), and not an unaccepted request
          --    (isUnacceptedPedido, dispatch.ts:140 to 142, applied at dispatch.ts:1275 to 1277:
          --    `scheduled` with origin `patient_portal`). A portal cancel left `scheduled or
-         --    confirmed`, sendable only when the visit is not a request.
+         --    confirmed`, sendable only when the visit is not a request. AN ONLINE REQUEST
+         --    (origin `patient_portal`, the shape isUnacceptedPedido reads) IS SENDABLE ONLY WHEN
+         --    ACCEPTED BY THE MARK, FROM A RECORDED ROW: its estado at the mark is `confirmed`, and
+         --    the last row of its history at or before the mark is a recorded change to
+         --    `confirmed` (`rc`: an acceptance in Pedidos, an Estado save, an SMS or review
+         --    confirmation, a confirm code, or a bring-back to Confirmada). An estado inferred only
+         --    from a change written after the mark is no acceptance.
          coalesce(m.visit_now and m.visit_created < m.due_at
                   and (st.status_at_mark in ('scheduled', 'confirmed')
                        or st.status_at_mark = 'scheduled or confirmed')
-                  and not (st.status_at_mark in ('scheduled', 'scheduled or confirmed') and m.pedido_origin), false) as c2,
+                  and (not m.pedido_origin
+                       or (st.status_at_mark = 'confirmed' and rc.kind_rec = 'change' and rc.status_rec = 'confirmed')), false) as c2,
          -- 3. THE START AT THE MARK IS THE START NOW (R33 = A), and is the start the shadow row
          --    carries: #1678's startAtTheMark (`probe_eval`, source `lost`) with every move written
          --    after the mark up to the read's clock. No start at the mark (no booking or move row to
          --    read it from) is not established.
          coalesce(e.start_at_mark = m.iso_start and m.start_now = m.iso_start, false) as c3,
-         -- 4. A SCHEDULING SAVE PLANNED THE RUN BEFORE IT FELL DUE: the last scheduling save
-         --    (#1720's classification, `pl` below) at or before the mark. Taking the LAST one is
-         --    what makes "no other scheduling save between that save and the mark" hold: a later
-         --    one re-plans and cancels the run (cancelOn, apps/web/lib/reminders/inngest/
-         --    functions.ts:106 to 111 and 192), and is then the save that planned it.
+         -- 4. A SCHEDULING SAVE PLANNED THE RUN BEFORE IT FELL DUE, "a scheduling save" read as
+         --    A SAVE THAT SENDS appointment/scheduled: the last such save at or before the mark
+         --    exists (`pl` below, which names the senders). A status-only save sends nothing
+         --    (a hand-set Confirmada on a booked visit, actions.ts:1966 to 1969 and 2112 to 2127;
+         --    an SMS or review confirmation of a booked visit; a confirm code) and is ignored in
+         --    both clauses: it neither plans a run nor cancels one. "No later save able to cancel
+         --    it before the mark" then holds by construction: only an appointment/scheduled event
+         --    cancels a sleeping run (cancelOn, apps/web/lib/reminders/inngest/functions.ts:106 to
+         --    111, on the send function at 192; the planner at 153 to 161 re-plans from the
+         --    event), so every save able to cancel the run before the mark is itself a sending
+         --    save, re-plans it, and is then the last one.
          (pl.plan_at is not null) as c4
     from lr_mark m
     left join probe_eval e
@@ -864,21 +905,58 @@ lr as (
                       order by v.created_at desc, v.k desc limit 1)
              end as status_at_mark) st on true
     left join lateral (
-      -- #1720's "a scheduling save" (scripts/db/read-sweep-diagnostic-20261105.sql, `subj_audit`,
-      -- `scheduling`): reminder-population.ts hasSchedulingEvent, predicate by predicate, of the
-      -- visit's own tenant.
-      select max(l.created_at) as plan_at
-        from public.audit_log l
-       where l.entity_type = 'appointment' and l.entity_id = m.appointment_id and l.tenant_id = m.tenant_id
-         and l.created_at <= m.due_at
-         and (l.action in ('appointment.create', 'appointment.reschedule')
-              or (l.action = 'appointment.update'
-                  and (l.metadata->>'toStatus' in ('scheduled', 'confirmed')
-                       or l.metadata->>'via' = 'portal_request_confirm'))
-              or (l.action = 'appointment.sms_reply_reviewed'
-                  and l.metadata->>'resolution' = 'confirmed' and l.metadata->>'applied' = 'true')
-              or (l.action = 'appointment.patient_sms_reply'
-                  and l.metadata->>'outcome' = 'confirmed'))) pl on true
+      -- The last row of the estado history at or before the mark, and its kind: condition 2's
+      -- recorded acceptance of an online request.
+      select (select v.kind from lr_ev v
+               where v.appointment_id = m.appointment_id and v.tenant_id = m.tenant_id
+                 and v.created_at <= m.due_at
+               order by v.created_at desc, v.k desc limit 1) as kind_rec,
+             (select v.to_status from lr_ev v
+               where v.appointment_id = m.appointment_id and v.tenant_id = m.tenant_id
+                 and v.created_at <= m.due_at
+               order by v.created_at desc, v.k desc limit 1) as status_rec) rc on true
+    left join lateral (
+      -- THE SAVES THAT SEND appointment/scheduled, read from the code on origin/main at 806c1bb2.
+      -- The event has ONE sender in the application, apps/web/lib/reminders/index.ts:69 to 70
+      -- (`enqueueAppointmentReminders`), called only by `enqueueRemindersAfterCommit`
+      -- (apps/web/lib/scheduling/reminders.ts:139), whose callers are:
+      --   actions.ts:1107  createAppointment          appointment.create (actions.ts:1031)
+      --   actions.ts:1212  batchScheduleAppointments  appointment.create (batch.ts:313)
+      --   actions.ts:1554  cloneAppointment           appointment.create (actions.ts:1523)
+      --   actions.ts:2142  updateAppointment          appointment.update (actions.ts:2031): only an
+      --                    online request accepted with the Estado control (actions.ts:1966 to
+      --                    1969, 2115) and a visit brought back from Cancelada, not as a request
+      --                    (actions.ts:2107 to 2110, 2118 to 2120)
+      --   actions.ts:2173  rescheduleAppointment      appointment.reschedule (actions.ts:2519),
+      --   actions.ts:2858  bulkRescheduleAppointments   both through moveAppointment, which sends
+      --                    for every moved row EXCEPT one that is an unaccepted request at the
+      --                    move (read at actions.ts:2342, dropped at 2569 to 2570)
+      --   actions.ts:3089  confirmAppointmentRequest  appointment.update via portal_request_confirm
+      --                    (actions.ts:3018 to 3028)
+      --   pedido-acceptance.ts:148  emitAcceptedPedidoReminders, called by
+      --     inbound-store.ts:325   resolveReviewItem   appointment.sms_reply_reviewed, confirmed and
+      --                            applied, on an unaccepted request only (inbound-store.ts:268)
+      --     inbound-reply.ts:463   applyInboundReply   appointment.patient_sms_reply, confirmed, on an
+      --                            unaccepted request only
+      -- That is R33's table of re-arming saves (reminder-population.ts RE_ARMING_SAVES), which
+      -- `rearm_rows` reads clause by clause (the test holds the two together), so `rearm_rows` is
+      -- the set of sending saves, with ONE exception taken here: a move counts only when the visit
+      -- was not an unaccepted request at the move, read from the recorded history (`lr_ev`): a visit
+      -- whose origin is not patient_portal, or whose last recorded estado at or before the move is
+      -- established and is not `scheduled`. No recorded estado is not established, and that move
+      -- does not count. Senders OUTSIDE the application write no audit row and are invisible here:
+      -- the owner-run scripts packages/db/scripts/inc-1007-rearm-reminders-emit.mjs and
+      -- obs-05-backfill-emit.mjs, and on origin/main also r36-fallback-rearm-emit.mjs.
+      select r.created_at as plan_at, r.clause as plan_clause
+        from rearm_rows r
+       where r.tenant_id = m.tenant_id and r.appointment_id = m.appointment_id
+         and r.created_at <= m.due_at
+         and (r.clause <> 'moved' or not m.pedido_origin
+              or coalesce((select v.to_status from lr_ev v
+                            where v.appointment_id = r.appointment_id and v.tenant_id = r.tenant_id
+                              and v.created_at <= r.created_at
+                            order by v.created_at desc, v.k desc limit 1) not in ('scheduled', 'unknown'), false))
+       order by r.created_at desc, r.id desc limit 1) pl on true
 ),
 pcl as (
   -- R20's comparison with R8, RK, S8 and LR put on the marks they name; every other label is R20's.
@@ -1519,8 +1597,8 @@ select n, "check", observed, expected, verdict from (
   union all
   select 26, 'LR (lost run), mark due ' || to_char(l.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' ' || l.offset_id || ' ' || l.channel,
          l.appointment_id::text || ' | no claim, no ledger row; estado at the mark ' || l.status_at_mark
-           || '; start at the mark is the start now; planned by a scheduling save at '
-           || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'),
+           || '; start at the mark is the start now; planned by a save that sends appointment/scheduled ('
+           || l.plan_clause || ') at ' || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'),
          'information: in R32''s accepted set, SOLO reads every one', 'INFO'
     from lr l
     join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
@@ -1535,11 +1613,11 @@ select n, "check", observed, expected, verdict from (
                                          || coalesce(l.status_at_mark, 'no recorded row')
                                          || case when not l.visit_now then ', no visit row now'
                                                  when l.visit_created >= l.due_at then ', created at or after its mark'
-                                                 when l.pedido_origin and l.status_at_mark in ('scheduled', 'scheduled or confirmed')
-                                                   then ', an online request not yet accepted'
+                                                 when l.pedido_origin and l.status_at_mark in ('scheduled', 'confirmed', 'scheduled or confirmed')
+                                                   then ', an online request not accepted at the mark by the recorded rows'
                                                  else '' end || ')' end,
                 case when not l.c3 then '3 the start at the mark is not the start now, or cannot be read' end,
-                case when not l.c4 then '4 no scheduling save at or before the mark' end),
+                case when not l.c4 then '4 no save that sends appointment/scheduled at or before the mark' end),
          'information: verdict 13 FAILs on it', 'INFO'
     from lr l
     join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
