@@ -5772,7 +5772,7 @@ Strategy's words are in the quoted blocks, character for character. The bullets 
 
 > SENTRY 11-03 09:30 to 10:30 UTC: the owner looked at osteojp-web, all environments, with no filter. ZERO issues in the window. Record it in the F4 note and DECISIONS.md: no captured error at the mark, and (a) stands. WEB-F (inbound, sender not E.164) is the known one, last seen about 11-01. It is resolved only after the owner confirms REMINDERS_INBOUND=false and 7 days pass with no new event.
 
-- F4 addendum: no captured error at the mark. The owner read the Sentry project osteojp-web, all environments, no filter, for 2026-11-03 09:30 to 10:30 UTC: zero issues. (a) stands; SOLO reads (a) as strategy's option (A) of 16:30 Lisbon, the single named exception recorded in the entry above.
+- F4 addendum: no captured error at the mark. The owner read the Sentry project osteojp-web, all environments, no filter, for 2026-11-03 09:30 to 10:30 UTC: zero issues. (a) stands: F4 is "lost before dispatch, scheduler cause not recoverable", option (a) of SOLO's first answer of 2026-11-06, as recorded in the F4 line above. It is not the same thing as option (A) of 16:30 Lisbon (the single named exception in the compare).
 - WEB-F stays open. It is resolved only after both: the owner confirms REMINDERS_INBOUND=false, and 7 days pass with no new event.
 
 **The "failed" ledger outcome.**
