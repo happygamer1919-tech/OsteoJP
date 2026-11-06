@@ -2,30 +2,28 @@
 -- the A1 findings): THE REMINDER SWEEP'S SHADOW AGAINST THE SLEEPING JOB OVER EVERY FULL DAY FROM
 -- MONDAY 2026-11-02 TO END_DAY (a dispatch value), UNDER #1678's CODE (R24, R33, R34). Built from
 -- the 2026-11-04 read (#1691, scripts/db/read-shadow-compare-20261104.sql) and extended with three
--- labels: LATE-PASS on verdict 3 (F1), HARD-DELETE on verdict 8 (F3) and NC on a shadow-only mark
--- (F4). It decides nothing itself: strategy's R32 says when a REVIEW counts as clean, and R36 what
--- follows.
+-- labels: LATE-PASS on verdict 3 (F1), HARD-DELETE on verdict 8 (F3) and LR on a shadow-only mark
+-- (F4, re-ruled 14:20). It decides nothing itself: strategy's R32 says when a REVIEW counts as
+-- clean, and R36 what follows.
 --
 -- READ ONLY. It writes nothing and changes nothing; run it inside `begin read only` ...
 -- `rollback`, so the server refuses any write. Verdict 0 reads the transaction's own setting.
 --
--- THREE VALUES COME FROM OUTSIDE, each set by the block with `set local` inside the read-only
+-- TWO VALUES COME FROM OUTSIDE, each set by the block with `set local` inside the read-only
 -- transaction; unset, the read stops with an error and prints nothing:
 --   osteojp.r47_deployed_at  the instant #1678 went live in production (DEPLOYED_AT), as before
 --   osteojp.r47_end_day      the last full day of the read (END_DAY, 2026-11-03 or later)
---   osteojp.r47_f4_answer    the F4 read's answer (F4_ANSWER): NO when it printed at least one
---                            `no`, YES when it printed two `yes`, UNREAD when it has not run
 --
 -- WHAT IT PRINTS: ONE result set, ordered by `n`, columns n | check | observed | expected |
 -- verdict. Verdicts are OK, REVIEW, VACUOUS or FAIL; rows that only inform read INFO and are never
--- counted. It prints counts, Lisbon times, the fixed labels of offsets, channels, ledger outcomes
--- and suppression reasons, a tenant's ordinal (never its id), the id of a hard-delete audit row
--- (row 25, the record HARD-DELETE ties a surplus row to), and, in the mismatch list only,
--- appointment ids (at most 500 a side). No tenant id, no patient id, no staff id, no name, no
+-- counted. It prints counts, Lisbon times, the fixed labels of offsets, channels, ledger outcomes,
+-- suppression reasons and statuses, a tenant's ordinal (never its id), the id of a hard-delete
+-- audit row (row 25, the record HARD-DELETE ties a surplus row to), and appointment ids in three
+-- places only: every LR row (row 26), every shadow-only mark that is not LR (row 27), and the
+-- mismatch list (at most 500 a side). No tenant id, no patient id, no staff id, no name, no
 -- phone, no email address, no message text, no note, and no audit metadata text (metadata is
--- compared, never printed; row 25 prints a hard-deleted visit's start as a Lisbon time). NC reads
--- whether a patient has an email address or a phone number and the two reminder switches, inside
--- `nc_in` only, and prints none of them: only the label.
+-- compared, never printed; row 25 prints a hard-deleted visit's start as a Lisbon time, rows 26
+-- and 27 a status reduced to a fixed word).
 --
 -- HOW IT IS BUILT. Three parts, in this order:
 --   1. R20, from `clock as (` to the end of `pc`: a copy of
@@ -38,7 +36,8 @@
 --   2. R22, from `off_min as (` to the end of `summ`: a byte-for-byte copy of
 --      scripts/db/read-sweep-unexplained-20261030.sql lines 413 to 586 (on main, #1672).
 --   3. This read's own: the 2026-11-04 read's own part (R8, the re-arming saves of #1678 as SQL,
---      RK, S8, S5K, R34, row 37), and the three new labels below.
+--      RK, S8, S5K, R34, row 37), and the three new labels below. `probe` gains one source,
+--      `lost` (LR's condition 3), which no other reader of `probe_eval` selects.
 --
 -- THE LABELS. R20's, unchanged; R8, RK, S8 and S5K as the 2026-11-04 read wrote them; and three
 -- new ones, each ruled by strategy on 2026-11-06:
@@ -56,11 +55,16 @@
 --       shadow pass that had the mark due with the visit still ahead (the sweep takes a mark once).
 --       Verdict 8 reads REVIEW when every short heartbeat is short by exactly its tied marks and no
 --       heartbeat holds more rows than it counts; anything else still FAILs. Row 25 names each tie.
---   NC (F4)  a shadow-only mark R20 leaves UNEXPLAINED (and S8 does not name) for which the
---       dispatch's contact and channel rule (apps/web/lib/reminders/dispatch.ts:1290 to 1303 on
---       main, quoted at `nc`) answers anything but send, on the patient's and tenant's fields as
---       they are at the read. Verdict 16 counts NC in R32's accepted set ONLY when F4_ANSWER is NO;
---       otherwise NC is printed and reads outside the set (REVIEW), so strategy reads it.
+--   LR, LOST RUN (F4, strategy 2026-11-06 14:20, replacing NC)  a shadow-only mark R20 leaves
+--       UNEXPLAINED (and S8 does not name) for which ALL FOUR hold, each read from recorded rows
+--       (the conditions are written at `lr`): 1. no claim of any taker for that appointment,
+--       offset, channel and start, and no reminder ledger row of it; 2. the visit existed and its
+--       estado at the mark was one the dispatcher sends for, read from the audit trail; 3. its start
+--       at the mark (#1678's startAtTheMark, `probe_eval`) is its start now and the mark's start
+--       (R33 = A); 4. a scheduling save (#1720's classification) at or before the mark planned the
+--       run. LR is in R32's accepted set and EVERY LR row is printed with its appointment id and
+--       mark (row 26). A shadow-only mark that fails any condition stays UNEXPLAINED, and row 27
+--       names the conditions it failed.
 --
 -- THE DAYS AND THE WINDOW. t0 is the first `shadow` heartbeat at or after DEPLOYED_AT, as before:
 -- verdict 2 FAILs unless it falls in or before Monday 11-02's 07:00 slot. Every day from Monday
@@ -95,8 +99,8 @@
 --   13  no mark stays UNEXPLAINED, on any side and any day from t0 to the read's clock
 --   15  R24 held: 0 shadow rows taken after a re-arming save written after their mark; VACUOUS
 --       when no mark needed R24 (the control); alone, that does not stop the block
---   16  every mismatch label is in R32's accepted set (R2, R4, R8, S5, and NC only when F4_ANSWER
---       is NO; R34 has no row here): OK, or REVIEW naming the others
+--   16  every mismatch label is in R32's accepted set (R2, R4, R8, S5 and LR; R34 has no row
+--       here): OK, or REVIEW naming the others
 --   (14 was the 2026-10-31 read's R8 count; the number is not reused.)
 --
 -- Run (the document's block does exactly this, with a 120 second bound):
@@ -104,7 +108,6 @@
 --        -c "begin read only" -c "set local statement_timeout = '120s'"
 --        -c "set local osteojp.r47_deployed_at = '<DEPLOYED_AT>'"
 --        -c "set local osteojp.r47_end_day = '<END_DAY>'"
---        -c "set local osteojp.r47_f4_answer = '<F4_ANSWER>'"
 --        -f scripts/db/read-shadow-compare-20261106.sql -c "rollback"
 with
 clock as (
@@ -633,6 +636,9 @@ probe as (
   --   pass     every pass that had a run-only UNEXPLAINED mark in range (R22's `pr`); upto that
   --            pass's created_at (RK)
   --   sent     every sweep-sent row (send mode only); upto its claim's created_at (R34)
+  --   lost     every shadow-only mark R20 leaves UNEXPLAINED; upto the read's clock: LR's
+  --            condition 3 reads only its `start_at_mark`, the start at the mark by
+  --            startAtTheMark's two rules with every move written after the mark
   select 'shadow' as src, c.id::text as k, c.tenant_id, c.appointment_id, c.offset_id, c.channel,
          c.due_at as mark,
          to_char(date_trunc('milliseconds', c.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as start_text,
@@ -664,6 +670,10 @@ probe as (
          to_char(date_trunc('milliseconds', s.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
          s.created_at
     from swept s
+  union all
+  select 'lost', null, p.tenant_id, p.appointment_id, p.offset_id, p.channel, p.due_at, p.iso_start, win.t1
+    from pc p cross join win
+   where p.side = 'shadow_only' and p.category = 'UNEXPLAINED'
 ),
 rearm_rows as (
   -- RE_ARMING_SAVES (reminder-population.ts at 1bd32c06, `reArmingClause`), clause by clause, on
@@ -742,90 +752,138 @@ rk as (
                        left join probe_eval e on e.src = 'pass' and e.k = pr.uk and e.upto = pr.pass_c
                       where pr.uk = u.uk and pr.in_range and pr.every <> 'F' and not coalesce(e.rearmed, false))
 ),
-f4 as (
-  -- The F4 read's answer, a dispatch value (F4_ANSWER): NO when that read printed at least one `no`,
-  -- YES when it printed two `yes`, UNREAD when it has not run. NC joins R32's accepted set only on
-  -- NO (strategy, 2026-11-06, F4). Any other text reads as not NO.
-  select current_setting('osteojp.r47_f4_answer') as answer
-),
-nc_in as (
-  -- NC's inputs, for every shadow-only mark R20 leaves UNEXPLAINED: the fields dispatch.ts:1289
-  -- to 1295 reads, from the columns loadReminderData (apps/web/lib/reminders/data.ts) loads them
-  -- from, through the same joins (the visit's patient and the visit's tenant): patients.email
-  -- (patientEmail), patients.phone (patientPhone), patients.reminder_email_enabled
-  -- (patientReminderEmailEnabled), patients.reminder_sms_enabled (patientReminderSmsEnabled) and
-  -- tenants.settings (tenantSettings). Read as they are AT THE READ, reduced to the rule's one word
-  -- in `nc`, never printed.
-  select p.tenant_id, p.appointment_id, p.offset_id, p.channel, p.starts_at,
-         pt.email as nc_email, pt.phone as nc_phone,
-         pt.reminder_email_enabled as nc_email_on, pt.reminder_sms_enabled as nc_sms_on,
-         tn.settings as nc_settings
+lr_mark as (
+  -- LR's subjects (LOST RUN, F4, strategy 2026-11-06 14:20, replacing NC): every shadow-only mark
+  -- R20 leaves UNEXPLAINED, with the visit as it is now (its start now is condition 3's; its
+  -- created_at and origin are written once, at the insert, and no writer changes them).
+  select p.tenant_id, p.appointment_id, p.offset_id, p.channel, p.starts_at, p.due_at, p.iso_start,
+         a.id is not null as visit_now, a.created_at as visit_created,
+         (a.origin = 'patient_portal') as pedido_origin,
+         to_char(date_trunc('milliseconds', a.starts_at) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as start_now
     from pc p
-    join public.appointments a on a.id = p.appointment_id and a.tenant_id = p.tenant_id
-    join public.patients pt on pt.id = a.patient_id
-    join public.tenants tn on tn.id = a.tenant_id
+    left join public.appointments a on a.id = p.appointment_id and a.tenant_id = p.tenant_id
    where p.side = 'shadow_only' and p.category = 'UNEXPLAINED'
 ),
-nc as (
-  -- THE DISPATCH'S CONTACT AND CHANNEL RULE, apps/web/lib/reminders/dispatch.ts:1290 to 1303 on
-  -- main (50383ca9), quoted exactly, with the line before them (1289), which makes `config`:
-  --   (1289) const config = parseTenantConfig(data.tenantSettings).reminders;
-  --   const plan = planReminderChannels(
-  --     config,
-  --     offsetId,
-  --     { email: !!data.patientEmail, phone: !!data.patientPhone },
-  --     { smsEnabled: data.patientReminderSmsEnabled, emailEnabled: data.patientReminderEmailEnabled },
-  --   );
-  --   if (!plan.send) return { dispatched: false, reason: plan.reason };
-  --
-  --   // One run sends ONE channel. The scheduler already fanned out per channel, so
-  --   // narrowing the plan here is what keeps the run and its idempotency key aligned:
-  --   // a run keyed on ...:email must never also send an SMS.
-  --   const wantEmail = channel === "email" && plan.email;
-  --   const wantSms = channel === "sms" && plan.sms;
-  --   if (!wantEmail && !wantSms) return { dispatched: false, reason: "channels_off" };
-  -- with planReminderChannels at dispatch.ts:333 to 368 (lead_time_off, then no_contact, then the
-  -- routed channel AND the tenant's switch AND the patient's switch AND the contact) and
-  -- parseTenantConfig's reminders at apps/web/lib/admin/settings-config.ts:93 to 106 (a switch that
-  -- is not a JSON boolean, and lead times that are not an array, take the default: on, and 48 and
-  -- 24). `send` means the run passes these lines. The expression between the two marker lines is
-  -- the one the agreement test evaluates against the real exported dispatchReminder
-  -- (apps/web/lib/reads/shadow-compare-nc.db.test.ts); it is not a second version of the rule.
-  -- WHAT NC CANNOT SHOW, read from the same file: in shadow the sleeping job's run takes its claim
-  -- at dispatch.ts:1100 BEFORE these lines, and a refusal here is written to the ledger as
-  -- `suppressed` with its reason at dispatch.ts:1063 to 1073 AFTER them, and the claim is not
-  -- released (dispatch.ts:1112). So a run that woke and was refused here leaves a claim of taker
-  -- `run` and a ledger row. A shadow-only mark has no such claim; NC says only that the rule would
-  -- have refused it, not that the run woke. The document's open question Q-NC1 carries this.
-  select i.tenant_id, i.appointment_id, i.offset_id, i.channel, i.starts_at,
--- NC RULE FROM HERE
-         case
-           when not (case when jsonb_typeof(i.nc_settings -> 'reminders' -> 'leadTimeHours') = 'array'
-                          then exists (select 1 from jsonb_array_elements(i.nc_settings -> 'reminders' -> 'leadTimeHours') as lt(v)
-                                        where jsonb_typeof(lt.v) = 'number'
-                                          and lt.v::numeric = case i.offset_id when '48h' then 48 when '24h' then 24 end)
-                          else i.offset_id in ('48h', '24h') end)
-             then 'lead_time_off'
-           when coalesce(i.nc_email, '') = '' and coalesce(i.nc_phone, '') = '' then 'no_contact'
-           when (i.offset_id = '48h' and i.channel = 'email'
-                 and coalesce(case when jsonb_typeof(i.nc_settings -> 'reminders' -> 'emailEnabled') = 'boolean'
-                                   then (i.nc_settings -> 'reminders' ->> 'emailEnabled')::boolean end, true)
-                 and i.nc_email_on and coalesce(i.nc_email, '') <> '')
-             or (i.offset_id = '24h' and i.channel = 'sms'
-                 and coalesce(case when jsonb_typeof(i.nc_settings -> 'reminders' -> 'smsEnabled') = 'boolean'
-                                   then (i.nc_settings -> 'reminders' ->> 'smsEnabled')::boolean end, true)
-                 and i.nc_sms_on and coalesce(i.nc_phone, '') <> '')
-             then 'send'
-           else 'channels_off'
-         end
--- NC RULE TO HERE
-           as nc_outcome
-    from nc_in i
+lr_ev as (
+  -- LR's condition 2, the recorded history of the visit's estado, of the visit's own tenant: the
+  -- booking row (`appointment.create`, whose metadata records the status it was booked with:
+  -- apps/web/lib/scheduling/actions.ts:1039 and 1530, batch.ts:320), every row that records a
+  -- status change (`toStatus`, with the status it left in `fromStatus`), the two SMS rows that
+  -- change a status without `toStatus` (inbound-reply.ts and inbound-store.ts move only a
+  -- `scheduled` visit, as R22's `sc` reads them), and the patient's own cancel (redeem.ts,
+  -- patient_audit_log, from scheduled or confirmed). Every status is reduced to a fixed word.
+  select z.appointment_id, z.tenant_id, z.created_at, z.k, z.kind,
+         case when z.from_status in ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show', 'scheduled or confirmed')
+              then z.from_status else 'unknown' end as from_status,
+         case when z.to_status in ('scheduled', 'confirmed', 'completed', 'cancelled', 'no_show')
+              then z.to_status else 'unknown' end as to_status
+    from (
+      select l.entity_id as appointment_id, l.tenant_id, l.created_at, l.id::text as k,
+             case when l.action = 'appointment.create' then 'booked' else 'change' end as kind,
+             case when l.action = 'appointment.create' then null
+                  when l.metadata->>'toStatus' is not null then l.metadata->>'fromStatus'
+                  else 'scheduled' end as from_status,
+             case when l.action = 'appointment.create' then l.metadata->>'status'
+                  when l.metadata->>'toStatus' is not null then l.metadata->>'toStatus'
+                  when l.action = 'appointment.patient_sms_reply' then l.metadata->>'outcome'
+                  else l.metadata->>'resolution' end as to_status
+        from public.audit_log l
+        join lr_mark m on m.appointment_id = l.entity_id and m.tenant_id = l.tenant_id
+       where l.entity_type = 'appointment'
+         and (l.action = 'appointment.create'
+              or l.metadata->>'toStatus' is not null
+              or (l.action = 'appointment.patient_sms_reply' and l.metadata->>'outcome' in ('cancelled', 'confirmed'))
+              or (l.action = 'appointment.sms_reply_reviewed' and l.metadata->>'applied' = 'true'
+                  and l.metadata->>'resolution' in ('confirmed', 'cancelled')))
+      union all
+      select pa.appointment_id, pa.tenant_id, pa.occurred_at, pa.id::text, 'change', 'scheduled or confirmed', 'cancelled'
+        from public.patient_audit_log pa
+        join lr_mark m on m.appointment_id = pa.appointment_id and m.tenant_id = pa.tenant_id
+       where pa.action = 'cancel' and pa.outcome = 'success'
+    ) z
+   group by z.appointment_id, z.tenant_id, z.created_at, z.k, z.kind, z.from_status, z.to_status
+),
+lr as (
+  -- LR, LOST RUN: the four conditions of strategy's ruling of 2026-11-06 14:20, each on its own
+  -- line, each false (never unknown) when the recorded rows cannot establish it.
+  select m.*, st.status_at_mark, pl.plan_at,
+         -- 1. NO CLAIM AND NO LEDGER ROW. No claim of ANY taker (reminder_claims, kind 'claim',
+         --    early or not, released or not) for this appointment, offset, channel and start, and no
+         --    reminder ledger row of this appointment, offset and channel from 10 minutes before the
+         --    mark on (S4's window: the claim fails open at the mark; a refusal is written to the
+         --    ledger as `suppressed`, dispatch.ts:1063 to 1073).
+         (not exists (select 1 from public.reminder_claims c
+                       where c.tenant_id = m.tenant_id and c.appointment_id = m.appointment_id
+                         and c.kind = 'claim' and c.offset_id = m.offset_id and c.channel = m.channel
+                         and c.starts_at = m.starts_at)
+          and not exists (select 1 from public.reminder_dispatches x
+                           where x.tenant_id = m.tenant_id and x.appointment_id = m.appointment_id
+                             and x.channel = m.channel and x.template_id like 'reminder.' || m.offset_id || '.%'
+                             and x.created_at >= m.due_at - interval '10 minutes')) as c1,
+         -- 2. THE VISIT EXISTED AND ITS ESTADO AT THE MARK WAS SENDABLE, from recorded rows. Existed:
+         --    created before its mark (sweep.ts:297, `createdAt < markOf(offset)`). The estado: the
+         --    status the first change AFTER the mark left, or else the status the last booking or
+         --    change at or before the mark set; neither, or a word that is not a status, is not
+         --    established. Sendable is the dispatcher's rule: REMINDABLE_STATUSES (dispatch.ts:81,
+         --    applied at dispatch.ts:1269 to 1271; the sweep's copy SWEEP_REMINDABLE_STATUSES,
+         --    sweep.ts:209, applied at sweep.ts:294), and not an unaccepted request
+         --    (isUnacceptedPedido, dispatch.ts:140 to 142, applied at dispatch.ts:1275 to 1277:
+         --    `scheduled` with origin `patient_portal`). A portal cancel left `scheduled or
+         --    confirmed`, sendable only when the visit is not a request.
+         coalesce(m.visit_now and m.visit_created < m.due_at
+                  and (st.status_at_mark in ('scheduled', 'confirmed')
+                       or st.status_at_mark = 'scheduled or confirmed')
+                  and not (st.status_at_mark in ('scheduled', 'scheduled or confirmed') and m.pedido_origin), false) as c2,
+         -- 3. THE START AT THE MARK IS THE START NOW (R33 = A), and is the start the shadow row
+         --    carries: #1678's startAtTheMark (`probe_eval`, source `lost`) with every move written
+         --    after the mark up to the read's clock. No start at the mark (no booking or move row to
+         --    read it from) is not established.
+         coalesce(e.start_at_mark = m.iso_start and m.start_now = m.iso_start, false) as c3,
+         -- 4. A SCHEDULING SAVE PLANNED THE RUN BEFORE IT FELL DUE: the last scheduling save
+         --    (#1720's classification, `pl` below) at or before the mark. Taking the LAST one is
+         --    what makes "no other scheduling save between that save and the mark" hold: a later
+         --    one re-plans and cancels the run (cancelOn, apps/web/lib/reminders/inngest/
+         --    functions.ts:106 to 111 and 192), and is then the save that planned it.
+         (pl.plan_at is not null) as c4
+    from lr_mark m
+    left join probe_eval e
+      on e.src = 'lost' and e.tenant_id = m.tenant_id and e.appointment_id = m.appointment_id
+     and e.offset_id = m.offset_id and e.channel = m.channel and e.mark = m.due_at and e.start_text = m.iso_start
+    left join lateral (
+      select case
+               when exists (select 1 from lr_ev v
+                             where v.appointment_id = m.appointment_id and v.tenant_id = m.tenant_id
+                               and v.kind = 'change' and v.created_at > m.due_at)
+                 then (select v.from_status from lr_ev v
+                        where v.appointment_id = m.appointment_id and v.tenant_id = m.tenant_id
+                          and v.kind = 'change' and v.created_at > m.due_at
+                        order by v.created_at, v.k limit 1)
+               else (select v.to_status from lr_ev v
+                      where v.appointment_id = m.appointment_id and v.tenant_id = m.tenant_id
+                        and v.created_at <= m.due_at
+                      order by v.created_at desc, v.k desc limit 1)
+             end as status_at_mark) st on true
+    left join lateral (
+      -- #1720's "a scheduling save" (scripts/db/read-sweep-diagnostic-20261105.sql, `subj_audit`,
+      -- `scheduling`): reminder-population.ts hasSchedulingEvent, predicate by predicate, of the
+      -- visit's own tenant.
+      select max(l.created_at) as plan_at
+        from public.audit_log l
+       where l.entity_type = 'appointment' and l.entity_id = m.appointment_id and l.tenant_id = m.tenant_id
+         and l.created_at <= m.due_at
+         and (l.action in ('appointment.create', 'appointment.reschedule')
+              or (l.action = 'appointment.update'
+                  and (l.metadata->>'toStatus' in ('scheduled', 'confirmed')
+                       or l.metadata->>'via' = 'portal_request_confirm'))
+              or (l.action = 'appointment.sms_reply_reviewed'
+                  and l.metadata->>'resolution' = 'confirmed' and l.metadata->>'applied' = 'true')
+              or (l.action = 'appointment.patient_sms_reply'
+                  and l.metadata->>'outcome' = 'confirmed'))) pl on true
 ),
 pcl as (
-  -- R20's comparison with R8, RK, S8 and NC put on the marks they name; every other label is R20's.
+  -- R20's comparison with R8, RK, S8 and LR put on the marks they name; every other label is R20's.
   -- S8 counts a save of any clause, a move that keeps the start included: every one of them
-  -- re-plans the sleeping job, and only the job's side of the race is in question here. NC comes
+  -- re-plans the sleeping job, and only the job's side of the race is in question here. LR comes
   -- after S8: a mark S8 names keeps S8.
   select p.tenant_id, p.appointment_id, p.offset_id, p.channel, p.starts_at, p.due_at, p.day, p.side,
          case when p.side = 'run_only' and p.category = 'UNEXPLAINED'
@@ -846,11 +904,12 @@ pcl as (
                                   and v.created_at >= p.due_at - interval '30 seconds' and v.created_at <= p.due_at)
               then 'S8 a re-arming save in the 30 seconds up to its mark: the sleeping job dropped it, the sweep took it'
               when p.side = 'shadow_only' and p.category = 'UNEXPLAINED'
-                   and exists (select 1 from nc
-                                where nc.tenant_id = p.tenant_id and nc.appointment_id = p.appointment_id
-                                  and nc.offset_id = p.offset_id and nc.channel = p.channel
-                                  and nc.starts_at = p.starts_at and nc.nc_outcome <> 'send')
-              then 'NC the dispatch''s contact and channel rule (dispatch.ts:1290 to 1303) refuses it: the sleeping job sends nothing for it'
+                   and exists (select 1 from lr
+                                where lr.tenant_id = p.tenant_id and lr.appointment_id = p.appointment_id
+                                  and lr.offset_id = p.offset_id and lr.channel = p.channel
+                                  and lr.starts_at = p.starts_at
+                                  and lr.c1 and lr.c2 and lr.c3 and lr.c4)
+              then 'LR lost run: no claim and no ledger row, sendable at its mark, its start unchanged, planned by a scheduling save before it fell due (each printed in row 26)'
               else p.category end as category
     from pc p
 ),
@@ -1145,8 +1204,8 @@ lab as (
   -- pass since its mark) and S7 (due in the 15 minutes before the read) are printed, not judged.
   -- An S5 row with no re-arming save behind it (its probe not `rearmed`: R20's S5 also matches a
   -- move that keeps the start) is S5K here, outside the set: R47 ruled no kept-start label, so
-  -- strategy reads it. NC is in the set only when the F4 read answered NO (strategy, 2026-11-06, F4):
-  -- with F4_ANSWER YES or UNREAD, an NC row reads outside the set and strategy reads it.
+  -- strategy reads it. LR is in the set (strategy, 2026-11-06 14:20), and every LR row is printed
+  -- with its appointment id and mark in row 26.
   select p.day, p.side,
          case when p.category like 'S5 %'
                    and not exists (select 1 from probe_eval e
@@ -1163,18 +1222,15 @@ lab as (
 labels as (
   select (select count(*) from pcl) as pairs,
          (select count(*) from lab) as labelled,
-         (select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5')
-                                     and not (letter = 'NC' and (select answer from f4) = 'NO')
+         (select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')
                                      and (full_day or letter not in ('R5', 'S7'))) as outside,
          (select string_agg(z.letter || ' ' || z.n::text, ', ' order by z.letter)
             from (select letter, count(*) as n from lab
-                   where letter not in ('R2', 'R4', 'R8', 'S5')
-                     and not (letter = 'NC' and (select answer from f4) = 'NO')
+                   where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')
                      and (full_day or letter not in ('R5', 'S7'))
                    group by letter) z) as outside_list,
          (select count(*) from lab where not full_day and letter in ('R5', 'S7')) as edge,
-         (select count(*) from lab where letter = 'NC') as nc_rows,
-         (select answer from f4) as f4_answer
+         (select count(*) from lab where letter = 'LR') as lr_rows
 ),
 r34 as (
   -- R34's label, SEND MODE ONLY (strategy's R34; sweep-send.ts at 1bd32c06,
@@ -1394,13 +1450,12 @@ select n, "check", observed, expected, verdict from (
     from r24
   union all
   select 16,
-         '16. every mismatch label is in R32''s accepted set (R2, R4, R8, S5, and NC only when the F4 read answered NO; R34 labels sweep-sent rows, none here), from t0 to the read''s clock',
+         '16. every mismatch label is in R32''s accepted set (R2, R4, R8, S5 and LR, every LR row printed in row 26; R34 labels sweep-sent rows, none here), from t0 to the read''s clock',
          'marks ' || pairs::text || '; labelled mismatches ' || labelled::text
            || '; with a label outside the set ' || outside::text
            || coalesce(' (' || outside_list || ')', '')
            || '; window-edge labels on a partial day, not judged ' || edge::text
-           || '; NC rows ' || nc_rows::text || ', F4_ANSWER ' || f4_answer
-           || case when f4_answer = 'NO' then ' (NC in the set)' else ' (NC outside the set)' end,
+           || '; LR rows (in the set, each in row 26) ' || lr_rows::text,
          'marks > 0; outside the set 0',
          case when (select t0 from win) is null then 'VACUOUS'
               when pairs = 0 then 'VACUOUS'
@@ -1408,10 +1463,9 @@ select n, "check", observed, expected, verdict from (
               else 'OK' end
     from labels
   union all
-  select 20, 'window: DEPLOYED_AT, the first shadow heartbeat after it (t0), the read''s clock, the last shadow heartbeat (Lisbon), the full days, F4_ANSWER',
+  select 20, 'window: DEPLOYED_AT, the first shadow heartbeat after it (t0), the read''s clock, the last shadow heartbeat (Lisbon), the full days',
          deployed || ' | ' || coalesce(t0, 'none') || ' | ' || t1 || ' | ' || coalesce(last_beat, 'none') || ' | '
-           || coalesce((select min(d)::text || ' to ' || max(d)::text || ' (' || count(*)::text || ')' from full_day having count(*) > 0), 'none')
-           || ' | F4_ANSWER ' || (select answer from f4),
+           || coalesce((select min(d)::text || ' to ' || max(d)::text || ' (' || count(*)::text || ')' from full_day having count(*) > 0), 'none'),
          'information', 'INFO'
     from lisbon
   union all
@@ -1462,6 +1516,35 @@ select n, "check", observed, expected, verdict from (
          'INFO'
     from hd_acct h join tenant_n tn on tn.tenant_id = h.tenant_id
    where h.short <> 0
+  union all
+  select 26, 'LR (lost run), mark due ' || to_char(l.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' ' || l.offset_id || ' ' || l.channel,
+         l.appointment_id::text || ' | no claim, no ledger row; estado at the mark ' || l.status_at_mark
+           || '; start at the mark is the start now; planned by a scheduling save at '
+           || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'),
+         'information: in R32''s accepted set, SOLO reads every one', 'INFO'
+    from lr l
+    join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
+              and p.channel = l.channel and p.starts_at = l.starts_at and p.side = 'shadow_only'
+   where p.category like 'LR %'
+  union all
+  select 27, 'shadow-only UNEXPLAINED, not LR, mark due ' || to_char(l.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' ' || l.offset_id || ' ' || l.channel,
+         l.appointment_id::text || ' | LR failed on: '
+           || concat_ws('; ',
+                case when not l.c1 then '1 a claim or a reminder ledger row of this mark exists' end,
+                case when not l.c2 then '2 the estado at the mark is not sendable or not established (read: '
+                                         || coalesce(l.status_at_mark, 'no recorded row')
+                                         || case when not l.visit_now then ', no visit row now'
+                                                 when l.visit_created >= l.due_at then ', created at or after its mark'
+                                                 when l.pedido_origin and l.status_at_mark in ('scheduled', 'scheduled or confirmed')
+                                                   then ', an online request not yet accepted'
+                                                 else '' end || ')' end,
+                case when not l.c3 then '3 the start at the mark is not the start now, or cannot be read' end,
+                case when not l.c4 then '4 no scheduling save at or before the mark' end),
+         'information: verdict 13 FAILs on it', 'INFO'
+    from lr l
+    join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
+              and p.channel = l.channel and p.starts_at = l.starts_at and p.side = 'shadow_only'
+   where p.category = 'UNEXPLAINED'
   union all
   select 23, 'marks due in the 24 hours before t0, the code before the deploy (no verdict reads them): both, shadow only, run only, on the key alone',
          both_sides::text || ', ' || shadow_only::text || ', ' || run_only::text,

@@ -1,37 +1,37 @@
 // SHADOW-COMPARE (2026-11-06, strategy's A2 re-run with the rulings of 2026-11-06 on the A1
-// findings): the reminder sweep's shadow against the sleeping job over every full day from Monday
-// 2026-11-02 to END_DAY, with LATE-PASS (F1), HARD-DELETE (F3) and NC (F4), and the F4 read. Built
-// from the 2026-11-04 read's test (#1691); its document and its two blocks agree with each other,
-// both reads write nothing, every halt in both blocks is explicit (proven by fault injection), the
-// read's copy of #1678's re-arming saves is held to the code it mirrors, and, on a local database,
-// every verdict flips on its own seeded fault and every label predicate names exactly its shape.
+// findings, F4 re-ruled at 14:20): the reminder sweep's shadow against the sleeping job over every
+// full day from Monday 2026-11-02 to END_DAY, with LATE-PASS (F1), HARD-DELETE (F3) and LR, the
+// lost run (F4). Built from the 2026-11-04 read's test (#1691); its document and its block agree
+// with each other, the read writes nothing, every halt in the block is explicit (proven by fault
+// injection), the read's copy of #1678's re-arming saves is held to the code it mirrors, and, on a
+// local database, every verdict flips on its own seeded fault and every label predicate names
+// exactly its shape.
 //
 // WHAT THIS PROVES, with no database:
 //   * the read's copy of R20 is R20's lines 145 to 444 on main with exactly the two named
 //     substitutions (now: `closes` from END_DAY, and `full_day` from 11-02 to END_DAY);
 //   * the read's copy of R22 is byte for byte R22's lines 413 to 586 on main;
 //   * the code the read mirrors is #1678's at 1bd32c06, byte for byte (unchanged from #1691);
-//   * LATE-PASS, HARD-DELETE and NC are written as the document says: LATE-PASS needs the empty
+//   * LATE-PASS, HARD-DELETE and LR are written as the document says: LATE-PASS needs the empty
 //     slot, the doubled slot after it and the run time in the empty slot; HARD-DELETE reads the
 //     recorded `appointment.hard_delete` audit row, ties to the FIRST pass, and verdict 8's REVIEW
-//     needs every short heartbeat short by exactly its ties; NC sits after S8 and is in R32's set
-//     only when F4_ANSWER is NO; the personal fields are read inside `nc_in` only;
-//   * the F4 read prints two lines from the NC rule's own expressions and reads nothing else;
-//   * the document's first line is NOT READY; no em dash in the document, the reads or the tests;
-//   * the document pins the real reads, guard and module; the sidecar pins the document;
-//   * both reads write nothing, control no transaction, and the compare reads the clock once;
-//   * the blocks' shape, and EVERY HALT IS EXPLICIT: each block runs in GREEN's tool shape
+//     needs every short heartbeat short by exactly its ties; LR sits after S8, needs all four of
+//     its conditions, is in R32's set, and every LR row is printed with its appointment id;
+//   * nothing of the withdrawn F4 read or NC is left (no setting, no file, no label);
+//   * the document's first line is NOT READY; no em dash in the document, the read or the tests;
+//   * the document pins the real read, guard and module; the sidecar pins the document;
+//   * the read writes nothing, controls no transaction, and reads the clock once;
+//   * the block's shape, and EVERY HALT IS EXPLICIT: the block runs in GREEN's tool shape
 //     (`true && eval '<block>' < /dev/null && echo TOOL-CHAIN-CONTINUED`), every external command a
 //     stub, each call made to fail in turn: each run ends with exit 1, exactly one STOP line, no
 //     pass line, the tool chain stopped. Under bash always; under zsh wherever it is installed;
 //   * the compare's four closing lines, each on its own profile only, REVIEW on 3 and 8 counted as
-//     clean, and the number of full days taken from END_DAY (two and four days proven);
-//   * the F4 block prints exactly its two lines and its answer, and STOPs on anything else.
+//     clean, the number of full days taken from END_DAY (two and four days proven), and the count
+//     of LR rows printed to the terminal without their ids.
 //
 // WITH A LOCAL DATABASE (SHADOW_COMPARE_1106_TEST_PGURL names one on 127.0.0.1 or localhost whose
-// `public` schema is the repository's): both reads run on seeded throwaways, as the blocks run them.
-// Any other host is refused. Without the variable those cases are skipped. NOT RUN by the builder
-// (no database stack was allowed to it): the document lists this run as owed.
+// `public` schema is the repository's): the read runs on seeded throwaways, as the block runs it.
+// Any other host is refused. Without the variable those cases are skipped.
 //
 // Run: node --test scripts/read-shadow-compare-20261106.test.mjs
 
@@ -51,8 +51,6 @@ const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 const DOC_PATH = "docs/read-shadow-compare-20261106.md";
 const SIDECAR = "docs/read-shadow-compare-20261106.sha256";
 const READ_PATH = "scripts/db/read-shadow-compare-20261106.sql";
-const F4_PATH = "scripts/db/read-f4-contact-20261106.sql";
-const AGREEMENT_PATH = "apps/web/lib/reads/shadow-compare-nc.db.test.ts";
 const R20_PATH = "scripts/db/read-shadow-compare-20261029.sql";
 const R22_PATH = "scripts/db/read-sweep-unexplained-20261030.sql";
 const GUARD = "scripts/assert-production-target.mjs";
@@ -61,17 +59,14 @@ const APPLY_DIR = "/Users/ivan/Projects/GitHub/osteojp-prod-apply";
 const ENV_FILE = "/Users/ivan/osteojp-secrets/new-prod.env";
 const OUT_DIR = "/Users/ivan/osteojp-handover";
 const OUT_NAME = "shadow-compare-20261106.out";
-const F4_OUT_NAME = "f4-contact-20261106.out";
 const PRHEAD = "a".repeat(40);
 const CLOCK_LINE = "  select now() as t1";
 const GUC = "osteojp.r47_deployed_at";
 const GUC_END = "osteojp.r47_end_day";
-const GUC_F4 = "osteojp.r47_f4_answer";
-const GUC_APPT = "osteojp.f4_appointment_id";
 const R8_LABEL = "R8 no scheduling save before any pass that could take the mark (by design while REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER is false)";
 const RK_LABEL = "RK kept out by R24: a re-arming save after its mark at every pass that could otherwise take it";
 const S8_LABEL = "S8 a re-arming save in the 30 seconds up to its mark: the sleeping job dropped it, the sweep took it";
-const NC_LABEL = "NC the dispatch's contact and channel rule (dispatch.ts:1290 to 1303) refuses it: the sleeping job sends nothing for it";
+const LR_LABEL = "LR lost run: no claim and no ledger row, sendable at its mark, its start unchanged, planned by a scheduling save before it fell due (each printed in row 26)";
 
 /** R8's eighth condition (the 2026-10-31 read's): every in-range pass recorded a visit left out. */
 const R8_EXCLUDED = "not exists (select 1 from pr where pr.uk = u.uk and pr.in_range and coalesce(pr.excluded_count, 0) = 0)";
@@ -108,7 +103,6 @@ const CLAUSES = ["booked", "moved", "accepted_in_pedidos", "accepted_with_estado
 
 const doc = read(DOC_PATH);
 const sql = read(READ_PATH);
-const f4sql = read(F4_PATH);
 
 function blockAfter(md, heading) {
   const at = md.indexOf(heading);
@@ -118,22 +112,17 @@ function blockAfter(md, heading) {
   return m[1];
 }
 const block = blockAfter(doc, "\n## THE BLOCK\n");
-const f4block = blockAfter(doc, "\n## F4 READ\n");
 
 /** A read with its comments removed and every string literal emptied. */
 const strip = (s) => s.replace(/--[^\n]*/g, "").replace(/'(?:[^']|'')*'/g, "''");
 const code = strip(sql);
-const f4code = strip(f4sql);
-/** The compare without NC's input CTE, the one place it may name a patient's field. */
-const NC_IN_START = "\nnc_in as (";
-const NC_IN_END = "\nnc as (";
-const codeWithoutNcIn = strip(sql.slice(0, sql.indexOf(NC_IN_START)) + sql.slice(sql.indexOf(NC_IN_END)));
 
 test("the document's first line is NOT READY, and no em dash is written anywhere in this change", () => {
   assert.equal(doc.split("\n")[0], "NOT READY");
-  for (const [p, s] of [[DOC_PATH, doc], [READ_PATH, sql], [F4_PATH, f4sql], [AGREEMENT_PATH, read(AGREEMENT_PATH)], ["this test", read("scripts/read-shadow-compare-20261106.test.mjs")]]) {
+  for (const [p, s] of [[DOC_PATH, doc], [READ_PATH, sql], ["this test", read("scripts/read-shadow-compare-20261106.test.mjs")]]) {
     assert.ok(!s.includes("\u2014"), `an em dash in ${p}`);
   }
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(doc), "a uuid is written in the document");
 });
 
 test("the read's copy of R20 is R20's lines 145 to 444 with exactly the two named substitutions", () => {
@@ -197,23 +186,91 @@ test("the read's re-arming saves name every clause once, with the conditions of 
   ]) assert.ok(ev.includes(piece), `probe_eval lost: ${piece}`);
 });
 
-test("R8, RK and S8 are #1691's; NC sits after S8, on a shadow-only UNEXPLAINED mark, and is in R32's set only on F4_ANSWER NO", () => {
-  for (const label of [R8_LABEL, RK_LABEL, S8_LABEL]) assert.equal(sql.split(`'${label}'`).length, 2, `the label is not written exactly once: ${label}`);
-  assert.equal(sql.split(`'${NC_LABEL.replace("'", "''")}'`).length, 2, "the NC label is not written exactly once");
+test("R8, RK and S8 are #1691's; LR sits after S8, on a shadow-only UNEXPLAINED mark, needs all four conditions, and is in R32's set", () => {
+  for (const label of [R8_LABEL, RK_LABEL, S8_LABEL, LR_LABEL]) assert.equal(sql.split(`'${label}'`).length, 2, `the label is not written exactly once: ${label}`);
   for (const c of ["s.in_range > 0", "s.f7 = s.in_range", "s.f1 = 0", "s.f2 = 0 and s.u2 = 0", "s.f3 = 0 and s.u3 = 0", "s.f6 = 0", "s.f8 = 0", R8_EXCLUDED]) {
     assert.ok(sql.includes(c), `r8 lost its condition ${c}`);
   }
   const pcl = sql.slice(sql.indexOf("\npcl as ("), sql.indexOf("\nagree as ("));
-  assert.ok(pcl.indexOf("then 'S8 ") < pcl.indexOf("then 'NC "), "NC does not come after S8");
-  assert.ok(pcl.includes("and nc.starts_at = p.starts_at and nc.nc_outcome <> 'send')"), "NC is not keyed on the mark or does not need a refusal");
+  assert.ok(pcl.indexOf("then 'S8 ") < pcl.indexOf("then 'LR "), "LR does not come after S8");
+  assert.ok(pcl.includes("when p.side = 'shadow_only' and p.category = 'UNEXPLAINED'\n                   and exists (select 1 from lr\n"), "LR is not on a shadow-only UNEXPLAINED mark");
+  assert.ok(pcl.includes("and lr.starts_at = p.starts_at\n                                  and lr.c1 and lr.c2 and lr.c3 and lr.c4)"), "LR is not keyed on the mark or does not need all four conditions");
   assert.doesNotMatch(code, /kept/i, "a kept-start label in the read");
-  assert.ok(doc.includes(`\`${NC_LABEL}\``), "the document does not name the NC label exactly");
+  assert.ok(doc.includes(`\`${LR_LABEL}\``), "the document does not name the LR label exactly");
   const after = sql.slice(sql.indexOf("\nagree as ("));
   assert.doesNotMatch(after.replace(/--[^\n]*/g, ""), /\bfrom pc\b|join pc\b/, "a verdict reads pc, not pcl");
-  // R32's accepted set, as verdict 16 reads it, and NC's condition beside it, both times.
-  assert.equal((sql.match(/letter not in \('R2', 'R4', 'R8', 'S5'\)/g) || []).length, 2);
-  assert.equal((sql.match(/and not \(letter = 'NC' and \(select answer from f4\) = 'NO'\)/g) || []).length, 2);
-  assert.match(sql, /select current_setting\('osteojp\.r47_f4_answer'\) as answer/);
+  // R32's accepted set, as verdict 16 reads it, LR in it, both times.
+  assert.equal((sql.match(/letter not in \('R2', 'R4', 'R8', 'S5', 'LR'\)/g) || []).length, 2);
+  assert.doesNotMatch(sql, /letter not in \('R2', 'R4', 'R8', 'S5'\)/);
+});
+
+test("LR's four conditions are written as strategy ruled them, each read from recorded rows, and the withdrawn F4 read and NC are gone", () => {
+  const lr = sql.slice(sql.indexOf("\nlr as ("), sql.indexOf("\npcl as ("));
+  // 1. no claim of any taker for the appointment, offset, channel and start, and no reminder ledger row.
+  for (const piece of [
+    "(not exists (select 1 from public.reminder_claims c\n                       where c.tenant_id = m.tenant_id and c.appointment_id = m.appointment_id\n                         and c.kind = 'claim' and c.offset_id = m.offset_id and c.channel = m.channel\n                         and c.starts_at = m.starts_at)",
+    "and not exists (select 1 from public.reminder_dispatches x",
+    "and x.channel = m.channel and x.template_id like 'reminder.' || m.offset_id || '.%'",
+    "and x.created_at >= m.due_at - interval '10 minutes')) as c1,",
+  ]) assert.ok(lr.includes(piece), `LR condition 1 lost: ${piece}`);
+  assert.doesNotMatch(lr.slice(0, lr.indexOf(" as c1,")).replace(/--[^\n]*/g, ""), /taker|early|release/, "condition 1 narrows the claim by taker, early or release");
+  // 2. existed, and the estado at the mark from recorded rows: sendable by the dispatcher's rule.
+  for (const piece of [
+    "coalesce(m.visit_now and m.visit_created < m.due_at",
+    "and (st.status_at_mark in ('scheduled', 'confirmed')",
+    "and not (st.status_at_mark in ('scheduled', 'scheduled or confirmed') and m.pedido_origin), false) as c2,",
+    "and v.kind = 'change' and v.created_at > m.due_at\n                        order by v.created_at, v.k limit 1)",
+    "and v.created_at <= m.due_at\n                      order by v.created_at desc, v.k desc limit 1)",
+  ]) assert.ok(lr.includes(piece), `LR condition 2 lost: ${piece}`);
+  const ev = sql.slice(sql.indexOf("\nlr_ev as ("), sql.indexOf("\nlr as ("));
+  for (const piece of [
+    "case when l.action = 'appointment.create' then l.metadata->>'status'",
+    "from public.patient_audit_log pa",
+    "then z.to_status else 'unknown' end as to_status",
+    "join lr_mark m on m.appointment_id = l.entity_id and m.tenant_id = l.tenant_id",
+  ]) assert.ok(ev.includes(piece), `LR's estado history lost: ${piece}`);
+  assert.doesNotMatch(strip(lr + ev), /\ba\.status\b/, "LR reads the estado from the row now");
+  // The dispatcher's rule it mirrors, on main.
+  const dispatch = read("apps/web/lib/reminders/dispatch.ts").split("\n");
+  assert.equal(dispatch[80], 'const REMINDABLE_STATUSES = new Set(["scheduled", "confirmed"]);', "dispatch.ts:81 is not the estado rule LR cites");
+  assert.equal(dispatch[140], '  return data.status === "scheduled" && PEDIDO_ORIGINS.has(data.origin);', "dispatch.ts:141 is not the request gate LR cites");
+  assert.equal(dispatch[1268], "  if (!REMINDABLE_STATUSES.has(data.status)) {", "dispatch.ts:1269 is not where the estado rule is applied");
+  assert.equal(dispatch[1274], "  if (isUnacceptedPedido(data)) {", "dispatch.ts:1275 is not where the request gate is applied");
+  const sweep = read("apps/web/lib/reminders/sweep.ts").split("\n");
+  assert.equal(sweep[208], 'export const SWEEP_REMINDABLE_STATUSES = ["scheduled", "confirmed"] as const;');
+  assert.equal(sweep[293], "    inArray(appointments.status, [...SWEEP_REMINDABLE_STATUSES]),");
+  assert.equal(sweep[296], "    sql`${appointments.createdAt} < ${markOf(offset)}`,");
+  // 3. the start at the mark (#1678's startAtTheMark, probe source `lost`) is the start now and the mark's.
+  assert.ok(lr.includes("coalesce(e.start_at_mark = m.iso_start and m.start_now = m.iso_start, false) as c3,"));
+  assert.ok(lr.includes("on e.src = 'lost' and e.tenant_id = m.tenant_id and e.appointment_id = m.appointment_id"));
+  assert.ok(sql.includes("  select 'lost', null, p.tenant_id, p.appointment_id, p.offset_id, p.channel, p.due_at, p.iso_start, win.t1\n    from pc p cross join win\n   where p.side = 'shadow_only' and p.category = 'UNEXPLAINED'\n"));
+  for (const reader of ["\nrk as (", "\nsubj as (", "\nr24 as (", "\nlab as (", "\nr34 as ("]) {
+    const at = sql.indexOf(reader);
+    const body = sql.slice(at, sql.indexOf("\n),", at));
+    if (body.includes("probe_eval")) assert.match(body, /e\.src = '(pass|subject|shadow|sent)'/, `${reader.trim()} reads probe_eval without naming its source`);
+  }
+  // 4. a scheduling save (#1720's classification) at or before the mark.
+  for (const piece of [
+    "select max(l.created_at) as plan_at",
+    "and l.created_at <= m.due_at\n",
+    "(l.action in ('appointment.create', 'appointment.reschedule')\n              or (l.action = 'appointment.update'\n                  and (l.metadata->>'toStatus' in ('scheduled', 'confirmed')\n                       or l.metadata->>'via' = 'portal_request_confirm'))\n              or (l.action = 'appointment.sms_reply_reviewed'\n                  and l.metadata->>'resolution' = 'confirmed' and l.metadata->>'applied' = 'true')\n              or (l.action = 'appointment.patient_sms_reply'\n                  and l.metadata->>'outcome' = 'confirmed'))) pl on true",
+    "(pl.plan_at is not null) as c4",
+  ]) assert.ok(lr.includes(piece), `LR condition 4 lost: ${piece}`);
+  // The same predicate as R20's `saves.scheduling` (hasSchedulingEvent), predicate by predicate.
+  const savesPred = sql.slice(sql.indexOf("         (l.action in ('appointment.create', 'appointment.reschedule')\n          or (l.action = 'appointment.update'"), sql.indexOf(" as scheduling\n    from public.audit_log l\n   where l.entity_type = 'appointment'\n     and l.entity_id in (select appointment_id from pair"));
+  const norm = (t) => t.replace(/\s+/g, " ").trim();
+  assert.ok(norm(lr).includes(norm(savesPred)), "condition 4's scheduling save is not R20's hasSchedulingEvent predicate");
+  // Every LR row and every shadow-only mark that is not LR is printed, with which conditions failed.
+  assert.ok(sql.includes("  select 26, 'LR (lost run), mark due '"));
+  assert.ok(sql.includes("   where p.category like 'LR %'\n"));
+  assert.ok(sql.includes("  select 27, 'shadow-only UNEXPLAINED, not LR, mark due '"));
+  for (const n of ["1", "2", "3", "4"]) assert.ok(sql.includes(`case when not l.c${n} then '${n} `), `row 27 does not name condition ${n}`);
+  // Nothing of the F4 read or NC is left.
+  for (const gone of ["r47_f4_answer", "f4_appointment_id", "nc_in", "nc_outcome", "F4_ANSWER"]) {
+    assert.ok(!sql.includes(gone), `the read still carries ${gone}`);
+    assert.ok(!doc.includes(gone), `the document still carries ${gone}`);
+  }
+  assert.doesNotMatch(doc, /read-f4-contact|shadow-compare-nc|## F4 READ/, "the document still names the F4 read or the NC agreement test");
 });
 
 test("LATE-PASS needs the empty slot, exactly two heartbeats in the next slot, and a run time in the empty slot; verdict 3's REVIEW needs every gap to be one", () => {
@@ -258,75 +315,42 @@ test("HARD-DELETE reads the recorded audit row, cites its source, ties to the FI
   assert.match(actions[3535], /startsAt: appt\.startsAt\.toISOString\(\),/);
 });
 
-test("NC: the rule sits between its two marker lines, and only nc_in names a patient's field", () => {
-  assert.equal(sql.split("\n-- NC RULE FROM HERE\n").length, 2);
-  assert.equal(sql.split("\n-- NC RULE TO HERE\n").length, 2);
-  const ncIn = sql.slice(sql.indexOf(NC_IN_START), sql.indexOf(NC_IN_END));
-  for (const piece of ["pt.email as nc_email, pt.phone as nc_phone,", "pt.reminder_email_enabled as nc_email_on, pt.reminder_sms_enabled as nc_sms_on,", "tn.settings as nc_settings", "where p.side = 'shadow_only' and p.category = 'UNEXPLAINED'"]) {
-    assert.ok(ncIn.includes(piece), `nc_in lost: ${piece}`);
-  }
-  assert.doesNotMatch(codeWithoutNcIn, /\bpt\./, "a patient's field is read outside nc_in");
-  // Outside nc_in, the fields reach only the rule (`nc`), as booleans and words.
-  const outside = codeWithoutNcIn.slice(codeWithoutNcIn.indexOf("\nnc as ("));
-  assert.ok(!/nc_email|nc_phone/.test(outside.slice(outside.indexOf("\npcl as ("))), "a patient's field reaches pcl or the rows");
-  assert.ok(read(AGREEMENT_PATH).includes("-- NC RULE FROM HERE"), "the agreement test does not cut the rule from its markers");
-});
-
-test("the F4 read: one visit by a uuid setting, two lines from the NC rule's own expressions, nothing else", () => {
-  assert.match(f4sql, /where a\.id = current_setting\('osteojp\.f4_appointment_id'\)::uuid/);
-  assert.equal((f4sql.match(/current_setting\(/g) || []).length, 1);
-  assert.ok(f4sql.includes("'has email: ' || case when coalesce(i.nc_email, '') <> '' then 'yes' else 'no' end"));
-  assert.ok(f4sql.includes("'email reminders on: ' || case when i.nc_email_on then 'yes' else 'no' end"));
-  const rule = sql.slice(sql.indexOf("\n-- NC RULE FROM HERE\n"), sql.indexOf("\n-- NC RULE TO HERE\n"));
-  assert.ok(rule.includes("coalesce(i.nc_email, '') <> ''") && rule.includes("i.nc_email_on"));
-  // It reads two fields of one patient through the visit, and prints two words.
-  const words = f4code.match(/\b[a-z_]+\.[a-z_]+\b/g) || [];
-  assert.deepEqual([...new Set(words)].sort(), ["a.id", "a.patient_id", "i.nc_email", "i.nc_email_on", "pt.email", "pt.id", "pt.reminder_email_enabled", "public.appointments", "public.patients", "z.line", "z.o"].sort());
-  const forbidden = /\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke|copy|call|do|set|begin|commit|rollback|savepoint|lock|vacuum|analyze|refresh|notify|listen|prepare|execute)\b/i;
-  assert.equal(f4code.match(forbidden), null);
-});
-
 test("the sidecar pins the document", () => {
   assert.equal(read(SIDECAR).trim(), `${sha256(doc)}  ${DOC_PATH}`);
 });
 
-test("the document pins the real reads, guard and module, in its table, in both blocks and in the owner's copy step", () => {
-  const before = doc.slice(0, doc.indexOf("## F4 READ"));
+test("the document pins the real read, guard and module, in its table, in the block and in the owner's copy step", () => {
+  const before = doc.slice(0, doc.indexOf("## THE BLOCK"));
   for (const [path, varName] of [[READ_PATH, "SHAREAD"], [GUARD, "SHAGUARD"], [MODULE, "SHAPTM"]]) {
     const s = sha256(read(path));
     assert.ok(block.includes(`${varName}=${s}\n`), `the block's ${varName} is not ${path}'s sha256`);
     assert.ok(before.includes(s), `the pins table does not carry ${path}'s sha256`);
   }
-  for (const [path, varName] of [[F4_PATH, "SHAF4"], [GUARD, "SHAGUARD"], [MODULE, "SHAPTM"]]) {
-    assert.ok(f4block.includes(`${varName}=${sha256(read(path))}\n`), `the F4 block's ${varName} is not ${path}'s sha256`);
-  }
-  assert.ok(before.includes(sha256(f4sql)), "the pins table does not carry the F4 read's sha256");
   assert.doesNotMatch(doc, /@@[A-Z0-9]+@@/, "a placeholder is left in the document");
   const fallback = doc.slice(doc.indexOf("## The owner's fallback"));
   assert.ok(fallback.includes(`= "${sha256(sql)}" ] && pbcopy`), "the owner's copy step does not check the read's sha256");
-  assert.ok(fallback.includes(sha256(f4sql)), "the owner's copy step does not name the F4 read's sha256");
-  for (const g of [GUC, GUC_END, GUC_F4, GUC_APPT]) assert.ok(fallback.includes(`set local ${g} = '`), `the owner's first line does not set ${g}`);
+  for (const g of [GUC, GUC_END]) assert.ok(fallback.includes(`set local ${g} = '`), `the owner's first line does not set ${g}`);
 });
 
-test("both reads write nothing and control no transaction; the compare reads the clock once and each setting where it says", () => {
+test("the read writes nothing and controls no transaction; it reads the clock once and each setting where it says", () => {
   const forbidden = /\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke|copy|call|do|set|begin|commit|rollback|savepoint|lock|vacuum|analyze|refresh|notify|listen|prepare|execute)\b/i;
   const hit = code.match(forbidden);
   assert.equal(hit, null, `the read carries a statement word it must not: ${hit && hit[0]}`);
   assert.ok(sql.includes("current_setting('transaction_read_only')"), "verdict 0 must read the transaction's own setting");
   assert.equal((sql.match(/current_setting\('osteojp\.r47_deployed_at'\)/g) || []).length, 1);
   assert.equal((sql.match(/current_setting\('osteojp\.r47_end_day'\)/g) || []).length, 2, "END_DAY is read other than in k and full_day");
-  assert.equal((sql.match(/current_setting\('osteojp\.r47_f4_answer'\)/g) || []).length, 1);
   assert.equal((code.match(/\bnow\(\)/g) || []).length, 1, "the read must read now() exactly once");
   assert.equal(sql.split("\n").filter((l) => l === CLOCK_LINE).length, 1, "the one clock line is not where a rehearsal replaces it");
   assert.doesNotMatch(code, /\b(current_timestamp|clock_timestamp|statement_timestamp|transaction_timestamp|localtimestamp|current_date)\b/i, "a second clock");
-  assert.doesNotMatch(f4code, /\b(now|current_timestamp|clock_timestamp)\b/i, "the F4 read reads a clock");
 });
 
-test("the compare never names a person's column outside nc_in, prints no tenant id and no metadata text", () => {
-  assert.doesNotMatch(codeWithoutNcIn, /\b(full_name|first_name|last_name|phone|phone_e164|email|address|notes|nif|patient_id|patient_2_id|practitioner_id|created_by|actor_user_id|provider_message_id|body|ip|room|name)\b/i, "the read names a personal column");
+test("the read never names a person's column, prints no tenant id and no metadata text", () => {
+  assert.doesNotMatch(code, /\b(full_name|first_name|last_name|phone|phone_e164|email|address|notes|nif|patient_id|patient_2_id|practitioner_id|created_by|actor_user_id|provider_message_id|body|ip|room|name)\b/i, "the read names a personal column");
   assert.doesNotMatch(code, /tenant_id::text|tenant_id\s*\|\|/, "the read prints a tenant id");
-  assert.doesNotMatch(sql, /\|\|\s*l\.metadata|metadata->>'[a-zA-Z]+'\s*\|\||\|\|\s*[a-z]+\.(from_start|to_start|start_at_mark|start_text|nc_email|nc_phone|nc_settings)/, "metadata or a patient's field is printed");
-  assert.equal((code.match(/appointment_id::text/g) || []).length, 1, "an appointment id is printed outside the mismatch list");
+  assert.doesNotMatch(sql, /\|\|\s*l\.metadata|metadata->>'[a-zA-Z]+'\s*\|\||\|\|\s*[a-z]+\.(from_start|to_start|start_at_mark|start_text)/, "metadata is printed");
+  assert.equal((code.match(/appointment_id::text/g) || []).length, 3, "an appointment id is printed outside rows 26, 27 and the mismatch list");
+  assert.match(sql, /l\.appointment_id::text \|\| ' \| no claim, no ledger row; estado at the mark ' \|\| l\.status_at_mark/);
+  assert.match(sql, /l\.appointment_id::text \|\| ' \| LR failed on: '/);
   assert.match(sql, /appointment_id::text \|\| ' \| ' \|\| category as observed/);
   assert.match(sql, /where rk <= 500\n/, "the mismatch list is not capped at 500 a side");
   const out = sql.slice(sql.indexOf("\nselect n, \"check\", observed, expected, verdict from ("));
@@ -369,30 +393,19 @@ function commonShape(b, label) {
   return { lines, psql: psql[0] };
 }
 
-test("the compare block's shape: six dispatch values checked first, one read-only psql with the three settings, the PR head by full sha", () => {
+test("the compare block's shape: five dispatch values checked first, one read-only psql with the two settings, the PR head by full sha", () => {
   const { lines, psql } = commonShape(block, "compare");
-  assert.match(psql, /-c "begin read only" -c "set local statement_timeout = '120s'" -c "set local osteojp\.r47_deployed_at = '\$\{DEPLOYED_AT\}'" -c "set local osteojp\.r47_end_day = '\$\{END_DAY\}'" -c "set local osteojp\.r47_f4_answer = '\$\{F4_ANSWER\}'" -c "select 'read only: '/);
+  assert.match(psql, /-c "begin read only" -c "set local statement_timeout = '120s'" -c "set local osteojp\.r47_deployed_at = '\$\{DEPLOYED_AT\}'" -c "set local osteojp\.r47_end_day = '\$\{END_DAY\}'" -c "select 'read only: '/);
   assert.match(psql, /-f \$\{READFILE\} -c "rollback" > \$\{OUT\} 2>&1 \|\| \{/);
-  assert.deepEqual(lines.slice(2, 8), ["PRHEAD=PENDING", "DOCSHA=PENDING", "PRNUM=PENDING", "DEPLOYED_AT=PENDING", "END_DAY=PENDING", "F4_ANSWER=PENDING"]);
-  assert.equal((block.match(/=PENDING$/gm) || []).length, 6);
-  assert.match(lines[15], /^echo "\$\{PRHEAD\} \$\{DOCSHA\} \$\{PRNUM\} \$\{DEPLOYED_AT\} \$\{END_DAY\} \$\{F4_ANSWER\}" \| grep -qxE '\[0-9a-f\]\{40\} \[0-9a-f\]\{64\} \[1-9\]\[0-9\]\* 2026-11-0\[12\]T/, "the PENDING check is not the first command");
-  assert.ok(lines[15].includes(" 2026-11-(0[3-9]|[12][0-9]|30) (NO|YES|UNREAD)'"), "END_DAY or F4_ANSWER is not checked by form");
+  assert.deepEqual(lines.slice(2, 7), ["PRHEAD=PENDING", "DOCSHA=PENDING", "PRNUM=PENDING", "DEPLOYED_AT=PENDING", "END_DAY=PENDING"]);
+  assert.equal((block.match(/=PENDING$/gm) || []).length, 5);
+  assert.match(lines[14], /^echo "\$\{PRHEAD\} \$\{DOCSHA\} \$\{PRNUM\} \$\{DEPLOYED_AT\} \$\{END_DAY\}" \| grep -qxE '\[0-9a-f\]\{40\} \[0-9a-f\]\{64\} \[1-9\]\[0-9\]\* 2026-11-0\[12\]T/, "the PENDING check is not the first command");
+  assert.ok(lines[14].endsWith(" 2026-11-(0[3-9]|[12][0-9]|30)' || { echo \"STOP: the head commit, the document's sha256, the pull request number, the deploy time or the end day still reads PENDING or is not in its form, so it is NOT READY. Nothing was read\"; exit 1; }"), "END_DAY is not checked by form");
   assert.ok(lines.includes(`OUT=${OUT_DIR}/${OUT_NAME}`));
   assert.doesNotMatch(block, /\b(cat|head|tail|less|more)\b[^\n]*\$\{OUT\}/, "the block prints the transcript");
 });
 
-test("the F4 block's shape: four dispatch values, APPTID a lowercase uuid before anything runs, one read-only psql", () => {
-  const { lines, psql } = commonShape(f4block, "F4");
-  assert.deepEqual(lines.slice(2, 6), ["PRHEAD=PENDING", "DOCSHA=PENDING", "PRNUM=PENDING", "APPTID=PENDING"]);
-  assert.equal((f4block.match(/=PENDING$/gm) || []).length, 4);
-  assert.match(lines[13], /^echo "\$\{PRHEAD\} \$\{DOCSHA\} \$\{PRNUM\}" \| grep -qxE/);
-  assert.equal(lines[14], `echo "\${APPTID}" | grep -qxE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' || { echo "STOP: APPTID still reads PENDING or is not a lowercase uuid, so it is NOT READY. Nothing was read"; exit 1; }`);
-  assert.match(psql, /^psql "\$\{DATABASE_URL_DIRECT\}" -X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -c "begin read only" -c "set local statement_timeout = '30s'" -c "set local osteojp\.f4_appointment_id = '\$\{APPTID\}'" -c "select 'read only: ' \|\| current_setting\('transaction_read_only'\)" -f \$\{F4FILE\} -c "rollback" > \$\{F4OUT\} 2>&1 \|\| \{/);
-  assert.ok(lines.includes(`F4OUT=${OUT_DIR}/${F4_OUT_NAME}`));
-  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(doc), "a uuid is written in the document");
-});
-
-// ---- The fault-injection harness (#1691's, with END_DAY, F4_ANSWER and the F4 block). ----
+// ---- The fault-injection harness (#1691's, with END_DAY and the LR count). ----
 
 const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const realOf = (name) => {
@@ -404,7 +417,7 @@ const realOf = (name) => {
 const STUBBED = ["git", "node", "psql", "date", "grep", "awk", "cut", "shasum", "rm"];
 const FAKED = ["git", "node", "psql", "date"];
 const MISMATCH_ID = "00000000-0000-4000-8000-0000000000a9";
-const HARNESS_APPTID = "00000000-0000-4000-8000-0000000000f4";
+const LR_ID = "00000000-0000-4000-8000-0000000000f8";
 const DAYS2 = ["2026-11-02", "2026-11-03"];
 const DAYS4 = ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"];
 const HARNESS_DEPLOYED = "2026-11-01T22:14:05Z";
@@ -424,12 +437,12 @@ function verdictRows(days) {
   ];
 }
 const table = (days) => [
-  "BEGIN", "SET", "SET", "SET", "SET", "SET",
+  "BEGIN", "SET", "SET", "SET",
   " shadow_compare_transaction ", "----------------------------", " read only: on", "(1 row)", "",
   " n  | check | observed | expected | verdict ",
   "----+-------+----------+----------+---------",
   ...verdictRows(days),
-  ` 20 | window: DEPLOYED_AT | 2026-11-01 22:14:05 | 2026-11-01 22:15:03 | 2026-11-04 08:00:00 | 2026-11-04 07:45:03 | ${days[0]} to ${days.at(-1)} (${days.length}) | F4_ANSWER UNREAD | information | INFO`,
+  ` 20 | window: DEPLOYED_AT | 2026-11-01 22:14:05 | 2026-11-01 22:15:03 | 2026-11-04 08:00:00 | 2026-11-04 07:45:03 | ${days[0]} to ${days.at(-1)} (${days.length}) | information | INFO`,
   ...days.map((d) => ` 22 | passes on ${d} (R11) | 60, 60, 0, 1 to 1, 4 | information | INFO`),
   " 36 | R34, send mode only | 0, 0, 0, 0: 0 sweep-sent rows, as shadow sends nothing | information | INFO",
   ROW37("0"),
@@ -496,21 +509,14 @@ const FIXTURES = {
   e37neg: early(TABLE_OK, "-1"),
   e37dec: early(TABLE_OK, "1.5"),
   e37huge: early(TABLE_OK, "1234567890"),
+  // Two LR rows (row 26), each with its appointment id: their day reads REVIEW, verdict 16 OK.
+  lr: swap(TABLE_OK, 11, "agreement, marks due 2026-11-02, 48h email", "REVIEW").replace(" 36 | R34", [
+    ` 26 | LR (lost run), mark due 2026-11-02 11:00 48h email | ${LR_ID} | no claim, no ledger row; estado at the mark scheduled | information: in R32's accepted set, SOLO reads every one | INFO`,
+    ` 26 | LR (lost run), mark due 2026-11-02 15:00 48h email | ${LR_ID} | no claim, no ledger row; estado at the mark confirmed | information: in R32's accepted set, SOLO reads every one | INFO`,
+    " 36 | R34",
+  ].join("\n")),
 };
 for (const [k, v] of Object.entries(FIXTURES)) if (k !== "ok" && k !== "four") assert.notEqual(v, TABLE_OK, `the fixture ${k} changed nothing`);
-
-/** What the F4 read's psql call writes, by profile. */
-const F4_FIXTURES = {
-  yy: "read only: on\nhas email: yes\nemail reminders on: yes",
-  ny: "read only: on\nhas email: no\nemail reminders on: yes",
-  yn: "read only: on\nhas email: yes\nemail reminders on: no",
-  nn: "read only: on\nhas email: no\nemail reminders on: no",
-  none: "read only: on",
-  extra: "read only: on\nhas email: yes\nemail reminders on: yes\nsomething else",
-  maybe: "read only: on\nhas email: maybe\nemail reminders on: yes",
-  swapped: "read only: on\nemail reminders on: yes\nemail reminders on: no",
-  notreadonly: "read only: off\nhas email: yes\nemail reminders on: yes",
-};
 
 function stubText(name, real) {
   return `#!/bin/sh
@@ -544,16 +550,8 @@ case "${name}" in
   psql)
     [ "$1" = "$HARNESS_DBURL" ] || { echo "harness: psql got a URL that is not the harness's" >&2; exit 97; }
     case "$*" in
-      *"-c set local osteojp.f4_appointment_id = "*)
-        case "$*" in
-          *"-X -q -A -t -v ON_ERROR_STOP=1 -P pager=off -c begin read only -c set local statement_timeout = '30s' -c set local osteojp.f4_appointment_id = '$HARNESS_APPTID' -c "*"-f scripts/db/read-f4-contact-20261106.sql -c rollback") ;;
-          *) echo "harness: the F4 psql call was not handed the appointment id, or not read only" >&2; exit 97;;
-        esac
-        cat "$d/f4.$HARNESS_F4"; exit 0;;
-    esac
-    case "$*" in
-      *"-c set local osteojp.r47_deployed_at = '$HARNESS_DEPLOYED' -c set local osteojp.r47_end_day = '$HARNESS_END' -c set local osteojp.r47_f4_answer = '$HARNESS_F4ANSWER' -c "*) ;;
-      *) echo "harness: psql was not handed the deploy time, the end day and the F4 answer" >&2; exit 97;;
+      *"-c set local osteojp.r47_deployed_at = '$HARNESS_DEPLOYED' -c set local osteojp.r47_end_day = '$HARNESS_END' -c "*) ;;
+      *) echo "harness: psql was not handed the deploy time and the end day" >&2; exit 97;;
     esac
     cat "$d/fix.$HARNESS_TABLE"; exit 0;;
   date)
@@ -576,41 +574,26 @@ function makeBase() {
     chmodSync(join(base, "bin", n), 0o755);
   }
   const wt = join(base, "apply");
-  for (const p of [DOC_PATH, SIDECAR, READ_PATH, F4_PATH, GUARD, MODULE]) {
+  for (const p of [DOC_PATH, SIDECAR, READ_PATH, GUARD, MODULE]) {
     mkdirSync(dirname(join(wt, p)), { recursive: true });
     cpSync(join(ROOT, p), join(wt, p));
   }
   mkdirSync(join(base, "handover"));
   writeFileSync(join(base, "prod.env"), "DATABASE_URL_DIRECT=postgresql://postgres.harness:x@harness.invalid:5432/postgres\n");
   for (const [k, v] of Object.entries(FIXTURES)) writeFileSync(join(base, `fix.${k}`), v + "\n");
-  for (const [k, v] of Object.entries(F4_FIXTURES)) writeFileSync(join(base, `f4.${k}`), v + "\n");
   return base;
 }
 
 const HARNESS_END = "2026-11-03";
-const HARNESS_F4ANSWER = "UNREAD";
 
-/** The compare block as GREEN pastes it from its dispatch: the six value lines filled, paths pointed at the harness. */
-function filled(base, { docsha, deployed, prnum, end, f4 } = {}) {
+/** The compare block as GREEN pastes it from its dispatch: the five value lines filled, paths pointed at the harness. */
+function filled(base, { docsha, deployed, prnum, end } = {}) {
   return block
     .replace("PRHEAD=PENDING", `PRHEAD=${PRHEAD}`)
     .replace("DOCSHA=PENDING", `DOCSHA=${docsha ?? sha256(doc)}`)
     .replace("PRNUM=PENDING", `PRNUM=${prnum ?? HARNESS_PRNUM}`)
     .replace("DEPLOYED_AT=PENDING", `DEPLOYED_AT=${deployed ?? HARNESS_DEPLOYED}`)
     .replace("END_DAY=PENDING", `END_DAY=${end ?? HARNESS_END}`)
-    .replace("F4_ANSWER=PENDING", `F4_ANSWER=${f4 ?? HARNESS_F4ANSWER}`)
-    .replaceAll(APPLY_DIR, join(base, "apply"))
-    .replaceAll(ENV_FILE, join(base, "prod.env"))
-    .replaceAll(OUT_DIR, join(base, "handover"));
-}
-
-/** The F4 block, filled the same way. */
-function filledF4(base, { docsha, prnum, appt } = {}) {
-  return f4block
-    .replace("PRHEAD=PENDING", `PRHEAD=${PRHEAD}`)
-    .replace("DOCSHA=PENDING", `DOCSHA=${docsha ?? sha256(doc)}`)
-    .replace("PRNUM=PENDING", `PRNUM=${prnum ?? HARNESS_PRNUM}`)
-    .replace("APPTID=PENDING", `APPTID=${appt ?? HARNESS_APPTID}`)
     .replaceAll(APPLY_DIR, join(base, "apply"))
     .replaceAll(ENV_FILE, join(base, "prod.env"))
     .replaceAll(OUT_DIR, join(base, "handover"));
@@ -633,11 +616,8 @@ function runOnce(shell, base, text, env = {}) {
       HARNESS_PRNUM,
       HARNESS_DEPLOYED,
       HARNESS_END,
-      HARNESS_F4ANSWER,
-      HARNESS_APPTID,
       HARNESS_DBURL: "postgresql://postgres.harness:x@harness.invalid:5432/postgres",
       HARNESS_TABLE: "ok",
-      HARNESS_F4: "yy",
       HARNESS_ZONE: "WET",
       HARNESS_NOW: "202611040800",
       ...env,
@@ -648,9 +628,11 @@ function runOnce(shell, base, text, env = {}) {
   return { ...r, out: `${r.stdout}${r.stderr}`, calls };
 }
 
-function assertGood(r, days = 2) {
+function assertGood(r, days = 2, lr = 0) {
   assert.equal(r.status, 0, r.out);
   assert.match(r.stdout, new RegExp(`^full days: ${days}$`, "m"));
+  assert.match(r.stdout, new RegExp(`^LR rows: ${lr} \\(row 26 of the file, each with its appointment id and mark; SOLO reads every one\\)$`, "m"));
+  assert.ok(!r.out.includes(LR_ID), "an LR row's appointment id reached the terminal");
   assert.equal(r.stdout.split("\n").filter((l) => /^ 22 \| passes on 2026-11-0\d \(R11\)/.test(l)).length, days, "the R11 rows were not printed");
   assert.ok(!r.out.includes(MISMATCH_ID), "an appointment id from the mismatch list reached the terminal");
   assert.doesNotMatch(r.out, /SHADOW_SUMMARY|read only: on|R8 no scheduling/, "the table itself reached the terminal");
@@ -678,8 +660,8 @@ function assertPass(r, count = "0", days = 2) {
   assert.match(r.stdout, new RegExp(`^verdicts: ${total(days)} OK / 0 REVIEW / 0 VACUOUS / 0 FAIL$`, "m"));
   assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1106 PASSED: ${total(days)} OK / 0 VACUOUS / 0 FAIL over ${days} full days\\. ${EARLY_LINE(count)} The whole table is in .*GREEN does not open it\\. ${Number(count) > 5 ? RERULE_NEXT : SWITCH_NEXT}$`, "m"));
 }
-function assertClean(r, reviews, count = "0", days = 2) {
-  assertGood(r, days);
+function assertClean(r, reviews, count = "0", days = 2, lr = 0) {
+  assertGood(r, days, lr);
   assertEarly(r, count);
   assert.match(r.stdout, new RegExp(`^verdicts: ${total(days) - reviews} OK / ${reviews} REVIEW / 0 VACUOUS / 0 FAIL$`, "m"));
   assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1106 REVIEW, CLEAN UNDER R32 AND THE 2026-11-06 RULINGS: .*verdicts 3 and 8 read OK or REVIEW under LATE-PASS and HARD-DELETE \\(rows 24 and 25\\).*\\. ${EARLY_LINE(count)} The table is in .*GREEN does not open it\\. ${Number(count) > 5 ? RERULE_NEXT : SWITCH_NEXT}$`, "m"));
@@ -694,17 +676,17 @@ function assertLabels(r, reviews, vacuous = 0, count = "0") {
   assertGood(r);
   assertEarly(r, count);
   assert.match(r.stdout, new RegExp(`^verdicts: ${total(2) - reviews - vacuous} OK / ${reviews} REVIEW / ${vacuous} VACUOUS / 0 FAIL$`, "m"));
-  assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1106 REVIEW, LABELS OUTSIDE R32'S SET: .*\\(rows 16, 31, 35, 50 and 51; NC is outside unless F4_ANSWER is NO\\)\\. ${EARLY_LINE(count)} The table is in .*GREEN does not open it\\. Strategy reads first, no switch until then$`, "m"));
+  assert.match(r.stdout, new RegExp(`^SHADOW-COMPARE-1106 REVIEW, LABELS OUTSIDE R32'S SET: .*\\(rows 16, 31, 35, 50 and 51\\)\\. ${EARLY_LINE(count)} The table is in .*GREEN does not open it\\. Strategy reads first, no switch until then$`, "m"));
 }
 
-function assertStop(r, re, label, closing = /SHADOW-COMPARE-1106 (PASSED|REVIEW)|F4-READ-1106 DONE/) {
+function assertStop(r, re, label, closing = /SHADOW-COMPARE-1106 (PASSED|REVIEW)/) {
   assert.notEqual(r.status, 0, `${label}: the block went on\n${r.out}`);
   const stops = r.stdout.split("\n").filter((l) => l.startsWith("STOP:"));
   assert.equal(stops.length, 1, `${label}: expected exactly one STOP line\n${r.out}`);
   if (re) assert.match(stops[0], re, label);
   assert.doesNotMatch(r.stdout, closing, `${label}: a closing line after a fault`);
   assert.ok(!r.out.includes(MISMATCH_ID), `${label}: an appointment id reached the terminal`);
-  assert.ok(!r.out.includes(HARNESS_APPTID), `${label}: the F4 appointment id reached the terminal`);
+  assert.ok(!r.out.includes(LR_ID), `${label}: an LR row's appointment id reached the terminal`);
   assert.doesNotMatch(r.stdout, /TOOL-CHAIN-CONTINUED/, `${label}: the tool chain went on`);
   assert.doesNotMatch(r.out, /harness: unexpected/, `${label}: an unexpected call`);
 }
@@ -721,8 +703,7 @@ for (const shell of shells) {
       assertStop(r, /still reads PENDING or is not in its form, so it is NOT READY/, "PENDING");
       assert.ok(!/^(git|node|psql|date|shasum|rm|awk|cut):/m.test(r.calls), `a command ran before the PENDING check: ${r.calls}`);
       for (const [k, v] of [["deployed", "PENDING"], ["deployed", "2026-11-03T06:00:00Z"], ["deployed", "2026-11-02T06:00:00Z'; drop table x; '"], ["prnum", "0"], ["docsha", "PENDING"],
-        ["end", "PENDING"], ["end", "2026-11-02"], ["end", "2026-11-31"], ["end", "2026-12-01"], ["end", "2026-11-5"], ["end", "2026-11-05'; select 1; '"],
-        ["f4", "PENDING"], ["f4", "no"], ["f4", "MAYBE"], ["f4", "NOYES"]]) {
+        ["end", "PENDING"], ["end", "2026-11-02"], ["end", "2026-11-31"], ["end", "2026-12-01"], ["end", "2026-11-5"], ["end", "2026-11-05'; select 1; '"]]) {
         const p = runOnce(shell, base, filled(base, { [k]: v }));
         assertStop(p, /NOT READY/, `${k} ${v}`);
         assert.ok(!/^(git|node|psql|date):/m.test(p.calls), `a command ran before the PENDING check (${k} ${v}): ${p.calls}`);
@@ -736,7 +717,7 @@ for (const shell of shells) {
       const text = filled(base);
       const clean = runOnce(shell, base, text);
       assertPass(clean);
-      assert.match(clean.stdout, /^full days:   2026-11-02 to 2026-11-03 \(2\); F4 answer UNREAD$/m);
+      assert.match(clean.stdout, /^full days:   2026-11-02 to 2026-11-03 \(2\)$/m);
       const out = readFileSync(join(base, "handover", OUT_NAME), "utf8");
       assert.match(out, /SHADOW_SUMMARY/, "the transcript is not in the handover folder");
       assert.ok(out.includes(MISMATCH_ID), "the mismatch list is not in the transcript");
@@ -779,9 +760,8 @@ for (const shell of shells) {
         assertStop(r, /earlier than 07:15 Lisbon on the day after the end day/, `four days, clock ${now}`);
         assert.ok(!/^(git|node|psql):/m.test(r.calls), `a command ran before the clock check: ${r.calls}`);
       }
-      // The F4 answer is handed to psql as filled.
-      assertPass(runOnce(shell, base, filled(base, { f4: "NO" }), { HARNESS_F4ANSWER: "NO" }));
-      assertStop(runOnce(shell, base, filled(base, { f4: "NO" })), /the read did not complete/, "psql handed another F4 answer");
+      // LR rows are counted to the terminal, never their ids; the day they fall on reads REVIEW.
+      assertClean(runOnce(shell, base, text, { HARNESS_TABLE: "lr" }), 1, "0", 2, 2);
       // Row 37 on the closing line (strategy's Q9(a)).
       assertPass(runOnce(shell, base, text, { HARNESS_TABLE: "e37five" }), "5");
       assertPass(runOnce(shell, base, text, { HARNESS_TABLE: "e37six" }), "6");
@@ -824,50 +804,6 @@ for (const shell of shells) {
     } finally { rmSync(base, { recursive: true, force: true }); }
   });
 
-  test(`${shell}: the F4 block prints exactly its two lines and its answer, STOPs on anything else, and every external call failed in turn is a clean STOP`, () => {
-    const base = makeBase();
-    try {
-      const own = runOnce(shell, base, f4block.replaceAll(APPLY_DIR, join(base, "apply")));
-      assertStop(own, /still reads PENDING or is not in its form, so it is NOT READY/, "F4 PENDING");
-      assert.ok(!/^(git|node|psql|date|shasum|rm|awk|cut):/m.test(own.calls), `a command ran before the PENDING check: ${own.calls}`);
-      for (const appt of ["PENDING", HARNESS_APPTID.toUpperCase(), HARNESS_APPTID.replaceAll("-", ""), `${HARNESS_APPTID}0`, `${HARNESS_APPTID}' or '1`, "not-a-uuid"]) {
-        const p = runOnce(shell, base, filledF4(base, { appt }));
-        assertStop(p, /APPTID still reads PENDING or is not a lowercase uuid, so it is NOT READY/, `appt ${appt}`);
-        assert.ok(!/^(git|node|psql|date):/m.test(p.calls), `a command ran before the APPTID check (${appt}): ${p.calls}`);
-      }
-      const text = filledF4(base);
-      for (const [f4, l1, l2, answer] of [["yy", "yes", "yes", "YES"], ["ny", "no", "yes", "NO"], ["yn", "yes", "no", "NO"], ["nn", "no", "no", "NO"]]) {
-        const r = runOnce(shell, base, text, { HARNESS_F4: f4 });
-        assert.equal(r.status, 0, r.out);
-        assert.match(r.stdout, new RegExp(`^has email: ${l1}\\nemail reminders on: ${l2}\\nF4-READ-1106 DONE: the F4 read answered ${answer} \\(NO when at least one line reads no\\)\\.`, "m"));
-        assert.match(r.stdout, /TOOL-CHAIN-CONTINUED/);
-        assert.doesNotMatch(r.out, /^STOP:/m);
-        assert.ok(!r.out.includes(HARNESS_APPTID), "the appointment id reached the terminal");
-        assert.doesNotMatch(r.out, /harness: unexpected/);
-      }
-      const out = readFileSync(join(base, "handover", F4_OUT_NAME), "utf8");
-      assert.equal(out, F4_FIXTURES.nn + "\n", "the F4 transcript is not in the handover folder");
-      const lines = /did not print exactly its two lines/;
-      for (const f4 of ["none", "extra"]) assertStop(runOnce(shell, base, text, { HARNESS_F4: f4 }), lines, `F4 ${f4}`);
-      assertStop(runOnce(shell, base, text, { HARNESS_F4: "maybe" }), /no has-email line/, "F4 maybe");
-      assertStop(runOnce(shell, base, text, { HARNESS_F4: "swapped" }), /no has-email line/, "F4 swapped");
-      assertStop(runOnce(shell, base, text, { HARNESS_F4: "notreadonly" }), /READ ONLY/, "F4 not read only");
-      assertStop(runOnce(shell, base, text, { HARNESS_APPTID: "00000000-0000-4000-8000-0000000000f5" }), /the F4 read did not complete/, "psql handed another id");
-      for (const [p, re] of [[F4_PATH, /F4 read on disk is not the reviewed file/], [GUARD, /target guard on disk/], [MODULE, /module on disk/], [DOC_PATH, /not the one the dispatch names/]]) {
-        const f = join(base, "apply", p);
-        const keep = readFileSync(f);
-        writeFileSync(f, Buffer.concat([keep, Buffer.from("\n")]));
-        assertStop(runOnce(shell, base, text), re, `F4 changed ${p}`);
-        writeFileSync(f, keep);
-      }
-      assertStop(runOnce(shell, base, text, { HARNESS_FETCHED: "b".repeat(40) }), /the pull request's head is \[b{40}\]/, "F4 moved head");
-      for (const zone of ["EST", ""]) assertStop(runOnce(shell, base, text, { HARNESS_ZONE: zone }), /not WET or WEST/, `F4 zone ${zone}`);
-      const clean = runOnce(shell, base, text);
-      const calls = clean.calls.trim().split("\n").map((l) => l.split(" ")[0]);
-      for (const n of STUBBED) assert.ok(calls.some((c) => c.startsWith(`${n}:`)), `${n} was never called by the F4 block, so its failure is not proven`);
-      for (const id of calls) assertStop(runOnce(shell, base, text, { HARNESS_FAIL: id }), null, `${shell} F4 fail ${id}`);
-    } finally { rmSync(base, { recursive: true, force: true }); }
-  });
 }
 
 
@@ -890,7 +826,8 @@ const channelOf = (offset) => (offset === "48h" ? "email" : "sms");
  * The base, at the read's clock Wednesday 11-04 08:00 with DEPLOYED_AT Sunday 11-01 15:20 Lisbon:
  * two synthetic tenants (the second with no visit, heartbeating with nothing due); 10 synthetic
  * visits Monday 11-02 to Friday 11-06 at 10:00 and 15:00 Lisbon (appt(1) Monday 10:00 to appt(10)
- * Friday 15:00), each with an `appointment.create` row dated 10-01 carrying its start; a shadow
+ * Friday 15:00), each with an `appointment.create` row dated 10-01 carrying its start and the
+ * status it was booked with (`scheduled`, as every booking writer on main records it); a shadow
  * heartbeat every 15 minutes, 07:00 to 21:45, from Sunday 07:00 (before the deploy, so t0 is the
  * 15:30 pass) to Wednesday 07:45; for every mark due from Sunday 00:00 to Wednesday 07:45 a
  * sleeping-job claim (mark + 2 s), a `sent` ledger row (mark + 3 s) and a shadow row in the
@@ -918,7 +855,7 @@ insert into public.appointments (id, tenant_id, patient_id, practitioner_id, loc
     from seed_appt;
 insert into public.audit_log (tenant_id, action, entity_type, entity_id, metadata, created_at)
   select '${TENANT}', 'appointment.create', 'appointment', id,
-         jsonb_build_object('startsAt', to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')), ${at("2026-10-01 09:00")}
+         jsonb_build_object('startsAt', to_char(starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'status', 'scheduled'), ${at("2026-10-01 09:00")}
     from seed_appt;
 create table seed_pass as
   select z.p as pass_at, z.p + interval '150 milliseconds' as created_at,
@@ -957,13 +894,16 @@ insert into public.reminder_sweep_passes (tenant_id, pass_id, mode, pass_at, loo
     from seed_pass p;
 `;
 
-/** A visit of the case's own. `saved` writes its `appointment.create` row (with startsAt `bookedAt`) at `created`. */
-const visit = (id, start, { tenant = TENANT, status = "scheduled", saved = true, created = "2026-10-01 09:00", updated = created, bookedAt = start, saveTenant = tenant, origin = "staff", patient = null } = {}) => `
+/**
+ * A visit of the case's own. `saved` writes its `appointment.create` row (with startsAt `bookedAt`
+ * and the status `bookedStatus`, left out when null) at `created`.
+ */
+const visit = (id, start, { tenant = TENANT, status = "scheduled", saved = true, created = "2026-10-01 09:00", updated = created, bookedAt = start, bookedStatus = "scheduled", saveTenant = tenant, origin = "staff", patient = null } = {}) => `
 insert into public.appointments (id, tenant_id, patient_id, practitioner_id, location_id, starts_at, ends_at, status, origin, created_at, updated_at)
   values ('${id}', '${tenant}', ${patient ? `'${patient}'` : "gen_random_uuid()"}, gen_random_uuid(), gen_random_uuid(), ${at(start)}, ${at(start)} + interval '1 hour',
           '${status}', '${origin}', ${at(created)}, ${at(updated)});
 ${saved ? `insert into public.audit_log (tenant_id, action, entity_type, entity_id, metadata, created_at)
-  values ('${saveTenant}', 'appointment.create', 'appointment', '${id}', '{"startsAt":"${iso(bookedAt)}"}', ${at(created)});` : ""}`;
+  values ('${saveTenant}', 'appointment.create', 'appointment', '${id}', '${JSON.stringify({ startsAt: iso(bookedAt), ...(bookedStatus === null ? {} : { status: bookedStatus }) })}', ${at(created)});` : ""}`;
 /** The sleeping job's claim at the mark and its ledger row. No shadow row. */
 const runClaim = (id, offset, start, due = dueOf(start, offset), outcome = "sent", reason = null) => `
 insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
@@ -1218,24 +1158,24 @@ const CASES = [
     info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(S8_LABEL)}`)], [16, /\(S8 1\)/]],
   },
   {
-    name: "S8 negative: the same move 31 seconds before the mark: UNEXPLAINED",
+    name: "S8 negative: the same move 31 seconds before the mark: not S8; no claim, no ledger row, planned by that move, so LR",
     seed: [
       visit(appt(0xb6), "2026-11-04 12:45", { bookedAt: "2026-11-04 13:00" }),
       moved(appt(0xb6), "2026-11-02 12:44:29", "2026-11-04 12:45", "2026-11-04 13:00"),
       shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
     ].join("\n"),
-    want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
-    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)]],
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /planned by a scheduling save at 2026-11-02 12:44:29/]],
   },
   {
-    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: UNEXPLAINED",
+    name: "S8 negative: a status-only save 10 seconds before the mark re-arms nothing: not S8; it is a scheduling save by #1720's classification, so LR, confirmed",
     seed: [
       visit(appt(0xb6), "2026-11-04 12:45"),
       audit(appt(0xb6), "appointment.update", "2026-11-02 12:44:50", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
       shadowRow(appt(0xb6), "48h", "2026-11-04 12:45", "2026-11-02 12:45"),
     ].join("\n"),
-    want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
-    info: [[50, new RegExp(`${appt(0xb6)} \\| UNEXPLAINED`)]],
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[50, new RegExp(`${appt(0xb6)} \\| ${re(LR_LABEL)}`)], [26, /estado at the mark confirmed; .*planned by a scheduling save at 2026-11-02 12:44:50/]],
   },
   { name: "a move that keeps the start, after the mark and before the pass: it does not count (R33), the shadow takes it, `both`", seed: KEPT(true), want: only({}) },
   {
@@ -1350,11 +1290,17 @@ const CASES = [
     info: [[16, /with a label outside the set 0; window-edge labels on a partial day, not judged 1/]],
   },
   {
-    name: "shadow only: the sleeping job's claim for Tuesday's 24h SMS at 10:00 removed",
+    name: "shadow only: the sleeping job's claim and ledger row for Tuesday's 24h SMS at 10:00 removed: a booked visit with neither is LR's shape",
     seed: `delete from public.reminder_dispatches where appointment_id = '${appt(5)}' and channel = 'sms';
            delete from public.reminder_claims where appointment_id = '${appt(5)}' and kind = 'claim' and offset_id = '24h';`,
-    want: only({ [`12 ${TUE}`]: "FAIL", 13: "FAIL" }),
-    info: [[50, new RegExp(`${appt(5)} \\| UNEXPLAINED`)]],
+    want: only({ [`12 ${TUE}`]: "REVIEW" }),
+    info: [[50, new RegExp(`${appt(5)} \\| ${re(LR_LABEL)}`)], [26, new RegExp(`^LR \\(lost run\\), mark due 2026-11-03 10:00 24h sms \\| ${appt(5)} \\| `)]],
+  },
+  {
+    name: "shadow only, the claim alone removed: the ledger row stays, so S4 (a ledger row with no claim), not LR",
+    seed: `delete from public.reminder_claims where appointment_id = '${appt(5)}' and kind = 'claim' and offset_id = '24h';`,
+    want: only({ [`12 ${TUE}`]: "REVIEW", 16: "REVIEW" }),
+    info: [[50, new RegExp(`${appt(5)} \\| S4 a ledger row with no claim`)], [16, /\(S4 1\)/]],
   },
   {
     name: "run only: the shadow row for Monday's 48h email at 10:00 removed (a booked visit, no save after the mark: not R8, not RK)",
@@ -1466,7 +1412,7 @@ for (const [name, counts, args] of CLAUSE_CASES) {
  * (for R34, whose result is a row and not a verdict) must not print its row.
  */
 
-// ---- 2026-11-06: LATE-PASS, HARD-DELETE and NC, on the same base. ----
+// ---- 2026-11-06: LATE-PASS, HARD-DELETE and LR, on the same base. ----
 
 /** A ULID whose first 10 characters encode this Lisbon instant (WET, so the wall time is UTC). */
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -1497,20 +1443,98 @@ const HD_SHAPE = ({ record = true, start = "2026-11-04 19:00", meta = null, extr
   record ? audit(HD_ID, "appointment.hard_delete", "2026-11-03 20:00:01", meta ?? JSON.stringify({ startsAt: iso(start), status: "scheduled" })) : "",
 ].join("\n");
 
-/** A synthetic patient (no person): the address and phone are .invalid-style fixtures. */
-const NC_PATIENT = "00000000-0000-4000-8000-00000000c001";
-const patient = (id, { email = null, phone = "+351 910 000 000", emailOn = true, smsOn = true } = {}) => `
-insert into public.patients (id, tenant_id, full_name, email, phone, reminder_email_enabled, reminder_sms_enabled)
-  values ('${id}', '${TENANT}', 'Synthetic patient', ${email === null ? "null" : `'${email}'`}, ${phone === null ? "null" : `'${phone}'`}, ${emailOn}, ${smsOn});`;
-/** F4's shape: a 48h email mark (Monday 11:00) the shadow took and the sleeping job did not; the 24h both took. */
-const NC_SHAPE = (p, { withPatient = true } = {}) => [
-  withPatient ? patient(NC_PATIENT, p) : "",
-  visit(appt(0xf8), "2026-11-04 11:00", { patient: withPatient ? NC_PATIENT : null }),
-  shadowRow(appt(0xf8), "48h", "2026-11-04 11:00", "2026-11-02 11:00"),
-  both(appt(0xf8), "24h", "2026-11-04 11:00"),
+/**
+ * LR's shape (F4, re-ruled 2026-11-06 14:20): a visit booked on 10-01 (status scheduled) for
+ * Wednesday 11:00 whose 48h mark (Monday 11:00) the shadow took in the 11:00 pass, with no claim
+ * and no ledger row. `start` is the visit's start now, `booked` its booking row's start, `extra`
+ * the case's own rows.
+ */
+const LR_APPT = appt(0xf8);
+const LR_SHAPE = ({ start = "2026-11-04 11:00", visitOpts = {}, extra = [] } = {}) => [
+  visit(LR_APPT, start, { bookedAt: "2026-11-04 11:00", ...visitOpts }),
+  shadowRow(LR_APPT, "48h", "2026-11-04 11:00", "2026-11-02 11:00"),
+  ...extra,
 ].join("\n");
+const NOT_LR = (cond) => [[50, new RegExp(`${LR_APPT} \\| UNEXPLAINED`)], [27, new RegExp(`^shadow-only UNEXPLAINED, not LR, mark due 2026-11-02 11:00 48h email \\| ${LR_APPT} \\| LR failed on: ${cond} \\| information: verdict 13 FAILs on it \\| INFO$`)]];
+const LR_UNEXPLAINED = only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" });
+/** A claim of the sleeping job for appt(0xf8), 48h email; `start` its start, `early` whether early. */
+const lrClaim = (start, created, early) => `
+insert into public.reminder_claims (tenant_id, appointment_id, kind, offset_id, channel, starts_at, due_at, taker, early, attempt, created_at)
+  values ('${TENANT}', '${LR_APPT}', 'claim', '48h', 'email', ${at(start)}, ${at(dueOf(start, "48h"))}, 'run', ${early}, 1, ${at(created)});`;
 
 CASES.push(
+  {
+    name: "LR: a booked visit's 48h mark the shadow took, with no claim and no ledger row, sendable, its start unchanged: LR, in R32's set, printed in row 26",
+    seed: LR_SHAPE(),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [
+      [50, new RegExp(`${LR_APPT} \\| ${re(LR_LABEL)}`)],
+      [26, new RegExp(`^LR \\(lost run\\), mark due 2026-11-02 11:00 48h email \\| ${LR_APPT} \\| no claim, no ledger row; estado at the mark scheduled; start at the mark is the start now; planned by a scheduling save at 2026-10-01 09:00:00 \\| information: in R32's accepted set, SOLO reads every one \\| INFO$`)],
+      [16, /with a label outside the set 0; .*LR rows \(in the set, each in row 26\) 1 \| /],
+      [11, /both 2; shadow only 1 \(unexplained 0\)/],
+    ],
+  },
+  {
+    name: "LR: confirmed by hand before the mark: the estado at the mark is confirmed, and that save is the last scheduling save: LR",
+    seed: LR_SHAPE({ extra: [audit(LR_APPT, "appointment.update", "2026-11-01 18:00", '{"fromStatus":"scheduled","toStatus":"confirmed"}')] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a scheduling save at 2026-11-01 18:00:00/]],
+  },
+  {
+    name: "LR: moved away and back after the mark: the start at the mark (the first move's fromStartsAt) is the start now (R33): LR",
+    seed: LR_SHAPE({ extra: [moved(LR_APPT, "2026-11-02 12:00", "2026-11-04 14:00", "2026-11-04 11:00"), moved(LR_APPT, "2026-11-02 12:05", "2026-11-04 11:00", "2026-11-04 14:00")] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[50, new RegExp(`${LR_APPT} \\| ${re(LR_LABEL)}`)]],
+  },
+  {
+    name: "LR negative 1: an early claim of the sleeping job for this mark and start: not LR, UNEXPLAINED",
+    seed: LR_SHAPE({ extra: [lrClaim("2026-11-04 11:00", "2026-11-02 10:00", true)] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("1 a claim or a reminder ledger row of this mark exists"),
+  },
+  {
+    name: "LR negative 1: a reminder ledger row of this mark (its claim was for another start, before t0, so not S4): not LR, UNEXPLAINED",
+    seed: LR_SHAPE({ extra: [lrClaim("2026-11-03 09:00", "2026-11-01 09:00:02", false), ledger(LR_APPT, "48h", "2026-11-02 11:00:03")] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("1 a claim or a reminder ledger row of this mark exists"),
+  },
+  {
+    name: "LR negative 2: cancelled before the mark, brought back after it: the estado at the mark (the status the next change left) is cancelled: not LR",
+    seed: LR_SHAPE({ extra: [
+      audit(LR_APPT, "appointment.update", "2026-11-01 18:00", '{"fromStatus":"scheduled","toStatus":"cancelled"}'),
+      audit(LR_APPT, "appointment.update", "2026-11-02 12:00", '{"fromStatus":"cancelled","toStatus":"scheduled"}'),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: cancelled\\)"),
+  },
+  {
+    name: "LR negative 2: a booking row that records no status and no status change: the estado cannot be established: not LR",
+    seed: LR_SHAPE({ visitOpts: { bookedStatus: null } }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: unknown\\)"),
+  },
+  {
+    name: "LR negative 2: an online request not yet accepted at the mark (scheduled, origin patient_portal): not LR",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal" } }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("2 the estado at the mark is not sendable or not established \\(read: scheduled, an online request not yet accepted\\)"),
+  },
+  {
+    name: "LR negative 3: moved after the mark to another start: the start at the mark is not the start now: not LR",
+    seed: LR_SHAPE({ start: "2026-11-04 14:00", extra: [moved(LR_APPT, "2026-11-02 12:00", "2026-11-04 14:00", "2026-11-04 11:00")] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("3 the start at the mark is not the start now, or cannot be read"),
+  },
+  {
+    name: "LR negative 4: no scheduling save at or before the mark (no booking row; an edit that re-arms nothing before it; a kept-start move and a confirmation after it): not LR",
+    seed: LR_SHAPE({ visitOpts: { saved: false }, extra: [
+      audit(LR_APPT, "appointment.update", "2026-11-01 18:00", '{"via":"agenda"}'),
+      moved(LR_APPT, "2026-11-02 12:00", "2026-11-04 11:00", "2026-11-04 11:00"),
+      audit(LR_APPT, "appointment.update", "2026-11-02 12:10", '{"fromStatus":"scheduled","toStatus":"confirmed"}'),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 no scheduling save at or before the mark"),
+  },
   {
     name: "LATE-PASS: Tuesday's 10:00 pass ran at 10:16:30, its run time in slot 10:00: verdict 3 REVIEW on Tuesday",
     seed: LATE("2026-11-03 10:00:00.500"),
@@ -1556,23 +1580,6 @@ update public.reminder_sweep_passes set recorded_count = recorded_count - 1 wher
     want: only({ 8: "FAIL" }),
   },
   {
-    name: "NC: a shadow-only 48h email mark of a patient with no email address, F4_ANSWER UNREAD: NC, verdict 16 REVIEW",
-    seed: NC_SHAPE({ email: null }),
-    want: only({ [`11 ${MON}`]: "REVIEW", 16: "REVIEW" }),
-    info: [[50, new RegExp(`${appt(0xf8)} \\| ${re(NC_LABEL)}`)], [16, /\(NC 1\)/], [16, /NC rows 1, F4_ANSWER UNREAD \(NC outside the set\)/]],
-  },
-  { name: "NC: the same, F4_ANSWER YES: verdict 16 REVIEW", seed: NC_SHAPE({ email: null }), f4: "YES", want: only({ [`11 ${MON}`]: "REVIEW", 16: "REVIEW" }) },
-  {
-    name: "NC: the same, F4_ANSWER NO: NC in R32's set, verdict 16 OK",
-    seed: NC_SHAPE({ email: null }), f4: "NO",
-    want: only({ [`11 ${MON}`]: "REVIEW" }),
-    info: [[16, /NC rows 1, F4_ANSWER NO \(NC in the set\)/], [20, /\| F4_ANSWER NO \|/]],
-  },
-  { name: "NC: an address on file, email reminders off: NC", seed: NC_SHAPE({ email: "synthetic@example.invalid", emailOn: false }), want: only({ [`11 ${MON}`]: "REVIEW", 16: "REVIEW" }) },
-  { name: "NC: an empty address and no phone: NC (no_contact)", seed: NC_SHAPE({ email: "", phone: null }), want: only({ [`11 ${MON}`]: "REVIEW", 16: "REVIEW" }) },
-  { name: "NC negative: an address on file and email reminders on: UNEXPLAINED", seed: NC_SHAPE({ email: "synthetic@example.invalid", emailOn: true }), want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }) },
-  { name: "NC negative: no patient row at all (the dispatch's loader finds nothing): UNEXPLAINED", seed: NC_SHAPE({}, { withPatient: false }), want: only({ [`11 ${MON}`]: "FAIL", 13: "FAIL" }) },
-  {
     name: "END_DAY 2026-11-04 read on Thursday 08:00: three full days, Wednesday's heartbeats short, its agreement VACUOUS",
     seed: "", end: "2026-11-04", clock: "2026-11-05 08:00:00",
     want: { ...only({}), "3 2026-11-04": "FAIL", "11 2026-11-04": "VACUOUS", "12 2026-11-04": "VACUOUS" },
@@ -1586,8 +1593,18 @@ const MUTANTS_1106 = [
   ["verdict 3's REVIEW arm takes any gap", "when v.tenants_ok + v.tenants_late = v.tenants then 'REVIEW'", "when true then 'REVIEW'", "LATE-PASS negative: a failed pass"],
   ["HARD-DELETE ties to the LAST pass", "order by m.audit_id, m.offset_id, h.pass_at, h.created_at", "order by m.audit_id, m.offset_id, h.pass_at desc, h.created_at desc", "HARD-DELETE: two heartbeats short by one"],
   ["HARD-DELETE explains any shortfall with a tie", "(select count(*) from hd_acct where short > 0 and short = tied) as explained", "(select count(*) from hd_acct where short > 0 and tied > 0) as explained", "HARD-DELETE negative: a heartbeat short by 2"],
-  ["NC never refuses", "and nc.starts_at = p.starts_at and nc.nc_outcome <> 'send')", "and nc.starts_at = p.starts_at and false)", "NC: a shadow-only 48h email mark"],
-  ["NC in R32's set whatever the F4 read says", "select current_setting('osteojp.r47_f4_answer') as answer", "select 'NO'::text as answer", "NC: a shadow-only 48h email mark"],
+  ["LR condition 1 without the claim", "and c.kind = 'claim' and c.offset_id = m.offset_id and c.channel = m.channel\n                         and c.starts_at = m.starts_at)", "and false)", "LR negative 1: an early claim"],
+  ["LR condition 1 without the ledger row", "and x.created_at >= m.due_at - interval '10 minutes')) as c1,", "and false)) as c1,", "LR negative 1: a reminder ledger row"],
+  ["LR condition 2 takes any estado", "and (st.status_at_mark in ('scheduled', 'confirmed')", "and (true or st.status_at_mark in ('scheduled', 'confirmed')", "LR negative 2: cancelled before the mark"],
+  ["LR condition 2 reads the status the change after the mark SET", "                 then (select v.from_status from lr_ev v", "                 then (select v.to_status from lr_ev v", "LR negative 2: cancelled before the mark"],
+  ["LR condition 2 takes an unknown status as scheduled", "              then z.to_status else 'unknown' end as to_status", "              then z.to_status else 'scheduled' end as to_status", "LR negative 2: a booking row that records no status"],
+  ["LR condition 2 without the request gate", "and not (st.status_at_mark in ('scheduled', 'scheduled or confirmed') and m.pedido_origin), false) as c2,", "and true, false) as c2,", "LR negative 2: an online request"],
+  ["LR condition 3 without the start now", "coalesce(e.start_at_mark = m.iso_start and m.start_now = m.iso_start, false) as c3,", "coalesce(e.start_at_mark = m.iso_start, false) as c3,", "LR negative 3"],
+  ["LR condition 4 takes a save after the mark", "         and l.created_at <= m.due_at\n", "         and true\n", "LR negative 4"],
+  ["LR condition 4 counts any audit row", "         and (l.action in ('appointment.create', 'appointment.reschedule')\n              or (l.action = 'appointment.update'", "         and (true\n              or (l.action = 'appointment.update'", "LR negative 4"],
+  ["pcl drops LR condition 2", "and lr.c1 and lr.c2 and lr.c3 and lr.c4)", "and lr.c1 and lr.c3 and lr.c4)", "LR negative 2: cancelled before the mark"],
+  ["pcl drops LR condition 4", "and lr.c1 and lr.c2 and lr.c3 and lr.c4)", "and lr.c1 and lr.c2 and lr.c3)", "LR negative 4"],
+  ["LR outside R32's set", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5')", "LR: a booked visit's 48h mark"],
 ];
 
 const MUTANTS = [
@@ -1635,7 +1652,6 @@ for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
     seed: base.seed,
     deployed: base.deployed,
     end: base.end,
-    f4: base.f4,
     clock: base.clock,
     mutate: (s) => {
       assert.equal(s.split(from).length, 2, `the mutated text is not written exactly once: ${from}`);
@@ -1672,23 +1688,19 @@ test("the read on a local database: every verdict flips on its own seeded fault,
     // tables the read and the seed use must then exist, which the seed proves by running strictly.
     spawnSync("psql", [dbUrl(BASE), "-X", "-q"], { encoding: "utf8", input: dump.stdout, maxBuffer: 64 * 1024 * 1024 });
     ok(psql(dbUrl(BASE), [], SEED));
-    const runRead = (db, text, deployed, end = "2026-11-03", f4 = "UNREAD") => {
+    const runRead = (db, text, deployed, end = "2026-11-03") => {
       const file = join(work, "read.sql");
       writeFileSync(file, text);
-      const set = [[GUC, deployed], [GUC_END, end], [GUC_F4, f4]].filter(([, v]) => v !== null).flatMap(([g, v]) => ["-c", `set local ${g} = '${v}'`]);
+      const set = [[GUC, deployed], [GUC_END, end]].filter(([, v]) => v !== null).flatMap(([g, v]) => ["-c", `set local ${g} = '${v}'`]);
       return psql(dbUrl(db), ["-A", "-t", "-F", "\u001f", "-c", "begin read only", "-c", "set local statement_timeout = '120s'", ...set, "-f", file, "-c", "rollback"]);
-    };
-    const runF4 = (db, id) => {
-      const set = id === null ? [] : ["-c", `set local ${GUC_APPT} = '${id}'`];
-      return psql(dbUrl(db), ["-A", "-t", "-c", "begin read only", "-c", "set local statement_timeout = '30s'", ...set, "-c", "select 'read only: ' || current_setting('transaction_read_only')", "-f", join(ROOT, F4_PATH), "-c", "rollback"]);
     };
     const withClock = (clock) => {
       const t = sql.replace(CLOCK_LINE, `  select timestamptz '${clock} Europe/Lisbon' as t1`);
       assert.notEqual(t, sql, "the clock line was not replaced");
       return t;
     };
-    // Without any one of its three settings the read stops with an error and prints no table.
-    for (const [args, g] of [[[null, "2026-11-03", "UNREAD"], GUC], [[DEPLOYED, null, "UNREAD"], GUC_END], [[DEPLOYED, "2026-11-03", null], GUC_F4]]) {
+    // Without either of its two settings the read stops with an error and prints no table.
+    for (const [args, g] of [[[null, "2026-11-03"], GUC], [[DEPLOYED, null], GUC_END]]) {
       const r = runRead(BASE, withClock(READ_CLOCK), ...args);
       assert.notEqual(r.status, 0, `the read ran without ${g}`);
       assert.match(r.stderr, new RegExp(`unrecognized configuration parameter "${g.replace(".", "\\.")}"`));
@@ -1705,7 +1717,7 @@ test("the read on a local database: every verdict flips on its own seeded fault,
         assert.notEqual(mutated, text, `${c.name}: the mutant changed nothing`);
         text = mutated;
       }
-      const out = ok(runRead(CASE_DB, text, c.deployed ?? DEPLOYED, c.end ?? "2026-11-03", c.f4 ?? "UNREAD"));
+      const out = ok(runRead(CASE_DB, text, c.deployed ?? DEPLOYED, c.end ?? "2026-11-03"));
       const rows = out.split("\n").filter(Boolean).map((l) => l.split("\u001f")).filter((r) => r.length === 5);
       const verdictRows = rows.filter((r) => r[4] !== "INFO");
       const verdicts = Object.fromEntries(verdictRows.map((r) => [keyOf(r), r[4]]));
@@ -1723,29 +1735,6 @@ test("the read on a local database: every verdict flips on its own seeded fault,
       for (const [n, rx] of c.info ?? []) {
         assert.ok(rows.some((r) => Number(r[0]) === n && rx.test(r.slice(1).join(" | "))), `${c.name}: no row ${n} matching ${rx}\n${out}`);
       }
-      admin(`drop database ${CASE_DB}`);
-    }
-    // The F4 read: exactly its two lines for each of the four answers, nothing for an id that names no visit.
-    {
-      const r = runF4(BASE, null);
-      assert.notEqual(r.status, 0, "the F4 read ran without its setting");
-      assert.match(r.stderr, /unrecognized configuration parameter "osteojp\.f4_appointment_id"/);
-      results.push("F4: the setting unset stops the read");
-    }
-    for (const [name, p, want] of [
-      ["an address, reminders on", { email: "synthetic@example.invalid", emailOn: true }, ["has email: yes", "email reminders on: yes"]],
-      ["no address (null), reminders on", { email: null, emailOn: true }, ["has email: no", "email reminders on: yes"]],
-      ["an empty address, reminders off", { email: "", emailOn: false }, ["has email: no", "email reminders on: no"]],
-      ["an address, reminders off", { email: "synthetic@example.invalid", emailOn: false }, ["has email: yes", "email reminders on: no"]],
-    ]) {
-      admin(`drop database if exists ${CASE_DB}`);
-      admin(`create database ${CASE_DB} template ${BASE}`);
-      ok(psql(dbUrl(CASE_DB), [], patient(NC_PATIENT, p) + visit(appt(0xf9), "2026-11-05 10:00", { patient: NC_PATIENT })));
-      const lines = ok(runF4(CASE_DB, appt(0xf9))).split("\n").filter(Boolean);
-      assert.deepEqual(lines, ["read only: on", ...want], `F4 ${name}`);
-      const none = ok(runF4(CASE_DB, appt(0xfa))).split("\n").filter(Boolean);
-      assert.deepEqual(none, ["read only: on"], `F4 ${name}: an id that names no visit printed a line`);
-      results.push(`F4 ${name}: ${want.join(", ")}; an unknown id prints nothing`);
       admin(`drop database ${CASE_DB}`);
     }
   } finally {
