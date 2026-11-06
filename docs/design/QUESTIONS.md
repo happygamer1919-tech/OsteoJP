@@ -1484,10 +1484,12 @@ liability, and let its design be recovered from git history if it is ever wanted
 
 **Recommended default:** Faturação's "Todas as localizações" means the viewer's own clinics for a location-scoped viewer, as PL-14 says: `listInvoices` takes the viewer's clinic list when no single clinic is chosen. The Início figure and the Faturação list then agree for every viewer. A consequence to rule with it: an invoice with no marcação has no clinic, so that viewer would stop seeing it on "Todas", which is already the case today for a viewer with ONE clinic. **Alternative:** keep Faturação's "Todas" as every clinic for those viewers, and widen nothing on Início; the two screens then keep differing for staff at two or more clinics.
 
-## Q-PACKS-IN-USE-1 - when does a pacote stop being "a decorrer" if its sessions are never used? (SOLO, 2026-11-02)
+## Q-PACKS-IN-USE-1 - when does a pacote stop being "a decorrer" if its sessions are never used? (SOLO, 2026-11-02) - **ANSWERED 2026-11-04 (Q15)**
 
 **Context.** "Packs em uso" (`/patients/packs`, #1703) lists a pacote while it has a free session or a booked session still ahead, which is the behaviour seen in Fisiozero (no expiry was seen there). A pacote with sessions left that nobody will ever book (a patient who stopped coming, or a pacote imported from Fisiozero with sessions left over) therefore stays "a decorrer" forever and keeps adding to the count.
 
 **What the code does now.** Nothing ages a pacote out. The read is BOUNDED (`PACKS_IN_USE_READ_CAP`, 1000 candidate pacotes, newest purchase first, and the page says so if it stops), which only stops a runaway and changes nothing at the clinic's size (Fisiozero showed 127).
 
 **Recommended default:** keep Fisiozero's behaviour (no age limit) until the clinic asks. **Options if the owner wants one:** (a) hide pacotes bought more than N months ago with nothing booked in the last N months; (b) a real expiry date per pacote (a Tier C migration, listed in #1703 as waiting); (c) a manual "encerrar" on the patient's pacote (also a migration).
+
+**Answered 2026-11-04 (strategy Q15, owner-delegated):** "a pack with sessions left stays 'a decorrer', with no age limit. Add a sort by last use." Built on branch `packs/Q15-packs-in-use-sort-by-last-use`: no age limit (pinned by tests), and a "Última utilização" sort. See DECISIONS, 2026-11-04.

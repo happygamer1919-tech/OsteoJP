@@ -16,6 +16,10 @@
  *     a cancelled visit does not count; a soft-deleted patient's pacote is not
  *     listed; a pacote whose patient belongs to another tenant is not listed.
  *  4. The search narrows the rows and leaves the count.
+ *  5. PACK-FICHA-01, the ficha's read (`listPatientPacks`): one patient's
+ *     pacotes, running and finished, never another patient's, and nothing
+ *     for a viewer who cannot read that patient. Added 2026-11-05, written
+ *     and not run by its author either (no Docker); CI's DB-gated job runs it.
  *
  * Fixture built, never borrowed (the CI database has no catalogue), and every
  * id is run-scoped. Timestamps go into raw SQL as ISO strings cast to
@@ -34,6 +38,7 @@ const d = live ? describe : describe.skip;
 d("Packs em uso: what each role reads", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let listPacksInUse: typeof import("./in-use-read").listPacksInUse;
+  let listPatientPacks: typeof import("./in-use-read").listPatientPacks;
 
   const tenant = randomUUID();
   const otherTenant = randomUUID();
@@ -83,7 +88,7 @@ d("Packs em uso: what each role reads", () => {
   beforeAll(async () => {
     const schema = await import("@osteojp/db");
     db = schema.getDbAdmin();
-    ({ listPacksInUse } = await import("./in-use-read"));
+    ({ listPacksInUse, listPatientPacks } = await import("./in-use-read"));
     const { sql } = await import("drizzle-orm");
 
     await db.execute(
@@ -307,5 +312,69 @@ d("Packs em uso: what each role reads", () => {
     const page = await listPacksInUse(actor("owner", owner), "bruno");
     expect(page.rows.map((r) => r.instanceId)).toEqual([brunoPack]);
     expect(page.totalInUse).toBe(3);
+  });
+
+  // ---------------------------------------------------------------------
+  // PACK-FICHA-01: the ficha's read, one patient at a time.
+  // ---------------------------------------------------------------------
+  const ids = (p: { running: { instanceId: string }[]; finished: { instanceId: string }[] }) => ({
+    running: p.running.map((r) => r.instanceId),
+    finished: p.finished.map((r) => r.instanceId),
+  });
+
+  it("ficha, owner on Ana: her two running pacotes, newest first, and the spent one as finished", async () => {
+    const page = await listPatientPacks(actor("owner", owner), ana);
+    expect(ids(page)).toEqual({ running: [anaAhead, anaPack], finished: [anaSpent] });
+    expect(page.truncated).toBe(false);
+    const spent = page.finished[0]!;
+    expect(spent.reserved).toBe(2);
+    expect(spent.free).toBe(0);
+    expect(spent.sessions).toHaveLength(2);
+  });
+
+  it("ficha: the numbers match Packs em uso for the same pacote", async () => {
+    const ficha = (await listPatientPacks(actor("owner", owner), ana)).running.find(
+      (r) => r.instanceId === anaPack,
+    )!;
+    const list = (await listPacksInUse(actor("owner", owner), "")).rows.find((r) => r.instanceId === anaPack)!;
+    expect(ficha.reserved).toBe(list.reserved);
+    expect(ficha.free).toBe(list.free);
+    expect(ficha.sessions).toEqual(list.sessions);
+  });
+
+  it("ficha: NEVER another patient's pacote (Ana's read has none of Bruno's, and the reverse)", async () => {
+    const forAna = await listPatientPacks(actor("owner", owner), ana);
+    const all = [...forAna.running, ...forAna.finished];
+    expect(all.every((r) => r.patientId === ana)).toBe(true);
+    expect(all.map((r) => r.instanceId)).not.toContain(brunoPack);
+    const forBruno = await listPatientPacks(actor("owner", owner), bruno);
+    expect(ids(forBruno)).toEqual({ running: [brunoPack], finished: [] });
+  });
+
+  it("ficha: a viewer who cannot read the patient gets nothing (reception CB on Ana, therapist A on Bruno)", async () => {
+    expect(ids(await listPatientPacks(actor("reception", receptionCb), ana))).toEqual({ running: [], finished: [] });
+    expect(ids(await listPatientPacks(actor("therapist", therapistA), bruno))).toEqual({ running: [], finished: [] });
+  });
+
+  it("ficha: therapist A on Ana sees her pacotes, RESERVADAS still counting B's visit", async () => {
+    const page = await listPatientPacks(actor("therapist", therapistA), ana);
+    expect(ids(page)).toEqual({ running: [anaAhead, anaPack], finished: [anaSpent] });
+    expect(page.running.find((r) => r.instanceId === anaPack)!.reserved).toBe(2);
+  });
+
+  it("ficha: the care-team therapist reads Ana's pacotes, not Bruno's", async () => {
+    expect(ids(await listPatientPacks(actor("therapist", careTherapist), ana)).running).toEqual([anaAhead, anaPack]);
+    expect(ids(await listPatientPacks(actor("therapist", careTherapist), bruno))).toEqual({ running: [], finished: [] });
+  });
+
+  it("ficha: the other tenant's patient reads nothing here", async () => {
+    expect(ids(await listPatientPacks(actor("owner", owner), stranger))).toEqual({ running: [], finished: [] });
+  });
+
+  it("ficha: the cap keeps the newest and says it stopped", async () => {
+    const page = await listPatientPacks(actor("owner", owner), ana, { cap: 2 });
+    expect(page.truncated).toBe(true);
+    // Opened anaPack, anaSpent, anaAhead: the two newest are anaAhead and anaSpent.
+    expect(ids(page)).toEqual({ running: [anaAhead], finished: [anaSpent] });
   });
 });

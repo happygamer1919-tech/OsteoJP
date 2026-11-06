@@ -5641,3 +5641,60 @@ branch `ui/AGENDA-MOBILE-WEEK-phone-week-grid`, Tier B.
   paths show, instead of the generic failure.
 - **Not hidden:** refusals that depend on the hour chosen in the drawer, and
   the location refusals, which keep their own sentences.
+
+## 2026-11-04 - The 15 open questions of Rodica's Fisiozero batch (owner-delegated answers, given by strategy)
+
+The owner delegated these answers to strategy; strategy gave them on 2026-11-04. They are recorded here as owner-delegated answers. The build follows them. Where an answer changes a held migration's bytes, that migration is re-reviewed (R4), re-rehearsed on its final bytes and given a new sha256 before its night.
+
+**Ficha export (live, #1702): kept as built.**
+1. A session with no linked appointment shows "sem hora".
+2. The text field replaces only the "Conteúdo importado" heading; the read-only note under it stays.
+3. An episode export has one row per session.
+
+**Tipos de Marcação (0110, #1704 and #1705).**
+4. SMS "off" on a type stops only that type's SMS; email reminders continue. This changes the send path (Tier B), so it is built and merged only after the reminder sweep is switched on (R9). It is a card until then; the screen says the switch has no effect on reminders yet.
+5. 0% IVA requires a Motivo (one of the 33 exemption codes). The save is refused without one. Enforced by the server action, not by the migration, so 0110's bytes do not change.
+6. The existing types take Fisiozero's values (0% and M07). This is a GREEN data operation on its own closed-hours night after 0110 (a new Tier C item; the night is proposed to strategy). The screen notes that JP's accountant confirms the values before any Stylus invoicing reads them.
+7. A type's colour shows as a stripe only, never as a block's fill. The agenda stripe is its own pull request after 0110.
+8. Fisiozero's "Nota 1" and "Nota 2" are not copied: they are not true here. OsteoJP's own wording: appointments store no price (the amount charged is the one on the issued invoice), and statistics count issued invoices only.
+9. Open, for Rodica: what Fisiozero's "FollowUp 2 dias" does. The field is hidden until she answers; its column stays.
+
+**Sistemas / SubSistemas (0111, #1706 and #1707).**
+10. The list is managed by owner and admin; reception and therapists pick from it.
+11. A Sistema is deactivated, never deleted.
+12. "Médis" and "Medis" are the same name: uniqueness ignores accents and case. 0111 is unapplied, so the rule goes into its unique index.
+13. The price-switch text gains "(ainda sem efeito)" until insurer pricing exists.
+
+**Bloqueios (0112).**
+14. As ruled in U4(c): clinic-wide closures are a separate Tier C item; per-therapist blocks for now.
+
+**Packs (live, #1703).**
+15. A pack with sessions left stays "a decorrer", with no age limit. The page gains a sort by last use.
+
+## 2026-11-05 - Strategy's rulings on SOLO's Thursday report (B1 to B10)
+
+Strategy ruled on 2026-11-05. Accepted as reported: the fallback result of 11-04, the second pass of 11-05 and its window, the A1 diagnostic (#1720) as READY, the R9 audit table, 0113 staying on Wed 11-18, and the two Q8 sentences (for the owner's eye).
+
+**Reminder switch (R36, R47).**
+- B1. A2 condition (1) accepts two causes: every V3 gap tied to a labelled late pass, and every V8 surplus tied to a labelled late pass or to a recorded hard delete after the count. Both labels go into the compare read, with an R4 review. The re-run over 11-02 to the latest full day must then read clean under R32.
+- B7. The 4 visits touched too near their start for any later run, and the 51 visits of the next 48 hours not re-armed, are the known residual. No reception check. The counts go into the R36 closing note.
+- B8. No switch date until A1 reads and A2's four conditions close. The switch night is then the first night after the clean re-run that has no sitting. Fri 11-13 can be the switch night instead of a weekly fallback if A2 closes by then.
+- B6. The weekly fallback blocks are authored, R4-reviewed and rehearsed now, so Fri 11-13 is ready if there is still no switch.
+- A1 runs today before the second pass, or Friday after the second pass has reported. Never during it.
+
+**Migration nights 11-09 to 11-12.**
+- B2. R9 is read by column and policy: 0109 to 0112 run as planned; 0113 waits for a clean verdict. Each night document carries its R9 statement at its READY pass.
+- B3. The morning after each GREEN report, SOLO merges that night's migration PR and its screen PR on green under R41, then promotes the next pending file. If either merge or the promotion is not green and pushed by 18:00 Lisbon, that night's sitting slips one night. A promotion is never rushed.
+- Apply settings: no change. Under the standing ruling of 09-23, GREEN's apply settings file is never amended, even for a named operation. If the classifier refuses a night, that sitting stops and strategy re-rules. GREEN may trial the read-only CI-status step once before Mon 11-09 and report the result.
+
+**New Tier C items (numbered after 0113).**
+- B4. Clinic-wide closures (0114), then pack payments (0115). Authoring starts only after the owner answers each design note's questions. Pack payments must reconcile with Stylus ruling S2 and never touch an invoices table.
+- B5. The patient duplicate bulk merge, after its prerequisite fix (which gets its own tier). Authored only after the three open questions are answered. Ruled now: when profiles are merged, the most restrictive consent of the merged profiles wins.
+
+**Fiscal (Tipos de Marcação).**
+- B10. A Motivo is refused on any IVA rate above 0%, in the server action. JP's accountant confirms, with Q6-D.
+- B9. The Q6 data operation (0% and M07 on the existing types) runs on the night of Thu 11-19, on one condition: the accountant's written confirmation (Q6-D) reaches the owner before Thu 11-19 12:00 Lisbon. Without it the night is skipped and nothing is written.
+  - Q6-A: archived types are included.
+  - Q6-B: internal-only types are included.
+  - Q6-C: the audit action is `service.vat_default_q6`.
+  - Q6-D: the accountant confirms type by type. The operation takes a per-type list (exempt with a code, or a stated rate), not one value for all.

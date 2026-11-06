@@ -98,4 +98,49 @@ describe("PacksInUseTable", () => {
   it("links the patient's name to the ficha", () => {
     expect(render(base, [])).toContain('href="/patients/pat-1"');
   });
+
+  it("defaults: the table is named packs-in-use-table, as the e2e spec reads it", () => {
+    expect(render(base, [])).toContain('data-testid="packs-in-use-table"');
+  });
+});
+
+describe("PacksInUseTable inside the ficha (PACK-FICHA-01): showPatient={false}", () => {
+  const html = renderToStaticMarkup(
+    createElement(PacksInUseTable, {
+      rows: [summarizePackInstance(base, [{ appointmentId: "a-0", startsAt: new Date("2026-10-20T09:00:00Z") }], NOW)],
+      showPatient: false,
+      testId: "patient-packs-running-table",
+    }),
+  );
+
+  it("drops NOME UTENTE: no header, no name, no link", () => {
+    expect(html).not.toContain(`>${s["packsInUse.colPatient"]}</th>`);
+    expect(html).not.toContain("Ana Silva");
+    expect(html).not.toContain('href="/patients/pat-1"');
+  });
+
+  it("keeps the other five headers in the same order", () => {
+    const order = [
+      "packsInUse.colPack",
+      "packsInUse.colStarted",
+      "packsInUse.colPayment",
+      "packsInUse.colReserved",
+      "packsInUse.colFree",
+    ] as const;
+    const at = order.map((k) => html.indexOf(`>${s[k]}</th>`));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  it("the row starts with the pack cell and still carries the session list and the counts", () => {
+    expect(html).toMatch(/data-testid="packs-in-use-row"><td[^>]*><details>/);
+    expect(html).toContain("Fisioterapia 10 • 450€");
+    expect(html).toContain(formatPackDateTime(new Date("2026-10-20T09:00:00Z")));
+    expect(html).toMatch(/>1<\/td><td[^>]*>9<\/td><\/tr>/);
+  });
+
+  it("takes its own test id", () => {
+    expect(html).toContain('data-testid="patient-packs-running-table"');
+    expect(html).not.toContain('data-testid="packs-in-use-table"');
+  });
 });

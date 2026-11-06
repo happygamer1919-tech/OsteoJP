@@ -6,7 +6,14 @@ import { redirect } from "next/navigation";
 
 import { getRequestContext } from "@/lib/auth/context";
 import { s } from "@/lib/i18n";
-import { PACKS_IN_USE_CAPABILITIES, PACKS_IN_USE_READ_CAP } from "@/lib/packs/in-use";
+import {
+  PACKS_IN_USE_CAPABILITIES,
+  PACKS_IN_USE_READ_CAP,
+  packsSortHref,
+  parsePacksInUseSort,
+  sortPacksInUse,
+  type PacksInUseSort,
+} from "@/lib/packs/in-use";
 import { listPacksInUse } from "@/lib/packs/in-use-read";
 import { SearchBox } from "../_components/search-box";
 import { PacksInUseTable } from "./packs-in-use-table";
@@ -15,7 +22,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * "Packs em uso" (Fisiozero parity, owner request 2026-11-02): every pacote
- * that is still running, one row each, patient A to Z.
+ * that is still running, one row each, patient A to Z by default, or by
+ * "Última utilização" (Q15, 2026-11-04) with `?sort=lastUse`.
  *
  * Lives under /patients because Fisiozero keeps it under FICHA DE UTENTE, and
  * OsteoJP's patient area is /patients: the Pacientes entry in the sidebar stays
@@ -39,8 +47,13 @@ export default async function PacksInUsePage({
   const sp = await searchParams;
   const raw = Array.isArray(sp.q) ? sp.q[0] : sp.q;
   const q = (raw ?? "").trim();
+  const sort = parsePacksInUseSort(Array.isArray(sp.sort) ? sp.sort[0] : sp.sort);
 
-  const { totalInUse, rows, truncated } = await listPacksInUse(ctx, q);
+  const page = await listPacksInUse(ctx, q);
+  const { totalInUse, truncated } = page;
+  // The read returns every row the page shows (bounded, not paginated), so the
+  // sort runs here, on the server, over the full list.
+  const rows = sortPacksInUse(page.rows, sort);
 
   return (
     <main className="flex flex-col gap-5">
@@ -58,8 +71,11 @@ export default async function PacksInUsePage({
         </div>
       </div>
 
-      <div className="max-w-md">
-        <SearchBox initialQuery={q} path="/patients/packs" placeholder={s["packsInUse.search"]} />
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="w-full max-w-md">
+          <SearchBox initialQuery={q} path="/patients/packs" placeholder={s["packsInUse.search"]} />
+        </div>
+        <SortLinks q={q} sort={sort} />
       </div>
 
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -89,5 +105,42 @@ export default async function PacksInUsePage({
 
       <p className="text-xs text-v2-text-secondary">{s["packsInUse.footnote"]}</p>
     </main>
+  );
+}
+
+const SORT_OPTIONS: ReadonlyArray<{ key: PacksInUseSort; label: string }> = [
+  { key: "name", label: s["packsInUse.sortName"] },
+  { key: "lastUse", label: s["packsInUse.sortLastUse"] },
+];
+
+/**
+ * Two plain links, server-rendered: no JavaScript, works by keyboard, and the
+ * current one is marked with aria-current and weight, not colour alone. The
+ * search is kept; the search box keeps `sort` in turn (it rewrites `q` only).
+ */
+function SortLinks({ q, sort }: { q: string; sort: PacksInUseSort }) {
+  return (
+    <nav aria-label={s["packsInUse.sortLabel"]} data-testid="packs-in-use-sort">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-v2-text-secondary">
+        <span>{s["packsInUse.sortLabel"]}:</span>
+        {SORT_OPTIONS.map((o) => {
+          const current = o.key === sort;
+          return (
+            <Link
+              key={o.key}
+              href={packsSortHref(q, o.key)}
+              aria-current={current ? "true" : undefined}
+              data-sort={o.key}
+              className={
+                (current ? "font-semibold text-v2-text-primary underline " : "") +
+                "underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              }
+            >
+              {o.label}
+            </Link>
+          );
+        })}
+      </p>
+    </nav>
   );
 }
