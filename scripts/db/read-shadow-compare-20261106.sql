@@ -9,18 +9,26 @@
 -- READ ONLY. It writes nothing and changes nothing; run it inside `begin read only` ...
 -- `rollback`, so the server refuses any write. Verdict 0 reads the transaction's own setting.
 --
--- TWO VALUES COME FROM OUTSIDE, each set by the block with `set local` inside the read-only
+-- THREE VALUES COME FROM OUTSIDE, each set by the block with `set local` inside the read-only
 -- transaction; unset, the read stops with an error and prints nothing:
 --   osteojp.r47_deployed_at  the instant #1678 went live in production (DEPLOYED_AT), as before
 --   osteojp.r47_end_day      the last full day of the read (END_DAY, 2026-11-03 or later)
+--   osteojp.r47_f4x          THE F4 EXCEPTION (strategy, 2026-11-06 16:30): the content of the
+--                            exception file, kept outside the repository, whose path and sha256 the
+--                            dispatch names (F4XFILE, F4XSHA). It must hold exactly one entry,
+--                            `<appointment id>,48h,email,2026-11-03 10:00`, naming a shadow-only
+--                            mark this read leaves UNEXPLAINED in the window; otherwise THE READ
+--                            REFUSES: it stops with an error whose text starts `F4XSTOP` and holds
+--                            counts only, and prints no table (see `f4x_in` and row 28)
 --
 -- WHAT IT PRINTS: ONE result set, ordered by `n`, columns n | check | observed | expected |
 -- verdict. Verdicts are OK, REVIEW, VACUOUS or FAIL; rows that only inform read INFO and are never
 -- counted. It prints counts, Lisbon times, the fixed labels of offsets, channels, ledger outcomes,
 -- suppression reasons and statuses, a tenant's ordinal (never its id), the id of a hard-delete
--- audit row (row 25, the record HARD-DELETE ties a surplus row to), and appointment ids in three
--- places only: every LR row (row 26), every shadow-only mark that is not LR (row 27), and the
--- mismatch list (at most 500 a side). No tenant id, no patient id, no staff id, no name, no
+-- audit row (row 25, the record HARD-DELETE ties a surplus row to), and appointment ids in four
+-- places only: every LR row (row 26), every shadow-only mark that is not LR (row 27), every
+-- shadow-only mark that fails rule 1b alone (row 29), and the mismatch list (at most 500 a side).
+-- The F4 exception's own row (row 28) prints its count, never the id. No tenant id, no patient id, no staff id, no name, no
 -- phone, no email address, no message text, no note, and no audit metadata text (metadata is
 -- compared, never printed; row 25 prints a hard-deleted visit's start as a Lisbon time, rows 26
 -- and 27 a status reduced to a fixed word).
@@ -76,6 +84,15 @@
 --       R32's accepted set and EVERY LR row is printed with its appointment id, mark and planning
 --       save (row 26). A shadow-only mark that fails any condition stays UNEXPLAINED, and row 27
 --       names the conditions it failed.
+--   F4X, THE F4 EXCEPTION (strategy, 2026-11-06 16:30, option A)  exactly ONE named shadow-only
+--       mark, the 48h email mark of 2026-11-03 10:00 Lisbon of one appointment, named by the
+--       exception file (osteojp.r47_f4x), is accepted under its own label, outside LR, after S8
+--       and LR, and only on a mark that would otherwise stay UNEXPLAINED. F4X is in R32's accepted
+--       set by this mechanism ONLY. Row 28 prints `F4 EXCEPTION 1 (ruling 11-06)`, the count only.
+--       Every OTHER shadow-only mark that stays UNEXPLAINED and passes conditions 1, 2 and 3 and
+--       every part of condition 4 EXCEPT rule 1b is printed in row 29 with its appointment id, mark
+--       and planning save: it stays UNEXPLAINED (verdict 13 FAILs on it) and strategy rules on each
+--       by name.
 --
 -- THE DAYS AND THE WINDOW. t0 is the first `shadow` heartbeat at or after DEPLOYED_AT, as before:
 -- verdict 2 FAILs unless it falls in or before Monday 11-02's 07:00 slot. Every day from Monday
@@ -110,8 +127,8 @@
 --   13  no mark stays UNEXPLAINED, on any side and any day from t0 to the read's clock
 --   15  R24 held: 0 shadow rows taken after a re-arming save written after their mark; VACUOUS
 --       when no mark needed R24 (the control); alone, that does not stop the block
---   16  every mismatch label is in R32's accepted set (R2, R4, R8, S5 and LR; R34 has no row
---       here): OK, or REVIEW naming the others
+--   16  every mismatch label is in R32's accepted set (R2, R4, R8, S5, LR and F4X, the F4
+--       exception only; R34 has no row here): OK, or REVIEW naming the others
 --   (14 was the 2026-10-31 read's R8 count; the number is not reused.)
 --
 -- Run (the document's block does exactly this, with a 120 second bound):
@@ -119,6 +136,7 @@
 --        -c "begin read only" -c "set local statement_timeout = '120s'"
 --        -c "set local osteojp.r47_deployed_at = '<DEPLOYED_AT>'"
 --        -c "set local osteojp.r47_end_day = '<END_DAY>'"
+--        -c "set local osteojp.r47_f4x = '<the exception file's one line>'"
 --        -f scripts/db/read-shadow-compare-20261106.sql -c "rollback"
 with
 clock as (
@@ -1076,6 +1094,26 @@ lr as (
              exists (select 1 from public.migration_staging_rows s
                       where s.tenant_id = m.tenant_id and s.imported_entity_id = m.appointment_id) as importer_touched) ux on true
 ),
+f4x_in as (
+  -- THE F4 EXCEPTION (strategy, 2026-11-06 16:30, option A): exactly ONE named shadow-only mark,
+  -- the 48h email mark of 2026-11-03 10:00 Lisbon of one appointment, is accepted. The setting
+  -- holds the exception file's content as the block read it, after the block checked the file's
+  -- mode (600), its sha256 against the dispatch's F4XSHA, and that it holds no quote, backslash or
+  -- control character but the line feed. Each line of it is one piece here; the file must hold
+  -- exactly one, and it must read `<appointment id>,48h,email,2026-11-03 10:00`, the mark the
+  -- ruling names (a lower-case id, no space around a comma, nothing after the time). It is
+  -- compared as text, never cast, and never printed.
+  select t.f4x_text,
+         t.f4x_text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12},48h,email,2026-11-03 10:00$' as well_formed
+    from regexp_split_to_table(current_setting('osteojp.r47_f4x'), E'\n') as t(f4x_text)
+),
+f4x_entry as (
+  -- The entry, on a well-formed line only: its appointment id as text, and the mark the ruling names.
+  select substr(f.f4x_text, 1, 36) as appointment_id, '48h'::text as offset_id, 'email'::text as channel,
+         timestamptz '2026-11-03 10:00:00 Europe/Lisbon' as due_at
+    from f4x_in f
+   where f.well_formed
+),
 pcl as (
   -- R20's comparison with R8, RK, S8 and LR put on the marks they name; every other label is R20's.
   -- S8 counts a save of any clause, a move that keeps the start included: every one of them
@@ -1106,8 +1144,50 @@ pcl as (
                                   and lr.starts_at = p.starts_at
                                   and lr.c1 and lr.c2 and lr.c3 and lr.c4)
               then 'LR lost run: no claim and no ledger row, sendable at its mark, its start unchanged, planned by a scheduling save before it fell due (each printed in row 26)'
+              -- F4X comes after S8 and LR, on a mark that would otherwise stay UNEXPLAINED only.
+              when p.side = 'shadow_only' and p.category = 'UNEXPLAINED'
+                   and exists (select 1 from f4x_entry x
+                                where x.appointment_id = p.appointment_id::text
+                                  and x.offset_id = p.offset_id and x.channel = p.channel and x.due_at = p.due_at)
+              then 'F4X the F4 exception (ruling 11-06): the one shadow-only mark the exception file names, accepted outside LR (row 28 prints the count only)'
               else p.category end as category
     from pc p
+),
+f4x_check as (
+  -- THE READ REFUSES unless the exception file holds exactly one line, that line is a well-formed
+  -- entry, and it names a shadow-only mark this read leaves UNEXPLAINED in the window (pcl labels it
+  -- F4X), so a stale exception cannot pass. Row 28 reads `accepted` through the one refusal line:
+  -- with a reason, it casts `F4XSTOP <reason>` to an integer, which stops the statement with an
+  -- error and prints no table (it is a read, so nothing is written anyway). Every reason holds
+  -- counts and fixed words only, never the entry.
+  select case when c.lines <> 1 then 'the exception file holds ' || c.lines::text || ' lines, not exactly one entry'
+              when c.malformed > 0 then 'the entry is not of the form <appointment id>,48h,email,2026-11-03 10:00'
+              when c.accepted <> 1 then 'the entry names no shadow-only mark this read leaves UNEXPLAINED in the window (a stale exception): '
+                                        || c.accepted::text || ' accepted'
+         end as problem,
+         c.accepted
+    from (select (select count(*) from f4x_in) as lines,
+                 (select count(*) from f4x_in where not f4x_in.well_formed) as malformed,
+                 (select count(*) from pcl where pcl.category like 'F4X %') as accepted) c
+),
+lr_1b_only as (
+  -- Row 29 (strategy, 2026-11-06 16:30): every shadow-only mark that stays UNEXPLAINED (so neither
+  -- LR nor F4X) and passes conditions 1, 2 and 3 and every part of condition 4 EXCEPT rule 1b: a
+  -- save that sends appointment/scheduled at or before the mark, the start it planned is the
+  -- mark's (which needs that save: with none, the start is unknown and the match is false), no
+  -- recorded start change after it, no portal move's staff notification (1a), no importer row
+  -- (1c). Only rule 1b keeps it out. It stays UNEXPLAINED (verdict 13 FAILs on it) and strategy
+  -- rules on each by name.
+  select l.*
+    from lr l
+    join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
+              and p.channel = l.channel and p.starts_at = l.starts_at and p.side = 'shadow_only'
+   where p.category = 'UNEXPLAINED'
+     and l.c1 and l.c2 and l.c3
+     and coalesce(l.plan_start = l.iso_start, false)
+     and not l.start_changed
+     and not l.portal_notified
+     and not l.importer_touched
 ),
 agree as (
   -- Per full day and reminder. `closed_start`: the visits these marks are for would start on a
@@ -1401,7 +1481,8 @@ lab as (
   -- An S5 row with no re-arming save behind it (its probe not `rearmed`: R20's S5 also matches a
   -- move that keeps the start) is S5K here, outside the set: R47 ruled no kept-start label, so
   -- strategy reads it. LR is in the set (strategy, 2026-11-06 14:20), and every LR row is printed
-  -- with its appointment id and mark in row 26.
+  -- with its appointment id and mark in row 26. F4X is in the set by the F4 exception ONLY
+  -- (strategy, 2026-11-06 16:30): at most one mark, the one the exception file names.
   select p.day, p.side,
          case when p.category like 'S5 %'
                    and not exists (select 1 from probe_eval e
@@ -1418,15 +1499,16 @@ lab as (
 labels as (
   select (select count(*) from pcl) as pairs,
          (select count(*) from lab) as labelled,
-         (select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')
+         (select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR', 'F4X')
                                      and (full_day or letter not in ('R5', 'S7'))) as outside,
          (select string_agg(z.letter || ' ' || z.n::text, ', ' order by z.letter)
             from (select letter, count(*) as n from lab
-                   where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')
+                   where letter not in ('R2', 'R4', 'R8', 'S5', 'LR', 'F4X')
                      and (full_day or letter not in ('R5', 'S7'))
                    group by letter) z) as outside_list,
          (select count(*) from lab where not full_day and letter in ('R5', 'S7')) as edge,
-         (select count(*) from lab where letter = 'LR') as lr_rows
+         (select count(*) from lab where letter = 'LR') as lr_rows,
+         (select count(*) from lab where letter = 'F4X') as f4x_rows
 ),
 r34 as (
   -- R34's label, SEND MODE ONLY (strategy's R34; sweep-send.ts at 1bd32c06,
@@ -1646,11 +1728,12 @@ select n, "check", observed, expected, verdict from (
     from r24
   union all
   select 16,
-         '16. every mismatch label is in R32''s accepted set (R2, R4, R8, S5 and LR, every LR row printed in row 26; R34 labels sweep-sent rows, none here), from t0 to the read''s clock',
+         '16. every mismatch label is in R32''s accepted set (R2, R4, R8, S5 and LR, every LR row printed in row 26, and F4X, the F4 exception only, row 28; R34 labels sweep-sent rows, none here), from t0 to the read''s clock',
          'marks ' || pairs::text || '; labelled mismatches ' || labelled::text
            || '; with a label outside the set ' || outside::text
            || coalesce(' (' || outside_list || ')', '')
            || '; window-edge labels on a partial day, not judged ' || edge::text
+           || '; F4X (in the set by the F4 exception only, row 28) ' || f4x_rows::text
            || '; LR rows (in the set, each in row 26) ' || lr_rows::text,
          'marks > 0; outside the set 0',
          case when (select t0 from win) is null then 'VACUOUS'
@@ -1754,6 +1837,18 @@ select n, "check", observed, expected, verdict from (
     join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
               and p.channel = l.channel and p.starts_at = l.starts_at and p.side = 'shadow_only'
    where p.category = 'UNEXPLAINED'
+  union all
+  select 28, 'F4 EXCEPTION ' || (case when f.problem is null then f.accepted else ('F4XSTOP ' || f.problem)::int end)::text || ' (ruling 11-06)',
+         'the shadow-only mark the exception file names, accepted under F4X (rows 16, 31 and 50); shadow-only marks that fail rule 1b alone (row 29, UNEXPLAINED) '
+           || (select count(*) from lr_1b_only)::text,
+         'information: the count only, never the id', 'INFO'
+    from f4x_check f
+  union all
+  select 29, 'shadow-only UNEXPLAINED, rule 1b alone, mark due ' || to_char(l.due_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI') || ' ' || l.offset_id || ' ' || l.channel,
+         l.appointment_id::text || ' | passes conditions 1, 2 and 3 and every part of condition 4 but rule 1b; planned by a save that sends appointment/scheduled ('
+           || l.plan_clause || ') at ' || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS'),
+         'information: UNEXPLAINED, verdict 13 FAILs on it; strategy rules on each by name', 'INFO'
+    from lr_1b_only l
   union all
   select 23, 'marks due in the 24 hours before t0, the code before the deploy (no verdict reads them): both, shadow only, run only, on the key alone',
          both_sides::text || ', ' || shadow_only::text || ', ' || run_only::text,

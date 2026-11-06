@@ -30,7 +30,14 @@
 //     pass line, the tool chain stopped. Under bash always; under zsh wherever it is installed;
 //   * the compare's four closing lines, each on its own profile only, REVIEW on 3 and 8 counted as
 //     clean, the number of full days taken from END_DAY (two and four days proven), and the count
-//     of LR rows printed to the terminal without their ids.
+//     of LR rows printed to the terminal without their ids;
+//   * THE F4 EXCEPTION (strategy, 2026-11-06 16:30, option A): the block checks the exception
+//     file (F4XFILE, F4XSHA) before anything reads production, each fault a clean STOP (missing,
+//     wrong sha256, wrong mode, a byte outside the allowed set, not ending in one line feed), hands
+//     its content to psql exactly, prints `F4 EXCEPTION 1 (ruling 11-06)` and row 29's count and
+//     never an id; and on a local database the read accepts exactly the one named mark (F4X) and
+//     REFUSES two entries, a malformed entry and an entry naming no UNEXPLAINED shadow-only mark,
+//     and prints every mark that fails rule 1b alone in row 29 while verdict 13 still FAILs.
 //
 // WITH A LOCAL DATABASE (SHADOW_COMPARE_1106_TEST_PGURL names one on 127.0.0.1 or localhost whose
 // `public` schema is the repository's): the read runs on seeded throwaways, as the block runs it.
@@ -72,6 +79,9 @@ const PRHEAD = "a".repeat(40);
 const CLOCK_LINE = "  select now() as t1";
 const GUC = "osteojp.r47_deployed_at";
 const GUC_END = "osteojp.r47_end_day";
+const GUC_F4X = "osteojp.r47_f4x";
+const F4X_LABEL = "F4X the F4 exception (ruling 11-06): the one shadow-only mark the exception file names, accepted outside LR (row 28 prints the count only)";
+const F4X_NAME = "f4-exception-20261106.txt";
 const R8_LABEL = "R8 no scheduling save before any pass that could take the mark (by design while REMIND_VISITS_THAT_NEVER_HAD_A_REMINDER is false)";
 const RK_LABEL = "RK kept out by R24: a re-arming save after its mark at every pass that could otherwise take it";
 const S8_LABEL = "S8 a re-arming save in the 30 seconds up to its mark: the sleeping job dropped it, the sweep took it";
@@ -208,9 +218,39 @@ test("R8, RK and S8 are #1691's; LR sits after S8, on a shadow-only UNEXPLAINED 
   assert.ok(doc.includes(`\`${LR_LABEL}\``), "the document does not name the LR label exactly");
   const after = sql.slice(sql.indexOf("\nagree as ("));
   assert.doesNotMatch(after.replace(/--[^\n]*/g, ""), /\bfrom pc\b|join pc\b/, "a verdict reads pc, not pcl");
-  // R32's accepted set, as verdict 16 reads it, LR in it, both times.
-  assert.equal((sql.match(/letter not in \('R2', 'R4', 'R8', 'S5', 'LR'\)/g) || []).length, 2);
+  // R32's accepted set, as verdict 16 reads it, LR and F4X in it, both times.
+  assert.equal((sql.match(/letter not in \('R2', 'R4', 'R8', 'S5', 'LR', 'F4X'\)/g) || []).length, 2);
   assert.doesNotMatch(sql, /letter not in \('R2', 'R4', 'R8', 'S5'\)/);
+  assert.doesNotMatch(sql, /letter not in \('R2', 'R4', 'R8', 'S5', 'LR'\)/);
+});
+
+test("THE F4 EXCEPTION: one entry of the ruled form, after S8 and LR, on an UNEXPLAINED shadow-only mark, in R32's set by itself only; the read refuses with counts only; row 29 is rule 1b alone", () => {
+  assert.equal(sql.split(`'${F4X_LABEL}'`).length, 2, "the F4X label is not written exactly once");
+  assert.ok(doc.includes(`\`${F4X_LABEL}\``), "the document does not name the F4X label exactly");
+  const pcl = sql.slice(sql.indexOf("\npcl as ("), sql.indexOf("\nf4x_check as ("));
+  assert.ok(pcl.indexOf("then 'S8 ") < pcl.indexOf("then 'LR ") && pcl.indexOf("then 'LR ") < pcl.indexOf("then 'F4X "), "F4X does not come after S8 and LR");
+  assert.ok(pcl.includes("when p.side = 'shadow_only' and p.category = 'UNEXPLAINED'\n                   and exists (select 1 from f4x_entry x\n"), "F4X is not on a shadow-only UNEXPLAINED mark");
+  assert.ok(pcl.includes("and x.offset_id = p.offset_id and x.channel = p.channel and x.due_at = p.due_at)"), "F4X is not keyed on the mark");
+  // The ruled form, once: the id, 48h, email and the mark of 2026-11-03 10:00 Lisbon.
+  const form = "'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12},48h,email,2026-11-03 10:00$'";
+  assert.equal(sql.split(form).length, 2, "the entry's form is not written exactly once");
+  for (const piece of ["'48h'::text as offset_id, 'email'::text as channel,", "timestamptz '2026-11-03 10:00:00 Europe/Lisbon' as due_at", "   where f.well_formed\n", "regexp_split_to_table(current_setting('osteojp.r47_f4x'), E'\\n')"]) {
+    assert.ok(sql.includes(piece), `the F4 exception's entry lost: ${piece}`);
+  }
+  assert.ok(doc.includes("```\n<appointment id>,48h,email,2026-11-03 10:00\n```"), "the document does not give the file's exact format");
+  // The refusals: more than one line, a malformed line, no UNEXPLAINED shadow-only mark named; counts only.
+  const chk = sql.slice(sql.indexOf("\nf4x_check as ("), sql.indexOf("\nlr_1b_only as ("));
+  for (const piece of ["when c.lines <> 1 then", "when c.malformed > 0 then", "when c.accepted <> 1 then", "(select count(*) from f4x_in where not f4x_in.well_formed) as malformed", "(select count(*) from pcl where pcl.category like 'F4X %') as accepted"]) {
+    assert.ok(chk.includes(piece), `the F4 exception's refusal lost: ${piece}`);
+  }
+  assert.doesNotMatch(chk.replace(/--[^\n]*/g, ""), /f4x_text|appointment_id/, "a refusal reason can print the entry");
+  assert.equal(sql.split("case when f.problem is null then f.accepted else ('F4XSTOP ' || f.problem)::int end").length, 2, "row 28's refusal is not written exactly once");
+  // Row 29: every part of LR but rule 1b, on a mark that stays UNEXPLAINED.
+  const only = sql.slice(sql.indexOf("\nlr_1b_only as ("), sql.indexOf("\nagree as ("));
+  for (const piece of ["   where p.category = 'UNEXPLAINED'\n", "     and l.c1 and l.c2 and l.c3\n", "     and coalesce(l.plan_start = l.iso_start, false)\n", "     and not l.start_changed\n", "     and not l.portal_notified\n", "     and not l.importer_touched\n"]) {
+    assert.ok(only.includes(piece), `row 29 lost: ${piece}`);
+  }
+  assert.doesNotMatch(only.replace(/--[^\n]*/g, ""), /portal_window|\bc4\b/, "row 29 reads rule 1b");
 });
 
 test("LR's four conditions are written as strategy ruled them, each read from recorded rows, and the withdrawn F4 read and NC are gone", () => {
@@ -504,7 +544,7 @@ test("the document pins the real read, guard and module, in its table, in the bl
   assert.doesNotMatch(doc, /@@[A-Z0-9]+@@/, "a placeholder is left in the document");
   const fallback = doc.slice(doc.indexOf("## The owner's fallback"));
   assert.ok(fallback.includes(`= "${sha256(sql)}" ] && pbcopy`), "the owner's copy step does not check the read's sha256");
-  for (const g of [GUC, GUC_END]) assert.ok(fallback.includes(`set local ${g} = '`), `the owner's first line does not set ${g}`);
+  for (const g of [GUC, GUC_END, GUC_F4X]) assert.ok(fallback.includes(`set local ${g} = '`), `the owner's first line does not set ${g}`);
 });
 
 test("the read writes nothing and controls no transaction; it reads the clock once and each setting where it says", () => {
@@ -514,6 +554,7 @@ test("the read writes nothing and controls no transaction; it reads the clock on
   assert.ok(sql.includes("current_setting('transaction_read_only')"), "verdict 0 must read the transaction's own setting");
   assert.equal((sql.match(/current_setting\('osteojp\.r47_deployed_at'\)/g) || []).length, 1);
   assert.equal((sql.match(/current_setting\('osteojp\.r47_end_day'\)/g) || []).length, 2, "END_DAY is read other than in k and full_day");
+  assert.equal((sql.match(/current_setting\('osteojp\.r47_f4x'\)/g) || []).length, 1, "the F4 exception is read other than once, in f4x_in");
   assert.equal((code.match(/\bnow\(\)/g) || []).length, 1, "the read must read now() exactly once");
   assert.equal(sql.split("\n").filter((l) => l === CLOCK_LINE).length, 1, "the one clock line is not where a rehearsal replaces it");
   assert.doesNotMatch(code, /\b(current_timestamp|clock_timestamp|statement_timestamp|transaction_timestamp|localtimestamp|current_date)\b/i, "a second clock");
@@ -523,7 +564,9 @@ test("the read never names a person's column, prints no tenant id and no metadat
   assert.doesNotMatch(code, /\b(full_name|first_name|last_name|phone|phone_e164|email|address|notes|nif|patient_id|patient_2_id|practitioner_id|created_by|actor_user_id|provider_message_id|body|ip|room|name)\b/i, "the read names a personal column");
   assert.doesNotMatch(code, /tenant_id::text|tenant_id\s*\|\|/, "the read prints a tenant id");
   assert.doesNotMatch(sql, /\|\|\s*l\.metadata|metadata->>'[a-zA-Z]+'\s*\|\||\|\|\s*[a-z]+\.(from_start|to_start|start_at_mark|start_text)/, "metadata is printed");
-  assert.equal((code.match(/appointment_id::text/g) || []).length, 3, "an appointment id is printed outside rows 26, 27 and the mismatch list");
+  assert.equal((code.match(/appointment_id::text/g) || []).length, 5, "an appointment id is printed outside rows 26, 27, 29 and the mismatch list, or compared outside F4X's match");
+  assert.match(sql, /where x\.appointment_id = p\.appointment_id::text\n/, "F4X's match is not the one unprinted use");
+  assert.match(sql, /l\.appointment_id::text \|\| ' \| passes conditions 1, 2 and 3 and every part of condition 4 but rule 1b; /);
   assert.match(sql, /l\.appointment_id::text \|\| ' \| no claim, no ledger row; estado at the mark ' \|\| l\.status_at_mark/);
   assert.match(sql, /l\.appointment_id::text \|\| ' \| LR failed on: '/);
   assert.match(sql, /appointment_id::text \|\| ' \| ' \|\| category as observed/);
@@ -568,14 +611,23 @@ function commonShape(b, label) {
   return { lines, psql: psql[0] };
 }
 
-test("the compare block's shape: five dispatch values checked first, one read-only psql with the two settings, the PR head by full sha", () => {
+test("the compare block's shape: seven dispatch values checked first, the exception file checked before anything reads production, one read-only psql with the three settings, the PR head by full sha", () => {
   const { lines, psql } = commonShape(block, "compare");
-  assert.match(psql, /-c "begin read only" -c "set local statement_timeout = '120s'" -c "set local osteojp\.r47_deployed_at = '\$\{DEPLOYED_AT\}'" -c "set local osteojp\.r47_end_day = '\$\{END_DAY\}'" -c "select 'read only: '/);
+  assert.match(psql, /-c "begin read only" -c "set local statement_timeout = '120s'" -c "set local osteojp\.r47_deployed_at = '\$\{DEPLOYED_AT\}'" -c "set local osteojp\.r47_end_day = '\$\{END_DAY\}'" -c "set local osteojp\.r47_f4x = '\$\{F4X\}'" -c "select 'read only: '/);
   assert.match(psql, /-f \$\{READFILE\} -c "rollback" > \$\{OUT\} 2>&1 \|\| \{/);
-  assert.deepEqual(lines.slice(2, 7), ["PRHEAD=PENDING", "DOCSHA=PENDING", "PRNUM=PENDING", "DEPLOYED_AT=PENDING", "END_DAY=PENDING"]);
-  assert.equal((block.match(/=PENDING$/gm) || []).length, 5);
-  assert.match(lines[14], /^echo "\$\{PRHEAD\} \$\{DOCSHA\} \$\{PRNUM\} \$\{DEPLOYED_AT\} \$\{END_DAY\}" \| grep -qxE '\[0-9a-f\]\{40\} \[0-9a-f\]\{64\} \[1-9\]\[0-9\]\* 2026-11-0\[12\]T/, "the PENDING check is not the first command");
-  assert.ok(lines[14].endsWith(" 2026-11-(0[3-9]|[12][0-9]|30)' || { echo \"STOP: the head commit, the document's sha256, the pull request number, the deploy time or the end day still reads PENDING or is not in its form, so it is NOT READY. Nothing was read\"; exit 1; }"), "END_DAY is not checked by form");
+  assert.deepEqual(lines.slice(2, 9), ["PRHEAD=PENDING", "DOCSHA=PENDING", "PRNUM=PENDING", "DEPLOYED_AT=PENDING", "END_DAY=PENDING", "F4XFILE=PENDING", "F4XSHA=PENDING"]);
+  assert.equal((block.match(/=PENDING$/gm) || []).length, 7);
+  assert.match(lines[16], /^echo "\$\{PRHEAD\} \$\{DOCSHA\} \$\{PRNUM\} \$\{DEPLOYED_AT\} \$\{END_DAY\} \$\{F4XSHA\}" \| grep -qxE '\[0-9a-f\]\{40\} \[0-9a-f\]\{64\} \[1-9\]\[0-9\]\* 2026-11-0\[12\]T/, "the PENDING check is not the first command");
+  assert.ok(lines[16].endsWith(" 2026-11-(0[3-9]|[12][0-9]|30) [0-9a-f]{64}' || { echo \"STOP: the head commit, the document's sha256, the pull request number, the deploy time, the end day or the exception file's sha256 still reads PENDING or is not in its form, so it is NOT READY. Nothing was read\"; exit 1; }"), "END_DAY or F4XSHA is not checked by form");
+  assert.ok(lines[17].startsWith(`echo "\${F4XFILE}" | grep -qxE '${OUT_DIR}/[A-Za-z0-9_.-]+' || `), "F4XFILE is not checked by form second");
+  // The exception file is checked, in this order, before the worktree, the env file or psql.
+  const at = (re) => { const i = lines.findIndex((l) => re.test(l)); assert.ok(i > 0, `no line ${re}`); return i; };
+  const order = [/^\[ -f "\$\{F4XFILE\}" \]/, /^PERM=\$\(find "\$\{F4XFILE\}" -perm 600\)/, /^\[ -n "\$\{PERM\}" \]/, /^XS=\$\(shasum -a 256 "\$\{F4XFILE\}"/, /^\[ "\$\{XS\}" = "\$\{F4XSHA\}" \]/,
+    /^XB=\$\(LC_ALL=C tr -d '0-9a-z:, \\n-' < "\$\{F4XFILE\}" \| wc -c/, /^\[ "\$\{XB\}" = 0 \]/, /^F4X=\$\(awk '\{ print \}' "\$\{F4XFILE\}"\)/, /^XR=\$\(printf '%s\\n' "\$\{F4X\}" \| shasum -a 256/, /^\[ "\$\{XR\}" = "\$\{F4XSHA\}" \]/].map(at);
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "the exception file's checks are out of order");
+  assert.ok(order.at(-1) < at(/^cd \/Users\/ivan\/Projects\/GitHub\/osteojp-prod-apply/), "the exception file is checked after the worktree");
+  assert.doesNotMatch(block, /echo [^\n]*\$\{F4X\}/, "the exception's content is printed");
+  assert.ok(at(/^\[ "\$\{F4L\}" = "F4 EXCEPTION 1 \(ruling 11-06\)" \] \|\| /) < at(/^RES=/), "row 28 is not checked before the profile");
   assert.ok(lines.includes(`OUT=${OUT_DIR}/${OUT_NAME}`));
   assert.doesNotMatch(block, /\b(cat|head|tail|less|more)\b[^\n]*\$\{OUT\}/, "the block prints the transcript");
 });
@@ -589,10 +641,15 @@ const realOf = (name) => {
   if (r.status !== 0 || !p.startsWith("/")) throw new Error(`the harness needs ${name} on ${SYSTEM_PATH}`);
   return p;
 };
-const STUBBED = ["git", "node", "psql", "date", "grep", "awk", "cut", "shasum", "rm"];
+const STUBBED = ["git", "node", "psql", "date", "grep", "awk", "cut", "shasum", "rm", "find", "tr", "wc"];
 const FAKED = ["git", "node", "psql", "date"];
 const MISMATCH_ID = "00000000-0000-4000-8000-0000000000a9";
 const LR_ID = "00000000-0000-4000-8000-0000000000f8";
+/** The harness's exception file: one synthetic entry, and a synthetic id for row 29's rows. */
+const F4X_ID = "00000000-0000-4000-8000-0000000000f4";
+const F4X_ENTRY = `${F4X_ID},48h,email,2026-11-03 10:00`;
+const CAND_ID = "00000000-0000-4000-8000-00000000c0de";
+const F4X_LINE = " 28 | F4 EXCEPTION 1 (ruling 11-06) | the shadow-only mark the exception file names, accepted under F4X (rows 16, 31 and 50); shadow-only marks that fail rule 1b alone (row 29, UNEXPLAINED) 0 | information: the count only, never the id | INFO";
 const DAYS2 = ["2026-11-02", "2026-11-03"];
 const DAYS4 = ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"];
 const HARNESS_DEPLOYED = "2026-11-01T22:14:05Z";
@@ -619,6 +676,7 @@ const table = (days) => [
   ...verdictRows(days),
   ` 20 | window: DEPLOYED_AT | 2026-11-01 22:14:05 | 2026-11-01 22:15:03 | 2026-11-04 08:00:00 | 2026-11-04 07:45:03 | ${days[0]} to ${days.at(-1)} (${days.length}) | information | INFO`,
   ...days.map((d) => ` 22 | passes on ${d} (R11) | 60, 60, 0, 1 to 1, 4 | information | INFO`),
+  F4X_LINE,
   " 36 | R34, send mode only | 0, 0, 0, 0: 0 sweep-sent rows, as shadow sends nothing | information | INFO",
   ROW37("0"),
   ` 40 | SHADOW_SUMMARY | full days ${days[0]} to ${days.at(-1)}: both=8 shadow_only=0 run_only=0 matched_share=100.0% | unexplained 0 | INFO`,
@@ -690,6 +748,18 @@ const FIXTURES = {
     ` 26 | LR (lost run), mark due 2026-11-02 15:00 48h email | ${LR_ID} | no claim, no ledger row; estado at the mark confirmed | information: in R32's accepted set, SOLO reads every one | INFO`,
     " 36 | R34",
   ].join("\n")),
+  // Row 28 missing, doubled, reading 0, or reading 1 with a decoy row whose number contains 28.
+  f4none: TABLE_OK.replace(F4X_LINE + "\n", ""),
+  f4double: TABLE_OK.replace(F4X_LINE, `${F4X_LINE}\n${F4X_LINE}`),
+  f4zero: TABLE_OK.replace(F4X_LINE, F4X_LINE.replace("F4 EXCEPTION 1 (", "F4 EXCEPTION 0 (")),
+  f4two: TABLE_OK.replace(F4X_LINE, F4X_LINE.replace("F4 EXCEPTION 1 (", "F4 EXCEPTION 2 (")),
+  f4decoy: TABLE_OK.replace(F4X_LINE, `${F4X_LINE}\n 280 | F4 EXCEPTION 1 (ruling 11-06) | a decoy | information | INFO`),
+  // Two marks that fail rule 1b alone (row 29, each with its appointment id): verdict 13 FAILs on them.
+  f4cand: swap(swap(TABLE_OK, 13, "no mark stays UNEXPLAINED", "FAIL"), 11, "agreement, marks due 2026-11-02, 48h email", "FAIL").replace(" 36 | R34", [
+    ` 29 | shadow-only UNEXPLAINED, rule 1b alone, mark due 2026-11-02 11:00 48h email | ${CAND_ID} | passes conditions 1, 2 and 3 and every part of condition 4 but rule 1b; planned by a save that sends appointment/scheduled (booked) at 2026-10-01 09:00:00 | information: UNEXPLAINED, verdict 13 FAILs on it; strategy rules on each by name | INFO`,
+    ` 29 | shadow-only UNEXPLAINED, rule 1b alone, mark due 2026-11-02 15:00 48h email | ${CAND_ID} | passes conditions 1, 2 and 3 and every part of condition 4 but rule 1b; planned by a save that sends appointment/scheduled (booked) at 2026-10-01 09:00:00 | information: UNEXPLAINED, verdict 13 FAILs on it; strategy rules on each by name | INFO`,
+    " 36 | R34",
+  ].join("\n")),
 };
 for (const [k, v] of Object.entries(FIXTURES)) if (k !== "ok" && k !== "four") assert.notEqual(v, TABLE_OK, `the fixture ${k} changed nothing`);
 
@@ -725,8 +795,8 @@ case "${name}" in
   psql)
     [ "$1" = "$HARNESS_DBURL" ] || { echo "harness: psql got a URL that is not the harness's" >&2; exit 97; }
     case "$*" in
-      *"-c set local osteojp.r47_deployed_at = '$HARNESS_DEPLOYED' -c set local osteojp.r47_end_day = '$HARNESS_END' -c "*) ;;
-      *) echo "harness: psql was not handed the deploy time and the end day" >&2; exit 97;;
+      *"-c set local osteojp.r47_deployed_at = '$HARNESS_DEPLOYED' -c set local osteojp.r47_end_day = '$HARNESS_END' -c set local osteojp.r47_f4x = '$HARNESS_F4X' -c "*) ;;
+      *) echo "harness: psql was not handed the deploy time, the end day and the exception" >&2; exit 97;;
     esac
     cat "$d/fix.$HARNESS_TABLE"; exit 0;;
   date)
@@ -754,16 +824,27 @@ function makeBase() {
     cpSync(join(ROOT, p), join(wt, p));
   }
   mkdirSync(join(base, "handover"));
+  writeF4x(base, `${F4X_ENTRY}\n`);
   writeFileSync(join(base, "prod.env"), "DATABASE_URL_DIRECT=postgresql://postgres.harness:x@harness.invalid:5432/postgres\n");
   for (const [k, v] of Object.entries(FIXTURES)) writeFileSync(join(base, `fix.${k}`), v + "\n");
   return base;
 }
 
 const HARNESS_END = "2026-11-03";
+/** The harness's exception file, under its handover folder, mode 600 unless `mode` says otherwise. */
+function writeF4x(base, content, mode = 0o600) {
+  const f = join(base, "handover", F4X_NAME);
+  rmSync(f, { force: true });
+  writeFileSync(f, content);
+  chmodSync(f, mode);
+  return f;
+}
 
 /** The compare block as GREEN pastes it from its dispatch: the five value lines filled, paths pointed at the harness. */
-function filled(base, { docsha, deployed, prnum, end } = {}) {
+function filled(base, { docsha, deployed, prnum, end, f4xfile, f4xsha } = {}) {
   return block
+    .replace("F4XFILE=PENDING", `F4XFILE=${f4xfile ?? `${OUT_DIR}/${F4X_NAME}`}`)
+    .replace("F4XSHA=PENDING", `F4XSHA=${f4xsha ?? sha256(`${F4X_ENTRY}\n`)}`)
     .replace("PRHEAD=PENDING", `PRHEAD=${PRHEAD}`)
     .replace("DOCSHA=PENDING", `DOCSHA=${docsha ?? sha256(doc)}`)
     .replace("PRNUM=PENDING", `PRNUM=${prnum ?? HARNESS_PRNUM}`)
@@ -791,6 +872,7 @@ function runOnce(shell, base, text, env = {}) {
       HARNESS_PRNUM,
       HARNESS_DEPLOYED,
       HARNESS_END,
+      HARNESS_F4X: F4X_ENTRY,
       HARNESS_DBURL: "postgresql://postgres.harness:x@harness.invalid:5432/postgres",
       HARNESS_TABLE: "ok",
       HARNESS_ZONE: "WET",
@@ -808,6 +890,10 @@ function assertGood(r, days = 2, lr = 0) {
   assert.match(r.stdout, new RegExp(`^full days: ${days}$`, "m"));
   assert.match(r.stdout, new RegExp(`^LR rows: ${lr} \\(row 26 of the file, each with its appointment id and mark; SOLO reads every one\\)$`, "m"));
   assert.ok(!r.out.includes(LR_ID), "an LR row's appointment id reached the terminal");
+  assert.ok(!r.out.includes(F4X_ID) && !r.out.includes(CAND_ID), "the exception's or a row 29 appointment id reached the terminal");
+  assert.match(r.stdout, /^exception:   mode 600, sha256 [0-9a-f]{64}, the dispatch's$/m);
+  assert.match(r.stdout, /^F4 EXCEPTION 1 \(ruling 11-06\)$/m);
+  assert.match(r.stdout, /^rule 1b alone: 0 shadow-only marks \(row 29 of the file, each with its appointment id, mark and planning save; UNEXPLAINED, so verdict 13 FAILs on each; strategy rules on each by name\)$/m);
   assert.equal(r.stdout.split("\n").filter((l) => /^ 22 \| passes on 2026-11-0\d \(R11\)/.test(l)).length, days, "the R11 rows were not printed");
   assert.ok(!r.out.includes(MISMATCH_ID), "an appointment id from the mismatch list reached the terminal");
   assert.doesNotMatch(r.out, /SHADOW_SUMMARY|read only: on|R8 no scheduling/, "the table itself reached the terminal");
@@ -862,6 +948,7 @@ function assertStop(r, re, label, closing = /SHADOW-COMPARE-1106 (PASSED|REVIEW)
   assert.doesNotMatch(r.stdout, closing, `${label}: a closing line after a fault`);
   assert.ok(!r.out.includes(MISMATCH_ID), `${label}: an appointment id reached the terminal`);
   assert.ok(!r.out.includes(LR_ID), `${label}: an LR row's appointment id reached the terminal`);
+  assert.ok(!r.out.includes(F4X_ID) && !r.out.includes(CAND_ID), `${label}: the exception's or a row 29 appointment id reached the terminal`);
   assert.doesNotMatch(r.stdout, /TOOL-CHAIN-CONTINUED/, `${label}: the tool chain went on`);
   assert.doesNotMatch(r.out, /harness: unexpected/, `${label}: an unexpected call`);
 }
@@ -878,7 +965,9 @@ for (const shell of shells) {
       assertStop(r, /still reads PENDING or is not in its form, so it is NOT READY/, "PENDING");
       assert.ok(!/^(git|node|psql|date|shasum|rm|awk|cut):/m.test(r.calls), `a command ran before the PENDING check: ${r.calls}`);
       for (const [k, v] of [["deployed", "PENDING"], ["deployed", "2026-11-03T06:00:00Z"], ["deployed", "2026-11-02T06:00:00Z'; drop table x; '"], ["prnum", "0"], ["docsha", "PENDING"],
-        ["end", "PENDING"], ["end", "2026-11-02"], ["end", "2026-11-31"], ["end", "2026-12-01"], ["end", "2026-11-5"], ["end", "2026-11-05'; select 1; '"]]) {
+        ["end", "PENDING"], ["end", "2026-11-02"], ["end", "2026-11-31"], ["end", "2026-12-01"], ["end", "2026-11-5"], ["end", "2026-11-05'; select 1; '"],
+        ["f4xsha", "PENDING"], ["f4xsha", "F".repeat(64)], ["f4xfile", "PENDING"], ["f4xfile", "/var/tmp/f4-exception.txt"], ["f4xfile", `${OUT_DIR}/sub/f4.txt`],
+        ["f4xfile", `${OUT_DIR}/f4 exception.txt`], ["f4xfile", `${OUT_DIR}/${OUT_NAME}`]]) {
         const p = runOnce(shell, base, filled(base, { [k]: v }));
         assertStop(p, /NOT READY/, `${k} ${v}`);
         assert.ok(!/^(git|node|psql|date):/m.test(p.calls), `a command ran before the PENDING check (${k} ${v}): ${p.calls}`);
@@ -975,6 +1064,67 @@ for (const shell of shells) {
       assert.ok(!/^(node|psql):/m.test(r2.calls), `the guard or psql ran without the env file: ${r2.calls}`);
       const r3 = runOnce(shell, base, text.replaceAll(join(base, "handover"), join(base, "no-such-handover")));
       assertStop(r3, /handover folder is not there/, "missing handover folder");
+      assertPass(runOnce(shell, base, text));
+    } finally { rmSync(base, { recursive: true, force: true }); }
+  });
+
+  test(`${shell}: THE F4 EXCEPTION's lines: the file missing, its sha256 not the dispatch's, its mode not 600, a byte outside the set, a second line feed, each a clean STOP before anything reads production; its content handed to psql exactly; row 28 and row 29's count on the terminal, never an id`, () => {
+    const base = makeBase();
+    try {
+      const text = filled(base);
+      const noRead = (r, label) => assert.ok(!/^(git|node|psql):/m.test(r.calls), `${label}: the worktree, the guard or psql ran: ${r.calls}`);
+      // Missing.
+      rmSync(join(base, "handover", F4X_NAME));
+      let r = runOnce(shell, base, text);
+      assertStop(r, /the exception file is not there\. Nothing was read/, "missing");
+      noRead(r, "missing");
+      // Wrong sha256: the dispatch names another file.
+      writeF4x(base, `${F4X_ENTRY}\n`);
+      r = runOnce(shell, base, filled(base, { f4xsha: "e".repeat(64) }));
+      assertStop(r, /the exception file is not the one the dispatch names \(its sha256 is [0-9a-f]{64}\)\. Never edit the file or the dispatch to pass this\./, "wrong sha256");
+      noRead(r, "wrong sha256");
+      // The file changed after the dispatch was filled.
+      writeF4x(base, `${F4X_ENTRY.replace("f4,", "f5,")}\n`);
+      assertStop(runOnce(shell, base, text), /the exception file is not the one the dispatch names/, "changed file");
+      // Wrong mode, each way.
+      for (const mode of [0o644, 0o640, 0o400, 0o700]) {
+        writeF4x(base, `${F4X_ENTRY}\n`, mode);
+        r = runOnce(shell, base, text);
+        assertStop(r, /the exception file is not mode 600\. Nothing was read/, `mode ${mode.toString(8)}`);
+        noRead(r, `mode ${mode.toString(8)}`);
+      }
+      // A byte outside the set, its sha256 the dispatch's: a quote, a backslash, a carriage return, a tab, an upper-case id, a NUL.
+      for (const bad of [`${F4X_ENTRY}'\n`, `${F4X_ENTRY}\\\n`, `${F4X_ENTRY}\r\n`, `${F4X_ENTRY}\t\n`, `${F4X_ENTRY.toUpperCase()}\n`, `${F4X_ENTRY}\u0000\n`]) {
+        writeF4x(base, bad);
+        r = runOnce(shell, base, filled(base, { f4xsha: sha256(bad) }));
+        assertStop(r, /the exception file holds [1-9][0-9]* bytes other than lower-case letters, digits, commas, colons, hyphens, spaces and line feeds\. Nothing was read/, `bad byte ${JSON.stringify(bad)}`);
+        noRead(r, `bad byte ${JSON.stringify(bad)}`);
+      }
+      // Not ending in exactly one line feed: what would be passed is not the pinned file.
+      for (const tail of ["", "\n\n"]) {
+        const c = `${F4X_ENTRY}${tail}`;
+        writeF4x(base, c);
+        r = runOnce(shell, base, filled(base, { f4xsha: sha256(c) }));
+        assertStop(r, /the exception as read is not the file the dispatch names \(the file must end with exactly one line feed\)/, `tail ${JSON.stringify(tail)}`);
+        noRead(r, `tail ${JSON.stringify(tail)}`);
+      }
+      // Two lines pass the block's checks and reach psql exactly as written; the read itself refuses them (the database cases).
+      const two = `${F4X_ENTRY}\n${F4X_ENTRY.replace("f4,", "f5,")}\n`;
+      writeF4x(base, two);
+      assertPass(runOnce(shell, base, filled(base, { f4xsha: sha256(two) }), { HARNESS_F4X: two.slice(0, -1) }));
+      r = runOnce(shell, base, filled(base, { f4xsha: sha256(two) }));
+      assertStop(r, /the read did not complete \(an error, a refusal of the F4 exception, whose reason is the one F4XSTOP line in .* and names no id/, "psql handed another exception");
+      writeF4x(base, `${F4X_ENTRY}\n`);
+      // Row 28 missing, doubled, reading 0 or 2: a clean STOP after the read.
+      const row28 = /did not print exactly one row 28 reading F4 EXCEPTION 1 \(ruling 11-06\), so the F4 exception did not accept exactly its one mark\..*No switch, SOLO reports to strategy$/;
+      for (const t of ["f4none", "f4double", "f4zero", "f4two"]) assertStop(runOnce(shell, base, text, { HARNESS_TABLE: t }), row28, t);
+      assertPass(runOnce(shell, base, text, { HARNESS_TABLE: "f4decoy" }));
+      // Row 29's marks are counted to the terminal, never their ids; verdict 13 FAILs on them, so the block STOPs on its profile.
+      r = runOnce(shell, base, text, { HARNESS_TABLE: "f4cand" });
+      assertStop(r, /a FAIL, a VACUOUS verdict other than 15/, "row 29's marks");
+      assert.match(r.stdout, /^F4 EXCEPTION 1 \(ruling 11-06\)$/m);
+      assert.match(r.stdout, /^rule 1b alone: 2 shadow-only marks \(row 29 of the file, /m);
+      assert.ok(readFileSync(join(base, "handover", OUT_NAME), "utf8").includes(CAND_ID), "row 29's ids are not in the transcript");
       assertPass(runOnce(shell, base, text));
     } finally { rmSync(base, { recursive: true, force: true }); }
   });
@@ -2040,6 +2190,95 @@ CASES.push(
   },
 );
 
+// ---- THE F4 EXCEPTION (strategy, 2026-11-06 16:30, option A): one named shadow-only mark accepted; row 29. ----
+
+/**
+ * F4X OFF, for every case that sets no exception (every case above): the read as it ships REFUSES
+ * without exactly one entry naming an UNEXPLAINED shadow-only mark, so those cases run with the
+ * setting read replaced by an empty text and row 28's refusal by its count. Every F4 exception case
+ * below sets the setting and runs the read as it ships (rule 1b on).
+ */
+const F4X_READ = "current_setting('osteojp.r47_f4x')";
+const F4X_REFUSAL = "case when f.problem is null then f.accepted else ('F4XSTOP ' || f.problem)::int end";
+const F4X_OFF = (s) => {
+  for (const t of [F4X_READ, F4X_REFUSAL]) assert.equal(s.split(t).length, 2, `F4X off: not written exactly once: ${t}`);
+  return s.replace(F4X_READ, "''::text").replace(F4X_REFUSAL, "f.accepted");
+};
+/** The named mark: a booked visit for Thursday 11-05 10:00 whose 48h email mark (Tuesday 11-03 10:00) only the shadow took. */
+const F4X_APPT = appt(0xf4);
+const F4X_OTHER = appt(0xf5);
+const F4X_START = "2026-11-05 10:00";
+const F4X_SHAPE = (start = F4X_START) => [
+  visit(F4X_APPT, start, { bookedAt: start }),
+  shadowRow(F4X_APPT, "48h", start, dueOf(start, "48h")),
+].join("\n");
+const F4X_OK = `${F4X_APPT},48h,email,2026-11-03 10:00`;
+const F4X_WANT = only({ [`11 ${TUE}`]: "REVIEW" });
+/** Row 28 as the read prints it: the count only, never an id; `cand` is row 29's count. */
+const ROW28 = (cand, accepted = 1) => [28, new RegExp(`^F4 EXCEPTION ${accepted} \\(ruling 11-06\\) \\| the shadow-only mark the exception file names, accepted under F4X \\(rows 16, 31 and 50\\); shadow-only marks that fail rule 1b alone \\(row 29, UNEXPLAINED\\) ${cand} \\| information: the count only, never the id \\| INFO$`)];
+const ROW29 = (id, mark, planner) => [29, new RegExp(`^shadow-only UNEXPLAINED, rule 1b alone, mark due ${mark} 48h email \\| ${id} \\| passes conditions 1, 2 and 3 and every part of condition 4 but rule 1b; planned by a save that sends appointment\\/scheduled \\(${re(planner).replace(" at ", "\\) at ")} \\| information: UNEXPLAINED, verdict 13 FAILs on it; strategy rules on each by name \\| INFO$`)];
+const REFUSE_LINES = (n) => new RegExp(`F4XSTOP the exception file holds ${n} lines, not exactly one entry`);
+const REFUSE_FORM = /F4XSTOP the entry is not of the form <appointment id>,48h,email,2026-11-03 10:00/;
+const REFUSE_STALE = /F4XSTOP the entry names no shadow-only mark this read leaves UNEXPLAINED in the window \(a stale exception\): 0 accepted/;
+/** A case of LR's shape that fails one predicate AND rule 1b, with the exception set: not in row 29. */
+const NEAR = (caseName, what) => {
+  const base = CASES.find((c) => c.name.startsWith(caseName) && !c.mutate);
+  assert.ok(base, `no case named ${caseName}`);
+  assert.deepEqual(base.want, LR_UNEXPLAINED, `${caseName} is not an UNEXPLAINED LR shape`);
+  return { name: `F4X row 29 near miss, ${what} and rule 1b: not in row 29`, seed: `${base.seed}\n${F4X_SHAPE()}`, f4x: F4X_OK, want: { ...LR_UNEXPLAINED, [`11 ${TUE}`]: "REVIEW" }, info: [ROW28(0)] };
+};
+
+CASES.push(
+  {
+    name: "F4X: the exception names the one shadow-only mark (11-03 10:00, 48h email, a booked visit that fails rule 1b alone): F4X, its day REVIEW, verdicts 13 and 16 OK, row 28 prints the count 1 and no id",
+    seed: F4X_SHAPE(),
+    f4x: F4X_OK,
+    want: F4X_WANT,
+    info: [
+      ROW28(0),
+      [50, new RegExp(`^shadow_only 2026-11-03 10:00 48h email \\| ${F4X_APPT} \\| ${re(F4X_LABEL)} \\| `)],
+      [16, /with a label outside the set 0; .*F4X \(in the set by the F4 exception only, row 28\) 1; LR rows \(in the set, each in row 26\) 0 \| /],
+      [11, /^11\. agreement, marks due 2026-11-03, 48h email.*\| both 2; shadow only 1 \(unexplained 0\)/],
+      [31, new RegExp(`^mismatch label, marks due 2026-11-03, 48h email, shadow_only: ${re(F4X_LABEL)} \\| 1 \\| `)],
+    ],
+  },
+  {
+    name: "F4X: the same mark with no exception (F4X off): UNEXPLAINED, verdict 13 FAILs, and row 29 prints it (rule 1b alone)",
+    seed: F4X_SHAPE(),
+    want: only({ [`11 ${TUE}`]: "FAIL", 13: "FAIL" }),
+    info: [ROW29(F4X_APPT, "2026-11-03 10:00", BOOKED_PLANNER), ROW28(1, 0)],
+  },
+  {
+    name: "F4X with a mark that fails rule 1b alone: the exception accepts its one mark, row 29 prints the other with its id, mark and planning save, and verdict 13 still FAILs",
+    seed: `${F4X_SHAPE()}\n${LR_SHAPE()}`,
+    f4x: F4X_OK,
+    want: only({ [`11 ${TUE}`]: "REVIEW", [`11 ${MON}`]: "FAIL", 13: "FAIL" }),
+    info: [ROW28(1), ROW29(LR_APPT, "2026-11-02 11:00", BOOKED_PLANNER), NOT_LR(PORTAL_4(BOOKED_PLANNER))[1], [50, new RegExp(`${F4X_APPT} \\| ${re(F4X_LABEL)}`)]],
+  },
+  { name: "F4X refused: two entries, the named mark's and another id's", seed: F4X_SHAPE(), f4x: `${F4X_OK}\n${F4X_OTHER},48h,email,2026-11-03 10:00`, refused: REFUSE_LINES(2) },
+  { name: "F4X refused: two entries, the same line twice", seed: F4X_SHAPE(), f4x: `${F4X_OK}\n${F4X_OK}`, refused: REFUSE_LINES(2) },
+  { name: "F4X refused: the entry and a trailing empty line", seed: F4X_SHAPE(), f4x: `${F4X_OK}\n`, refused: REFUSE_LINES(2) },
+  { name: "F4X refused: malformed, semicolons for commas", seed: F4X_SHAPE(), f4x: F4X_OK.replaceAll(",", ";"), refused: REFUSE_FORM },
+  { name: "F4X refused: malformed, another offset and channel (24h sms)", seed: F4X_SHAPE(), f4x: F4X_OK.replace("48h,email", "24h,sms"), refused: REFUSE_FORM },
+  { name: "F4X refused: malformed, another time (10:15)", seed: F4X_SHAPE(), f4x: F4X_OK.replace("10:00", "10:15"), refused: REFUSE_FORM },
+  { name: "F4X refused: malformed, a fifth field after the time", seed: F4X_SHAPE(), f4x: `${F4X_OK},more`, refused: REFUSE_FORM },
+  { name: "F4X refused: malformed, a character before the id", seed: F4X_SHAPE(), f4x: `x${F4X_OK}`, refused: REFUSE_FORM },
+  { name: "F4X refused: malformed, an upper-case id", seed: F4X_SHAPE(), f4x: F4X_OK.toUpperCase().replace("48H,EMAIL", "48h,email"), refused: REFUSE_FORM },
+  { name: "F4X refused: malformed, empty", seed: F4X_SHAPE(), f4x: "", refused: REFUSE_FORM },
+  { name: "F4X refused: the entry names no shadow-only mark: the named mark is on both sides now (a stale exception)", seed: `${visit(F4X_APPT, F4X_START)}\n${both(F4X_APPT, "48h", F4X_START)}`, f4x: F4X_OK, refused: REFUSE_STALE },
+  { name: "F4X refused: the entry names another visit than the shadow-only mark's", seed: F4X_SHAPE(), f4x: F4X_OK.replace(F4X_APPT, F4X_OTHER), refused: REFUSE_STALE },
+  { name: "F4X refused: the named visit's shadow-only mark is another mark (its 48h of 11-02 15:30)", seed: F4X_SHAPE("2026-11-04 15:30"), f4x: F4X_OK, refused: REFUSE_STALE },
+  { name: "F4X refused: the named mark is shadow-only but R20 labels it (S4: its ledger row kept), not UNEXPLAINED", seed: `${F4X_SHAPE()}\n${ledger(F4X_APPT, "48h", "2026-11-03 10:00:03")}`, f4x: F4X_OK, refused: REFUSE_STALE },
+  NEAR("LR negative 1: an early claim", "a claim of this mark (condition 1)"),
+  NEAR("LR negative 2: cancelled before the mark", "cancelled at the mark (condition 2)"),
+  NEAR("LR negative 3", "moved after the mark (condition 3)"),
+  NEAR("LR negative 4:", "no sending save (condition 4)"),
+  NEAR("LR negative 4f", "the planned start another (condition 4)"),
+  NEAR("LR negative 4g", "a recorded start change after the planning save (condition 4)"),
+  NEAR("LR negative 4h (round 3", "a portal move's staff notification (rule 1a)"),
+  NEAR("LR negative 4j (round 3)", "an importer row (rule 1c)"),
+);
+
 const MUTANTS_1106 = [
   ["LATE-PASS without the run time", "                    and x.run_slot = d.slot)\n),\nhb_day3 as (", "                    and true)\n),\nhb_day3 as (", "LATE-PASS negative: the late pass's run time in slot 10:15"],
   ["verdict 3's REVIEW arm takes any gap", "when v.tenants_ok + v.tenants_late = v.tenants then 'REVIEW'", "when true then 'REVIEW'", "LATE-PASS negative: a failed pass"],
@@ -2091,7 +2330,33 @@ const MUTANTS_1106 = [
   ["rule 1a reads another visit's notification", "where sn.tenant_id = m.tenant_id and sn.appointment_id = m.appointment_id", "where sn.tenant_id = m.tenant_id", "LR (round 3, rule 1b off)"],
   ["rule 1c dropped", "          and not ux.importer_touched\n", "          and true\n", "LR negative 4j, rule 1c alone"],
   ["rule 1c reads another visit's staging row", "where s.tenant_id = m.tenant_id and s.imported_entity_id = m.appointment_id", "where s.tenant_id = m.tenant_id", "LR (round 3, rule 1b off)"],
-  ["LR outside R32's set", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5')", "LR: a booked visit's 48h mark"],
+  ["LR outside R32's set", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR', 'F4X')\n", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'F4X')\n", "LR: a booked visit's 48h mark"],
+  // THE F4 EXCEPTION. Strategy's two (R4): accept two entries; accept an entry with no matching mark.
+  ["F4X accepts two entries", "when c.lines <> 1 then", "when c.lines < 1 then", "F4X refused: two entries, the named mark's and another id's"],
+  ["F4X accepts two entries, on the same line twice", "when c.lines <> 1 then", "when c.lines < 1 then", "F4X refused: two entries, the same line twice"],
+  ["F4X accepts an entry with no matching mark", "when c.accepted <> 1 then", "when false then", "F4X refused: the entry names no shadow-only mark: the named mark is on both sides"],
+  ["F4X accepts an entry with no matching mark, on another visit's id", "when c.accepted <> 1 then", "when false then", "F4X refused: the entry names another visit"],
+  ["F4X's match without the appointment id", "where x.appointment_id = p.appointment_id::text\n", "where true\n", "F4X refused: the entry names another visit"],
+  ["F4X's match without the mark", "and x.offset_id = p.offset_id and x.channel = p.channel and x.due_at = p.due_at)", ")", "F4X refused: the named visit's shadow-only mark is another mark"],
+  ["F4X on a mark R20 labels", "when p.side = 'shadow_only' and p.category = 'UNEXPLAINED'\n                   and exists (select 1 from f4x_entry x", "when p.side = 'shadow_only'\n                   and exists (select 1 from f4x_entry x", "F4X refused: the named mark is shadow-only but R20 labels it"],
+  ["F4X's form without its end anchor", ",48h,email,2026-11-03 10:00$'", ",48h,email,2026-11-03 10:00'", "F4X refused: malformed, a fifth field"],
+  ["F4X's form takes any offset and channel", ",48h,email,2026-11-03 10:00$'", ",[a-z0-9]+,[a-z]+,2026-11-03 10:00$'", "F4X refused: malformed, another offset"],
+  ["F4X's form takes any time", ",48h,email,2026-11-03 10:00$'", ",48h,email,2026-11-03 [0-9:]+$'", "F4X refused: malformed, another time"],
+  ["F4X's form takes an upper-case id", "t.f4x_text ~ '^[0-9a-f]{8}", "t.f4x_text ~* '^[0-9a-f]{8}", "F4X refused: malformed, an upper-case id"],
+  ["F4X's malformed check dropped", "when c.malformed > 0 then", "when false then", "F4X refused: malformed, a fifth field"],
+  ["F4X outside R32's set", "                   where letter not in ('R2', 'R4', 'R8', 'S5', 'LR', 'F4X')\n", "                   where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')\n", "F4X: the exception names the one shadow-only mark", null, [16, /with a label outside the set 0; /]],
+  ["F4X outside R32's set, verdict 16's count", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR', 'F4X')\n", "(select count(*) from lab where letter not in ('R2', 'R4', 'R8', 'S5', 'LR')\n", "F4X: the exception names the one shadow-only mark"],
+  // Row 29: every part of LR but rule 1b, on a mark that stays UNEXPLAINED.
+  ["row 29 lists nothing", "     and l.c1 and l.c2 and l.c3\n", "     and false\n", "F4X with a mark that fails rule 1b alone", null, ROW28(1)],
+  ["row 29 without condition 1", "     and l.c1 and l.c2 and l.c3\n", "     and l.c2 and l.c3\n", "F4X row 29 near miss, a claim of this mark", null, ROW28(0)],
+  ["row 29 without condition 2", "     and l.c1 and l.c2 and l.c3\n", "     and l.c1 and l.c3\n", "F4X row 29 near miss, cancelled at the mark", null, ROW28(0)],
+  ["row 29 without condition 3", "     and l.c1 and l.c2 and l.c3\n", "     and l.c1 and l.c2\n", "F4X row 29 near miss, moved after the mark", null, ROW28(0)],
+  ["row 29 without condition 4's start match", "     and coalesce(l.plan_start = l.iso_start, false)\n", "     and true\n", "F4X row 29 near miss, the planned start another", null, ROW28(0)],
+  ["row 29 without condition 4's start match, on no sending save", "     and coalesce(l.plan_start = l.iso_start, false)\n", "     and true\n", "F4X row 29 near miss, no sending save", null, ROW28(0)],
+  ["row 29 without condition 4's start change", "     and not l.start_changed\n", "     and true\n", "F4X row 29 near miss, a recorded start change", null, ROW28(0)],
+  ["row 29 without rule 1a", "     and not l.portal_notified\n", "     and true\n", "F4X row 29 near miss, a portal move's staff notification", null, ROW28(0)],
+  ["row 29 without rule 1c", "     and not l.importer_touched\n", "     and true\n", "F4X row 29 near miss, an importer row", null, ROW28(0)],
+  ["row 29 lists a mark that is not UNEXPLAINED (the F4X mark itself)", "   where p.category = 'UNEXPLAINED'\n     and l.c1 and l.c2 and l.c3\n", "   where true\n     and l.c1 and l.c2 and l.c3\n", "F4X: the exception names the one shadow-only mark", null, ROW28(0)],
 ];
 
 const MUTANTS = [
@@ -2137,13 +2402,14 @@ for (const [what, from, to, caseName, more, infoKill] of MUTANTS) {
   CASES.push({
     name: `MUTANT: ${what}, on "${caseName}"`,
     seed: base.seed,
+    f4x: base.f4x,
     rewrite: base.rewrite,
     deployed: base.deployed,
     end: base.end,
     clock: base.clock,
     mutate: (s) => {
       assert.equal(s.split(from).length, 2, `the mutated text is not written exactly once: ${from}`);
-      const m = s.replace(from, to);
+      const m = s.replace(from, () => to); // literal: a `$` in a mutant is SQL, not a replacement pattern
       return more ? more(m) : m;
     },
     kills: infoKill ? undefined : base.name,
@@ -2176,10 +2442,10 @@ test("the read on a local database: every verdict flips on its own seeded fault,
     // tables the read and the seed use must then exist, which the seed proves by running strictly.
     spawnSync("psql", [dbUrl(BASE), "-X", "-q"], { encoding: "utf8", input: dump.stdout, maxBuffer: 64 * 1024 * 1024 });
     ok(psql(dbUrl(BASE), [], SEED));
-    const runRead = (db, text, deployed, end = "2026-11-03") => {
+    const runRead = (db, text, deployed, end = "2026-11-03", f4x = null) => {
       const file = join(work, "read.sql");
       writeFileSync(file, text);
-      const set = [[GUC, deployed], [GUC_END, end]].filter(([, v]) => v !== null).flatMap(([g, v]) => ["-c", `set local ${g} = '${v}'`]);
+      const set = [[GUC, deployed], [GUC_END, end], [GUC_F4X, f4x]].filter(([, v]) => v !== null).flatMap(([g, v]) => ["-c", `set local ${g} = '${v}'`]);
       return psql(dbUrl(db), ["-A", "-t", "-F", "\u001f", "-c", "begin read only", "-c", "set local statement_timeout = '120s'", ...set, "-f", file, "-c", "rollback"]);
     };
     const withClock = (clock) => {
@@ -2187,8 +2453,8 @@ test("the read on a local database: every verdict flips on its own seeded fault,
       assert.notEqual(t, sql, "the clock line was not replaced");
       return t;
     };
-    // Without either of its two settings the read stops with an error and prints no table.
-    for (const [args, g] of [[[null, "2026-11-03"], GUC], [[DEPLOYED, null], GUC_END]]) {
+    // Without any of its three settings the read, as it ships, stops with an error and prints no table.
+    for (const [args, g] of [[[null, "2026-11-03", F4X_OK], GUC], [[DEPLOYED, null, F4X_OK], GUC_END], [[DEPLOYED, "2026-11-03", null], GUC_F4X]]) {
       const r = runRead(BASE, withClock(READ_CLOCK), ...args);
       assert.notEqual(r.status, 0, `the read ran without ${g}`);
       assert.match(r.stderr, new RegExp(`unrecognized configuration parameter "${g.replace(".", "\\.")}"`));
@@ -2200,13 +2466,32 @@ test("the read on a local database: every verdict flips on its own seeded fault,
       admin(`create database ${CASE_DB} template ${BASE}`);
       if (c.seed) ok(psql(dbUrl(CASE_DB), [], c.seed));
       let text = withClock(c.clock ?? READ_CLOCK);
+      if (c.f4x === undefined) text = F4X_OFF(text);
       if (c.rewrite) text = c.rewrite(text);
       if (c.mutate) {
         const mutated = c.mutate(text);
         assert.notEqual(mutated, text, `${c.name}: the mutant changed nothing`);
         text = mutated;
       }
-      const out = ok(runRead(CASE_DB, text, c.deployed ?? DEPLOYED, c.end ?? "2026-11-03"));
+      const run = runRead(CASE_DB, text, c.deployed ?? DEPLOYED, c.end ?? "2026-11-03", c.f4x ?? null);
+      const refusedBy = c.refused ?? (c.kills ? CASES.find((u) => u.name === c.kills).refused : undefined);
+      if (refusedBy) {
+        // A refusal: an error starting F4XSTOP, no table, and no appointment id in it. A mutant of a
+        // refusing case is killed when it does not refuse for the same reason.
+        if (c.kills) {
+          assert.ok(run.status === 0 || !refusedBy.test(run.stderr), `${c.name}: the mutant SURVIVES: it refuses as the unmutated case does`);
+          results.push(`${c.name}: ${run.status === 0 ? "ran, no refusal" : `refused otherwise: ${(run.stderr.match(/F4XSTOP[^"]*/) || [run.stderr.trim()])[0]}`}`);
+        } else {
+          assert.notEqual(run.status, 0, `${c.name}: the read did not refuse\n${run.stdout}`);
+          assert.match(run.stderr, refusedBy, `${c.name}: not the refusal expected`);
+          assert.doesNotMatch(run.stdout, /\u001f(OK|REVIEW|VACUOUS|FAIL|INFO)$/m, `${c.name}: a row printed with the refusal`);
+          for (const id of [F4X_APPT, F4X_OTHER]) assert.ok(!run.stderr.toLowerCase().includes(id) && !run.stdout.toLowerCase().includes(id), `${c.name}: the refusal prints an appointment id`);
+          results.push(`${c.name}: refused, ${run.stderr.match(/F4XSTOP[^"]*/)[0]}`);
+        }
+        admin(`drop database ${CASE_DB}`);
+        continue;
+      }
+      const out = ok(run);
       const rows = out.split("\n").filter(Boolean).map((l) => l.split("\u001f")).filter((r) => r.length === 5);
       const verdictRows = rows.filter((r) => r[4] !== "INFO");
       const verdicts = Object.fromEntries(verdictRows.map((r) => [keyOf(r), r[4]]));
