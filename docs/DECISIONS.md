@@ -5752,3 +5752,58 @@ The owner answered every open question in the three design notes ("yes to all re
 - The Inngest sync alert is Tier B, not Tier A (the owner's tier list of 2026-09-19 puts .github/workflows in Tier B): a scheduled GitHub Actions check, at most hourly, using no Inngest executions, comparing the commit the domain serves with the last successful sync for that commit; on a mismatch it runs the sync once, then fails red. A gate manifest change goes in its own GATE-CHANGE pull request, merged by the owner.
 - Revoking the unused table-level UPDATE on the pack instances is its own Tier C migration after 0115. Foreign keys that block a hard delete once a pack has a price or a payment are correct; the hard-delete refusal itemises them, and the bulk duplicate merge moves those rows and never deletes them.
 - Every report gives the CI state of every held head it cites, and every time in a report comes from a clock read in a named zone.
+
+## 2026-11-06 - Strategy's rulings of 16:55 Toronto (21:55 Lisbon): the A2 re-run, Sentry at the F4 mark, the failed ledger outcome, the board freeze plan, the weekend order
+
+Strategy's words are in the quoted blocks, character for character. The bullets under each block are SOLO's record, not strategy's text.
+
+**The A2 re-run (#1736).**
+
+> #1736: READY accepted (7ec94cff). The owner runs the A2 re-run on GREEN on Sat 11-07.
+> - M2: ship as is. F4's history was read in A1.
+> - M3: confirmed. "Never the id" means the terminal and row 28. The .out file stays in the handover folder, is opened by SOLO only, and is never pasted into chat or the repo.
+> - M1, M4: ship with the note.
+> - If row 29 lists any mark: STOP as designed. Paste the row-29 conditions (no ids) to strategy, which rules on each by name.
+
+- #1736 is READY at head `7ec94cff`. The A2 re-run is the owner's GREEN sitting on Sat 11-07.
+- A row 29 that lists any mark is a STOP. SOLO sends strategy that row's conditions with no ids, and strategy rules on each mark by name.
+
+**Sentry at the F4 mark (addendum to the F4 record in the two 2026-11-06 entries above).**
+
+> SENTRY 11-03 09:30 to 10:30 UTC: the owner looked at osteojp-web, all environments, with no filter. ZERO issues in the window. Record it in the F4 note and DECISIONS.md: no captured error at the mark, and (a) stands. WEB-F (inbound, sender not E.164) is the known one, last seen about 11-01. It is resolved only after the owner confirms REMINDERS_INBOUND=false and 7 days pass with no new event.
+
+- F4 addendum: no captured error at the mark. The owner read the Sentry project osteojp-web, all environments, no filter, for 2026-11-03 09:30 to 10:30 UTC: zero issues. (a) stands: F4 is "lost before dispatch, scheduler cause not recoverable", option (a) of SOLO's first answer of 2026-11-06, as recorded in the F4 line above. It is not the same thing as option (A) of 16:30 Lisbon (the single named exception in the compare).
+- WEB-F stays open. It is resolved only after both: the owner confirms REMINDERS_INBOUND=false, and 7 days pass with no new event.
+
+**The "failed" ledger outcome.**
+
+> The "failed" ledger outcome needs a migration: accepted. The onFailure part of the wake-note card is Tier C, with its own number after 0115. It is not on the 11-18 night. The rest of that card stays Tier B, after the switch.
+
+- This splits the wake-note card of the entry above. Its onFailure part (a run whose load throws on every attempt writes a "failed" ledger row) is Tier C, takes its own migration number after `0115`, and does not join the 11-18 night. The rest of the card (the wake note, the run whose claim and ledger writes both fail, the swallowed enqueue failure) stays Tier B, after the switch.
+
+**The board freeze plan (owner-approved 11-01).**
+
+> BOARD FREEZE PLAN (owner-approved 11-01): approved in principle. The order:
+> - It starts AFTER the history rewrite (Sun 11-22, or its re-ruled date), so the repo does not churn before fresh clones.
+> - Step 1: one GATE-CHANGE PR, merged by the owner by hand: board JSON frozen as an archive; board:reconcile and its tests removed.
+> - Step 2: docs/RULINGS.md; slim CLAUDE.md; consolidate SOLO's memory index.
+> - GitHub Issues as the owner's tracker: NOT while the repo is public, because Issues are public too. Until the repo goes private, the board stays the tracker.
+> - Write the plan into DECISIONS.md with this order.
+> - STANDING: any process change the owner approves directly in the terminal goes to strategy in SOLO's next report. This one sat for 5 days.
+
+- The plan, in order:
+  1. Nothing starts before the history rewrite (Sun 11-22, or its re-ruled date).
+  2. Step 1: one GATE-CHANGE pull request, merged by the owner by hand. The board JSON is frozen as an archive, and `board:reconcile` and its tests are removed.
+  3. Step 2: `docs/RULINGS.md`, a slim `CLAUDE.md`, and one consolidated SOLO memory index.
+  4. GitHub Issues do not become the owner's tracker while the repository is public. Until it goes private, the board stays the tracker.
+- Standing: a process change the owner approves directly in the terminal goes to strategy in SOLO's next report.
+
+**Stylus.**
+
+- Stylus rulings recorded in docs/design/DESIGN-stylus-invoicing.md (held PR, not on main before Mon 11-09 evening)
+
+**The weekend order.**
+
+> WEEKEND ORDER, no change: Sat reads (A2 re-run, then Q6 read-out); Sun chain from 22:00 Lisbon; Mon C5 merges and spill; earliest switch Tue 11-10 after 21:50 Lisbon, on a clean re-run. #1735 and #1737 merge before the switch night.
+
+- No change to the order: Saturday, the A2 re-run, then the Q6 read-out; Sunday, the chain from 22:00 Lisbon; Monday, the C5 merges and any spill; the switch at the earliest on Tue 11-10 after 21:50 Lisbon, and only on a clean re-run. #1735 and #1737 merge before the switch night.
