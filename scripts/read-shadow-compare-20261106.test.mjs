@@ -294,18 +294,49 @@ test("LR's four conditions are written as strategy ruled them, each read from re
   // 4. the last save that SENDS appointment/scheduled at or before the mark: R33's re-arming saves
   //    (`rearm_rows`, held to RE_ARMING_SAVES above), less a move of a request unaccepted at the move.
   for (const piece of [
-    "select r.created_at as plan_at, r.clause as plan_clause\n        from rearm_rows r\n       where r.tenant_id = m.tenant_id and r.appointment_id = m.appointment_id\n         and r.created_at <= m.due_at\n",
+    "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from rearm_rows r\n       where r.tenant_id = m.tenant_id and r.appointment_id = m.appointment_id\n         and r.created_at <= m.due_at\n",
     "and (r.clause <> 'moved' or not m.pedido_origin\n              or coalesce((select v.to_status from lr_ev v\n                            where v.appointment_id = r.appointment_id and v.tenant_id = r.tenant_id\n                              and v.created_at <= r.created_at\n                            order by v.created_at desc, v.k desc limit 1) not in ('scheduled', 'unknown'), false))",
     "order by r.created_at desc, r.id desc limit 1) pl on true",
-    "(pl.plan_at is not null) as c4",
+    // ... and that save planned the run FOR THE MARK'S START (the R4 review's round 2).
+    "(pl.plan_at is not null\n          and coalesce(ps.plan_start = m.iso_start, false)\n          and not ps.start_changed) as c4",
+    "select case when pl.plan_clause in ('booked', 'moved') then pl.plan_to_start\n                  else (select b.to_start from rearm_rows b\n                         where b.tenant_id = m.tenant_id and b.appointment_id = m.appointment_id\n                           and b.clause in ('booked', 'moved') and b.created_at <= pl.plan_at\n                         order by b.created_at desc, b.id desc limit 1) end as plan_start,",
+    "exists (select 1 from rearm_rows n\n                      where n.tenant_id = m.tenant_id and n.appointment_id = m.appointment_id\n                        and n.clause = 'moved' and n.from_start is distinct from n.to_start\n                        and n.created_at > pl.plan_at and n.created_at <= m.due_at) as start_changed) ps on true",
   ]) assert.ok(lr.includes(piece), `LR condition 4 lost: ${piece}`);
-  assert.doesNotMatch(lr.slice(lr.indexOf("(pl.plan_at is not null) as c4")).replace(/--[^\n]*/g, ""), /public\.audit_log|toStatus|hasSchedulingEvent/, "condition 4 reads audit rows of its own instead of the sending saves");
-  // The senders, from the code: every caller of the one sender is named in the comment, with its line.
-  assert.deepEqual(gitGrep("-n", "name: EVENT_APPOINTMENT_SCHEDULED", "--", "apps/**/*.ts", ":!*.test.*").map((l) => l.split(":").slice(0, 2).join(":")),
-    ["apps/web/lib/reminders/index.ts:70"], "appointment/scheduled has another sender in the application");
-  assert.deepEqual(gitGrep("-n", "enqueueAppointmentReminders(", "--", "apps/**/*.ts", ":!*.test.*").map((l) => l.split(":").slice(0, 2).join(":")),
-    ["apps/web/lib/reminders/index.ts:49", "apps/web/lib/scheduling/reminders.ts:139"], "the sender has another caller");
-  const enqueueCalls = gitGrep("-n", "-E", "await (enqueueRemindersAfterCommit|emitAcceptedPedidoReminders)\\(", "--", "apps/**/*.ts", ":!*.test.*")
+  assert.doesNotMatch(lr.slice(lr.indexOf("and not ps.start_changed) as c4")).replace(/--[^\n]*/g, ""), /public\.audit_log|toStatus|hasSchedulingEvent/, "condition 4 reads audit rows of its own instead of the sending saves");
+  // `rearm_rows` carries every move row, sending or not, with both of its starts: condition 4's start change reads them all.
+  assert.ok(sql.includes("when l.action = 'appointment.reschedule' then 'moved'"), "rearm_rows no longer reads every move row as `moved`");
+  assert.ok(sql.includes("l.metadata->>'fromStartsAt' as from_start,\n           l.metadata->>'startsAt' as to_start"), "rearm_rows no longer carries both starts of a row");
+  // THE SENDERS, FROM THE CODE. Every reference, in apps/ and packages/ (tests excluded, comment
+  // lines excluded: a comment sends nothing), to the event (its constant or its literal name) and
+  // to the two functions every application sender goes through (a call with or without `await`,
+  // an import, a definition) is pinned here, so a new sender, a new caller or an alias fails it.
+  const codeRefs = (pattern) => gitGrep("-n", "-E", pattern, "--", "apps", "packages", ":!*.test.*")
+    .filter((l) => !/^[^:]+:[0-9]+:[ \t]*(\/\/|\*|\/\*)/.test(l))
+    .map((l) => l.split(":").slice(0, 2).join(":"));
+  assert.deepEqual(codeRefs("EVENT_APPOINTMENT_SCHEDULED|appointment/scheduled"), [
+    "apps/web/lib/reminders/index.ts:11", "apps/web/lib/reminders/index.ts:70",
+    "apps/web/lib/reminders/inngest/client.ts:125",
+    "apps/web/lib/reminders/inngest/functions.ts:108", "apps/web/lib/reminders/inngest/functions.ts:153",
+    "apps/web/lib/reminders/inngest/functions.ts:296", "apps/web/lib/reminders/inngest/functions.ts:3",
+    "apps/web/lib/reminders/notification-registry.ts:67",
+    "packages/db/scripts/inc-1007-rearm-reminders-emit.mjs:237", "packages/db/scripts/obs-05-backfill-emit.mjs:69",
+  ], "a reference to appointment/scheduled appeared or moved: a new sender? re-derive condition 4's list (index.ts:70 is the one sender in the application; functions.ts reads the event as trigger and cancelOn; the registry names it; the two scripts are owner-run senders that write no audit row)");
+  assert.equal(read("apps/web/lib/reminders/index.ts").split("\n")[69], "    name: EVENT_APPOINTMENT_SCHEDULED,", "index.ts:70 is not the one sender");
+  assert.deepEqual(gitGrep("-n", "enqueueAppointmentReminders", "--", "apps", "packages", ":!*.test.*").filter((l) => !/^[^:]+:[0-9]+:[ \t]*(\/\/|\*|\/\*)/.test(l)).map((l) => l.split(":").slice(0, 2).join(":")),
+    ["apps/web/lib/reminders/index.ts:49", "apps/web/lib/scheduling/reminders.ts:139", "apps/web/lib/scheduling/reminders.ts:2"].sort(), "the sender has another caller");
+  assert.deepEqual(codeRefs("enqueueRemindersAfterCommit|emitAcceptedPedidoReminders"), [
+    "apps/web/lib/reminders/inbound-reply.ts:463", "apps/web/lib/reminders/inbound-reply.ts:9",
+    "apps/web/lib/reminders/inbound-store.ts:15", "apps/web/lib/reminders/inbound-store.ts:325",
+    "apps/web/lib/scheduling/actions.ts:1107", "apps/web/lib/scheduling/actions.ts:1212", "apps/web/lib/scheduling/actions.ts:1554",
+    "apps/web/lib/scheduling/actions.ts:2142", "apps/web/lib/scheduling/actions.ts:2173", "apps/web/lib/scheduling/actions.ts:2858",
+    "apps/web/lib/scheduling/actions.ts:3089", "apps/web/lib/scheduling/actions.ts:75",
+    "apps/web/lib/scheduling/pedido-acceptance.ts:141", "apps/web/lib/scheduling/pedido-acceptance.ts:148", "apps/web/lib/scheduling/pedido-acceptance.ts:3",
+    "apps/web/lib/scheduling/reminders.ts:117",
+  ], "a reference to a sender appeared or moved (a call with or without await, an alias): re-derive condition 4's list");
+  // The calls among them (not the imports at inbound-reply.ts:9, inbound-store.ts:15, actions.ts:75 and
+  // pedido-acceptance.ts:3, nor the definitions at pedido-acceptance.ts:141 and reminders.ts:117).
+  const enqueueCalls = gitGrep("-n", "-E", "(enqueueRemindersAfterCommit|emitAcceptedPedidoReminders)\\(", "--", "apps", "packages", ":!*.test.*")
+    .filter((l) => !/^[^:]+:[0-9]+:[ \t]*(\/\/|\*|\/\*)/.test(l) && !/export async function /.test(l))
     .map((l) => l.split(":").slice(0, 2).join(":"));
   assert.deepEqual(enqueueCalls, [
     "apps/web/lib/reminders/inbound-reply.ts:463", "apps/web/lib/reminders/inbound-store.ts:325",
@@ -1694,6 +1725,56 @@ CASES.push(
     want: LR_UNEXPLAINED,
     info: NOT_LR("4 no save that sends appointment\\/scheduled at or before the mark"),
   },
+  // ---- The R4 review of 2026-11-06, round 2 (MAJOR): the planning save must have planned the run FOR THE MARK'S START. ----
+  {
+    name: "LR negative 4e (round 2, the reviewer's seed): a request booked for 11-20, accepted in Pedidos (sends, plans for 11-20), cancelled, brought back to Agendada (a request again, sends nothing), moved while unaccepted to the mark's start (sends nothing), accepted by a confirm code (sends nothing): no run planned for that start: not LR, condition 4",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", status: "confirmed", bookedAt: "2026-11-20 11:00" }, extra: [
+      audit(LR_APPT, "appointment.update", "2026-10-10 09:00", PEDIDOS_ACCEPT),
+      audit(LR_APPT, "appointment.cancel", "2026-10-12 09:00", '{"fromStatus":"confirmed","toStatus":"cancelled"}'),
+      audit(LR_APPT, "appointment.update", "2026-10-13 09:00", '{"fromStatus":"cancelled","toStatus":"scheduled"}'),
+      moved(LR_APPT, "2026-10-14 09:00", "2026-11-04 11:00", "2026-11-20 11:00"),
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-10-15 09:00", CODE_CONFIRMED),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 the last save that sends appointment\\/scheduled at or before the mark \\(accepted_in_pedidos at 2026-10-10 09:00:00\\) did not plan the run for the mark's start: the start in effect after it is another or cannot be read and a recorded start change after it, at or before the mark"),
+  },
+  {
+    name: "LR (round 2's twin): the same history, but the request moved to the mark's start is accepted in Pedidos (it sends) before the mark: the acceptance planned the run for the new start: LR",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal", status: "confirmed", bookedAt: "2026-11-20 11:00" }, extra: [
+      audit(LR_APPT, "appointment.update", "2026-10-10 09:00", PEDIDOS_ACCEPT),
+      audit(LR_APPT, "appointment.cancel", "2026-10-12 09:00", '{"fromStatus":"confirmed","toStatus":"cancelled"}'),
+      audit(LR_APPT, "appointment.update", "2026-10-13 09:00", '{"fromStatus":"cancelled","toStatus":"scheduled"}'),
+      moved(LR_APPT, "2026-10-14 09:00", "2026-11-04 11:00", "2026-11-20 11:00"),
+      audit(LR_APPT, "appointment.update", "2026-10-15 09:00", PEDIDOS_ACCEPT),
+    ] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a save that sends appointment\/scheduled \(accepted_in_pedidos\) at 2026-10-15 09:00:00 \| /]],
+  },
+  {
+    name: "LR negative 4f: the booking row records another start, and no recorded move brought the visit to the mark's start before the mark (it was moved away and back after it): the booking planned the run for another start: not LR, condition 4",
+    seed: LR_SHAPE({ visitOpts: { bookedAt: "2026-11-20 11:00" }, extra: [moved(LR_APPT, "2026-11-02 12:00", "2026-11-04 14:00", "2026-11-04 11:00"), moved(LR_APPT, "2026-11-02 12:05", "2026-11-04 11:00", "2026-11-04 14:00")] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 the last save that sends appointment\\/scheduled at or before the mark \\(booked at 2026-10-01 09:00:00\\) did not plan the run for the mark's start: the start in effect after it is another or cannot be read"),
+  },
+  {
+    name: "LR negative 4g: a request booked for the mark's start (the booking plans for it), moved away and back while unaccepted before the mark (neither move sends), accepted by a confirm code: a recorded start change after the planning save: not LR, condition 4",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal" }, extra: [
+      moved(LR_APPT, "2026-10-20 09:00", "2026-11-04 14:00", "2026-11-04 11:00"),
+      moved(LR_APPT, "2026-10-21 09:00", "2026-11-04 11:00", "2026-11-04 14:00"),
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-10-22 09:00", CODE_CONFIRMED),
+    ] }),
+    want: LR_UNEXPLAINED,
+    info: NOT_LR("4 the last save that sends appointment\\/scheduled at or before the mark \\(booked at 2026-10-01 09:00:00\\) did not plan the run for the mark's start: a recorded start change after it, at or before the mark"),
+  },
+  {
+    name: "LR: a request booked for the mark's start, a move that keeps the start while unaccepted (it sends nothing and changes no start), accepted by a confirm code before the mark: planned by the booking: LR",
+    seed: LR_SHAPE({ visitOpts: { origin: "patient_portal" }, extra: [
+      moved(LR_APPT, "2026-10-20 09:00", "2026-11-04 11:00", "2026-11-04 11:00"),
+      audit(LR_APPT, "appointment.confirm.sms_code", "2026-10-22 09:00", CODE_CONFIRMED),
+    ] }),
+    want: only({ [`11 ${MON}`]: "REVIEW" }),
+    info: [[26, /estado at the mark confirmed; start at the mark is the start now; planned by a save that sends appointment\/scheduled \(booked\) at 2026-10-01 09:00:00 \| /]],
+  },
   {
     name: "LATE-PASS: Tuesday's 10:00 pass ran at 10:16:30, its run time in slot 10:00: verdict 3 REVIEW on Tuesday",
     seed: LATE("2026-11-03 10:00:00.500"),
@@ -1769,7 +1850,18 @@ const MUTANTS_1106 = [
   ["LR condition 3 without the start now", "coalesce(e.start_at_mark = m.iso_start and m.start_now = m.iso_start, false) as c3,", "coalesce(e.start_at_mark = m.iso_start, false) as c3,", "LR negative 3"],
   ["LR condition 4 takes a save after the mark", "         and r.created_at <= m.due_at\n", "         and true\n", "LR negative 4b"],
   ["LR condition 4 takes a save after the mark, on the first negative", "         and r.created_at <= m.due_at\n", "         and true\n", "LR negative 4:"],
-  ["LR condition 4 counts any audit row (a status-only save plans)", "select r.created_at as plan_at, r.clause as plan_clause\n        from rearm_rows r\n", "select r.created_at as plan_at, r.clause as plan_clause\n        from (select l.id, l.tenant_id, l.entity_id as appointment_id, l.created_at, 'any'::text as clause from public.audit_log l) r\n", "LR negative 4b"],
+  // A status-only save as the planner: on 4b (no booking row) the start check now also keeps it out, so this
+  // mutant is killed by what row 27 prints there, and by row 26's planner on the hand-confirmed booked visit.
+  ["LR condition 4 counts any audit row (a status-only save plans)", "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from rearm_rows r\n", "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from (select l.id, l.tenant_id, l.entity_id as appointment_id, l.created_at, 'any'::text as clause, null::text as to_start from public.audit_log l) r\n", "LR negative 4b", null, NOT_LR("4 no save that sends appointment\\/scheduled at or before the mark")[1]],
+  ["LR condition 4 counts any audit row, on the hand-confirmed booked visit", "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from rearm_rows r\n", "select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start\n        from (select l.id, l.tenant_id, l.entity_id as appointment_id, l.created_at, 'any'::text as clause, null::text as to_start from public.audit_log l) r\n", "LR: confirmed by hand before the mark", null, [26, /\(booked\) at 2026-10-01 09:00:00/]],
+  // Round 2: the planning save planned the run FOR THE MARK'S START.
+  ["LR condition 4 without the start match", "          and coalesce(ps.plan_start = m.iso_start, false)\n", "          and true\n", "LR negative 4f"],
+  ["LR condition 4 without the start change after the planning save", "          and not ps.start_changed) as c4", "          and true) as c4", "LR negative 4g"],
+  ["LR condition 4 reads no start for a status save that sends", "then pl.plan_to_start\n                  else (select b.to_start from rearm_rows b", "then pl.plan_to_start\n                  else (select null::text from rearm_rows b", "LR (round 2's twin)"],
+  ["LR condition 4 reads a status save's start at the mark, not at the save", "and b.clause in ('booked', 'moved') and b.created_at <= pl.plan_at", "and b.clause in ('booked', 'moved') and b.created_at <= m.due_at", "LR negative 4e", null, NOT_LR("4 the last save that sends appointment\\/scheduled at or before the mark \\(accepted_in_pedidos at 2026-10-10 09:00:00\\) did not plan the run for the mark's start: the start in effect after it is another or cannot be read and a recorded start change after it, at or before the mark")[1]],
+  ["LR condition 4's start change counts a move that keeps the start", "and n.clause = 'moved' and n.from_start is distinct from n.to_start", "and n.clause = 'moved'", "LR: a request booked for the mark's start, a move that keeps"],
+  ["LR condition 4's start change counts the planning move itself", "and n.created_at > pl.plan_at and n.created_at <= m.due_at", "and n.created_at >= pl.plan_at and n.created_at <= m.due_at", "LR: an online request accepted by a confirm code, then moved"],
+  ["LR condition 4's start change counts a move after the mark", "and n.created_at > pl.plan_at and n.created_at <= m.due_at", "and n.created_at > pl.plan_at", "LR: moved away and back after the mark"],
   ["LR condition 4 counts a move of an unaccepted request", "and (r.clause <> 'moved' or not m.pedido_origin\n", "and (true or not m.pedido_origin\n", "LR negative 4c"],
   ["LR condition 4 reads the estado after the move", "                              and v.created_at <= r.created_at\n", "                              and true\n", "LR negative 4c"],
   ["LR condition 4 counts a move with no recorded estado", "not in ('scheduled', 'unknown'), false))", "not in ('scheduled', 'unknown'), true))", "LR negative 4c"],

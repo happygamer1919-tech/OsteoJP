@@ -64,7 +64,10 @@
 --       or before the mark; 3. its start at the mark (#1678's startAtTheMark, `probe_eval`) is its
 --       start now and the mark's start (R33 = A); 4. a save that SENDS appointment/scheduled (R33's
 --       re-arming saves, `rearm_rows`, less a move of a request still unaccepted at the move) at or
---       before the mark planned the run; a status-only save sends nothing and is ignored. LR is in
+--       before the mark planned the run, FOR THE MARK'S START: the start in effect right after the
+--       last such save is the mark's start, and no recorded start change (any move row, sending
+--       or not) falls after it and at or before the mark; a status-only save sends nothing and is
+--       ignored. LR is in
 --       R32's accepted set and EVERY LR row is printed with its appointment id, mark and planning
 --       save (row 26). A shadow-only mark that fails any condition stays UNEXPLAINED, and row 27
 --       names the conditions it failed.
@@ -834,7 +837,7 @@ lr_ev as (
 lr as (
   -- LR, LOST RUN: the four conditions of strategy's ruling of 2026-11-06 14:20, each on its own
   -- line, each false (never unknown) when the recorded rows cannot establish it.
-  select m.*, st.status_at_mark, rc.kind_rec, rc.status_rec, pl.plan_at, pl.plan_clause,
+  select m.*, st.status_at_mark, rc.kind_rec, rc.status_rec, pl.plan_at, pl.plan_clause, ps.plan_start, ps.start_changed,
          -- 1. NO CLAIM AND NO LEDGER ROW. No claim of ANY taker (reminder_claims, kind 'claim',
          --    early or not, released or not) for this appointment, offset, channel and start, and no
          --    reminder ledger row of this appointment, offset and channel from 10 minutes before the
@@ -885,7 +888,16 @@ lr as (
          --    111, on the send function at 192; the planner at 153 to 161 re-plans from the
          --    event), so every save able to cancel the run before the mark is itself a sending
          --    save, re-plans it, and is then the last one.
-         (pl.plan_at is not null) as c4
+         --    AND THAT SAVE PLANNED THE RUN FOR THE START THE MARK IS FOR (`ps` below): the start
+         --    in effect right after it equals the mark's start, and no recorded start change
+         --    falls after it and at or before the mark. A save plans runs for the start it sends
+         --    (the planner computes each mark from the event's start, functions.ts:153 to 161), and
+         --    a move that sends nothing (a request unaccepted at the move, actions.ts:2342 and 2569
+         --    to 2570) changes the start without re-planning, so a run planned before it was for
+         --    another start. A start the recorded rows cannot establish is not that start.
+         (pl.plan_at is not null
+          and coalesce(ps.plan_start = m.iso_start, false)
+          and not ps.start_changed) as c4
     from lr_mark m
     left join probe_eval e
       on e.src = 'lost' and e.tenant_id = m.tenant_id and e.appointment_id = m.appointment_id
@@ -947,7 +959,7 @@ lr as (
       -- does not count. Senders OUTSIDE the application write no audit row and are invisible here:
       -- the owner-run scripts packages/db/scripts/inc-1007-rearm-reminders-emit.mjs and
       -- obs-05-backfill-emit.mjs, and on origin/main also r36-fallback-rearm-emit.mjs.
-      select r.created_at as plan_at, r.clause as plan_clause
+      select r.created_at as plan_at, r.clause as plan_clause, r.to_start as plan_to_start
         from rearm_rows r
        where r.tenant_id = m.tenant_id and r.appointment_id = m.appointment_id
          and r.created_at <= m.due_at
@@ -957,6 +969,24 @@ lr as (
                               and v.created_at <= r.created_at
                             order by v.created_at desc, v.k desc limit 1) not in ('scheduled', 'unknown'), false))
        order by r.created_at desc, r.id desc limit 1) pl on true
+    left join lateral (
+      -- Condition 4's start: the run the planning save planned is for the start in effect right
+      -- after it. A booking or a move sends its own start (`startsAt`, `to_start`); a status save
+      -- that sends (an acceptance, a bring-back) sends the start then in effect, read from the
+      -- last booking or move row at or before it (`booked` or `moved`, sending or not). No such
+      -- row, or a row with no start, leaves it unknown, and condition 4 is false. A recorded start
+      -- change is any move row (every `appointment.reschedule`, sending or not) whose start left
+      -- is distinct from its new start (a missing `fromStartsAt` counts as a change), written
+      -- after the planning save and at or before the mark.
+      select case when pl.plan_clause in ('booked', 'moved') then pl.plan_to_start
+                  else (select b.to_start from rearm_rows b
+                         where b.tenant_id = m.tenant_id and b.appointment_id = m.appointment_id
+                           and b.clause in ('booked', 'moved') and b.created_at <= pl.plan_at
+                         order by b.created_at desc, b.id desc limit 1) end as plan_start,
+             exists (select 1 from rearm_rows n
+                      where n.tenant_id = m.tenant_id and n.appointment_id = m.appointment_id
+                        and n.clause = 'moved' and n.from_start is distinct from n.to_start
+                        and n.created_at > pl.plan_at and n.created_at <= m.due_at) as start_changed) ps on true
 ),
 pcl as (
   -- R20's comparison with R8, RK, S8 and LR put on the marks they name; every other label is R20's.
@@ -1617,7 +1647,14 @@ select n, "check", observed, expected, verdict from (
                                                    then ', an online request not accepted at the mark by the recorded rows'
                                                  else '' end || ')' end,
                 case when not l.c3 then '3 the start at the mark is not the start now, or cannot be read' end,
-                case when not l.c4 then '4 no save that sends appointment/scheduled at or before the mark' end),
+                case when not l.c4 then '4 '
+                  || case when l.plan_at is null then 'no save that sends appointment/scheduled at or before the mark'
+                          else 'the last save that sends appointment/scheduled at or before the mark (' || l.plan_clause || ' at '
+                               || to_char(l.plan_at at time zone 'Europe/Lisbon', 'YYYY-MM-DD HH24:MI:SS')
+                               || ') did not plan the run for the mark''s start: '
+                               || concat_ws(' and ',
+                                    case when not coalesce(l.plan_start = l.iso_start, false) then 'the start in effect after it is another or cannot be read' end,
+                                    case when l.start_changed then 'a recorded start change after it, at or before the mark' end) end end),
          'information: verdict 13 FAILs on it', 'INFO'
     from lr l
     join pcl p on p.tenant_id = l.tenant_id and p.appointment_id = l.appointment_id and p.offset_id = l.offset_id
