@@ -26,7 +26,15 @@
  *   - APPEND ONLY: UPDATE, DELETE and TRUNCATE refused at the gate on both
  *     tables for every staff role;
  *   - SET ONCE: a second price for the same instance is a primary key violation;
- *   - THE CONSTRAINTS by name, each with everything else satisfied.
+ *   - THE CONSTRAINTS by name, each with everything else satisfied;
+ *   - STRATEGY 2026-11-06: nothing reaches anyone through PUBLIC on the
+ *     instance table or either money table (SR-52, SR-56), with a control that
+ *     grants to PUBLIC in a rolled-back transaction; the live census of
+ *     UPDATE writers of patient_pack_instances (no user trigger, no function
+ *     body, no referential action; the static half is
+ *     scripts/pack-instances-update-census.test.mjs); and the set-once
+ *     mechanism named, with controls that drop the primary key, and add an
+ *     UPDATE grant and policy, inside rolled-back transactions.
  *   Each refusal that could be the fixture's fault has a control showing the
  *   owning connection accepts the same row.
  *
@@ -37,7 +45,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Sql, TransactionSql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { asRole, claimsFor, connect, live } from "./rls-harness";
+import { asRole, claimsFor, connect, live, Rollback } from "./rls-harness";
 
 const PAYMENTS = "public.pack_instance_payments";
 const PRICES = "public.pack_instance_agreed_prices";
@@ -106,6 +114,29 @@ async function ownerTry(sql: Sql, fn: (tx: TransactionSql) => Promise<unknown>):
     return (e as { constraint_name?: string }).constraint_name ?? (e as { code?: string }).code ?? (e as Error).message;
   }
 }
+
+/**
+ * Run each DDL statement as the owning connection, then `set local role
+ * authenticated` with the claims, then fn; ALWAYS rolled back, so a control
+ * that removes or adds a mechanism never outlives its transaction.
+ */
+async function ddlThenAs<T>(sql: Sql, ddl: string[], claims: string, fn: (tx: TransactionSql) => Promise<T>): Promise<T> {
+  try {
+    await sql.begin(async (tx) => {
+      for (const stmt of ddl) await tx.unsafe(stmt);
+      await tx.unsafe("set local role authenticated");
+      await tx`select set_config('request.jwt.claims', ${claims}, true)`;
+      throw new Rollback(await fn(tx));
+    });
+    throw new Error("unreachable: transaction committed without rollback");
+  } catch (err) {
+    if (err instanceof Rollback) return err.value as T;
+    throw err;
+  }
+}
+
+/** An SQL UPDATE of patient_pack_instances, as a Postgres regular expression. */
+const UPDATES_INSTANCES = String.raw`update\s+(only\s+)?("?public"?\.)?"?patient_pack_instances\M`;
 
 d(`pack payments: shape, gates, policies, set once [${SIDE}]`, () => {
   let sql: Sql;
@@ -452,6 +483,160 @@ d(`pack payments: shape, gates, policies, set once [${SIDE}]`, () => {
   it("an instance with a price or money history cannot be deleted (NO ACTION), beside one without that can", async () => {
     expect(await ownerTry(sql, (tx) => tx`delete from patient_pack_instances where id = ${priced}`)).toMatch(/^pack_instance_(payments|agreed_prices)_pack_instance_id_fkey$/);
     expect(await ownerTry(sql, (tx) => tx`delete from patient_pack_instances where id = ${inst}`)).toBe("ok");
+  });
+
+  // ======================================================================
+  // STRATEGY, 2026-11-06: the census, PUBLIC, and the set-once mechanism.
+  // ======================================================================
+
+  it("PUBLIC (SR-52, SR-56): nothing reaches anyone through PUBLIC on patient_pack_instances or either money table; anon holds no UPDATE on any column; authenticated's UPDATE on instances is its own 0037 grant; no column UPDATE on the money tables", async () => {
+    const probe = async (q: Sql | TransactionSql, t: string) => {
+      const name = t.replace(/^public\./, "");
+      const [r] = await q<
+        {
+          public_table: number;
+          public_columns: number;
+          public_info_schema: number;
+          anon_table_update: boolean;
+          anon_any_column_update: boolean;
+          anon_each_column_update: boolean;
+          auth_any_column_update: boolean;
+          auth_update_granted_by_name: boolean;
+        }[]
+      >`
+        select
+          (select count(*)::int from pg_class c, aclexplode(c.relacl) a where c.oid = to_regclass(${t}) and a.grantee = 0) as public_table,
+          (select count(*)::int from pg_attribute att, aclexplode(att.attacl) a where att.attrelid = to_regclass(${t}) and a.grantee = 0) as public_columns,
+          ((select count(*) from information_schema.table_privileges where table_schema = 'public' and table_name = ${name} and grantee = 'PUBLIC')
+           + (select count(*) from information_schema.column_privileges where table_schema = 'public' and table_name = ${name} and grantee = 'PUBLIC'))::int as public_info_schema,
+          has_table_privilege('anon', to_regclass(${t}), 'UPDATE') as anon_table_update,
+          has_any_column_privilege('anon', to_regclass(${t}), 'UPDATE') as anon_any_column_update,
+          coalesce((select bool_or(has_column_privilege('anon', to_regclass(${t}), att.attname, 'UPDATE'))
+                      from pg_attribute att where att.attrelid = to_regclass(${t}) and att.attnum > 0 and not att.attisdropped), false) as anon_each_column_update,
+          has_any_column_privilege('authenticated', to_regclass(${t}), 'UPDATE') as auth_any_column_update,
+          exists (select 1 from pg_class c, aclexplode(c.relacl) a
+                   where c.oid = to_regclass(${t}) and a.privilege_type = 'UPDATE' and a.grantee = 'authenticated'::regrole) as auth_update_granted_by_name`;
+      return r!;
+    };
+    const none = {
+      public_table: 0,
+      public_columns: 0,
+      public_info_schema: 0,
+      anon_table_update: false,
+      anon_any_column_update: false,
+      anon_each_column_update: false,
+    };
+    // patient_pack_instances after 0115: as on main. authenticated's UPDATE is
+    // 0037's grant BY NAME, and nothing arrives through PUBLIC.
+    expect(await probe(sql, INSTANCES)).toEqual({ ...none, auth_any_column_update: true, auth_update_granted_by_name: true });
+    for (const t of [PAYMENTS, PRICES]) {
+      expect(await probe(sql, t), t).toEqual({ ...none, auth_any_column_update: false, auth_update_granted_by_name: false });
+    }
+    // CONTROL: the same probes, inside a rolled-back transaction that grants
+    // UPDATE to PUBLIC (the table on instances, one column on prices), read the
+    // grant from every angle, so the zeros above are measurements, not a probe
+    // that cannot see PUBLIC.
+    const seen = await sql
+      .begin(async (tx) => {
+        await tx.unsafe("grant update on public.patient_pack_instances to public");
+        await tx.unsafe("grant update (agreed_price_cents) on public.pack_instance_agreed_prices to public");
+        throw new Rollback({ inst: await probe(tx, INSTANCES), prices: await probe(tx, PRICES) });
+      })
+      .catch((e) => {
+        if (e instanceof Rollback) return e.value as { inst: Awaited<ReturnType<typeof probe>>; prices: Awaited<ReturnType<typeof probe>> };
+        throw e;
+      });
+    expect(seen.inst.public_table).toBeGreaterThan(0);
+    expect(seen.inst.public_info_schema).toBeGreaterThan(0);
+    expect(seen.inst.anon_table_update).toBe(true);
+    expect(seen.inst.anon_each_column_update).toBe(true);
+    expect(seen.prices.public_columns).toBeGreaterThan(0);
+    expect(seen.prices.public_info_schema).toBeGreaterThan(0);
+    expect(seen.prices.anon_any_column_update).toBe(true);
+    expect(seen.prices.auth_any_column_update).toBe(true);
+    // And the grants did not outlive the control.
+    expect(await probe(sql, INSTANCES)).toEqual({ ...none, auth_any_column_update: true, auth_update_granted_by_name: true });
+    expect((await probe(sql, PRICES)).public_columns).toBe(0);
+  });
+
+  it("the live census: patient_pack_instances has no user trigger, no function body UPDATEs it, no foreign key action rewrites it, and the one function naming it is 0108's read", async () => {
+    const triggers = await sql<{ name: string }[]>`
+      select tgname::text as name from pg_trigger where tgrelid = to_regclass(${INSTANCES}) and not tgisinternal`;
+    expect(triggers).toEqual([]);
+    const updaters = await sql<{ fn: string }[]>`
+      select p.oid::regprocedure::text as fn from pg_proc p where p.prosrc ~* ${UPDATES_INSTANCES}`;
+    expect(updaters).toEqual([]);
+    const namers = await sql<{ fn: string; definer: boolean }[]>`
+      select n.nspname || '.' || p.proname as fn, p.prosecdef as definer
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where p.prosrc ~* 'patient_pack_instances' order by 1`;
+    expect(namers).toEqual([{ fn: "public.pack_instance_consuming_sessions", definer: true }]);
+    // Its keys to other tables: no ON UPDATE action and no SET NULL / SET
+    // DEFAULT on delete, so no referential action UPDATEs an instance row.
+    const fks = await sql<{ name: string; upd: string; del: string }[]>`
+      select conname::text as name, confupdtype::text as upd, confdeltype::text as del
+        from pg_constraint where conrelid = to_regclass(${INSTANCES}) and contype = 'f' order by 1`;
+    expect(fks.length).toBe(3);
+    for (const fk of fks) {
+      expect(["a", "r"], fk.name).toContain(fk.upd);
+      expect(["a", "r", "c"], fk.name).toContain(fk.del);
+    }
+    // CONTROL: the pattern matches the statement shapes it must catch.
+    const [ctl] = await sql<{ a: boolean; b: boolean; c: boolean; clean: boolean }[]>`
+      select 'UPDATE public.patient_pack_instances SET legacy_consumed = 0' ~* ${UPDATES_INSTANCES} as a,
+             'update "patient_pack_instances" set x = 1' ~* ${UPDATES_INSTANCES} as b,
+             'update only public."patient_pack_instances" set x = 1' ~* ${UPDATES_INSTANCES} as c,
+             'update patient_pack_instances_archive set x = 1' ~* ${UPDATES_INSTANCES} as clean`;
+    expect(ctl).toEqual({ a: true, b: true, c: true, clean: false });
+  });
+
+  it("SET ONCE, the mechanism: the agreed price lives in pack_instance_agreed_prices, whose PRIMARY KEY refuses a second set as reception with tenant claims (23505); CONTROL: with that key dropped inside a rolled-back transaction, the same second set is accepted", async () => {
+    const claims = claimsFor(tenant, "reception", reception);
+    const row = (cents: number) => ({ pack_instance_id: inst, tenant_id: tenant, agreed_price_cents: cents, created_by: reception });
+    const twice = (ddl: string[]) =>
+      ddlThenAs(sql, ddl, claims, async (tx) => {
+        const first = await refusal(tx, (sp) => sp`insert into pack_instance_agreed_prices ${sp(row(45000))}`);
+        let second: string | null = null;
+        try {
+          await tx.savepoint((sp) => sp`insert into pack_instance_agreed_prices ${sp(row(1))}`);
+        } catch (e) {
+          second = `${(e as { code?: string }).code}:${(e as { constraint_name?: string }).constraint_name}`;
+        }
+        const rows = (
+          await tx<{ c: number }[]>`
+            select agreed_price_cents as c from pack_instance_agreed_prices where pack_instance_id = ${inst} order by agreed_price_cents`
+        ).map((r) => r.c);
+        return { first, second, rows };
+      });
+    expect(await twice([])).toEqual({ first: null, second: "23505:pack_instance_agreed_prices_pkey", rows: [45000] });
+    expect(await twice(["alter table public.pack_instance_agreed_prices drop constraint pack_instance_agreed_prices_pkey"])).toEqual({
+      first: null,
+      second: null,
+      rows: [1, 45000],
+    });
+    // The key did not outlive the control.
+    const [pk] = await sql<{ n: number }[]>`
+      select count(*)::int as n from pg_constraint where conname = 'pack_instance_agreed_prices_pkey' and contype = 'p'`;
+    expect(pk!.n).toBe(1);
+  });
+
+  it("SET ONCE against UPDATE: refused at the table gate (42501), and behind the gate there is no UPDATE policy; CONTROLS: a column grant alone changes no row, a grant plus an UPDATE policy changes the price", async () => {
+    const claims = claimsFor(tenant, "reception", reception);
+    const upd = (ddl: string[]) =>
+      ddlThenAs(sql, ddl, claims, async (tx) => ({
+        code: await refusal(tx, (sp) => sp`update pack_instance_agreed_prices set agreed_price_cents = 1 where pack_instance_id = ${priced}`),
+        price: (await tx<{ c: number }[]>`select agreed_price_cents as c from pack_instance_agreed_prices where pack_instance_id = ${priced}`)[0]?.c,
+      }));
+    const grant = "grant update (agreed_price_cents) on public.pack_instance_agreed_prices to authenticated";
+    expect(await upd([])).toEqual({ code: "42501", price: 40000 });
+    expect(await upd([grant])).toEqual({ code: null, price: 40000 });
+    expect(
+      await upd([grant, "create policy pp_ctl_update on public.pack_instance_agreed_prices for update to authenticated using (true) with check (true)"]),
+    ).toEqual({ code: null, price: 1 });
+    const [left] = await sql<{ grants: boolean; pols: number }[]>`
+      select has_any_column_privilege('authenticated', to_regclass(${PRICES}), 'UPDATE') as grants,
+             (select count(*)::int from pg_policies where tablename = 'pack_instance_agreed_prices' and cmd = 'UPDATE') as pols`;
+    expect(left).toEqual({ grants: false, pols: 0 });
   });
 
   it("the patient role is denied at the table gate on both tables", async () => {
