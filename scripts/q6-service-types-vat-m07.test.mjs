@@ -132,7 +132,8 @@ test("the sidecar pins the document, and the document says NOT READY, records it
   assert.match(doc, /\n## NOT REHEARSED\n\n- \*\*The blocks whole\.\*\*/);
   assert.match(doc, /\*\*The target guard's pass branch and the production path\*\*/);
   assert.match(doc, /\n### Independent rehearsal, Thu 2026-11-05, 14:13 to 14:18 WET, on `35d44346`: REHEARSED OK/);
-  assert.match(doc, /\*\*The delta after that head, THE PRE-CHECK's ids-file STOP moved above its clean-up, is NOT YET REHEARSED\*\*/);
+  assert.match(doc, /\n### Delta rehearsal, Thu 2026-11-05, 17:22 to 17:24 WET, on `be72f8cb`: REHEARSED OK for the delta\n/);
+  assert.match(doc, /\*\*The delta after that head, THE PRE-CHECK's ids-file STOP moved above its clean-up, was REHEARSED OK at `be72f8cb` on Thu 2026-11-05\*\*/);
   for (const f of [DOC, READ, PRE, WRITE, POST, UNDO, SELF]) {
     assert.ok(!read(f).includes(String.fromCharCode(0x2014)), `${f} carries an em dash`);
   }
@@ -1425,7 +1426,10 @@ const FIX = {
 const withFirstLine = (line) => [line, ...doc.split("\n").slice(1)].join("\n");
 
 function makeBase({ firstLine = "READY: the harness's copy" } = {}) {
-  const base = mkdtempSync(join(tmpdir(), "q6-vat-harness-"));
+  // The "fault-" prefix keeps the harness's own directory from reading as a
+  // "/tmp/q6-" record path when the temp dir is /tmp (the Linux runner), as
+  // the sibling harnesses do ("fault-r36w-", "fault-0110-").
+  const base = mkdtempSync(join(tmpdir(), "fault-q6-vat-harness-"));
   for (const dir of ["bin", "fix", "apply/docs", "apply/scripts/data", "runs"]) mkdirSync(join(base, dir), { recursive: true });
   const real = Object.fromEntries([...STUBBED.filter((n) => !FAKED.has(n)), "cat"].map((n) => [n, realPath(n)]));
   for (const n of STUBBED) {
@@ -1453,11 +1457,13 @@ function localize(name, run, base, { docsha, envFile, fill = true, held = TIP, r
       .replace(/^LISTSHA='PENDING[^\n]*$/m, `LISTSHA='${listsha}'`)
       .replace(/^DISAGREEOK='PENDING[^\n]*$/m, `DISAGREEOK='${disagreeok}'`);
   }
-  b = b.replaceAll(PROD_APPLY, join(base, "apply"))
+  // The "/tmp/q6-" records move first, so no harness path put in by a later
+  // substitution can be rewritten again, whatever the temp dir is.
+  b = b.replaceAll("/tmp/q6-", join(run, "tmp", "q6-"))
+    .replaceAll(PROD_APPLY, join(base, "apply"))
     .replaceAll(PROD_ENV, envFile ?? join(base, "fake-prod.env"))
     .replaceAll(REC_DIR, join(run, "rec"))
-    .replaceAll(HAND_DIR, join(run, "hand"))
-    .replaceAll("/tmp/q6-", join(run, "tmp", "q6-"));
+    .replaceAll(HAND_DIR, join(run, "hand"));
   const rest = b.replaceAll(join(run, "tmp", "q6-"), "").replaceAll(join(run, "rec"), "").replaceAll(join(run, "hand"), "").replaceAll(join(base, "apply"), "")
     .replaceAll(envFile ?? join(base, "fake-prod.env"), "");
   for (const bad of ["/tmp/q6", "osteojp-secrets", "osteojp-prod-apply", "osteojp-handover", "/Users/ivan"]) {
