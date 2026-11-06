@@ -4,7 +4,7 @@ NOT READY: R4 two rounds PASS (2026-11-05); rehearsed 2026-11-05 by another sess
 
 **Status: AUTHORED 2026-11-05 BY A BUILD SESSION ON STRATEGY'S RULING B6. REVIEWED (R4, two rounds, PASS). REHEARSED 2026-11-05 BY A SESSION THAT DID NOT WRITE IT (see "Rehearsal"). NOT RUN.** Nothing in this document may be pasted until the first line reads READY. WEEKLY, BEFORE YOU START carries `PENDING` in the six lines GREEN's dispatch fills, and STOPs at its first check while it does.
 
-**In plain words.** On Wednesday 2026-11-04 the fallback re-arm (`docs/data-op-r36-fallback-rearm-20261104.md`, "the R36 document" below) gave a fresh reminder job to every qualifying appointment starting within the next 28 days, and its second pass on Thursday 2026-11-05 reached the visits Wednesday skipped. That covers visits up to about Wednesday 2026-12-02. If the reminder sweep is still in shadow (sending nothing) on Friday 2026-11-13, this document runs the same re-arm once more that night, reaching 28 days from its read, so up to about Friday 2026-12-11. It sends nothing for a visit an earlier sitting already re-armed at the start it still has: this operation's marker holds those, and the program skips them. It writes nothing to the database. It sends one scheduling event per appointment it re-arms, behind the same refusal that stops it if the sweep is sending.
+**In plain words.** On Wednesday 2026-11-04 the fallback re-arm (`docs/data-op-r36-fallback-rearm-20261104.md`, "the R36 document" below) gave a fresh reminder job to every qualifying appointment starting within the next 28 days, and its second pass on Thursday 2026-11-05 reached the visits Wednesday skipped. That covers visits up to about Wednesday 2026-12-02. If the reminder sweep is still in shadow (sending nothing) on Friday 2026-11-13, this document runs the same re-arm once more that night, reaching 28 days from its read, so up to about Friday 2026-12-11. If it is still in shadow on Friday 2026-11-20, the second ruled night (strategy, 2026-11-06), it runs once more, up to about Friday 2026-12-18. It sends nothing for a visit an earlier sitting already re-armed at the start it still has: this operation's marker holds those, and the program skips them. It writes nothing to the database. It sends one scheduling event per appointment it re-arms, behind the same refusal that stops it if the sweep is sending.
 
 **It runs ONLY if the sweep stays in shadow.** If Friday 11-13 becomes the night the sweep is switched to sending (strategy's B8), no weekly sitting runs, that night or after.
 
@@ -15,7 +15,7 @@ NOT READY: R4 two rounds PASS (2026-11-05); rehearsed 2026-11-05 by another sess
 | Tests | `scripts/r36-weekly-fallback.test.mjs`: this document's blocks statically, under fault injection in bash and zsh against the program's real output, its scenarios, its pins, its nights and dates, and the program's settled-marker refusals at a week's distance. The program's own tests are unchanged (`scripts/r36-fallback-rearm-emit.test.mjs`) |
 | Who runs it | GREEN, an apply-only session, on the owner's dispatch naming `packages/db/scripts/r36-fallback-rearm-emit.mjs`, in a closed window with the owner at the keyboard. The session that wrote this never runs it |
 | Run from | The HELD head of THIS document's pull request, fetched as `refs/pull/1726/head` (`PR=1726` in WEEKLY, BEFORE YOU START; the later blocks run on the head it recorded) and compared to HELD, in `/Users/ivan/Projects/GitHub/osteojp-prod-apply`. That ref survives the branch being deleted. The pull request carries the label `held-for-apply` until the last weekly sitting's report, so that `main` is never merged into it (see "What must happen before READY"). It does not read `origin/data/R36-fallback-rearm-20261104` (#1690) |
-| When | Only a night strategy has ruled for a weekly sitting, listed in every block as `NIGHTS`. **Today: `20261113` only (Friday 2026-11-13).** From 21:00 Lisbon that day until 06:29 Lisbon the next morning |
+| When | Only a night strategy has ruled for a weekly sitting, listed in every block as `NIGHTS`. **Today: `20261113` (Friday 2026-11-13) and `20261120` (Friday 2026-11-20, ruled 2026-11-06).** From 21:00 Lisbon that day until 06:29 Lisbon the next morning |
 | Scope | `--max-days-ahead 28`: appointments starting more than 24 hours and no more than 28 days after each read, that this operation's marker does not hold as sent at their present start |
 | What it sends | One `appointment/scheduled` event per eligible appointment, `confirmationEligible: false`, with NO event id of its own |
 | What it writes to Postgres | Nothing. Every read is a READ ONLY transaction |
@@ -37,7 +37,7 @@ B8 is the dispatch's summary of the ruling, not a quotation of it. Q-R36-F1, as 
 
 > "Q-R36-F1 = YES, conditional. Only if still in shadow after a fallback: a fallback sitting every Wednesday from 11-11, the last by Wed 11-25, then strategy re-rules."
 
-B6 moved the first weekly night from Wednesday 11-11 (a migration night: Mon 11-09 to Thu 11-12 are migration nights, `CAL-migration-sittings-2026-11-08-to-2026-11-18`) to Friday 11-13. Wednesday 11-18 is the `0113` migration night and is never a weekly night. The last weekly sitting is by Wednesday 11-25, then strategy re-rules. **Every night after 11-13 is added to `NIGHTS` only on strategy's ruling, by a change to this document** (a new sha256, an R4 round on the changed bytes, a new READY line, a new HELD); see "Questions for strategy".
+B6 moved the first weekly night from Wednesday 11-11 (a migration night: Mon 11-09 to Thu 11-12 are migration nights, `CAL-migration-sittings-2026-11-08-to-2026-11-18`) to Friday 11-13. Wednesday 11-18 is the `0113` migration night and is never a weekly night. The last weekly sitting is by Wednesday 11-25, then strategy re-rules. **Every night after 11-13 is added to `NIGHTS` only on strategy's ruling, by a change to this document** (a new sha256, an R4 round on the changed bytes, a new READY line, a new HELD); see "Questions for strategy". On 2026-11-06 strategy ruled "add Fri 11-20 only" (Q-R36W-1), so `NIGHTS` lists 11-13 and 11-20.
 
 ## What it re-arms, and why
 
@@ -80,7 +80,7 @@ The cost of keeping the program: its refusal sentences under `--second-pass` say
 
 ## The nights: which, and the window on a Friday
 
-`NIGHTS='20261113'` in every block. WEEKLY, BEFORE YOU START refuses a RUNDAY that is not in it, and every later block refuses a recorded night that is not in it. 2026-11-13 is a Friday.
+`NIGHTS='20261113|20261120'` in every block. WEEKLY, BEFORE YOU START refuses a RUNDAY that is not in it, and every later block refuses a recorded night that is not in it (`grep -qxE`: `-x` holds each alternative to the whole line). 2026-11-13 and 2026-11-20 are Fridays.
 
 **The window on a Friday night: Friday 21:00 to Saturday 06:29, Lisbon,** the same window as every R36 block. It ends before Saturday's opening:
 
@@ -139,7 +139,7 @@ RUNDAY='PENDING: the Lisbon date of the night the dispatch names, one of NIGHTS,
 STALEPATH='PENDING: no, or yes only on the ruling of Q-R36-F6'
 LASTOK='PENDING: yes only when GREEN reported the last sitting ended clean, as the dispatch names it'
 PRIORK='PENDING: the count of appointments sent that the last closing line printed'
-NIGHTS='20261113'
+NIGHTS='20261113|20261120'
 PR=1726
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
 SHAWRAP=1795c035a45d7a318b2966eda3991423ee0d2c27c5bc1a78d1e811404459f454
@@ -292,7 +292,7 @@ Pasted only after the owner's looks of step 1, in the sitting.
 ```
 (
 set -o pipefail
-NIGHTS='20261113'
+NIGHTS='20261113|20261120'
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
 SHAWRAP=1795c035a45d7a318b2966eda3991423ee0d2c27c5bc1a78d1e811404459f454
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
@@ -405,7 +405,7 @@ Pasted only after the owner's word that G2 passed. Then again after each run tha
 ```
 (
 set -o pipefail
-NIGHTS='20261113'
+NIGHTS='20261113|20261120'
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
 SHAWRAP=1795c035a45d7a318b2966eda3991423ee0d2c27c5bc1a78d1e811404459f454
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
@@ -503,7 +503,7 @@ echo "WEEKLY REST: this run ended clean. The marker now holds ${TOTAL} appointme
 ```
 (
 set -o pipefail
-NIGHTS='20261113'
+NIGHTS='20261113|20261120'
 FIXSHA=20a6d73151468d36c080bcfd6cfad528d3a69d2d
 SHAWRAP=1795c035a45d7a318b2966eda3991423ee0d2c27c5bc1a78d1e811404459f454
 SHAEMIT=8f4242d0aefe003acfa2dbc3330e4bf0b7471aa38123763fa9411fc379656e7f
@@ -592,7 +592,7 @@ GREEN pastes WEEKLY, BEFORE YOU START only from a dispatch of its own, for one n
 
 | Field | What SOLO fills |
 |---|---|
-| `RUNDAY` | the Lisbon date of the night, YYYYMMDD, one of `NIGHTS` (today only `20261113`) |
+| `RUNDAY` | the Lisbon date of the night, YYYYMMDD, one of `NIGHTS` (today `20261113` or `20261120`) |
 | `HELD` | the full sha of this pull request's head at the READY line, the commit `refs/pull/<PR>/head` must read |
 | `DOCSHA` | this document's sha256 at that head (the sidecar's value) |
 | `STALEPATH` | `no` while the heartbeats are fresh; `yes` only on the ruling of Q-R36-F6, the owner's two confirmations that night, and an open incident card for why the sweep stopped |
@@ -620,7 +620,7 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 
 ## Rehearsal
 
-**REHEARSED by a session that did not write this, on BLUE (a local throwaway, Postgres at production's migration position, through `0108`), on Thursday 2026-11-05, 13:15 to 14:05 WET,** at this pull request's head `3173a15c` with this document at sha256 `6a8f4897...0d27`. Verdict: rehearsed OK within the substitutions below; no defect found in the blocks. **Since `3173a15c` only prose has changed: the four blocks are byte-identical to the blocks rehearsed** (compared fence by fence). The blocks ran in GREEN's shape (`cd && eval`) under `zsh -f` (the NOT READY stop also under `bash --noprofile --norc`), every command under a clean environment; the stack was stopped at the end. The unit tests at that head (`scripts/r36-weekly-fallback.test.mjs` and `scripts/r36-fallback-rearm-emit.test.mjs`, `DATABASE_URL` blank): 45 of 45. The lead's rule held throughout: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
+**REHEARSED by a session that did not write this, on BLUE (a local throwaway, Postgres at production's migration position, through `0108`), on Thursday 2026-11-05, 13:15 to 14:05 WET,** at this pull request's head `3173a15c` with this document at sha256 `6a8f4897...0d27`. Verdict: rehearsed OK within the substitutions below; no defect found in the blocks. **Since `3173a15c` only prose has changed, and one token in each block: the four blocks are byte-identical to the blocks rehearsed except their `NIGHTS` line**, which reads `NIGHTS='20261113|20261120'` since strategy's ruling of 2026-11-06 (it read `NIGHTS='20261113'` in the rehearsal; compared fence by fence). That one-token delta is NOT REHEARSED on the throwaway; `scripts/r36-weekly-fallback.test.mjs` runs the blocks with it, a 11-20 night passing and a 11-27 night refused. The blocks ran in GREEN's shape (`cd && eval`) under `zsh -f` (the NOT READY stop also under `bash --noprofile --norc`), every command under a clean environment; the stack was stopped at the end. The unit tests at that head (`scripts/r36-weekly-fallback.test.mjs` and `scripts/r36-fallback-rearm-emit.test.mjs`, `DATABASE_URL` blank): 45 of 45. The lead's rule held throughout: "A script's own REFUSE or STOP line is a halt, the same as a harness refusal. Never edit an env file, a URL, a flag, a label or a script to get past a guard. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so."
 
 **The substitutions, and nothing else**, as applied:
 - (a) the throwaway's connection string inline on each program call;
@@ -655,7 +655,7 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 | an empty marker (a fresh sink) | WEEKLY, BEFORE YOU START | the program's `--second-pass: ... holds no sending run`, then the block's STOP |
 | a row of unknown outcome | WEEKLY, BEFORE YOU START | the program's `... 1 row(s) of unknown outcome` |
 | a lock | WEEKLY, BEFORE YOU START | the program's `... lock is present` (the lock kept) |
-| RUNDAY `20261120` | WEEKLY, BEFORE YOU START | `RUNDAY 20261120 is not a weekly night strategy has ruled (this document lists 20261113) ...` |
+| RUNDAY `20261120` (at `3173a15c`, before 11-20 was ruled) | WEEKLY, BEFORE YOU START | `RUNDAY 20261120 is not a weekly night strategy has ruled (this document lists 20261113) ...` |
 | `main` moved after the first block | THE WEEKLY CANARY | `main moved during the sitting ...`, before its dry run |
 | `main` moved after the canary | THE WEEKLY REST | `main moved during the sitting ...`, before its dry run |
 | the canary pasted twice | THE WEEKLY CANARY | `the weekly canary already ran in this sitting ...` |
@@ -675,12 +675,13 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 - the real scheduler: the sends to Inngest, G2, the step 7 look, and the Inngest settings look;
 - the marker and lock in `~/.osteojp-r36-fallback-rearm` (sink runs keep them beside the sink file), and a marker genuinely a week old (the first `readAt` was aged 26 hours);
 - `OUT OF TIME`, a killed run, a failed send, and a row that changes between its read and its send;
-- `STALEPATH=yes` through a weekly sitting.
+- `STALEPATH=yes` through a weekly sitting;
+- the `NIGHTS` line as it reads since 2026-11-06 (`20261113|20261120`), and a sitting on the night of 11-20.
 
 ## What must happen before READY, in this order, and none of it by GREEN
 
 1. **The R4 round:** DONE, two rounds, PASS (2026-11-05): round 1 on `38345ed2` (no MAJOR; six fixes in `fefb1591`), round 2 on `fefb1591` (no MINOR; two prose NITs fixed in `3173a15c`).
-2. **The rehearsal:** DONE, 2026-11-05 at `3173a15c`, by a session that did not write this (see "Rehearsal"), with what stayed NOT REHEARSED. A later change to any block needs its own rehearsal of the delta.
+2. **The rehearsal:** DONE, 2026-11-05 at `3173a15c`, by a session that did not write this (see "Rehearsal"), with what stayed NOT REHEARSED. A later change to any block needs its own rehearsal of the delta. The `NIGHTS` change of 2026-11-06 (one token per block, adding `20261120`) is such a change; it is not rehearsed, and its narrow R4 round on the changed bytes (R8) is still to run.
 3. **No GATE-CHANGE is needed to land the new test file:** it is under `scripts/**/*.test.mjs`, a gate glob, and the freeze allows an ADDED gate file (`scripts/assert-gates-unchanged.mjs`). It becomes frozen at the next GATE-CHANGE that regenerates the manifest.
 4. **SOLO's READY line**: the first line changes and the sidecar `docs/data-op-r36-weekly-fallback.sha256` is regenerated in the same commit. The test accepts either first line.
 5. **The pull request kept held, unarmed and unmerged, with the label `held-for-apply` REQUIRED, on from before the READY line until the last weekly sitting's GREEN report.** Without the label the auto-update workflow merges `main` into this branch, the head moves, and `refs/pull/1726/head` stops matching HELD: WEEKLY, BEFORE YOU START stops, and the READY line, DOCSHA and HELD would all have to be redone. This authoring session changes no label; SOLO puts it on, and nobody takes it off before that report.
@@ -689,7 +690,8 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 ## Questions for strategy
 
 **Q-R36W-1. Which nights after Friday 11-13.**
-- blocked_what: every weekly sitting after 11-13. `NIGHTS` lists `20261113` only, and a block refuses any other RUNDAY.
+- answered: Fri 11-20 added, ruled 2026-11-06; strategy rules on 11-27 after the 11-20 report. Strategy's words: "add Fri 11-20 only". `NIGHTS` now reads `20261113|20261120` in the four blocks.
+- blocked_what: as asked, before the answer: every weekly sitting after 11-13. `NIGHTS` listed `20261113` only, and a block refused any other RUNDAY.
 - options: (a) none: the switch happens by then, or Q-R36-F1's re-rule ends the weekly sittings; (b) one more night by Wednesday 11-25, the last Q-R36-F1 allows: Thursday 11-19 or Friday 11-20 (Wednesday 11-18 is the `0113` night); (c) both 11-20 and 11-25.
 - recommendation: (b), Friday 11-20, if the sweep is still in shadow on 11-18. A sitting on 11-20 reaches visits up to Friday 12-18, which carries every reminder to the night of Wednesday 12-16, past the re-rule Q-R36-F1 asks for after 11-25. Each night is added by a one-token change to `NIGHTS` in the four blocks, one narrow R4 round (R8), a new READY line and a new HELD.
 
@@ -698,4 +700,5 @@ None is needed and none exists. It writes nothing to Postgres. An event cannot b
 ## Authoring record
 
 - Authored on branch `data/R36-weekly-fallback-20261113`, stacked on #1690's held head `415bd0e9`, as pull request #1726, the number in WEEKLY, BEFORE YOU START. This pull request's own diff is this document, its sidecar and `scripts/r36-weekly-fallback.test.mjs`. No program, no other test and no document of #1690 changed.
+- 2026-11-06, on strategy's answer to Q-R36W-1: `20261120` added to `NIGHTS` in the four blocks (one token each, nothing else in the blocks changed), this document's prose where it lists the ruled nights, the test's nights, and the sidecar. The first line is unchanged.
 - `scripts/r36-weekly-fallback.test.mjs`, run with `node --test` and `DATABASE_URL` blank, no database and no Docker. Its counts are in the pull request's description.

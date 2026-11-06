@@ -8,7 +8,8 @@
 //   * EVERY HALT IS EXPLICIT: every command a later step relies on carries its own STOP;
 //   * every pin is the real file's sha256 on this tree, and the program is the one the R36
 //     document pins (unchanged);
-//   * NIGHTS is the same in every block, today 20261113 only, every night a Monday to Friday, and
+//   * NIGHTS is the same in every block, today 20261113 and 20261120 (ruled 2026-11-06), every
+//     night a Monday to Friday, a 11-20 night passing every block and a 11-27 night refused, and
 //     the window of a Friday night ends before Saturday's opening by the weekday table;
 //   * the program runs with exactly the reviewed arguments: --max-days-ahead 28 everywhere,
 //     --max 5 or 200, --second-pass only in the first block, --confirm only under caffeinate;
@@ -50,7 +51,7 @@ const EMIT = "packages/db/scripts/inc-1007-rearm-reminders-emit.mjs";
 const GUARD = "scripts/assert-production-target.mjs";
 const PTM = "scripts/production-target.mjs";
 const FIXSHA = "20a6d73151468d36c080bcfd6cfad528d3a69d2d";
-const RULED_NIGHTS = ["20261113"];
+const RULED_NIGHTS = ["20261113", "20261120"];
 const doc = read(DOC);
 const withFirstLine = (line) => doc.replace(/^[^\n]*\n/, `${line}\n`);
 
@@ -131,7 +132,9 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /^THE HALT RULE\. /m);
   assert.match(doc, /\*\*Nobody presses Replay or Rerun on any event or run in the Inngest dashboard/);
   assert.match(doc, /^\*\*REHEARSED by a session that did not write this, on BLUE /m);
-  assert.match(doc, /\*\*Since `3173a15c` only prose has changed: the four blocks are byte-identical to the blocks rehearsed\*\*/);
+  assert.match(doc, /\*\*Since `3173a15c` only prose has changed, and one token in each block: the four blocks are byte-identical to the blocks rehearsed except their `NIGHTS` line\*\*/);
+  assert.ok(doc.includes("That one-token delta is NOT REHEARSED on the throwaway"));
+  assert.ok(doc.includes("- answered: Fri 11-20 added, ruled 2026-11-06; strategy rules on 11-27 after the 11-20 report."));
   assert.match(doc, /^\*\*NOT REHEARSED, said one by one:\*\*$/m);
   assert.ok(doc.includes("**Its pass branch is NOT REHEARSED.**"));
   assert.match(doc, /A script's own REFUSE or STOP line is a halt, the same as a harness refusal\. Never edit an env file, a URL, a flag, a label or a script to get past a guard\. A block that cannot run on the throwaway is recorded as NOT REHEARSED and the document says so\./);
@@ -280,7 +283,7 @@ const ISO_DOW = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
 /** The weekday table of every block, the awk of WEEKLY, BEFORE YOU START, as a function. */
 const closedByTable = (dow, hhmm) => dow === 7 || (dow >= 1 && dow <= 5 && (hhmm < 800 || hhmm >= 2100)) || (dow === 6 && (hhmm < 800 || hhmm >= 1300));
 
-test("NIGHTS is the same in every block, today 20261113 only, a Friday, and every ruled night is a Monday to Friday", () => {
+test("NIGHTS is the same in every block, today 20261113 and 20261120, both Fridays, and every ruled night is a Monday to Friday", () => {
   const lists = blocksOf(doc).map((b) => (/^NIGHTS='([0-9|]+)'$/m.exec(b) ?? [null, null])[1]);
   assert.deepEqual(lists, Array(4).fill(RULED_NIGHTS.join("|")));
   for (const n of RULED_NIGHTS) {
@@ -291,9 +294,12 @@ test("NIGHTS is the same in every block, today 20261113 only, a Friday, and ever
     assert.ok(!["20261109", "20261110", "20261111", "20261112", "20261118"].includes(n), n);
   }
   assert.equal(ISO_DOW[lisbonParts(Date.parse("2026-11-13T12:00:00Z")).weekday], 5);
-  assert.ok(doc.includes("`NIGHTS='20261113'` in every block") && doc.includes("**Today: `20261113` only (Friday 2026-11-13).**"));
+  assert.equal(ISO_DOW[lisbonParts(Date.parse("2026-11-20T12:00:00Z")).weekday], 5);
+  assert.equal(ISO_DOW[lisbonParts(Date.parse("2026-11-27T12:00:00Z")).weekday], 5);
+  assert.ok(doc.includes("`NIGHTS='20261113|20261120'` in every block") && doc.includes("**Today: `20261113` (Friday 2026-11-13) and `20261120` (Friday 2026-11-20, ruled 2026-11-06).**"));
+  assert.ok(doc.includes("one of `NIGHTS` (today `20261113` or `20261120`)"));
   // The block's own test of RUNDAY against NIGHTS: a ruled night passes, any other fails, in grep's -x.
-  for (const [day, ok] of [["20261113", true], ["20261120", false], ["2026111", false], ["202611130", false]]) {
+  for (const [day, ok] of [["20261113", true], ["20261120", true], ["20261127", false], ["20261106", false], ["2026111", false], ["202611130", false], ["2026112", false], ["202611200", false], ["2026111320261120", false]]) {
     const r = spawnSync("/bin/sh", ["-c", `echo "${day}" | grep -qxE '${RULED_NIGHTS.join("|")}'`]);
     assert.equal(r.status === 0, ok, day);
   }
@@ -1054,7 +1060,7 @@ test("the positive controls: the program's calls carry exactly the arguments the
 /** Scenarios: each must STOP with its sentence, without its last line; a few end clean on another path. */
 const SCENARIOS = [
   { name: "wbys", tag: "unfilled", raw: true, stop: /^STOP: HELD is not a filled-in sha, so this block is NOT READY/m },
-  { name: "wbys", tag: "runday-not-ruled", runday: "20261120", stop: /^STOP: RUNDAY 20261120 is not a weekly night strategy has ruled \(this document lists 20261113\)/m },
+  { name: "wbys", tag: "runday-not-ruled", runday: "20261127", scenario: { stamp: "202611272130", next: "20261128" }, stop: /^STOP: RUNDAY 20261127 is not a weekly night strategy has ruled \(this document lists 20261113\|20261120\)/m },
   { name: "wbys", tag: "runday-migration-night", runday: "20261112", scenario: { rdow: "4" }, stop: /^STOP: RUNDAY 20261112 is not a weekly night strategy has ruled/m },
   { name: "wbys", tag: "lastok-no", lastok: "no", stop: /^STOP: LASTOK is not yes/m },
   { name: "wbys", tag: "priork-unfilled", priork: "x", stop: /^STOP: PRIORK is still PENDING, or is not a whole number above 0/m },
@@ -1084,6 +1090,9 @@ const SCENARIOS = [
   { name: "wcanary", tag: "no-head", setup: (tmp) => putRecord(tmp, "r36w-night.ok", NIGHT_REC, 5), stop: /^STOP: WEEKLY, BEFORE YOU START recorded no head/m },
   { name: "wcanary", tag: "head-moved", setup: (tmp) => { SETUPS.wcanary(tmp); putRecord(tmp, "r36w-head.sha", `${FAKE_SHA.OTHER}\n`, 5); }, stop: /^STOP: the apply worktree is not on the head WEEKLY, BEFORE YOU START recorded/m },
   { name: "wcanary", tag: "night-not-ruled", setup: (tmp) => { SETUPS.wcanary(tmp); putRecord(tmp, "r36w-night.ok", "20261106 20261107\n", 5); }, stop: /^STOP: the recorded night 20261106 is not a weekly night strategy has ruled/m },
+  { name: "wcanary", tag: "night-1127-not-ruled", scenario: { stamp: "202611272130", dow: "5" }, setup: (tmp) => { SETUPS.wcanary(tmp); putRecord(tmp, "r36w-night.ok", "20261127 20261128\n", 5); }, stop: /^STOP: the recorded night 20261127 is not a weekly night strategy has ruled \(this document lists 20261113\|20261120\)/m },
+  { name: "wrest", tag: "night-1127-not-ruled", scenario: { stamp: "202611272130", dow: "5" }, setup: (tmp) => { SETUPS.wrest(tmp); putRecord(tmp, "r36w-night.ok", "20261127 20261128\n", 30); }, stop: /^STOP: the recorded night 20261127 is not a weekly night strategy has ruled/m },
+  { name: "wclosing", tag: "night-1127-not-ruled", scenario: { stamp: "202611272130", dow: "5" }, setup: (tmp) => { SETUPS.wclosing(tmp); putRecord(tmp, "r36w-night.ok", "20261127 20261128\n", 60); }, stop: /^STOP: the recorded night 20261127 is not a weekly night strategy has ruled/m },
   { name: "wcanary", tag: "outside-window", scenario: { stamp: "202611140700", dow: "6" }, stop: /^STOP: Lisbon 202611140700 is outside the night WEEKLY, BEFORE YOU START recorded/m },
   { name: "wcanary", tag: "no-priork", setup: (tmp) => { SETUPS.wcanary(tmp); rmSync(join(tmp, "r36w-priork.ok")); }, stop: /^STOP: WEEKLY, BEFORE YOU START recorded no PRIORK in this sitting/m },
   { name: "wcanary", tag: "marker-changed", scenario: { swapKind: "wCanaryDry", swapFile: "wCanaryChanged.out" }, stop: /^STOP: this operation's marker holds 16 sent appointments, not the 15 WEEKLY, BEFORE YOU START found/m },
@@ -1160,6 +1169,38 @@ test("the window edges of a Friday night: 21:00 Friday and 06:29 Saturday pass W
         assert.equal(r.code, 0, `${shell} ${stamp}\n${r.out.slice(-1500)}`);
         assert.ok(r.out.includes(SUCCESS.wbys), `${shell} ${stamp}`);
       }
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("the second ruled night: a Friday 11-20 run window passes all four blocks, and 11-13 still passes, in every shell here", async () => {
+  const base = mkdtempSync(join(tmpdir(), "fault-r36w-1120-"));
+  try {
+    const docSha = await prepareHarness(base, readyDoc());
+    const NIGHT_1120 = "20261120 20261121\n";
+    const ages = { wcanary: 5, wrest: 30, wclosing: 60 };
+    for (const shell of shellsHere()) {
+      for (const [stamp, dow] of [["202611202100", "5"], ["202611202130", "5"], ["202611210629", "6"]]) {
+        const sc = { stamp, dow, next: "20261121" };
+        const w = await runOnce(harnessConfig("wbys", shell, base, docSha, { tag: `1120-${stamp}`, runday: "20261120", scenario: sc }), `${shell}-1120-wbys-${stamp}`, null);
+        assert.equal(w.code, 0, `${shell} wbys ${stamp}\n${w.out.slice(-1500)}`);
+        assert.ok(w.out.includes(SUCCESS.wbys), `${shell} wbys ${stamp}`);
+        assert.match(w.out, /^the night: {5}RUNDAY 20261120, weekday 5, a ruled weekly night; the window runs from 20261120 21:00 to 20261121 06:29, Lisbon;.* inside: yes$/m);
+        assert.equal(w.recordText["r36w-night.ok"], NIGHT_1120, `${shell} wbys ${stamp}: the night recorded`);
+        for (const name of ["wcanary", "wrest", "wclosing"]) {
+          const setup = (tmp) => { SETUPS[name](tmp); putRecord(tmp, "r36w-night.ok", NIGHT_1120, ages[name]); };
+          const r = await runOnce(harnessConfig(name, shell, base, docSha, { tag: `1120-${stamp}`, setup, scenario: sc }), `${shell}-1120-${name}-${stamp}`, null);
+          assert.equal(r.code, 0, `${shell} ${name} ${stamp}\n${r.out.slice(-1500)}`);
+          assert.ok(r.out.includes(SUCCESS[name]), `${shell} ${name} ${stamp}`);
+          assert.match(r.out, /the night recorded: 20261120 21:00 to 20261121 06:29; inside: yes$/m, `${shell} ${name} ${stamp}`);
+        }
+      }
+      // 11-13 still passes, by the default scenario (Friday 11-13 21:30).
+      const w13 = await runOnce(harnessConfig("wbys", shell, base, docSha, { tag: "1113" }), `${shell}-1113-wbys`, null);
+      assert.equal(w13.code, 0, `${shell} wbys 1113\n${w13.out.slice(-1500)}`);
+      assert.equal(w13.recordText["r36w-night.ok"], NIGHT_REC);
     }
   } finally {
     rmSync(base, { recursive: true, force: true });
