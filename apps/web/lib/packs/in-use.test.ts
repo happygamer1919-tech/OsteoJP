@@ -13,6 +13,7 @@ import {
   isPackInUse,
   lastPackUse,
   matchesPatientSearch,
+  packSessionLabels,
   packsSortHref,
   parsePacksInUseSort,
   sortPacksInUse,
@@ -438,5 +439,135 @@ describe("buildPatientPacks (PACK-FICHA-01): one patient's pacotes for the ficha
   it("the patient cap is a positive integer", () => {
     expect(Number.isInteger(PATIENT_PACKS_READ_CAP)).toBe(true);
     expect(PATIENT_PACKS_READ_CAP).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * PACK-LABEL-01: "<pacote>: Sessão N de M" on the patient's Marcações tab.
+ *
+ * The input is what the read hands over: each instance's CONSUMING sessions
+ * (0108's function: linked, not cancelled). A cancelled visit is therefore
+ * never in `sessions`; these cases build the views exactly that way, through
+ * the same `summarizePackInstance` the page uses.
+ */
+describe("packSessionLabels: the Sessão N de M numbering", () => {
+  const at = (iso: string) => new Date(iso);
+  const s = (appointmentId: string, iso: string): PackSession => ({ appointmentId, startsAt: at(iso) });
+
+  it("numbers the consuming visits by start time, earliest = 1, M = the instance total", () => {
+    const v = summarizePackInstance(
+      row({ packName: "Osteopatia 5", sessionsTotal: 5 }),
+      // Handed over out of order on purpose: the order is the start time.
+      [s("c", "2026-10-15T09:00:00Z"), s("a", "2026-10-01T09:00:00Z"), s("b", "2026-10-08T09:00:00Z")],
+      NOW,
+    );
+    expect(packSessionLabels([v])).toEqual({
+      a: { packName: "Osteopatia 5", sessionNumber: 1, sessionsTotal: 5 },
+      b: { packName: "Osteopatia 5", sessionNumber: 2, sessionsTotal: 5 },
+      c: { packName: "Osteopatia 5", sessionNumber: 3, sessionsTotal: 5 },
+    });
+  });
+
+  it("onlyIds keeps the labels of listed visits only, and does not renumber them", () => {
+    const v = summarizePackInstance(
+      row({ packName: "Osteopatia 5", sessionsTotal: 5, legacyConsumed: 1 }),
+      [s("a", "2026-10-01T09:00:00Z"), s("b", "2026-10-08T09:00:00Z"), s("c", "2026-10-15T09:00:00Z")],
+      NOW,
+    );
+    // "b" is a visit the caller's list does not show: no label, no id sent on.
+    expect(packSessionLabels([v], new Set(["a", "c", "not-a-session"]))).toEqual({
+      a: { packName: "Osteopatia 5", sessionNumber: 2, sessionsTotal: 5 },
+      c: { packName: "Osteopatia 5", sessionNumber: 4, sessionsTotal: 5 },
+    });
+    expect(packSessionLabels([v], new Set())).toEqual({});
+  });
+
+  it("a cancelled visit leaves no gap: it takes no number and the next visit closes up", () => {
+    // Four visits were booked; the second ("x-cancelled") was cancelled, so it
+    // is not a consuming session and the read never returns it.
+    const v = summarizePackInstance(
+      row({ sessionsTotal: 10 }),
+      [s("v1", "2026-10-01T09:00:00Z"), s("v3", "2026-10-15T09:00:00Z"), s("v4", "2026-10-22T09:00:00Z")],
+      NOW,
+    );
+    const labels = packSessionLabels([v]);
+    expect(labels["v1"]!.sessionNumber).toBe(1);
+    expect(labels["v3"]!.sessionNumber).toBe(2);
+    expect(labels["v4"]!.sessionNumber).toBe(3);
+    expect(labels["x-cancelled"]).toBeUndefined();
+    expect(Object.keys(labels)).toHaveLength(3);
+  });
+
+  it("two instances on one patient are numbered independently, each with its own name and total", () => {
+    const first = summarizePackInstance(
+      row({ instanceId: "i1", patientId: "p", packName: "Fisioterapia 10", sessionsTotal: 10 }),
+      [s("f1", "2026-09-01T09:00:00Z"), s("f2", "2026-09-08T09:00:00Z")],
+      NOW,
+    );
+    const second = summarizePackInstance(
+      row({ instanceId: "i2", patientId: "p", packName: "Osteopatia 5", sessionsTotal: 5 }),
+      // Interleaved in time with the first pacote: still its own count.
+      [s("o1", "2026-09-05T09:00:00Z"), s("o2", "2026-10-01T09:00:00Z")],
+      NOW,
+    );
+    const labels = packSessionLabels([first, second]);
+    expect(labels).toEqual({
+      f1: { packName: "Fisioterapia 10", sessionNumber: 1, sessionsTotal: 10 },
+      f2: { packName: "Fisioterapia 10", sessionNumber: 2, sessionsTotal: 10 },
+      o1: { packName: "Osteopatia 5", sessionNumber: 1, sessionsTotal: 5 },
+      o2: { packName: "Osteopatia 5", sessionNumber: 2, sessionsTotal: 5 },
+    });
+  });
+
+  it("an appointment with no pacote gets no label", () => {
+    const v = summarizePackInstance(row(), [s("in-pack", "2026-10-01T09:00:00Z")], NOW);
+    const labels = packSessionLabels([v]);
+    expect(labels["no-pack"]).toBeUndefined();
+    expect(packSessionLabels([])).toEqual({});
+  });
+
+  it("sessions spent before linking (legacy_consumed) come first, as Packs em uso numbers them", () => {
+    const v = summarizePackInstance(
+      row({ sessionsTotal: 10, legacyConsumed: 3 }),
+      [s("first-linked", "2026-10-01T09:00:00Z"), s("second-linked", "2026-10-08T09:00:00Z")],
+      NOW,
+    );
+    const labels = packSessionLabels([v]);
+    expect(labels["first-linked"]!.sessionNumber).toBe(4);
+    expect(labels["second-linked"]!.sessionNumber).toBe(5);
+  });
+
+  it("future visits are numbered too, and a start-time tie is broken by the appointment id", () => {
+    const v = summarizePackInstance(
+      row(),
+      [s("tie-b", "2026-12-01T09:00:00Z"), s("tie-a", "2026-12-01T09:00:00Z"), s("past", "2026-10-01T09:00:00Z")],
+      NOW,
+    );
+    const labels = packSessionLabels([v]);
+    expect(labels["past"]!.sessionNumber).toBe(1);
+    expect(labels["tie-a"]!.sessionNumber).toBe(2);
+    expect(labels["tie-b"]!.sessionNumber).toBe(3);
+  });
+
+  it("does not trust the input order: a view whose sessions arrive unsorted is numbered by start time", () => {
+    const labels = packSessionLabels([
+      {
+        packName: "Osteopatia 5",
+        sessionsTotal: 5,
+        legacyConsumed: 0,
+        sessions: [s("late", "2026-10-20T09:00:00Z"), s("early", "2026-10-01T09:00:00Z")],
+      },
+    ]);
+    expect(labels["early"]!.sessionNumber).toBe(1);
+    expect(labels["late"]!.sessionNumber).toBe(2);
+  });
+
+  it("an overdrawn pacote reads past its total, not clamped", () => {
+    const v = summarizePackInstance(
+      row({ sessionsTotal: 2 }),
+      [s("a", "2026-10-01T09:00:00Z"), s("b", "2026-10-02T09:00:00Z"), s("c", "2026-10-03T09:00:00Z")],
+      NOW,
+    );
+    expect(packSessionLabels([v])["c"]).toEqual({ packName: "Fisioterapia 10", sessionNumber: 3, sessionsTotal: 2 });
   });
 });

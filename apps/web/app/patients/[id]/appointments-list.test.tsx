@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { getStrings } from "@osteojp/i18n";
 import type { AgendaAppointment } from "@/lib/scheduling/types";
 import type { TherapistChangeStaff } from "@/lib/scheduling/therapist-change";
 
@@ -370,5 +371,78 @@ describe("AppointmentsList - Marcar novamente follows the server's create rule (
 
   it("with no edit panel data the list cannot know the viewer, and shows it as before", () => {
     expect(offered(render(rowOf(COLLEAGUE), { editDrawer: null }))).toBe(true);
+  });
+});
+
+/**
+ * PACK-LABEL-01: "<pacote>: Sessão N de M" under a row that used a pacote
+ * session. The labels are built on the server (`packSessionLabels`, pinned in
+ * lib/packs/in-use.test.ts); this pins only how the list draws them.
+ */
+describe("AppointmentsList: the pacote session line (PACK-LABEL-01)", () => {
+  const A = "00000000-0000-0000-0000-00000000aa01";
+  const B = "00000000-0000-0000-0000-00000000aa02";
+  const C = "00000000-0000-0000-0000-00000000aa03";
+  const LINE = 'data-testid="marcacao-pack-session"';
+
+  const renderMany = (
+    appts: AgendaAppointment[],
+    packSessions?: Record<string, { packName: string; sessionNumber: number; sessionsTotal: number }>,
+  ): string =>
+    renderToStaticMarkup(
+      createElement(AppointmentsList, {
+        appointments: appts,
+        canEdit: false,
+        canCancel: false,
+        editDrawer: null,
+        packSessions,
+      }),
+    );
+
+  const rowHtml = (html: string, id: string): string => {
+    const start = html.indexOf(`data-appointment-id="${id}"`);
+    expect(start, id).toBeGreaterThan(-1);
+    const next = html.indexOf('data-testid="consulta-row"', start);
+    return html.slice(start, next === -1 ? undefined : next);
+  };
+
+  it("draws the line in bold, in pt-PT, under the row it belongs to and no other", () => {
+    const html = renderMany(
+      [
+        { ...base, id: A, status: "completed" },
+        { ...base, id: B, status: "cancelled" },
+        { ...base, id: C, status: "scheduled" },
+      ],
+      {
+        [A]: { packName: "Osteopatia 5", sessionNumber: 1, sessionsTotal: 5 },
+        [C]: { packName: "Osteopatia 5", sessionNumber: 2, sessionsTotal: 5 },
+      },
+    );
+    expect(count(html, LINE)).toBe(2);
+    expect(rowHtml(html, A)).toContain("Osteopatia 5: Sessão 1 de 5");
+    expect(rowHtml(html, C)).toContain("Osteopatia 5: Sessão 2 de 5");
+    // The cancelled visit has no label, so it shows no line.
+    expect(rowHtml(html, B)).not.toContain(LINE);
+    // Bold, on the existing text token; no new colour.
+    expect(html).toMatch(
+      /<span data-testid="marcacao-pack-session" class="text-sm font-semibold text-text-primary">Osteopatia 5: Sessão 1 de 5<\/span>/,
+    );
+  });
+
+  it("no labels handed over: no row shows a line (the list as before)", () => {
+    expect(count(renderMany([{ ...base, id: A }]), LINE)).toBe(0);
+    expect(count(renderMany([{ ...base, id: A }], {}), LINE)).toBe(0);
+  });
+
+  it("a pacote name containing a placeholder is printed as typed", () => {
+    const html = renderMany([{ ...base, id: A }], {
+      [A]: { packName: "Pack {n} {total}", sessionNumber: 3, sessionsTotal: 10 },
+    });
+    expect(html).toContain("Pack {n} {total}: Sessão 3 de 10");
+  });
+
+  it("the pt-PT and en strings carry the three placeholders", () => {
+    expect(getStrings("pt")["packs.sessionLine"]).toBe("{pack}: Sessão {n} de {total}");
+    expect(getStrings("en")["packs.sessionLine"]).toBe("{pack}: Session {n} of {total}");
   });
 });

@@ -96,15 +96,17 @@ export function lastPackUse(sessions: readonly PackSession[], now: Date): Date |
   return last;
 }
 
+/** A pacote's sessions in time order, the appointment id breaking a tie. */
+export function comparePackSessions(a: PackSession, b: PackSession): number {
+  return a.startsAt.getTime() - b.startsAt.getTime() || a.appointmentId.localeCompare(b.appointmentId);
+}
+
 export function summarizePackInstance(
   row: PackInstanceRow,
   sessions: readonly PackSession[],
   now: Date,
 ): PackInUseView {
-  const ordered = [...sessions].sort(
-    (a, b) =>
-      a.startsAt.getTime() - b.startsAt.getTime() || a.appointmentId.localeCompare(b.appointmentId),
-  );
+  const ordered = [...sessions].sort(comparePackSessions);
   const inputs = {
     sessionsTotal: row.sessionsTotal,
     legacyConsumed: row.legacyConsumed,
@@ -323,6 +325,65 @@ export function buildPatientPacks(
     running: views.filter(isPackInUse),
     finished: views.filter((v) => !isPackInUse(v)),
   };
+}
+
+/**
+ * PACK-LABEL-01: "<pacote>: Sessão N de M" under a visit on the patient's
+ * Marcações tab (Fisiozero parity, board card UI-pack-sessions-per-visit).
+ *
+ * BUILT FROM THE SAME VIEWS AS THE PACKS TAB, so no rule is restated here:
+ *
+ * - WHICH VISITS GET A LINE: the instance's consuming sessions, exactly as
+ *   0108's `pack_instance_consuming_sessions` returned them (linked to the
+ *   instance, status not cancelled: PACK_CONSUMING_STATUS_SQL). A cancelled
+ *   visit is not among them, so it gets no line and takes no number; a visit
+ *   with no pacote is in no instance and gets no line either.
+ * - THE ORDER: `summarizePackInstance`'s, by start time, the appointment id
+ *   breaking a tie. Earliest first.
+ * - N: the visit's place in that order, counted AFTER the sessions spent
+ *   before appointments were linked (legacy_consumed, 0067), the same
+ *   numbering "Packs em uso" prints (`<ol start={legacyConsumed + 1}>`) and
+ *   the one 0108's header names for "Sessão N de M". So the two screens never
+ *   give one visit two numbers. With legacy_consumed 0, which every pacote
+ *   sold since 0067 has, the earliest consuming visit is Sessão 1.
+ * - M: the instance's sessions_total.
+ *
+ * An overdrawn pacote (more consuming visits than sessions) honestly reads
+ * past its total, "Sessão 11 de 10", as RESERVADAS does; it is not clamped.
+ */
+export type PackSessionLabel = {
+  packName: string;
+  sessionNumber: number;
+  sessionsTotal: number;
+};
+
+export function packSessionLabels(
+  views: readonly Pick<PackInUseView, "packName" | "sessionsTotal" | "legacyConsumed" | "sessions">[],
+  /**
+   * When given, only these appointments get a label. The numbering still
+   * counts every consuming visit, so N does not change; the filter only keeps
+   * the ids of visits the caller's list does not show out of what it sends on
+   * (R4 MINOR 1 on PR #1743: a therapist's narrowed list must not carry a
+   * colleague's appointment ids to the browser).
+   */
+  onlyIds?: ReadonlySet<string>,
+): Record<string, PackSessionLabel> {
+  const out: Record<string, PackSessionLabel> = {};
+  for (const v of views) {
+    const ordered = [...v.sessions].sort(comparePackSessions);
+    ordered.forEach((x, i) => {
+      if (onlyIds && !onlyIds.has(x.appointmentId)) return;
+      // One appointment links to at most one instance (a single FK column),
+      // so a second entry cannot occur; the first one stands if it ever did.
+      if (Object.prototype.hasOwnProperty.call(out, x.appointmentId)) return;
+      out[x.appointmentId] = {
+        packName: v.packName,
+        sessionNumber: v.legacyConsumed + i + 1,
+        sessionsTotal: v.sessionsTotal,
+      };
+    });
+  }
+  return out;
 }
 
 /** "450" for whole euros, "237,50" otherwise. No currency sign: the caller adds "€". */

@@ -55,6 +55,8 @@ import {
   type ClinicWindowRefusal,
 } from "@/lib/scheduling/clinic-hours-message";
 import { formatCreatedAt, formatTimeOfDay } from "@/lib/scheduling/time";
+// Type only: in-use.ts reaches @osteojp/db, which never enters a client bundle.
+import type { PackSessionLabel } from "@/lib/packs/in-use";
 import type {
   AgendaAppointment,
   AgendaOptions,
@@ -83,6 +85,16 @@ const STATUS_KEY: Record<AppointmentStatusValue, StringKey> = {
 };
 
 const dateFmt = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+/**
+ * PACK-LABEL-01: "<pacote>: Sessão N de M". One pass over the template, so a
+ * pacote name that happens to contain "{n}" is printed as typed.
+ */
+export function packSessionLineText(label: PackSessionLabel): string {
+  return s["packs.sessionLine"].replace(/\{(pack|n|total)\}/g, (_m, k: string) =>
+    k === "pack" ? label.packName : k === "n" ? String(label.sessionNumber) : String(label.sessionsTotal),
+  );
+}
 
 // SCHED-15: `isEligibleForScheduleAgain` and the ScheduleAgain form both moved
 // to app/agenda/schedule-again-drawer.tsx so the agenda drawer shares them. The
@@ -118,6 +130,7 @@ export function AppointmentsList({
   filtered = false,
   therapistStaff = null,
   editDrawer = null,
+  packSessions = {},
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -148,6 +161,12 @@ export function AppointmentsList({
    * Reagendar on this list.
    */
   editDrawer?: FichaEditDrawer | null;
+  /**
+   * PACK-LABEL-01: appointment id -> its pacote session, built on the server
+   * by `packSessionLabels` (lib/packs/in-use.ts). A row whose id is absent
+   * (no pacote, or a cancelled visit, which consumes nothing) shows no line.
+   */
+  packSessions?: Readonly<Record<string, PackSessionLabel>>;
 }) {
   return (
     <ToastProvider regionLabel={s["toast.regionLabel"]}>
@@ -159,6 +178,7 @@ export function AppointmentsList({
         filtered={filtered}
         therapistStaff={therapistStaff}
         editDrawer={editDrawer}
+        packSessions={packSessions}
       />
     </ToastProvider>
   );
@@ -177,6 +197,7 @@ function AppointmentsListInner({
   filtered,
   therapistStaff,
   editDrawer,
+  packSessions,
 }: {
   appointments: AgendaAppointment[];
   canEdit: boolean;
@@ -185,6 +206,7 @@ function AppointmentsListInner({
   filtered: boolean;
   therapistStaff: TherapistChangeStaff | null;
   editDrawer: FichaEditDrawer | null;
+  packSessions: Readonly<Record<string, PackSessionLabel>>;
 }) {
   const router = useRouter();
   const [action, setAction] = useState<RowAction | null>(null);
@@ -218,6 +240,7 @@ function AppointmentsListInner({
           canCancel={canCancel}
           canCancelRow={canCancel || ownCancelIds.includes(a.id)}
           therapistStaff={therapistStaff}
+          packSession={Object.prototype.hasOwnProperty.call(packSessions, a.id) ? packSessions[a.id]! : null}
           // U6: no "Marcar novamente" where the server would answer
           // `forbidden`: a therapist on a colleague's visit (R52), or on one
           // whose Terapeuta 2 is a person (SCHED-29). The viewer and the tenant's
@@ -301,6 +324,7 @@ function AppointmentRow({
   canCancel,
   canCancelRow,
   therapistStaff,
+  packSession,
   scheduleAgainHidden,
   onOpenNotes,
   onScheduleAgain,
@@ -315,6 +339,8 @@ function AppointmentRow({
   /** SCHED-30: this viewer may cancel THIS row and bring it back. */
   canCancelRow: boolean;
   therapistStaff: TherapistChangeStaff | null;
+  /** PACK-LABEL-01: the pacote session this visit uses, or null. */
+  packSession: PackSessionLabel | null;
   /** U6: the server would refuse this viewer's "Marcar novamente" on this row. */
   scheduleAgainHidden: boolean;
   onOpenNotes: () => void;
@@ -369,6 +395,13 @@ function AppointmentRow({
             {a.practitionerName}
             {a.serviceName ? ` · ${a.serviceName}` : ""}
           </span>
+          {/* PACK-LABEL-01: the pacote session this visit used, bold, as on
+              Fisiozero. Only a consuming visit has one (see packSessionLabels). */}
+          {packSession && (
+            <span data-testid="marcacao-pack-session" className="text-sm font-semibold text-text-primary">
+              {packSessionLineText(packSession)}
+            </span>
+          )}
           {/* PL-02 (b): provenance line - who created the marcação and when.
               Reuses the already-fetched createdByName/createdAt and the SAME
               i18n + formatter as the agenda hover card (24h Lisbon). A null

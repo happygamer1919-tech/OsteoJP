@@ -20,6 +20,12 @@
  *     pacotes, running and finished, never another patient's, and nothing
  *     for a viewer who cannot read that patient. Added 2026-11-05, written
  *     and not run by its author either (no Docker); CI's DB-gated job runs it.
+ *  6. PACK-LABEL-01, "Sessão N de M" on the Marcações tab: the labels built
+ *     from that same read (`packSessionLabels`) number every consuming visit of
+ *     a pacote by start time, a colleague's included, skip a cancelled visit
+ *     and a visit with no pacote, and give a viewer who cannot read the patient
+ *     nothing. Added 2026-11-06 and RUN by its author: the whole file, on a
+ *     local throwaway stack, 23 of 23 passed.
  *
  * Fixture built, never borrowed (the CI database has no catalogue), and every
  * id is run-scoped. Timestamps go into raw SQL as ISO strings cast to
@@ -39,6 +45,7 @@ d("Packs em uso: what each role reads", () => {
   let db: ReturnType<typeof import("@osteojp/db").getDbAdmin>;
   let listPacksInUse: typeof import("./in-use-read").listPacksInUse;
   let listPatientPacks: typeof import("./in-use-read").listPatientPacks;
+  let packSessionLabels: typeof import("./in-use").packSessionLabels;
 
   const tenant = randomUUID();
   const otherTenant = randomUUID();
@@ -75,6 +82,11 @@ d("Packs em uso: what each role reads", () => {
   let brunoPack = "";
   let gonePack = "";
   let strangerPack = "";
+  // PACK-LABEL-01: the visits whose labels are asserted, by role in the fixture.
+  const visit = {} as Record<
+    "anaPast" | "anaFutureB" | "anaCancelled" | "anaNoPack" | "spent1" | "spent2" | "ahead1" | "ahead2",
+    string
+  >;
 
   const now = Date.now();
   const at = (days: number) => new Date(now + days * 86_400_000);
@@ -89,6 +101,7 @@ d("Packs em uso: what each role reads", () => {
     const schema = await import("@osteojp/db");
     db = schema.getDbAdmin();
     ({ listPacksInUse, listPatientPacks } = await import("./in-use-read"));
+    ({ packSessionLabels } = await import("./in-use"));
     const { sql } = await import("drizzle-orm");
 
     await db.execute(
@@ -170,37 +183,42 @@ d("Packs em uso: what each role reads", () => {
     // tell the two apart; it proves the row is not listed.
     strangerPack = await open(stranger, pack10);
 
-    const appt = (
+    const appt = async (
       patient: string,
       practitioner: string,
       location: string,
       days: number,
       status: string,
       inst: string | null,
-    ) => {
+    ): Promise<string> => {
+      const id = randomUUID();
       const start = at(days);
       const end = new Date(start.getTime() + 45 * 60_000);
-      return db.execute(
+      await db.execute(
         sql`insert into public.appointments
               (id, tenant_id, patient_id, practitioner_id, location_id, service_id,
                starts_at, ends_at, status, pack_instance_id, created_by)
-            values (${randomUUID()}, ${tenant}, ${patient}, ${practitioner}, ${location}, ${service},
+            values (${id}, ${tenant}, ${patient}, ${practitioner}, ${location}, ${service},
                     ${start.toISOString()}::timestamptz, ${end.toISOString()}::timestamptz,
                     ${status}, ${inst}, ${owner})`,
       );
+      return id;
     };
     // Ana's 10-pack at LV: one past visit with A, one future visit with B (A's
     // colleague), and one CANCELLED visit, which must not count.
-    await appt(ana, therapistA, lv, -3, "completed", anaPack);
-    await appt(ana, therapistB, lv, 7, "scheduled", anaPack);
-    await appt(ana, therapistA, lv, 9, "cancelled", anaPack);
+    visit.anaPast = await appt(ana, therapistA, lv, -3, "completed", anaPack);
+    visit.anaFutureB = await appt(ana, therapistB, lv, 7, "scheduled", anaPack);
+    visit.anaCancelled = await appt(ana, therapistA, lv, 9, "cancelled", anaPack);
+    // PACK-LABEL-01: a visit of Ana's with no pacote at all. Linked to nothing,
+    // so no count above moves.
+    visit.anaNoPack = await appt(ana, therapistA, lv, -1, "completed", null);
     // Ana's spent 2-pack: both sessions used, both in the past. NOT in use.
-    await appt(ana, therapistA, lv, -20, "completed", anaSpent);
-    await appt(ana, therapistA, lv, -13, "no_show", anaSpent);
+    visit.spent1 = await appt(ana, therapistA, lv, -20, "completed", anaSpent);
+    visit.spent2 = await appt(ana, therapistA, lv, -13, "no_show", anaSpent);
     // Ana's other 2-pack: one past, one still ahead. No free session, but in
     // use until the second visit has passed.
-    await appt(ana, therapistA, lv, -6, "completed", anaAhead);
-    await appt(ana, therapistA, lv, 11, "scheduled", anaAhead);
+    visit.ahead1 = await appt(ana, therapistA, lv, -6, "completed", anaAhead);
+    visit.ahead2 = await appt(ana, therapistA, lv, 11, "scheduled", anaAhead);
     // Bruno: B only, at Castelo Branco.
     await appt(bruno, therapistB, cb, 2, "scheduled", brunoPack);
     // The deleted patient has a visit too, so only the delete keeps it off.
@@ -376,5 +394,36 @@ d("Packs em uso: what each role reads", () => {
     expect(page.truncated).toBe(true);
     // Opened anaPack, anaSpent, anaAhead: the two newest are anaAhead and anaSpent.
     expect(ids(page)).toEqual({ running: [anaAhead], finished: [anaSpent] });
+  });
+
+  // ---------------------------------------------------------------------
+  // PACK-LABEL-01: "Sessão N de M", built from the ficha's read.
+  // ---------------------------------------------------------------------
+  const labelsFor = async (a: ReturnType<typeof actor>, patient: string) => {
+    const page = await listPatientPacks(a, patient);
+    return packSessionLabels([...page.running, ...page.finished]);
+  };
+
+  it("labels, owner on Ana: every consuming visit numbered per pacote; cancelled and pacote-less visits get none", async () => {
+    const labels = await labelsFor(actor("owner", owner), ana);
+    expect(labels[visit.anaPast]).toEqual({ packName: "Fisioterapia 10", sessionNumber: 1, sessionsTotal: 10 });
+    expect(labels[visit.anaFutureB]).toEqual({ packName: "Fisioterapia 10", sessionNumber: 2, sessionsTotal: 10 });
+    expect(labels[visit.spent1]).toEqual({ packName: "Fisioterapia 2", sessionNumber: 1, sessionsTotal: 2 });
+    expect(labels[visit.spent2]).toEqual({ packName: "Fisioterapia 2", sessionNumber: 2, sessionsTotal: 2 });
+    expect(labels[visit.ahead1]).toEqual({ packName: "Osteopatia 2", sessionNumber: 1, sessionsTotal: 2 });
+    expect(labels[visit.ahead2]).toEqual({ packName: "Osteopatia 2", sessionNumber: 2, sessionsTotal: 2 });
+    expect(labels[visit.anaCancelled]).toBeUndefined();
+    expect(labels[visit.anaNoPack]).toBeUndefined();
+    expect(Object.keys(labels)).toHaveLength(6);
+  });
+
+  it("labels, therapist A on Ana: the same numbers, B's visit included (the number is the pacote's)", async () => {
+    const asA = await labelsFor(actor("therapist", therapistA), ana);
+    expect(asA).toEqual(await labelsFor(actor("owner", owner), ana));
+    expect(asA[visit.anaFutureB]!.sessionNumber).toBe(2);
+  });
+
+  it("labels: a viewer who cannot read the patient gets none (reception CB on Ana)", async () => {
+    expect(await labelsFor(actor("reception", receptionCb), ana)).toEqual({});
   });
 });
