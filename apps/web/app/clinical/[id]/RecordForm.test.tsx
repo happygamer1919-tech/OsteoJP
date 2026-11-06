@@ -341,6 +341,55 @@ describe("Old-record proof (rule #5) — a v3-bound record still renders its ORI
   });
 });
 
+/** Top-level section anchors (id="section-<key>") in DOM order. */
+const sectionOrder = (html: string): string[] =>
+  [...html.matchAll(/id="section-([a-z_]+)"/g)].map((m) => m[1]!);
+
+describe("FICHA-ORDER-01: a v6 ficha renders the previous system's section order; a v5 record keeps v5's", () => {
+  const v5 = loadTpl("osteopathy-v5.json");
+  const v6 = loadTpl("osteopathy-v6.json");
+  const schemaV5 = parseTemplateSchema(jsonbShape(v5.schema))!;
+  const schemaV6 = parseTemplateSchema(jsonbShape(v6.schema))!;
+
+  it("renders the v6 sections top to bottom in the ruled order (episode_date has no input)", () => {
+    const html = render({}, false, schemaV6);
+    expect(sectionOrder(html)).toEqual([
+      "weight_kg", "height_cm", "red_flags", "health_problems",
+      "consultation_reason", "relief_aggravation", "clinical_history",
+      "systems_review", "bodychart", "mobilidade", "mobilidade_observacoes",
+      "special_tests", "diagnostico", "tratamento", "treatment_plan",
+      "treatment_objectives", "observations",
+    ]);
+    expect(html).not.toContain('id="section-episode_date"');
+  });
+
+  it("keeps Peso + Altura in their thin card at the top of v6", () => {
+    const html = render({}, false, schemaV6);
+    const card = html.indexOf('data-testid="ficha-peso-altura-card"');
+    expect(card).toBeGreaterThan(-1);
+    expect(card).toBeLessThan(html.indexOf('id="section-weight_kg"'));
+    expect(html.indexOf('id="section-height_cm"')).toBeLessThan(html.indexOf('id="section-red_flags"'));
+  });
+
+  it("puts the red-flag prompt right under Alertas on v6", () => {
+    const html = render({ red_flags: "x" }, false, schemaV6);
+    const prompt = html.indexOf('data-testid="red-flag-consultation-prompt"');
+    expect(prompt).toBeGreaterThan(html.indexOf('id="section-red_flags"'));
+    expect(prompt).toBeLessThan(html.indexOf('id="section-health_problems"'));
+  });
+
+  it("a record pinned to v5 still renders v5's order (rule #5)", () => {
+    const html = render({}, false, schemaV5);
+    expect(sectionOrder(html)).toEqual([
+      "weight_kg", "height_cm", "consultation_reason", "bodychart",
+      "relief_aggravation", "observations", "mobilidade", "special_tests",
+      "mobilidade_observacoes", "systems_review", "health_problems",
+      "clinical_history", "diagnostico", "treatment_objectives", "treatment_plan",
+      "tratamento", "red_flags",
+    ]);
+  });
+});
+
 describe("Timestamp (SPEC 4 + W5-19 ruling B) — no episode_date input, no manual created-date picker", () => {
   it("renders NO date input and no 'Data do Episódio' label (episode_date is auto-stamped)", () => {
     const html = render();

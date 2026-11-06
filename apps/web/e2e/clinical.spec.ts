@@ -39,7 +39,7 @@ test.describe("authoring (therapist)", () => {
     await expect(picker.getByRole("option", { name: TEMPLATE_RETIRED_LABEL })).toHaveCount(0);
   });
 
-  test("W12-22: new ficha renders the v5 order (R12), Peso/Altura thin card, Alertas alone (no CID row), no Marcação respectiva / Testes Neurológicos", async ({
+  test("FICHA-ORDER-01: new ficha renders the v6 order (previous system's sections), Peso/Altura thin card, Alertas alone (no CID row), no Marcação respectiva / Testes Neurológicos", async ({
     page,
   }) => {
     await page.goto("/clinical/new");
@@ -64,33 +64,41 @@ test.describe("authoring (therapist)", () => {
     await expect(form.getByText("Marcação respectiva", { exact: false })).toHaveCount(0);
     await expect(form.getByText("Testes Neurológicos", { exact: false })).toHaveCount(0);
 
-    // W12-22 / W12-30 left-nav order: the section rail lists sections in the exact
-    // v5 order. anchor ids = section-<key>; episode_date is hidden (ruling B),
-    // cid_codes is gone. W12-30 (owner ruling 2026-07-25): bodychart is hoisted to
-    // sit right AFTER consultation_reason (was appended last).
+    // FICHA-ORDER-01 left-nav order: the section rail lists sections in the exact
+    // v6 order, the previous system's. anchor ids = section-<key>; episode_date is
+    // hidden (ruling B), cid_codes is gone. Plano de Tratamento and Objectivos do
+    // Tratamento (OsteoJP-only) sit right after Tratamento.
+    const expectedSections = [
+      "#section-weight_kg",
+      "#section-height_cm",
+      "#section-red_flags",
+      "#section-health_problems",
+      "#section-consultation_reason",
+      "#section-relief_aggravation",
+      "#section-clinical_history",
+      "#section-systems_review",
+      "#section-bodychart",
+      "#section-mobilidade",
+      "#section-mobilidade_observacoes",
+      "#section-special_tests",
+      "#section-diagnostico",
+      "#section-tratamento",
+      "#section-treatment_plan",
+      "#section-treatment_objectives",
+      "#section-observations",
+    ];
     const railLinks = page.getByRole("navigation", { name: "Registos Clínicos" }).locator("a");
     const hrefs = await railLinks.evaluateAll((els) =>
       els.map((e) => (e as HTMLAnchorElement).getAttribute("href")),
     );
-    expect(hrefs).toEqual([
-      "#section-weight_kg",
-      "#section-height_cm",
-      "#section-consultation_reason",
-      "#section-bodychart",
-      "#section-relief_aggravation",
-      "#section-observations",
-      "#section-mobilidade",
-      "#section-special_tests",
-      "#section-mobilidade_observacoes",
-      "#section-systems_review",
-      "#section-health_problems",
-      "#section-clinical_history",
-      "#section-diagnostico",
-      "#section-treatment_objectives",
-      "#section-treatment_plan",
-      "#section-tratamento",
-      "#section-red_flags",
-    ]);
+    expect(hrefs).toEqual(expectedSections);
+
+    // The form body follows the same order top to bottom (the rail and the body
+    // both read topLevelFields, but this pins what the clinician scrolls through).
+    const bodyIds = await form
+      .locator('[id^="section-"]')
+      .evaluateAll((els) => els.map((e) => `#${e.id}`));
+    expect(bodyIds).toEqual(expectedSections);
   });
 
   test("create a record from the current form, then sign/lock and version it", async ({ page }) => {

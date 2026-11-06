@@ -327,4 +327,42 @@ describe("topLevelFields — x-order drives render sequence, NOT jsonb property 
     // 18 fields = v4's 19 minus cid_codes (no field invented or lost).
     expect(schema.order).toHaveLength(18);
   });
+
+  it("FICHA-ORDER-01: the osteopathy-v6 seed carries the previous system's section order and differs from v5 only in version, x-order and version_note", () => {
+    const dir = path.join(__dirname, "../../../../packages/db/seed/form-templates");
+    type Seed = { version: number; schema: Record<string, unknown>; _meta: Record<string, unknown> };
+    const v5 = JSON.parse(readFileSync(path.join(dir, "osteopathy-v5.json"), "utf8")) as Seed;
+    const v6 = JSON.parse(readFileSync(path.join(dir, "osteopathy-v6.json"), "utf8")) as Seed;
+    expect(v6.version).toBe(6);
+    const schema = parseTemplateSchema(v6.schema)!;
+    // episode_date leads x-order but has no input (ruling B, HIDDEN_FIELD_KEYS);
+    // treatment_plan and treatment_objectives (OsteoJP-only) follow tratamento.
+    const V6 = [
+      "episode_date", "weight_kg", "height_cm", "red_flags", "health_problems",
+      "consultation_reason", "relief_aggravation", "clinical_history",
+      "systems_review", "bodychart", "mobilidade", "mobilidade_observacoes",
+      "special_tests", "diagnostico", "tratamento", "treatment_plan",
+      "treatment_objectives", "observations",
+    ];
+    expect(schema.order).toEqual(V6);
+    // Same 18 keys as v5: no field invented or lost, every property placed once.
+    expect([...schema.order!].sort()).toEqual([...(parseTemplateSchema(v5.schema)!.order ?? [])].sort());
+    expect(Object.keys(schema.properties).sort()).toEqual([...V6].sort());
+    // Order holds when jsonb length-sorts the property keys.
+    const lengthSorted = Object.fromEntries(
+      Object.entries(schema.properties).sort(([a], [b]) => a.length - b.length || a.localeCompare(b)),
+    );
+    const jsonbShaped = parseTemplateSchema({ ...v6.schema, properties: lengthSorted })!;
+    expect(topLevelFields(jsonbShaped).map(([k]) => k)).toEqual(V6);
+    // Everything else is byte-for-byte v5: field definitions, labels, required,
+    // ai_extractable flags, title, description, the other _meta entries.
+    const strip = (t: Seed) => {
+      const c = structuredClone(t) as Seed;
+      delete (c as Partial<Seed>).version;
+      delete c.schema["x-order"];
+      delete c._meta["version_note"];
+      return c;
+    };
+    expect(strip(v6)).toEqual(strip(v5));
+  });
 });
