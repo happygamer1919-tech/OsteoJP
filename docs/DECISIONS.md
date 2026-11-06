@@ -5698,3 +5698,24 @@ Strategy ruled on 2026-11-05. Accepted as reported: the fallback result of 11-04
   - Q6-B: internal-only types are included.
   - Q6-C: the audit action is `service.vat_default_q6`.
   - Q6-D: the accountant confirms type by type. The operation takes a per-type list (exempt with a code, or a stated rate), not one value for all.
+
+## 2026-11-05 - One chain night for 0109 to 0112 (strategy, on the owner's instruction)
+
+The owner asked for "as many migrations per night as possible". Strategy re-ruled U1, R38 and B3 for 0109 to 0112 only; everything else stands.
+
+- C1. The chain night is Sun 11-08, 14:00 Sun to 06:29 Mon Lisbon (the clinic is closed all day). Four separate GREEN sittings in file order, 0109, 0110, 0111, 0112, each a fresh session with its own pre-check, READY line and the owner's freeze lines. Each starts only after SOLO has read the previous GREEN report and printed "NEXT OK" with the journal number it expects. One migration in flight at a time.
+- C2. Any STOP, REFUSE, FAIL or harness refusal ends the chain for the night. The rest move to Mon 11-09 from 21:00 Lisbon, then the next closed night. No new sitting starts after 02:00 Lisbon.
+- C3. Promotions are stacked before Sun 12:00 Lisbon (0110 on 0109, 0111 on 0110, 0112 on 0111), each byte-identical to its rehearsed final bytes. GREEN's apply blocks are unchanged; SOLO's checks, prose and dispatches change with R4. The whole chain gets one independent rehearsal on the final bytes, in order, including a halt in the middle that the later sittings must refuse to start after.
+- C4. Each document carries its R9 statement. The chain runs while the sweep is in shadow; that night's heartbeats and shadow rows are flagged in the next compare as "migration night".
+- C5. No merge to main during the chain. Monday morning, SOLO merges under R41 on green, in order: 0109 and its screen PRs, 0110 and #1705, 0111 and #1707, 0112 and #1709. The first not green by Mon 18:00 Lisbon stops the sequence, and the report states the gap between production and main until it closes.
+- C6. A second combined night is allowed under C1 to C5, earliest Wed 11-18, only for items at full standard: 0113 after a clean sweep verdict, 0114 and 0115 after their own R4 and rehearsal. Never on the sweep's switch night or a fallback night.
+- C7. Data operations (the Saturday-hours values op on Sun 11-15, the Q6 VAT op on Thu 11-19) keep their own nights and never join a migration chain.
+- The chain's READY pass is due Sat 11-07 20:00 Lisbon, with the rehearsal result and the four documents' sha256 lines.
+
+## 2026-11-05 - Owner answers: pack payments, clinic closures, patient duplicates
+
+The owner answered every open question in the three design notes ("yes to all recommendations"), so B4 and B5 authoring may start.
+
+- Pack payments (0115): the platform records pack money as an internal, non-fiscal list of payments plus an agreed price, never in invoices. Reception types the agreed price with the catalogue price shown beside it. Stylus first; its reference is optional and flagged when missing. Owner, admin and reception record payments; therapists see no amounts. The agenda is the one session count. A cancelled pack's unused sessions can be closed by owner and admin. Pack money stays out of Faturação and the Painel; Packs em uso shows a separate "Packs recebidos (registo interno, não fiscal)" total. A "Vender pack" action is added. Methods: numerário, MB WAY, Multibanco, cartão (TPA), transferência, outro. No Fisiozero screenshots exist any more.
+- Clinic closures (0114): no override; owner, admin and reception manage them; national holidays apply to every clinic, with no municipal holidays; a closure save lists the visits already booked in it for reception to move; future "Feriado" blocks are converted later on an owner-confirmed date list; no clinic entry in the weekly blocks list; online booking shows no slots on a closed day. Fisiozero's "Clínica OsteoJP LX" is Linda-a-Velha. "Externos" are outside practitioners using the clinic.
+- Patient duplicates: a clinic sees a patient only with a visit there or as the patient's main clinic; a patient who visits both clinics keeps one merged profile that both see; the most restrictive consent wins (strategy, 11-05).
