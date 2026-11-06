@@ -133,7 +133,7 @@ test("the document carries the sections the ruling asks for", () => {
   assert.match(doc, /\*\*Nobody presses Replay or Rerun on any event or run in the Inngest dashboard/);
   assert.match(doc, /^\*\*REHEARSED by a session that did not write this, on BLUE /m);
   assert.match(doc, /\*\*Since `3173a15c` only prose has changed, and one token in each block: the four blocks are byte-identical to the blocks rehearsed except their `NIGHTS` line\*\*/);
-  assert.ok(doc.includes("That one-token delta is NOT REHEARSED on the throwaway"));
+  assert.ok(doc.includes("That one-token delta was REHEARSED OK on Friday 2026-11-06 by another session that did not write this"));
   assert.ok(doc.includes("- answered: Fri 11-20 added, ruled 2026-11-06; strategy rules on 11-27 after the 11-20 report."));
   assert.match(doc, /^\*\*NOT REHEARSED, said one by one:\*\*$/m);
   assert.ok(doc.includes("**Its pass branch is NOT REHEARSED.**"));
