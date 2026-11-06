@@ -2,6 +2,8 @@
 
 Status: DESIGN ONLY. No code path to Stylus exists. No write to Stylus is allowed until Stylus confirms in writing that a write made with the demo key is not a real fiscal document and is not reported to the AT (rule S8 below). Written 2026-10-25 from Stylus's answers of 2026-10-25 and a read-only probe of the demo account the same day.
 
+Updated 2026-11-06: strategy's rulings in section 8 relax S8 (demo write tests with synthetic data) and S5 (a retry with the same `id_encomenda_shopify`). Read section 8 with every section below.
+
 ## 1. The rulings this design follows (strategy, 2026-10-25)
 
 - **S1. Stylus stays the fiscal system.** The platform never numbers a document, never picks a document type, never issues a receipt or a credit note.
@@ -107,3 +109,25 @@ Late payments and receipts, cancellations and credit notes, pacote sales and pac
 1. Stylus answers section 6.
 2. The owner gives the SKU for each platform service (the mapping, S3).
 3. Then the build, in this order: the ledger migration (Tier C), the eligibility read and the reception list (no Stylus call), then the posting job behind its switch, tested against a fake server only.
+
+## 8. Strategy rulings of 2026-11-06 (on the answers of 2026-11-05)
+
+Strategy ruled on Fri 2026-11-06 at 16:55 Toronto (21:55 Lisbon). Its words are below, character for character, with one change: a contact's first name is written as "the named contact", because this repository is public. Where these rulings and sections 1 to 7 disagree, these rulings win.
+
+- S8 satisfied: demo write tests are allowed, with SYNTHETIC data only. The demo key is shared among integrators, so no real names, NIFs or phone numbers. Use 999999990 as the NIF.
+- S5 relaxed: a retry with the same id_encomenda_shopify is safe (proved by the duplicate:true reply). Build the retry on it.
+- S2 confirmed: never post pack sales or pack sessions. Both stay manual in Stylus.
+- The platform's VAT field is informational and must match the Stylus article card. Any mismatch is a refusal before POST, never a silent send.
+- Insurer invoices stay manual.
+- Open, for the owner: how numerario (cash) maps in metodo_pagamento (likely OUTRO), with the accountant; and whether the named contact is on the Stylus side or the clinic side.
+- Demo write tests: AFTER the chain night and the C5 merges, as their own PR. Nothing Stylus-related touches main before Mon 11-09 evening.
+
+What this changes in the sections above (SOLO's record, not strategy's text):
+
+- The status line and S8 (section 1, section 3, section 6 question 1): a POST with the demo key is now allowed, in demo write tests only, with synthetic data only. The NIF in those tests is 999999990.
+- S5 and section 4.2: a repeated `id_encomenda_shopify` is answered with `duplicate:true`, so the `verificar` state is no longer a dead end. The posting job retries an unknown outcome with the same `id_encomenda_shopify`. Section 6 question 2 is answered.
+- S2 and section 4.1: unchanged. Pack sales and pack sessions are never posted.
+- S3 and section 4.3: the platform's VAT rate is checked against the rate on the Stylus article before the POST. A mismatch is refused before the POST; nothing is sent.
+- Insurer invoices: unchanged, manual in Stylus.
+- Still open, for the owner: the `metodo_pagamento` value for numerario (likely `OUTRO`, with the accountant), and which side the named contact is on.
+- Timing: the demo write tests are their own pull request, after the chain night and the C5 merges. This section itself is held: it does not merge to main before Mon 11-09 evening.
