@@ -5818,3 +5818,45 @@ Strategy's words are in the quoted blocks, character for character. The bullets 
 - The section title, the owner's answer of Fri 2026-11-06 about 19:00 Toronto (Sat 00:00 Lisbon), option (a) of SOLO's question: the section reads "Problemas de Saúde", as in the previous system. The renderer override of W5-19 ruling C (`apps/web/app/clinical/[id]/field-display.ts`, `SECTION_LABEL_OVERRIDES`) is emptied, so the template's own `x-label` shows. It is presentation only and applies to every template version, old records included, from the deploy that carries it. This reverses part of the 2026-09 RULING 2 above ("Problemas de Saude" disappears from the form); the grid, the unlabeled free text and its "Outras..." placeholder (ruling F) are unchanged. Under strategy's standing delegation of 2026-11-06 (item B6) a reversal of a ruling goes to strategy, so this is built and held until strategy confirms.
 - The owner's other answers of the same message: the previous system's fields OsteoJP lacks (CID codes, EVA scale, load-test notes, neurological tests, linked appointment, private notes) stay out unless the clinic asks; the pack has no short number (PACK-LABEL-01, #1743).
 - Strategy, Fri 2026-11-06 19:00 Toronto (Sat 00:00 Lisbon), ruling 1, its words: "FICHA-ORDER-01 v6: YES, on the Tier C list as proposed: one-row INSERT per tenant, ON CONFLICT DO NOTHING, its own document, rehearsal and sha256. GREEN runs it on a closed-hours night with no other sitting, AFTER the switch and its clean first-send read. Earliest Thu 11-12; if the switch slips, strategy re-rules. Never run the seed loader against production. Card the loader's refusal to UPDATE a referenced template: Tier B, later."
+
+## 2026-11-06 - Strategy's standing delegation of 19:00 Toronto (Sat 00:00 Lisbon): what SOLO decides alone, what it asks, what goes to the owner, and the daily report
+
+Strategy's words are in the quoted blocks, character for character, with two elisions marked in square brackets: people's first names, and a number copied from a screenshot of the previous system (this repository is public). The bullets under each block are SOLO's record, not strategy's text.
+
+> STANDING DELEGATION, in force now. Record it in DECISIONS.md.
+>
+> A. SOLO DECIDES ALONE (no ASK). It applies its own recommendation, records it in DECISIONS.md, and lists it in the next report under "DECIDED BY SOLO" (one line each, reason and file:line). Strategy may reverse any of them later. In scope:
+> - technical choices inside a ruled design: implementation, test design, review findings, MINORs, seeded-failure shape, label wording, file layout;
+> - card creation, splits and tiers that follow the tier list as written;
+> - CI fixes, flaky-test handling inside the no-blind-rerun rule, rebases and merges allowed by the rules (never a held head before its sitting);
+> - re-sequencing non-production work, and dates that do not move a sitting (use SLIP if one does);
+> - reading strategy's rulings literally where they are ambiguous, with the reading stated.
+>
+> B. SOLO STILL ASKS STRATEGY, batched. Only these:
+> 1. anything that writes to production: a new Tier C item, a sitting night, a data op;
+> 2. send-path changes (Tier B); the owner still sees the summary before merge;
+> 3. any GATE-CHANGE, the settings file, guards, hooks, or freeze rules;
+> 4. sweep verdicts: A2, the switch, UNDO, R32 labels or exceptions;
+> 5. security or privacy findings (PRIVATE items);
+> 6. anything that contradicts or reopens a ruling, or where SOLO's premise behind a ruling turns out wrong;
+> 7. Inngest budget above 35,000 a month.
+>
+> C. GOES TO THE OWNER, as one lettered list with SOLO's recommendation: product, clinical, fiscal, legal and money questions, and anything for [names of clinic staff], Stylus or the accountant.
+>
+> D. REPORT CADENCE: one report a day, by 16:00 Toronto (21:00 Lisbon). Sections, in order: STOP or ANOMALY, ASK (B), OWNER (C), DECIDED BY SOLO (A), DONE, CI of held heads. A STOP, a production anomaly or a patient-facing failure is reported at once, not held for the daily report. Interim lines (READY, NEXT OK, SLIP) as before. If a day has no ASK and no STOP, the report says "nothing needed" on its first line.
+
+- "Rebases" in A is read by SOLO as "bringing a branch up to date with main". The standing nevers (no rebase, no force push) are unchanged, so SOLO does it by merging main in, as R3 already says. Reading stated under A's last bullet.
+- Nothing in A loosens a standing rule: GATE-CHANGE pull requests stay the owner's click and are never armed; no merge between the owner's freeze lines or during a chain; at most 5 agents and 2 database stacks.
+- A "DECIDED BY SOLO" line names its record: the DECISIONS.md entry or the pull request body that carries it.
+
+> RULINGS ON TODAY'S 17:29 REPORT:
+> 1. FICHA-ORDER-01 v6: YES, on the Tier C list as proposed: one-row INSERT per tenant, ON CONFLICT DO NOTHING, its own document, rehearsal and sha256. GREEN runs it on a closed-hours night with no other sitting, AFTER the switch and its clean first-send read. Earliest Thu 11-12; if the switch slips, strategy re-rules. Never run the seed loader against production. Card the loader's refusal to UPDATE a referenced template: Tier B, later.
+> 2. #1743 PACK-LABEL-01: accepted. It merges after the Monday C5 merges. The pack number ([the previous system's number]) waits for the owner's answer (C).
+> 3. The scratch-file incident: unique scratch names per agent are accepted.
+> 4. Screenshots with patient data: handled correctly. Never copy them into any file, prompt or repo.
+> 5. #1742 Stylus: merges Mon 11-09 evening at the earliest, as planned.
+>
+> Limits unchanged: at most 5 agents and 2 database stacks. No merges between the owner's freeze lines. CI of held heads in every report.
+
+- The osteopathy v6 one-row insert joins the ruled Tier C list. It is not run before the switch and its clean first-send read, and never on a night with another sitting.
+- The owner answered ruling 2's question the same evening: no short pack number (option (a), SOLO's recommendation). #1743 ships without one.
