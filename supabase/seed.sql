@@ -95,11 +95,12 @@ grant usage, select
 --   GUARDED, so the file is valid on both sides of the promotion: on a
 --   database without the tables this block does nothing. A table added to the
 --   list here must be one whose own migration revokes service_role.
+--   public.health_systems (0111) is one: its migration revokes ALL from service_role by name.
 do $seed_revoke$
 declare
   t text;
 begin
-  foreach t in array array['public.reminder_claims', 'public.reminder_sweep_passes'] loop
+  foreach t in array array['public.reminder_claims', 'public.reminder_sweep_passes', 'public.health_systems'] loop
     if to_regclass(t) is not null then
       execute format('revoke all on table %s from service_role', t);
     end if;
