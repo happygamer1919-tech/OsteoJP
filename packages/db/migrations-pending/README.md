@@ -33,6 +33,7 @@ edit; the body is already final.
 
 | file | must follow | authored | held on |
 |---|---|---|---|
+| `NEXT-AFTER-0112_patient_id_array_reads.sql` | `0112` (the weekly blocks, held on #1708). Ruled `0113` by strategy (U3, 2026-11-03), sitting Wednesday 2026-11-18 | 2026-11-03, branch `db/u3-0113-patient-id-array-reads` | this branch's pull request, held; promoted as `0113` after `0112` is applied and merged |
 
 **THE `NEXT-AFTER-0089` CONTENTION IS RESOLVED, and this is how it ended.** Two files
 claimed `NEXT-AFTER-0089`, which is the situation this directory exists for. NESA-NAMES
