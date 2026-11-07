@@ -5,6 +5,7 @@ import { appointments, locations, timeOff, type DbTx } from "@osteojp/db";
 import { runScoped } from "@/lib/auth/context";
 import { listSharedResourcesTx } from "./shared-resources";
 import { readEffectiveTemplates } from "./effective-availability";
+import { readWeeklyBlockRows } from "./weekly-blocks";
 import { type AvailabilityTemplate } from "./availability";
 import { addDays, lisbonMidnightUtc } from "./time";
 import type { AppointmentStatusValue } from "./types";
@@ -177,16 +178,26 @@ const blockSelection = {
 } as const;
 
 /** time_off blocks overlapping the query range (half-open). Therapist-wide, so
- *  never scoped to a location — an absence blocks every clinic for that span. */
-function readBlockRows(
+ *  never scoped to a location — an absence blocks every clinic for that span.
+ *
+ *  BLOQUEIOS DE REPETICAO SEMANAL: the therapist's weekly rules join here,
+ *  expanded into one block per matching Lisbon date (weekly-blocks.ts). HERE,
+ *  in the one function both block readers compose, so the availability read
+ *  and the agenda band cannot disagree about a weekly rule. Their ids start
+ *  with `weekly:` and name no time_off row (isWeeklyBlockId). */
+async function readBlockRows(
   tx: DbTx,
   args: { therapistId: string; rangeStart: Date; rangeEnd: Date },
 ): Promise<BlockRow[]> {
-  return tx
-    .select(blockSelection)
-    .from(timeOff)
-    .where(and(eq(timeOff.userId, args.therapistId), blockOverlapsRange(args.rangeStart, args.rangeEnd)))
-    .orderBy(asc(timeOff.startsAt));
+  const [timeOffRows, weeklyRows] = await Promise.all([
+    tx
+      .select(blockSelection)
+      .from(timeOff)
+      .where(and(eq(timeOff.userId, args.therapistId), blockOverlapsRange(args.rangeStart, args.rangeEnd)))
+      .orderBy(asc(timeOff.startsAt)),
+    readWeeklyBlockRows(tx, args),
+  ]);
+  return [...timeOffRows, ...weeklyRows].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
 /**

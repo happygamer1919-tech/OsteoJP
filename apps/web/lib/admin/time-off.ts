@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { assertCan } from "@osteojp/auth";
-import { appointments, patients, timeOff } from "@osteojp/db";
+import { appointments, patients, therapistWeeklyBlocks, timeOff, weeklyBlocksSchemaPresent } from "@osteojp/db";
 import { runScoped, type RequestContext } from "@/lib/auth/context";
 import { addDays, lisbonDateTimeToUtc, lisbonMidnightUtc, lisbonParts } from "@/lib/scheduling/time";
 import { generateLoteSchedule, type LoteEnd } from "@/lib/scheduling/lote";
@@ -25,7 +25,14 @@ import {
  * to the caller's tenant; this module never filters tenant_id by hand.
  */
 
-export type TimeOffMode = "pontual" | "prolongada";
+/**
+ * BLOQUEIOS NA AGENDA / FERIAS adds "intervalo": Fisiozero's "Modo PONTUAL", a
+ * start (date + time) to an end (date + time), e.g. "2026-11-24 05:00 ate
+ * 2026-11-26 23:54". One time_off row, like the other two. It is a CREATE shape
+ * of the Bloqueios page, and the shape a stored row reads back as when it spans
+ * more than one Lisbon date without being whole days (viewFor).
+ */
+export type TimeOffMode = "pontual" | "prolongada" | "intervalo";
 
 /** A block as shown in the Bloquear horário list (Lisbon wall-clock strings). */
 export type TimeOffBlockView = {
@@ -81,11 +88,12 @@ export type TimeOffBlockInput = {
   mode: TimeOffMode;
   /** "yyyy-mm-dd" Lisbon date. Both modes use it as the start day. */
   startDate: string;
-  /** "yyyy-mm-dd" Lisbon date. prolongada: last day (inclusive). Ignored for pontual. */
+  /** "yyyy-mm-dd" Lisbon date. prolongada: last day (inclusive). intervalo: the
+   *  END day. Ignored for pontual. */
   endDate?: string;
-  /** "HH:mm" Lisbon. pontual only. */
+  /** "HH:mm" Lisbon. pontual and intervalo. */
   startTime?: string;
-  /** "HH:mm" Lisbon. pontual only. */
+  /** "HH:mm" Lisbon. pontual and intervalo (on endDate for intervalo). */
   endTime?: string;
   note?: string;
 };
@@ -101,7 +109,18 @@ export type OverlappingAppointment = {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 
-/** Map our two modes to the time_off reason enum. ferias -> vacation, else other. */
+/**
+ * Map a mode to the time_off reason enum. ferias (prolongada) -> vacation, else
+ * other.
+ *
+ * "intervalo" IS ALWAYS "other", and that is the rule chosen for Fisiozero's
+ * free-text "Motivo". The Motivo is stored WORD FOR WORD in `note`, which is
+ * what every screen shows (the band, the inspector, the Bloqueios list). The
+ * enum is never inferred from it: reading "Ferias" as vacation and "Doente" as
+ * sick would be a keyword classifier guessing at a fact the clinic did not
+ * state, and its misses would look authoritative. "other" claims nothing the
+ * clinic did not say, and no reader branches on the enum beyond a label.
+ */
 function reasonForMode(mode: TimeOffMode): "vacation" | "other" {
   return mode === "prolongada" ? "vacation" : "other";
 }
@@ -126,6 +145,22 @@ function resolveWindow(input: TimeOffBlockInput): { startsAt: Date; endsAt: Date
       startsAt: lisbonDateTimeToUtc(input.startDate, st),
       endsAt: lisbonDateTimeToUtc(input.startDate, et),
     };
+  }
+
+  if (input.mode === "intervalo") {
+    const endDate = input.endDate ?? "";
+    const st = input.startTime ?? "";
+    const et = input.endTime ?? "";
+    if (!DATE_RE.test(endDate)) throw new AdminError("invalid", "endDate must be yyyy-mm-dd");
+    if (!TIME_RE.test(st) || !TIME_RE.test(et)) {
+      throw new AdminError("invalid", "intervalo times must be HH:mm");
+    }
+    const startsAt = lisbonDateTimeToUtc(input.startDate, st);
+    const endsAt = lisbonDateTimeToUtc(endDate, et);
+    // Compared as INSTANTS, so the repeated hour of the autumn clock change is
+    // judged by the clock that actually runs, not by the wall-clock text.
+    if (endsAt.getTime() <= startsAt.getTime()) throw new AdminError("invalid", "end must be after start");
+    return { startsAt, endsAt };
   }
 
   // prolongada
@@ -170,6 +205,22 @@ function viewFor(row: {
   }
 
   const hh = (n: number) => String(n).padStart(2, "0");
+  // Bloqueios PONTUAL (Fisiozero's): hours that run across Lisbon dates. Read
+  // back as what it is, with its end DATE, rather than as a one-day pontual
+  // whose end date silently collapsed onto its start (which an Editar would
+  // then have saved as a one-day block).
+  if (endParts.date !== startParts.date) {
+    return {
+      id: row.id,
+      mode: "intervalo",
+      reason: row.reason,
+      startDate: startParts.date,
+      endDate: endParts.date,
+      startTime: `${hh(startParts.hour)}:${hh(startParts.minute)}`,
+      endTime: `${hh(endParts.hour)}:${hh(endParts.minute)}`,
+      note: row.note ?? "",
+    };
+  }
   return {
     id: row.id,
     mode: "pontual",
@@ -220,8 +271,15 @@ export async function listTimeOffBlocks(
  * whose absences you simply cannot see.
  */
 export type RosterTimeOff =
-  | { manageable: true; blocks: TimeOffBlockView[] }
+  | { manageable: true; blocks: TimeOffBlockView[]; weekly: WeeklyRuleView[] }
   | { manageable: false };
+
+/**
+ * BLOQUEIOS DE REPETICAO SEMANAL, shown READ-ONLY beside a therapist's blocks
+ * in Equipa and Horarios, so the person reading "Bloqueios de X" sees every
+ * block that takes X's time. Managed on the Bloqueios page only.
+ */
+export type WeeklyRuleView = { id: string; weekday: number; startTime: string; endTime: string };
 
 /**
  * Time-off for a WHOLE ROSTER, in two queries, with the unmanageable members
@@ -267,7 +325,7 @@ export async function listTimeOffBlocksForRoster(
       .where(inArray(timeOff.userId, wanted))
       .orderBy(asc(timeOff.startsAt));
 
-    for (const id of wanted) out.set(id, { manageable: true, blocks: [] });
+    for (const id of wanted) out.set(id, { manageable: true, blocks: [], weekly: [] });
     for (const row of rows) {
       const held = out.get(row.userId);
       // Defensive rather than decorative: RLS could in principle return a row
@@ -275,6 +333,26 @@ export async function listTimeOffBlocksForRoster(
       // this type exists to prevent, so it is skipped only when the bucket is
       // genuinely absent, which cannot happen for a wanted id.
       if (held?.manageable) held.blocks.push(viewFor(row));
+    }
+
+    // The weekly rules, once their table exists (pending migration; inert before).
+    if (await weeklyBlocksSchemaPresent(tx)) {
+      const weekly = await tx
+        .select({
+          id: therapistWeeklyBlocks.id,
+          userId: therapistWeeklyBlocks.userId,
+          weekday: therapistWeeklyBlocks.weekday,
+          startTime: therapistWeeklyBlocks.startTime,
+          endTime: therapistWeeklyBlocks.endTime,
+        })
+        .from(therapistWeeklyBlocks)
+        .where(inArray(therapistWeeklyBlocks.userId, wanted));
+      for (const r of weekly) {
+        const held = out.get(r.userId);
+        if (held?.manageable) {
+          held.weekly.push({ id: r.id, weekday: r.weekday, startTime: r.startTime.slice(0, 5), endTime: r.endTime.slice(0, 5) });
+        }
+      }
     }
     return out;
   });
@@ -312,8 +390,8 @@ async function appointmentsOverlapping(
 
 function validateInput(input: TimeOffBlockInput): void {
   if (!input.userId) throw new AdminError("invalid", "user required");
-  if (input.mode !== "pontual" && input.mode !== "prolongada") {
-    throw new AdminError("invalid", "mode must be pontual or prolongada");
+  if (input.mode !== "pontual" && input.mode !== "prolongada" && input.mode !== "intervalo") {
+    throw new AdminError("invalid", "mode must be pontual, prolongada or intervalo");
   }
 }
 

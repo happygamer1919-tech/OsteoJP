@@ -34,6 +34,10 @@ const TIME_OFF_REASON_KEY: Record<string, StringKey> = {
   sick: "appointment.timeOffReasonSick",
   holiday: "appointment.timeOffReasonHoliday",
   other: "appointment.timeOffReasonOther",
+  // BLOQUEIOS DE REPETICAO SEMANAL: an expanded weekly rule (weekly-blocks-core.ts,
+  // WEEKLY_BLOCK_REASON). Named as what it is, so the reader knows to look on
+  // the Bloqueios page rather than in the therapist's time_off list.
+  weekly: "blocks.weeklyBandNote",
 };
 
 export type ConflictLine = { kind: ConflictKind; heading: string; text: string };

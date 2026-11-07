@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { can } from "@osteojp/auth";
 import { GlassPanel } from "@osteojp/ui";
@@ -266,6 +267,17 @@ export default async function HorariosPage({
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold text-v2-text-primary">{s[heading.title]}</h1>
         <p className="text-sm text-v2-text-secondary">{s[heading.subtitle]}</p>
+        {/* BLOQUEIOS NA AGENDA / FERIAS: Fisiozero's blocks panel lives one
+            level down, behind the capability it writes with. */}
+        {can(actor.role, "schedule:manage") && (
+          <Link
+            href="/horarios/bloqueios"
+            data-testid="open-bloqueios"
+            className="mt-1 w-fit text-sm font-medium text-accent-2-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          >
+            {s["blocks.openLink"]}
+          </Link>
+        )}
       </header>
 
       {banner && (
@@ -371,6 +383,7 @@ export default async function HorariosPage({
                       therapistId={t.id}
                       therapistName={t.label}
                       blocks={timeOff.blocks}
+                      weeklyRules={timeOff.weekly}
                       labels={blockLabels}
                       actions={blockActions}
                       openBlockId={editBlock ?? null}

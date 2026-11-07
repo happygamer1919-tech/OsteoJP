@@ -7,6 +7,7 @@ import { s } from "@/lib/i18n";
 import { TimeFieldInput } from "@/components/time-field-input";
 import type { InspectedDay } from "@/lib/scheduling/schedule-inspection";
 import type { ScheduleRule } from "@/lib/scheduling/availability";
+import { isWeeklyBlockId } from "@/lib/scheduling/weekly-blocks-core";
 import {
   dayDefinedRemoveMessageKey,
   dayEditBlockingReasons,
@@ -396,7 +397,22 @@ export function ScheduleInspector({
                           <StatusChip tone={RULE_TONE.excecao}>{RULE_LABEL.excecao}</StatusChip>
                         </span>
                       </td>
-                      {canEdit && (
+                      {canEdit && isWeeklyBlockId(b.blockId) && (
+                        /* BLOQUEIOS DE REPETICAO SEMANAL: a weekly rule has no
+                           time_off row behind it, so Editar and Eliminar here
+                           would post an id the time_off actions cannot find.
+                           The rule is managed where it was made. */
+                        <td className="py-2 pl-3 align-top">
+                          <a
+                            href="/horarios/bloqueios"
+                            className="text-xs underline decoration-dotted underline-offset-2 text-v2-text-secondary hover:text-v2-text-primary"
+                            data-testid={`inspector-block-weekly-${day.date}`}
+                          >
+                            {s["blocks.openLink"]}
+                          </a>
+                        </td>
+                      )}
+                      {canEdit && !isWeeklyBlockId(b.blockId) && (
                         <td className="py-2 pl-3 align-top">
                           <span className="flex gap-2">
                             {onEditBlock && (

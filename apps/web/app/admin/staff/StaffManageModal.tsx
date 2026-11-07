@@ -11,6 +11,7 @@ import { saveTherapistScheduleAction } from "../working-hours/actions";
 import {
   TherapistBlocks,
   type BlockView,
+  type WeeklyRuleRow,
   type BlockLabels,
 } from "../working-hours/TherapistBlocks";
 import {
@@ -80,6 +81,7 @@ export function StaffManageModal({
   locations,
   memberships,
   blocks,
+  weeklyRules = [],
   autoOpen = false,
 }: {
   userId: string;
@@ -126,6 +128,8 @@ export function StaffManageModal({
   memberships: { locationId: string; color: string | null }[];
   /** Existing time-off blocks for this member. */
   blocks: BlockView[];
+  /** This member's weekly rules (Bloqueios de repetição semanal), read-only. */
+  weeklyRules?: WeeklyRuleRow[];
   /** Deep-link (?t=<id>): open the modal on the Horários section. */
   autoOpen?: boolean;
 }) {
@@ -563,6 +567,7 @@ export function StaffManageModal({
                     therapistId={userId}
                     therapistName={displayName ?? fullName}
                     blocks={blocks}
+                    weeklyRules={weeklyRules}
                     labels={blockLabels}
                   />
                 </div>

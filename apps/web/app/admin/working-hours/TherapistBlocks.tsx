@@ -5,6 +5,7 @@ import { Button, StatusBadge, useAnimatedDialog, type ButtonVariant } from "@ost
 import { TimeFieldInput } from "@/components/time-field-input";
 import { DateFieldInput } from "@/components/date-field-input";
 import { adminInputInline, adminLabel } from "../admin-ui";
+import { s } from "@/lib/i18n";
 import { partitionBlocks } from "@/lib/admin/block-list-order";
 import {
   needsProlongadaWarning,
@@ -28,7 +29,10 @@ export type BlockFormMode = "pontual" | "prolongada" | "lote";
 
 export type BlockView = {
   id: string;
-  mode: "pontual" | "prolongada";
+  /** "intervalo": a block written on the Bloqueios page (Fisiozero's Modo
+   *  PONTUAL) that runs across dates. Listed and removable here; edited only
+   *  by removing and adding it again, because this form has no such shape. */
+  mode: "pontual" | "prolongada" | "intervalo";
   reason: string;
   startDate: string;
   endDate: string;
@@ -36,6 +40,26 @@ export type BlockView = {
   endTime: string;
   note: string;
 };
+
+/** A weekly rule as listed here (time_off.ts WeeklyRuleView, restated: that
+ *  module is server-only). Weekday 0 = Sunday .. 6 = Saturday. */
+export type WeeklyRuleRow = { id: string; weekday: number; startTime: string; endTime: string };
+
+const WEEKDAY_KEY = {
+  0: "blocks.weekday.sun",
+  1: "blocks.weekday.mon",
+  2: "blocks.weekday.tue",
+  3: "blocks.weekday.wed",
+  4: "blocks.weekday.thu",
+  5: "blocks.weekday.fri",
+  6: "blocks.weekday.sat",
+} as const;
+
+/** Monday first, Sunday last, then by start time: the Bloqueios page's order. */
+function sortWeekly(rows: readonly WeeklyRuleRow[]): WeeklyRuleRow[] {
+  const rank = (wd: number) => (wd + 6) % 7;
+  return [...rows].sort((a, b) => rank(a.weekday) - rank(b.weekday) || a.startTime.localeCompare(b.startTime));
+}
 
 export type BlockLabels = {
   block: string; // "Bloquear horário"
@@ -88,6 +112,9 @@ function blockSummary(b: BlockView): string {
       ? fmtDate(b.startDate)
       : `${fmtDate(b.startDate)} a ${fmtDate(b.endDate)}`;
   }
+  if (b.mode === "intervalo") {
+    return `${fmtDate(b.startDate)} ${b.startTime} a ${fmtDate(b.endDate)} ${b.endTime}`;
+  }
   return `${fmtDate(b.startDate)} · ${b.startTime}–${b.endTime}`;
 }
 
@@ -123,7 +150,10 @@ export function TherapistBlocks({
   // unavailable, so /horarios shows this as its first, filled button. Equipa
   // keeps the quiet ghost button it had.
   triggerVariant = "ghost",
+  weeklyRules = [],
 }: {
+  /** The therapist's weekly rules, shown read-only (Bloqueios page manages them). */
+  weeklyRules?: readonly WeeklyRuleRow[];
   therapistId: string;
   therapistName: string;
   blocks: BlockView[];
@@ -139,11 +169,16 @@ export function TherapistBlocks({
   // SCHED-21: the deep-linked block, resolved against THIS card's own list. A
   // block id that belongs to another therapist finds nothing here and the card
   // stays shut, which is the right answer rather than an empty editor.
-  const linked = openBlockId ? (blocks.find((b) => b.id === openBlockId) ?? null) : null;
-  const [open, setOpen] = useState(linked !== null);
+  const found = openBlockId ? (blocks.find((b) => b.id === openBlockId) ?? null) : null;
+  // An "intervalo" block opens the card (so it can be seen and removed) but
+  // not the editor, which has no shape for it.
+  const linked = found && found.mode !== "intervalo" ? found : null;
+  const [open, setOpen] = useState(found !== null);
   const { ref, shown } = useAnimatedDialog(open);
   const [editing, setEditing] = useState<BlockView | null>(linked);
-  const [mode, setMode] = useState<BlockFormMode>(linked?.mode ?? "pontual");
+  const [mode, setMode] = useState<BlockFormMode>(
+    linked && linked.mode !== "intervalo" ? linked.mode : "pontual",
+  );
   // PL-22: the lote end condition. Local state because the two inputs it
   // switches between must not both post - a stale "until" beside a count is
   // exactly the kind of ambiguity the server would have to guess about.
@@ -166,7 +201,7 @@ export function TherapistBlocks({
     setWarning(null);
     // A stored block is one row: editing it is never a lote (the recurrence is
     // a creation-time shape, not something a single row remembers).
-    setMode(b.mode);
+    if (b.mode !== "intervalo") setMode(b.mode);
   };
   const startCreate = () => {
     setEditing(null);
@@ -198,9 +233,11 @@ export function TherapistBlocks({
       <span className="text-v2-text-primary">{blockSummary(b)}</span>
       {b.note ? <span className="text-v2-text-secondary">· {b.note}</span> : null}
       <span className="ml-auto flex gap-1">
-        <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(b)}>
-          {labels.edit}
-        </Button>
+        {b.mode !== "intervalo" && (
+          <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(b)}>
+            {labels.edit}
+          </Button>
+        )}
         <form action={actions.remove} onSubmit={() => setOpen(false)}>
           <input type="hidden" name="id" value={b.id} />
           <input type="hidden" name="userId" value={therapistId} />
@@ -284,6 +321,30 @@ export function TherapistBlocks({
                 </details>
               )}
             </div>
+          )}
+
+          {/* BLOQUEIOS DE REPETICAO SEMANAL, read-only here: they take this
+              therapist's time every week, so "Bloqueios de X" lists them, and
+              they are managed on the Bloqueios page, which the link opens. */}
+          {weeklyRules.length > 0 && (
+            <section className="flex flex-col gap-1" data-testid="blocks-weekly-readonly" aria-labelledby={`weekly-${therapistId}`}>
+              <h4 id={`weekly-${therapistId}`} className="text-sm font-semibold text-v2-text-primary">
+                {s["blocks.weeklyInList"]}
+              </h4>
+              <ul className="flex flex-col gap-1">
+                {sortWeekly(weeklyRules).map((w) => (
+                  <li key={w.id} className="text-sm tabular-nums text-v2-text-primary" data-testid="blocks-weekly-row">
+                    {s[WEEKDAY_KEY[w.weekday as keyof typeof WEEKDAY_KEY]]}: {w.startTime} -- {w.endTime}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="/horarios/bloqueios"
+                className="w-fit text-sm text-accent-2-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+              >
+                {s["blocks.manageWeekly"]}
+              </a>
+            </section>
           )}
 
           {/* Create / edit form */}

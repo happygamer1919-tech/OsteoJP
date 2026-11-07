@@ -57,6 +57,7 @@ import { AgendaWeekCompact } from "./agenda-week-compact";
 import { AgendaWeekList } from "./agenda-week-list";
 import { AppointmentDrawer, type ModalState } from "./appointment-drawer";
 import { BlockTimeDialog } from "./block-time-dialog";
+import { blockEditHref } from "@/lib/scheduling/weekly-blocks-core";
 import { ServiceFilterPanel, ServiceFilterToggle } from "./service-filter";
 
 // v2 glass toolbar controls (SPEC-v2-foundation §7 nav-button idiom): no opaque
@@ -848,9 +849,7 @@ export function AgendaView({
         onOpenBlock={
           filters.practitionerId && canBlockTime
             ? (blockId) =>
-                router.push(
-                  `/horarios?t=${filters.practitionerId}&editBlock=${blockId}`,
-                )
+                router.push(blockEditHref(filters.practitionerId!, blockId))
             : undefined
         }
       />
@@ -878,9 +877,7 @@ export function AgendaView({
         onOpenBlock={
           filters.practitionerId && canBlockTime
             ? (blockId) =>
-                router.push(
-                  `/horarios?t=${filters.practitionerId}&editBlock=${blockId}`,
-                )
+                router.push(blockEditHref(filters.practitionerId!, blockId))
             : undefined
         }
       />
