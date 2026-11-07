@@ -625,6 +625,76 @@ verdicts 7 and 8 caught it. When this record was written, the Status line at the
 still read NOT REHEARSED, because this session changed only this section; the
 author updated the Status line afterwards (c1a0fc7b).
 
+### Further arms, after the mutation sweep
+
+**Run by a second session that did not write these files, from head `8753271f`, on
+Saturday 2026-11-07 between 03:14 and 03:16 Lisbon time (WET),** inside closed hours:
+the Lisbon clock was read before each arm, and R08 read n 0 every time. The mutation
+sweep listed states no earlier arm had held; these arms hold them. No stage file and no
+block changed. Each arm ran the stage files alone with psql on the throwaway, as arm 2
+above did, and stage 2 was handed the carries read out of that arm's own stage 1
+transcript with the blocks' own `carry` line. Each expected outcome was written down
+before its arm ran.
+
+**The throwaway.** Its own Supabase stack (project id `ficha-v6-arms`, every port in the
+549xx range, Postgres 17), built from this head's `supabase/migrations` and stopped with
+`--no-backup` at the end. Each arm started from a fresh seed of INSERTs the rehearsal
+wrote: four synthetic tenants, three (a1, b2, d4) holding osteopathy versions 1 to 5
+from the repo files and one (c3) holding no osteopathy row; physiotherapy version 4 in
+all four; a synthetic physiotherapy version 5 and version 6 in a1 and in c3; and two
+audit rows of other actions in every tenant. 23 `form_templates` rows, 8 `audit_log`
+rows. Only 127.0.0.1 was contacted.
+
+**A. A richer happy path. Expected: three tenants INSERT, R02 OK, 3 rows and 3 audit
+rows written, stage 3 all OK, every other row unchanged. Actual: PASS.** Stage 1
+classified a1, b2 and d4 `INSERT` and c3 `NO OSTEOPATHY VERSION 5: LEFT ALONE` (its
+physiotherapy rows not counted); R02 read n 0, control 8, `OK`, not VACUOUS; R04's
+control was 15, the osteopathy rows only. Stage 2 exited 0 with `W1 inserted 3 row(s)`,
+`A2 the other 23 row(s) unchanged` and `DONE: 3 osteopathy version 6 row(s) inserted, 3
+audit row(s)`. Stage 3 read `10 OK / 0 VACUOUS / 0 FAIL`. The 23 earlier rows, the 8
+physiotherapy rows and the 8 other audit rows each read the same count and md5 before
+and after.
+
+**B. An inactive version 5 in b2. Expected: R05 in stage 1 and in stage 2, nothing
+written. Actual: PASS.** Stage 1 classified b2 `VERSION 5 IS NOT ACTIVE (R05)` and
+printed R05 n 1, control 3, `REFUSE`, every other line OK. Stage 2 stopped at P2 with
+`STOP: R05 refuses`, psql exit 3. Counts and md5s unchanged.
+
+**C. An osteopathy version 6 already in d4, with no audit row of this op. Expected: R04
+in stage 1, and stage 2 alone stopping on its own check, not P0. Actual: PASS.** Stage 1
+classified d4 `HOLDS VERSION 6 OR ABOVE (R04)` and printed R04 n 1, control 16,
+`REFUSE`. Stage 2 printed `P0 no audit row carries staff.ficha_v6.install_template` and
+went on; P2 stopped it with `STOP: R04 refuses: an osteopathy row of version 6 or above
+already exists`, psql exit 3. Nothing written.
+
+**D. The database moves between stage 1 and stage 2. Expected: stage 2 stops on its
+carry or premise check, nothing written. Actual: PASS, three ways.** Stage 1 passed each
+time (`fv6_count` 3); the change was then committed, and stage 2 ran with stage 1's
+carries. D1, a fifth tenant with osteopathy versions 1 to 5 added: P2 read n 0 on all
+eight, then P3 stopped with `STOP: carry fv6_count reads 4 now and stage 1 printed 3`.
+D2, the English label of `weight_kg` in b2's version 5 changed: P2 stopped on `R03
+refuses`, before P3. D3, the title of a1's physiotherapy version 5 changed (a row the op
+never writes; the count, the tenants and the row count unchanged): P3 stopped on `carry
+fv6_baseline`. Each psql exit 3, and the counts and md5s were those of the moved state.
+
+**E. A stray osteopathy version 7 in b2. Expected: a refusal. Actual: PASS, R04.**
+Stage 1 classified b2 `HOLDS VERSION 6 OR ABOVE (R04)` and printed R04 n 1, control 16,
+`REFUSE`; stage 2 stopped at P2 on `R04 refuses`, psql exit 3. Nothing written.
+
+**No finding: every arm matched what was written before it ran.** A note for the reader:
+stage 1's file exits 0 even when it prints REFUSE; the stage 1 block's REFUSE count is
+what stops the sitting.
+
+**NOT REHEARSED in these arms, one by one:**
+
+- The four blocks: these arms ran the stage files alone, so no block line ran here (the
+  clock checks, the HEAD CHECK, the markers, the transcript checks). The blocks ran in
+  arms 1 to 3 above.
+- The target guard and the production environment file, as in the list above.
+- L1 against a second writer holding a lock, and the one-hour age limit: not exercised.
+- Stage 3 after arms B to E, where nothing was written: not run.
+- Production's own data: not read.
+
 ## What this does NOT do
 
 - **It runs no loader.** Nothing in a block or a stage file runs, reads or imports
