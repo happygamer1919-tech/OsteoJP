@@ -16,6 +16,7 @@ import {
   type HealthInsuranceEntry,
   type PatientField,
 } from "../../../lib/patients/validation";
+import type { HealthSystemOption } from "../../../lib/admin/health-systems-core";
 
 const s = getStrings(DEFAULT_LOCALE);
 
@@ -43,6 +44,13 @@ type Fields = {
   // one (ADSE plus a private insurer is ordinary here); the insurer is optional
   // beside the number, because a bare number is not usable at the desk.
   healthInsuranceNumbers: HealthInsuranceEntry[];
+  // Sistemas / SubSistemas (owner request 2026-11-02, Fisiozero's ficha): the
+  // chosen Sistema ("" = "Seleccione") and the "Nº da Entidade / Subsistema"
+  // text right below it. Independent of healthInsuranceNumbers above: that list
+  // stays the clinic's own record of a patient's plans, and nothing copies one
+  // into the other.
+  healthSystemId: string;
+  healthSystemNumber: string;
   email: string;
   phone: string;
   // `address` (street) is retained in state so its stored value round-trips
@@ -88,6 +96,8 @@ function toFields(p?: Patient | null): Fields {
     nifExempt: p?.nifExempt ?? false,
     nifExemptReason: p?.nifExemptReason ?? "",
     healthInsuranceNumbers: p?.healthInsuranceNumbers ?? [],
+    healthSystemId: p?.healthSystemId ?? "",
+    healthSystemNumber: p?.healthSystemNumber ?? "",
     email: p?.email ?? "",
     phone: p?.phone ?? "",
     address: p?.address ?? "",
@@ -139,10 +149,14 @@ export type PatientLocationOption = { id: string; name: string };
 export function PatientForm({
   patient,
   locations = [],
+  healthSystems = [],
   rgpdEnabled = false,
 }: {
   patient?: Patient | null;
   locations?: PatientLocationOption[];
+  /** Sistemas / SubSistemas: the dropdown's entries (active ones, plus the
+   *  patient's current one if it has since been switched off). */
+  healthSystems?: HealthSystemOption[];
   /** RGPD-01 — whether the consent table exists on this database yet. Defaults
    *  to false so the tick is absent unless a server component says otherwise;
    *  before the apply the box would be refused on submit. */
@@ -374,6 +388,39 @@ export function PatientForm({
           onChange={(next) => set("healthInsuranceNumbers", next)}
           inputCls={inputCls}
         />
+        {/* Sistemas / SubSistemas, as on Fisiozero's ficha: the dropdown, with
+            "Nº da Entidade / Subsistema" directly below it. Its own full-width
+            row so the two stay stacked in one column. THE RIGHT HALF OF THIS ROW
+            IS EMPTY ON PURPOSE: filling it (or letting the grid flow the next
+            field into it) would break the stacking Fisiozero has. NOT CHECKED
+            IN A BROWSER: verified by rendered markup only. */}
+        <div className="col-span-2 grid grid-cols-2 gap-4" data-testid="patient-health-system">
+          <div className="flex flex-col gap-4">
+            <Field label={s["patients.fieldHealthSystem"]} errorFor="healthSystemId">
+              <select
+                value={fields.healthSystemId}
+                onChange={(e) => set("healthSystemId", e.target.value)}
+                className={inputCls}
+              >
+                <option value="">{s["patients.healthSystemSelect"]}</option>
+                {healthSystems.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.active ? h.name : `${h.name} ${s["patients.healthSystemInactiveSuffix"]}`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={s["patients.fieldHealthSystemNumber"]} errorFor="healthSystemNumber">
+              <input
+                value={fields.healthSystemNumber}
+                onChange={(e) => set("healthSystemNumber", e.target.value)}
+                maxLength={64}
+                autoComplete="off"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+        </div>
         <Field label={s["patients.fieldPhone"]} errorFor="phone">
           <input
             value={fields.phone}

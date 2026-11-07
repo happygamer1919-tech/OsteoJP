@@ -6,6 +6,7 @@ import { resolveLocationControl } from "@/lib/auth/location-choice";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { listActiveLocations } from "@/lib/invoices/queries";
 import { rgpdConsentCaptureAvailable } from "@/lib/patients/rgpd-acceptance";
+import { listHealthSystemOptions } from "@/lib/admin/health-systems";
 import { PatientForm } from "../_components/patient-form";
 
 const s = getStrings(DEFAULT_LOCALE);
@@ -25,10 +26,11 @@ export default async function NewPatientPage() {
   // migration is unnumbered and held, so before the apply the table does not
   // exist and the box would be refused on submit. Absent is the right control
   // then, and the patient still registers and reads "RGPD em falta".
-  const [scope, locations, rgpdEnabled] = await Promise.all([
+  const [scope, locations, rgpdEnabled, healthSystems] = await Promise.all([
     viewerLocationScope(actor),
     listActiveLocations(actor),
     rgpdConsentCaptureAvailable(actor),
+    listHealthSystemOptions(actor),
   ]);
   const control = resolveLocationControl(
     scope,
@@ -47,7 +49,7 @@ export default async function NewPatientPage() {
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">
         {s["patients.new"]}
       </h1>
-      <PatientForm locations={formLocations} rgpdEnabled={rgpdEnabled} />
+      <PatientForm locations={formLocations} healthSystems={healthSystems} rgpdEnabled={rgpdEnabled} />
     </main>
   );
 }

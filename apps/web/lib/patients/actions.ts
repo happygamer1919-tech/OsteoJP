@@ -35,6 +35,7 @@ import { AdminError, isAdminError } from "@/lib/admin/errors";
 import { isForeignKeyViolation } from "@/lib/admin/foreign-key-refusal";
 import { isDeadlockVictim, sqlStateOf } from "@/lib/observability/sql-state";
 import { verifyDeletePassword } from "@/lib/admin/appointment-delete-password";
+import { healthSystemSelectable } from "@/lib/admin/health-systems";
 import { requireRequestContext, runScoped } from "../auth/context";
 import { writeAudit } from "./audit";
 import { insertPatientTx } from "./insert";
@@ -49,6 +50,7 @@ import {
   parseMergeInput,
   parseUpdatePatient,
   ValidationError,
+  healthSystemUnavailable,
   type CreatePatientInput,
   type MergePatientsInput,
   type PatientField,
@@ -214,6 +216,14 @@ async function createPatientImpl(
       primaryLocationId = loc.id;
     }
 
+    // Sistemas / SubSistemas: the chosen Sistema must be an ACTIVE one the
+    // caller can read (so of the caller's tenant). The composite key would
+    // refuse another tenant's anyway, but with an error nobody at the desk can
+    // act on; this names the field instead.
+    if (input.healthSystemId && !(await healthSystemSelectable(tx, input.healthSystemId, null))) {
+      throw healthSystemUnavailable();
+    }
+
     // GUEST-06: tenant_id, created_by, the omitted patient_number and the audit
     // row all moved into `insertPatientTx`, which is now the ONE place a patients
     // row is inserted — the guest convert needs the same insert inside its own
@@ -230,6 +240,8 @@ async function createPatientImpl(
         nifExempt: input.nifExempt,
         nifExemptReason: input.nifExemptReason,
         healthInsuranceNumbers: input.healthInsuranceNumbers,
+        healthSystemId: input.healthSystemId,
+        healthSystemNumber: input.healthSystemNumber,
         email: input.email,
         phone: input.phone,
         address: input.address,
@@ -299,6 +311,10 @@ async function updatePatientImpl(
     ...(input.healthInsuranceNumbers !== undefined && {
       healthInsuranceNumbers: input.healthInsuranceNumbers,
     }),
+    ...(input.healthSystemId !== undefined && { healthSystemId: input.healthSystemId }),
+    ...(input.healthSystemNumber !== undefined && {
+      healthSystemNumber: input.healthSystemNumber,
+    }),
     ...(input.email !== undefined && { email: input.email }),
     ...(input.phone !== undefined && { phone: input.phone }),
     ...(input.address !== undefined && { address: input.address }),
@@ -348,6 +364,22 @@ async function updatePatientImpl(
         if (!loc)
           throw new ValidationError("Invalid primaryLocationId", "primaryLocationId");
         patch.primaryLocationId = loc.id;
+      }
+    }
+
+    // Sistemas / SubSistemas: a chosen Sistema must be one the caller can read,
+    // and active unless it is the value this patient already holds (a Sistema
+    // switched off later stays on the fichas that name it, and saving such a
+    // ficha unchanged is not refused).
+    if (input.healthSystemId) {
+      const [current] = await tx
+        .select({ healthSystemId: patients.healthSystemId })
+        .from(patients)
+        .where(and(eq(patients.id, id), isNull(patients.deletedAt)))
+        .limit(1);
+      if (!current) throw new PatientNotFoundError();
+      if (!(await healthSystemSelectable(tx, input.healthSystemId, current.healthSystemId))) {
+        throw healthSystemUnavailable();
       }
     }
 

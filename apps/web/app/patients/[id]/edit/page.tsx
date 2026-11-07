@@ -6,6 +6,7 @@ import { getRequestContext } from "../../../../lib/auth/context";
 import { resolveLocationControl } from "@/lib/auth/location-choice";
 import { viewerLocationScope } from "@/lib/auth/viewer-locations";
 import { listActiveLocations } from "@/lib/invoices/queries";
+import { listHealthSystemOptions } from "@/lib/admin/health-systems";
 import { PatientForm } from "../../_components/patient-form";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +28,10 @@ export default async function EditPatientPage({
   // PL-15b: the clinic is editable here too, so a patient registered before the
   // form carried one (or filed at the wrong clinic) can be corrected. Same PL-14
   // rule: one reachable clinic renders as a line, several as a picker.
-  const [scope, locations] = await Promise.all([
+  const [scope, locations, healthSystems] = await Promise.all([
     viewerLocationScope(actor),
     listActiveLocations(actor),
+    listHealthSystemOptions(actor, patient.healthSystemId),
   ]);
   const control = resolveLocationControl(
     scope,
@@ -48,7 +50,7 @@ export default async function EditPatientPage({
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">
         {s["patients.editRecord"]}
       </h1>
-      <PatientForm patient={patient} locations={formLocations} />
+      <PatientForm patient={patient} locations={formLocations} healthSystems={healthSystems} />
     </main>
   );
 }

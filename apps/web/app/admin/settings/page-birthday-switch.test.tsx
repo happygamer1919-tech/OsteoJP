@@ -31,10 +31,19 @@ vi.mock("@/lib/admin/settings", () => ({
     birthdayIndication: { headerIcon: h.headerIcon },
   }),
 }));
+// The Sistemas / SubSistemas panel shares this page: its reads and its
+// actions are stubbed too, so the page renders without a database.
+vi.mock("@/lib/admin/health-systems", () => ({
+  listHealthSystems: async () => [],
+  getHealthSystemsPriceTable: async () => false,
+}));
 vi.mock("./actions", () => ({
   saveSettings: async () => {},
   changeDeletePasswordAction: async () => {},
   saveBirthdayIndicationAction: async () => {},
+  addHealthSystemAction: async () => {},
+  setHealthSystemActiveAction: async () => {},
+  setHealthSystemsPriceTableAction: async () => {},
 }));
 
 import SettingsPage from "./page";

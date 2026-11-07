@@ -118,3 +118,44 @@ describe("PatientForm — clinic (PL-15b)", () => {
     expect(html).not.toContain(`<option value="${LV.id}" selected="">`);
   });
 });
+
+// Sistemas / SubSistemas (owner request 2026-11-02): Fisiozero's dropdown with
+// "Seleccione" first, and "Nº da Entidade / Subsistema" directly below it, on
+// both create and edit. The insurance list (PL-23) stays as it is.
+describe("PatientForm - Sistema/SubSistema", () => {
+  const systems = [
+    { id: "00000000-0000-0000-0000-0000000000d1", name: "ADSE", active: true },
+    { id: "00000000-0000-0000-0000-0000000000d2", name: "SAMS", active: false },
+  ];
+
+  it("renders the dropdown with Seleccione first, then the number field below it", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm, { healthSystems: systems.slice(0, 1) }));
+    const block = html.slice(html.indexOf('data-testid="patient-health-system"'));
+    const select = block.indexOf("Sistema/SubSistema");
+    const first = block.indexOf(">Seleccione</option>");
+    const adse = block.indexOf(">ADSE</option>");
+    const number = block.indexOf("Nº da Entidade / Subsistema");
+    expect(select).toBeGreaterThanOrEqual(0);
+    expect(first).toBeGreaterThan(select);
+    expect(adse).toBeGreaterThan(first);
+    expect(number).toBeGreaterThan(adse);
+  });
+
+  it("with no Sistemas yet, the dropdown holds Seleccione only (as Fisiozero's empty list)", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm));
+    const block = html.slice(html.indexOf('data-testid="patient-health-system"'));
+    const select = block.slice(block.indexOf("<select"), block.indexOf("</select>"));
+    expect(select.match(/<option/g)?.length).toBe(1);
+    expect(select).toContain("Seleccione");
+  });
+
+  it("keeps the insurance list beside it", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm, { healthSystems: systems }));
+    expect(html).toContain("Números dos seguros de saúde");
+  });
+
+  it("labels a switched-off Sistema the patient still names", () => {
+    const html = renderToStaticMarkup(createElement(PatientForm, { healthSystems: systems }));
+    expect(html).toContain("SAMS (desativado)");
+  });
+});

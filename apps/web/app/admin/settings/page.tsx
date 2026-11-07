@@ -7,6 +7,8 @@ import {
   BILLING_CURRENCIES,
 } from "@/lib/admin/settings-config";
 import { changeDeletePasswordAction, saveBirthdayIndicationAction, saveSettings } from "./actions";
+import { getHealthSystemsPriceTable, listHealthSystems } from "@/lib/admin/health-systems";
+import { HealthSystemsPanel, healthSystemsBanner } from "./health-systems-panel";
 import {
   adminHelp,
   adminInput,
@@ -27,12 +29,19 @@ export default async function SettingsPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const actor = await requireRequestContext();
-  const settings = await getTenantSettings(actor);
+  const [settings, healthSystemEntries, priceTableEnabled] = await Promise.all([
+    getTenantSettings(actor),
+    listHealthSystems(actor),
+    getHealthSystemsPriceTable(actor),
+  ]);
   const { config } = settings;
   const { m } = await searchParams;
 
+  // The Sistemas panel shows its own hs- codes; the top banner ignores them.
+  const hsBanner = healthSystemsBanner(m);
   const banner =
-    m === "ok" ? { ok: true, text: s["admin.settings.saved"] }
+    hsBanner ? null
+    : m === "ok" ? { ok: true, text: s["admin.settings.saved"] }
     : m ? { ok: false, text: s["admin.settings.error"] }
     : null;
 
@@ -156,6 +165,12 @@ export default async function SettingsPage({
           </div>
         </form>
       </GlassPanel>
+
+      <HealthSystemsPanel
+        entries={healthSystemEntries}
+        priceTableEnabled={priceTableEnabled}
+        message={hsBanner}
+      />
 
       {/* Appointment hard-delete password (W3-06) — its own form so it never
           rides on the main settings save. The current value is never shown

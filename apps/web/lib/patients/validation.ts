@@ -3,8 +3,10 @@
 // the codebase convention (no schema library).
 
 import { parsePatientPhone } from "@osteojp/notify";
+import { DEFAULT_LOCALE, getStrings } from "@osteojp/i18n";
 
 import { checkNif, type NifProblem } from "./nif";
+import { HEALTH_SYSTEM_NUMBER_MAX } from "../admin/health-systems-core";
 
 /**
  * Which INPUT a refusal belongs to.
@@ -27,6 +29,8 @@ export type PatientField =
   | "nif"
   | "nifExemptReason"
   | "healthInsuranceNumbers"
+  | "healthSystemId"
+  | "healthSystemNumber"
   | "email"
   | "phone"
   | "address"
@@ -95,6 +99,12 @@ export type CreatePatientInput = {
   // PL-23 — health insurance plans, a list because a patient may hold more than
   // one. Entries arrive from the form and are normalized/capped below.
   healthInsuranceNumbers?: HealthInsuranceEntry[] | null;
+  // Sistemas / SubSistemas (owner request 2026-11-02): the chosen Sistema (a
+  // health_systems id, "" or null for "Seleccione") and the "Nº da Entidade /
+  // Subsistema" text. Independent of healthInsuranceNumbers. The id is checked
+  // against the caller's own tenant in the action.
+  healthSystemId?: string | null;
+  healthSystemNumber?: string | null;
   email?: string | null;
   phone?: string | null;
   address?: string | null;
@@ -136,6 +146,8 @@ export type CreatePatientValues = {
   nifExempt: boolean;
   nifExemptReason: string | null;
   healthInsuranceNumbers: HealthInsuranceEntry[];
+  healthSystemId: string | null;
+  healthSystemNumber: string | null;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -326,6 +338,28 @@ function resolveNif(
   return { nif: rawNif.replace(/[\s.\-]/g, ""), nifExempt: false, nifExemptReason: null };
 }
 
+/**
+ * Sistemas / SubSistemas: the ONE refusal the desk sees for the ficha's
+ * Sistema, whether the id is malformed (a stale or hand-made request), of
+ * another tenant, or switched off since the page was opened. All three mean
+ * the same thing at the desk, and the repair is the same: choose another.
+ */
+export function healthSystemUnavailable(): ValidationError {
+  return new ValidationError(
+    getStrings(DEFAULT_LOCALE)["patients.healthSystemUnavailable"],
+    "healthSystemId",
+  );
+}
+
+function optionalHealthSystemId(v: unknown): string | null {
+  try {
+    return optionalUuid(v, "healthSystemId");
+  } catch (e) {
+    if (e instanceof ValidationError) throw healthSystemUnavailable();
+    throw e;
+  }
+}
+
 function optionalUuid(v: unknown, field: PatientField): string | null {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") throw new ValidationError(`${field} must be a UUID`, field);
@@ -396,6 +430,8 @@ export function parseCreatePatient(
     nifExempt: nif.nifExempt,
     nifExemptReason: nif.nifExemptReason,
     healthInsuranceNumbers: optionalInsuranceList(r.healthInsuranceNumbers) ?? [],
+    healthSystemId: optionalHealthSystemId(r.healthSystemId),
+    healthSystemNumber: optionalText(r.healthSystemNumber, "healthSystemNumber", HEALTH_SYSTEM_NUMBER_MAX),
     email: optionalEmail(r.email),
     phone: optionalPhone(r.phone),
     address: optionalText(r.address, "address", 500),
@@ -450,6 +486,9 @@ export function parseUpdatePatient(
   if ("healthInsuranceNumbers" in r) {
     out.healthInsuranceNumbers = optionalInsuranceList(r.healthInsuranceNumbers) ?? [];
   }
+  if ("healthSystemId" in r) out.healthSystemId = optionalHealthSystemId(r.healthSystemId);
+  if ("healthSystemNumber" in r)
+    out.healthSystemNumber = optionalText(r.healthSystemNumber, "healthSystemNumber", HEALTH_SYSTEM_NUMBER_MAX);
   if ("email" in r) out.email = optionalEmail(r.email);
   if ("phone" in r && !phoneUnchanged(r.phone, opts.storedPhone)) out.phone = optionalPhone(r.phone);
   if ("address" in r) out.address = optionalText(r.address, "address", 500);

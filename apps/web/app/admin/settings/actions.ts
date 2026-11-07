@@ -6,6 +6,11 @@ import { setBirthdayHeaderIcon, updateTenantSettings } from "@/lib/admin/setting
 import { setDeletePassword } from "@/lib/admin/appointment-delete-password";
 import { isAdminError } from "@/lib/admin/errors";
 import { REMINDER_LEAD_TIME_OPTIONS } from "@/lib/admin/settings-config";
+import {
+  createHealthSystem,
+  setHealthSystemActive,
+  setHealthSystemsPriceTable,
+} from "@/lib/admin/health-systems";
 
 /** Selected lead-time checkboxes -> number[]. Unchecked boxes are simply absent. */
 function readLeadTimes(formData: FormData): number[] {
@@ -83,4 +88,60 @@ export async function changeDeletePasswordAction(formData: FormData): Promise<vo
   }
   revalidatePath("/admin/settings");
   redirect(`/admin/settings?m=${code}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Sistemas / SubSistemas (owner request 2026-11-02)                   */
+/* ------------------------------------------------------------------ */
+/* Each is its own form, so none rides on the main settings save. The  */
+/* lib functions enforce settings:manage and audit every write; these  */
+/* only read the form and redirect with an hs- code the page maps to a */
+/* message inside the panel.                                           */
+
+function hsCode(e: unknown): string {
+  return isAdminError(e) ? `hs-err:${e.code}` : "hs-err";
+}
+
+function backToPanel(code: string): never {
+  revalidatePath("/admin/settings");
+  redirect(`/admin/settings?m=${code}#sistemas`);
+}
+
+export async function addHealthSystemAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "hs-ok";
+  try {
+    const outcome = await createHealthSystem(actor, String(formData.get("name") ?? ""));
+    if (outcome === "reactivated") code = "hs-reactivated";
+  } catch (e) {
+    code = hsCode(e);
+  }
+  backToPanel(code);
+}
+
+export async function setHealthSystemActiveAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "hs-ok";
+  try {
+    await setHealthSystemActive(
+      actor,
+      String(formData.get("id") ?? ""),
+      formData.get("active") === "true",
+    );
+  } catch (e) {
+    code = hsCode(e);
+  }
+  backToPanel(code);
+}
+
+/** "Usa tabela de preços de Sistemas". Stored only: nothing reads it yet. */
+export async function setHealthSystemsPriceTableAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  let code = "hs-ok";
+  try {
+    await setHealthSystemsPriceTable(actor, formData.get("enabled") === "true");
+  } catch (e) {
+    code = hsCode(e);
+  }
+  backToPanel(code);
 }
