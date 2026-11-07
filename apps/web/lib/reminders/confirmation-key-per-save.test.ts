@@ -230,10 +230,12 @@ describe("every emitter of appointment/scheduled goes through the one that makes
       "apps/web/lib/reminders/inngest/client.ts",
       "apps/web/lib/reminders/inngest/functions.ts",
     ]);
-    // The literal appears only where the constant is defined, and in the
-    // notification registry, which lists events and sends nothing.
+    // The literal appears only where the constant is defined, in the
+    // notification registry, which lists events and sends nothing, and in the
+    // portal move's one sender in apps/api (R44, below).
     const literal = APP_SOURCES.filter((s) => s.src.includes('"appointment/scheduled"')).map((s) => s.file);
     expect(literal.sort()).toEqual([
+      "apps/api/lib/appointments/portal-move-replan.ts",
       "apps/web/lib/reminders/inngest/client.ts",
       "apps/web/lib/reminders/notification-registry.ts",
     ]);
@@ -242,9 +244,40 @@ describe("every emitter of appointment/scheduled goes through the one that makes
     expect(index).toMatch(/saveId: string;/);
   });
 
-  it("apps/api sends no Inngest event at all", () => {
+  /**
+   * R44 (strategy and owner, 2026-11-02): apps/api sends exactly ONE Inngest
+   * event, the re-plan of a visit the patient moved in the portal, from ONE
+   * file, called from ONE place (`rescheduleOwn`, after its commit). It
+   * serves nothing and defines no function. It does not go through
+   * `enqueueRemindersAfterCommit` (apps/web), so it makes its own marker,
+   * once per save, and never asks for a confirmation (the owner's ruling: no
+   * fresh confirmation on a portal move).
+   */
+  it("apps/api sends one Inngest event: the portal move's re-plan, from rescheduleOwn only", () => {
     const api = APP_SOURCES.filter((s) => s.file.startsWith("apps/api/"));
-    expect(api.filter((s) => /from\s+"inngest"|appointment\/scheduled/.test(s.src)).map((s) => s.file)).toEqual([]);
+    const SENDER = "apps/api/lib/appointments/portal-move-replan.ts";
+    expect(api.filter((s) => /from\s+"inngest"|appointment\/scheduled/.test(s.src)).map((s) => s.file)).toEqual([SENDER]);
+    const src = api.find((s) => s.file === SENDER)!.src;
+    // One send, of the re-plan event, and nothing else Inngest can run.
+    expect(src.match(/\.send\(/g)).toHaveLength(1);
+    expect(src.match(/"[a-z]+\/[a-z.]+"/g)).toEqual(['"appointment/scheduled"']);
+    expect(src).not.toMatch(/\bserve\b|createFunction/);
+    // The marker, made once per call, and never a confirmation.
+    expect(src).toContain("saveId: randomUUID()");
+    expect(src.match(/randomUUID\(\)/g)).toHaveLength(1);
+    expect(src).toContain("confirmationEligible: false,");
+    expect(src).not.toMatch(/confirmationEligible: true|acceptedPedido|acceptedGuestRequest|therapistChangeOnly/);
+    // Its one caller is the portal move, after the move's transaction.
+    const callers = APP_SOURCES.filter((s) => /\breplanAfterPortalMove\(/.test(s.src)).map((s) => s.file);
+    expect(callers.sort()).toEqual(["apps/api/lib/appointments/portal-move-replan.ts", "apps/api/lib/appointments/store.ts"]);
+    const store = api.find((s) => s.file === "apps/api/lib/appointments/store.ts")!.src;
+    expect(store.match(/\breplanAfterPortalMove\(/g)).toHaveLength(1);
+    const move = store.slice(store.indexOf("async rescheduleOwn("), store.indexOf("async hasWindowConflict("));
+    expect(move).toContain("replanAfterPortalMove(");
+    // After the transaction closes (its `});` is the only one at this indent in the method).
+    const txClose = move.indexOf("\n    });\n");
+    expect(txClose).toBeGreaterThan(move.indexOf("getDbAdmin().transaction("));
+    expect(move.indexOf("replanAfterPortalMove(")).toBeGreaterThan(txClose);
   });
 
   it("only enqueueRemindersAfterCommit calls the sender, and it makes the marker once per call", () => {

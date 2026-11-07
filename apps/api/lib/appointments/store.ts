@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import {
   appointments,
+  auditLog,
   locations,
   patients,
   services,
@@ -30,6 +31,8 @@ import type {
 import { OPEN_SLOTS_HORIZON_DAYS } from "./booking";
 import type { TherapistCandidate } from "./therapist";
 import { acquireSlotLocks } from "./slot-lock";
+import { portalMoveAuditRow } from "./portal-move-audit";
+import { replanAfterPortalMove } from "./portal-move-replan";
 import { locationHasBookableTherapist } from "@/lib/booking/location-bookable";
 
 /**
@@ -1082,7 +1085,11 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
     // separate statement, outside any transaction, so the window between check
     // and write was wider here than on create. Now the move happens inside one
     // transaction that holds the slot lock for the DESTINATION window.
-    await getDbAdmin().transaction(async (tx) => {
+    //
+    // R44: the transaction hands back what the re-plan needs, only once the
+    // move and its audit row are written. It is read after the transaction
+    // resolves, i.e. after COMMIT: a rolled-back move hands nothing on.
+    const replan = await getDbAdmin().transaction(async (tx): Promise<{ practitionerId: string } | null> => {
       // The therapist is on the stored row, not in the request - a patient
       // reschedules a time, never a practitioner. Read it under the same tx.
       const owned = await tx
@@ -1100,7 +1107,7 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
 
       // No row means not theirs, or not in a reschedulable state. Same silent
       // no-op the bare update produced, so callers see no behaviour change.
-      if (owned.length === 0) return;
+      if (owned.length === 0) return null;
 
       await tx.execute(
         acquireSlotLocks(
@@ -1111,7 +1118,33 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
         ),
       );
 
-      await tx
+      // R44: the start this move LEAVES, read AFTER the slot lock and under a
+      // row lock (the same order every move takes them: slot, then row), so a
+      // second move of the same row cannot commit between this read and the
+      // update and leave `fromStartsAt` one move behind. The Terapeuta the row
+      // and the re-plan carry is read here too, under the same lock.
+      const before = await tx
+        .select({
+          startsAt: appointments.startsAt,
+          locationId: appointments.locationId,
+          practitionerId: appointments.practitionerId,
+          status: appointments.status,
+          origin: appointments.origin,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.id, id),
+            eq(appointments.patientId, principal.patientId),
+            eq(appointments.tenantId, principal.tenantId),
+            inArray(appointments.status, ["scheduled", "confirmed"]),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (before.length === 0) return null;
+
+      const moved = await tx
         .update(appointments)
         .set({ startsAt, endsAt })
         .where(
@@ -1121,8 +1154,50 @@ export const drizzleAppointmentsStore: AppointmentsStore = {
             eq(appointments.tenantId, principal.tenantId),
             inArray(appointments.status, ["scheduled", "confirmed"]),
           ),
-        );
+        )
+        .returning({ id: appointments.id });
+      if (moved.length === 0) return null;
+
+      // An UNACCEPTED REQUEST is read the way the dispatcher reads it
+      // (apps/web/lib/reminders/dispatch.ts, `isUnacceptedPedido`): status
+      // `scheduled` and origin `patient_portal`, from the locked row.
+      const unacceptedRequest = before[0].status === "scheduled" && before[0].origin === "patient_portal";
+
+      // R44: the move's audit row, IN THIS TRANSACTION, so a move without its
+      // row (or a row without its move) cannot commit. A failed insert throws
+      // and rolls the move back with it. An unaccepted request's move writes
+      // its own action, which the reminder sweep does not read
+      // (./portal-move-audit.ts says why).
+      await tx.insert(auditLog).values(
+        portalMoveAuditRow({
+          tenantId: principal.tenantId,
+          appointmentId: id,
+          practitionerId: before[0].practitionerId,
+          locationId: before[0].locationId,
+          fromStartsAt: before[0].startsAt,
+          startsAt,
+          endsAt,
+          unacceptedRequest,
+        }),
+      );
+
+      // MOVING AN UNACCEPTED REQUEST RE-PLANS NOTHING, as on the staff move
+      // (apps/web/lib/scheduling/actions.ts, `moveAppointment`): it has no
+      // reminder run to supersede, and the dispatch refuses it anyway.
+      return unacceptedRequest ? null : { practitionerId: before[0].practitionerId };
     });
+
+    // R44: POST-COMMIT, ids and the new start only, never able to fail the
+    // move (./portal-move-replan.ts). Cancels the reminder runs planned for
+    // the old start and plans them for this one.
+    if (replan) {
+      await replanAfterPortalMove({
+        appointmentId: id,
+        tenantId: principal.tenantId,
+        startsAt,
+        practitionerId: replan.practitionerId,
+      });
+    }
   },
 
   async hasWindowConflict(

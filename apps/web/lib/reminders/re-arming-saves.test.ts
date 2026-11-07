@@ -176,6 +176,9 @@ describe("R33: the doors that re-arm the live job are the doors of the gate's ta
  * without a fresh ruling (./reminder-population.ts says so). Pinned here as
  * the only senders outside apps/web, and as writing no audit row.
  */
+/** R44: the portal move's re-plan sender, the one Inngest sender in apps/api. */
+const PORTAL_MOVE_SENDER = "apps/api/lib/appointments/portal-move-replan.ts";
+
 const OWNER_RUN_SENDERS = [
   "packages/db/scripts/inc-1007-rearm-reminders-emit.mjs",
   "packages/db/scripts/obs-05-backfill-emit.mjs",
@@ -199,14 +202,18 @@ describe("R33: the senders outside the application are the two owner-run scripts
     return out;
   };
 
-  it("only they name the event outside apps/web", () => {
+  it("only they name the event outside the application (apps/web, and the portal move's one sender in apps/api)", () => {
     const outside = ["packages", "scripts", "apps/api", "apps/portal", "apps/admin"]
       .filter((dir) => existsSync(join(REPO, dir)))
       .flatMap((dir) => scriptsUnder(dir));
     expect(outside.some((x) => x.file.startsWith("apps/portal/"))).toBe(true);
     expect(outside.some((x) => x.file.startsWith("apps/admin/"))).toBe(true);
     const senders = outside.filter((x) => x.src.includes('"appointment/scheduled"')).map((x) => x.file);
-    expect(senders.sort()).toEqual(OWNER_RUN_SENDERS);
+    // R44: the portal move's re-plan is an APPLICATION sender, and the gate
+    // sees it: its save writes the `appointment.reschedule` row the `moved`
+    // clause reads (the portal-move block below).
+    expect(senders.filter((f) => !f.startsWith("apps/api/")).sort()).toEqual(OWNER_RUN_SENDERS);
+    expect(senders.filter((f) => f.startsWith("apps/api/"))).toEqual([PORTAL_MOVE_SENDER]);
   });
 
   it.each(OWNER_RUN_SENDERS)("%s writes no audit row", (file) => {
@@ -360,11 +367,25 @@ describe("R33: the conditions the table's clauses are read from", () => {
     const batch = bodyOf("apps/web/lib/scheduling/batch.ts:batchSchedule");
     expect(batch).toContain("startsAt: toBook[i].startsAt.toISOString(),");
     expect(batch).toContain("startsAt: b.startsAt,");
-    // No other file writes either row (the gate's own table names them, and writes nothing).
+    // No other file writes either row (the gate's own table names them, and
+    // writes nothing), but the portal move's builder (R44, 2026-11-02), whose
+    // row is held to the same keys below.
     const writers = APP_SOURCES.filter((x) => /action: "appointment\.(create|reschedule)"/.test(x.src))
       .map((x) => x.file)
       .filter((f) => f !== "apps/web/lib/reminders/reminder-population.ts");
-    expect(writers.sort()).toEqual(["apps/web/lib/scheduling/actions.ts", "apps/web/lib/scheduling/batch.ts"]);
+    expect(writers.sort()).toEqual([
+      "apps/api/lib/appointments/portal-move-audit.ts",
+      "apps/web/lib/scheduling/actions.ts",
+      "apps/web/lib/scheduling/batch.ts",
+    ]);
+    // The portal move records both starts the same way, from the row as its
+    // own transaction read it, and writes one move row and no booking row.
+    const portal = srcOf("apps/api/lib/appointments/portal-move-audit.ts");
+    // (The value, ending in a comma; its type annotation names the same string and ends in `;`.)
+    expect(portal.match(/action: "appointment\.(create|reschedule)",/g)).toEqual(['action: "appointment.reschedule",']);
+    expect(portal).toContain('entityType: "appointment",');
+    expect(portal).toContain("fromStartsAt: args.fromStartsAt.toISOString(),");
+    expect(portal).toContain("startsAt: args.startsAt.toISOString(),");
     expect(actions.match(/action: "appointment\.(create|reschedule)"/g)).toHaveLength(3);
   });
 
@@ -386,6 +407,60 @@ describe("R33: the conditions the table's clauses are read from", () => {
     const fns = srcOf("apps/web/lib/reminders/inngest/functions.ts");
     expect(fns).toContain("const due = computeDueReminders(new Date(startsAt), new Date());");
     expect(fns).toContain("triggers: [{ event: EVENT_APPOINTMENT_SCHEDULED }],");
+  });
+});
+
+/**
+ * R44 (strategy and owner, 2026-11-02): THE PORTAL MOVE IS A DOOR OUTSIDE THE
+ * TABLE'S `doors` LIST. The patient's own move in the portal
+ * (apps/api/lib/appointments/store.ts, `rescheduleOwn`) re-plans the live job
+ * with its own `appointment/scheduled` (./portal-move-replan.ts in apps/api),
+ * not through `enqueueRemindersAfterCommit`, so the door list above cannot find
+ * it, and the table in ./reminder-population.ts was frozen in its code bytes
+ * when this landed. Its row is the `moved` clause's row
+ * (`appointment.reschedule`), written in the move's own transaction, and its
+ * event goes after the commit, except for an unaccepted request, as on the
+ * staff move. Held here from the source.
+ */
+describe("R44: the portal move writes the `moved` clause's row in its transaction and re-plans after it", () => {
+  const move = (() => {
+    const store = srcOf("apps/api/lib/appointments/store.ts");
+    return store.slice(store.indexOf("async rescheduleOwn("), store.indexOf("async hasWindowConflict("));
+  })();
+
+  it("the row is built and inserted inside the transaction, after the update", () => {
+    const tx = move.indexOf("getDbAdmin().transaction(");
+    const update = move.indexOf(".update(appointments)");
+    const insert = move.indexOf("await tx.insert(auditLog).values(");
+    const txClose = move.indexOf("\n    });\n");
+    expect(tx).toBeGreaterThan(-1);
+    expect(update).toBeGreaterThan(tx);
+    expect(insert).toBeGreaterThan(update);
+    expect(move.indexOf("portalMoveAuditRow(")).toBeGreaterThan(insert);
+    expect(txClose).toBeGreaterThan(insert);
+    expect(move).toContain("fromStartsAt: before[0].startsAt,");
+  });
+
+  it("the re-plan goes after the commit, never for an unaccepted request", () => {
+    const txClose = move.indexOf("\n    });\n");
+    expect(move.indexOf("replanAfterPortalMove(")).toBeGreaterThan(txClose);
+    expect(move).toContain('before[0].status === "scheduled" && before[0].origin === "patient_portal"');
+    expect(move).toContain("return unacceptedRequest ? null : { practitionerId: before[0].practitionerId };");
+  });
+
+  it("an unaccepted request's portal move writes an action no clause reads (SOLO's ruling on R4 of #1693)", () => {
+    const PEDIDO_MOVE = "appointment.pedido_reschedule.portal";
+    const builder = srcOf("apps/api/lib/appointments/portal-move-audit.ts");
+    expect(builder).toContain(`return args.unacceptedRequest ? { ...row, action: "${PEDIDO_MOVE}" } : row;`);
+    expect(move).toContain("unacceptedRequest,");
+    expect(RE_ARMING_SAVES.map((c) => c.action)).not.toContain(PEDIDO_MOVE);
+  });
+
+  it("the event is the one the live job re-plans on, with the new start", () => {
+    const sender = srcOf(PORTAL_MOVE_SENDER);
+    expect(sender).toContain('const PORTAL_MOVE_REPLAN_EVENT = "appointment/scheduled";');
+    expect(sender).toContain("name: PORTAL_MOVE_REPLAN_EVENT,");
+    expect(sender).toContain("startsAt: args.startsAt.toISOString(),");
   });
 });
 

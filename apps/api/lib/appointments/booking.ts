@@ -246,7 +246,10 @@ export interface AppointmentsStore {
   ): Promise<MutableAppointment | null>;
   /** Cancel an OWN appointment (status → cancelled). */
   cancelOwn(principal: PatientPrincipal, id: string): Promise<void>;
-  /** Move an OWN appointment to a new window. */
+  /** Move an OWN appointment to a new window. R44: the move and its
+   *  `appointment.reschedule` audit row (./portal-move-audit.ts) commit in one
+   *  transaction, or neither does; after the commit the visit's reminders are
+   *  re-planned (./portal-move-replan.ts), best-effort. */
   rescheduleOwn(
     principal: PatientPrincipal,
     id: string,
@@ -776,6 +779,9 @@ export async function rescheduleAppointment(
   if (verdict.conflict) throw new AppointmentError("no_slot");
 
   await store.rescheduleOwn(principal, id, { startsAt: input.startsAt, endsAt: newEndsAt });
+
+  // R44: the store has already re-planned the visit's reminders, after its
+  // commit (./portal-move-replan.ts), as the staff move does. Nothing more here.
 
   // POST-COMMIT, same rule as cancel. Both instants are carried so the centre
   // can render "moved from X to Y" without a second read.

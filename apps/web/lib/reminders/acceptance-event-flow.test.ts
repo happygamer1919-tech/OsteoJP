@@ -214,8 +214,15 @@ describe("before acceptance, a pedido produces nothing", () => {
    * `appointment/scheduled` at BOOKING time, the confirmation would fire for an
    * unaccepted pedido from a second place, and this arm goes red rather than the
    * defect shipping.
+   *
+   * ONE FILE IS ALLOWED, SINCE R44 (strategy and owner, 2026-11-02): the
+   * re-plan a patient's own MOVE sends, /lib/appointments/portal-move-replan.ts,
+   * called only from `rescheduleOwn` after its commit, never for an unaccepted
+   * pedido, and always with `confirmationEligible: false`
+   * (confirmation-key-per-save.test.ts holds those). No BOOKING path emits:
+   * the booking module and the store's booking insert are held below.
    */
-  it("apps/api emits NO scheduling event anywhere — asserted at source", () => {
+  it("apps/api emits NO scheduling event but the portal move's re-plan, asserted at source", () => {
     const root = join(__dirname, "..", "..", "..", "..", "apps", "api");
     const files: string[] = [];
     const walk = (dir: string) => {
@@ -235,6 +242,21 @@ describe("before acceptance, a pedido produces nothing", () => {
         .replace(/^\s*\/\/.*$/gm, "");
       return /from\s+["']inngest["']|appointment\/scheduled/.test(src);
     });
-    expect(offenders.map((f) => f.slice(root.length))).toEqual([]);
+    expect(offenders.map((f) => f.slice(root.length))).toEqual(["/lib/appointments/portal-move-replan.ts"]);
+
+    // ...and no booking path reaches it: the booking module does not name it,
+    // and in the store only the move does.
+    const code = (rel: string) =>
+      readFileSync(join(root, rel), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+    expect(code("lib/appointments/booking.ts")).not.toMatch(/replanAfterPortalMove|portal-move-replan|inngest/);
+    const store = code("lib/appointments/store.ts");
+    expect(store.match(/replanAfterPortalMove\(/g)).toHaveLength(1);
+    const createBooking = store.slice(store.indexOf("async createBooking("), store.indexOf("async getOwnMutable("));
+    expect(createBooking.length).toBeGreaterThan(100);
+    expect(createBooking).not.toContain("replanAfterPortalMove");
+    const move = store.slice(store.indexOf("async rescheduleOwn("), store.indexOf("async hasWindowConflict("));
+    expect(move).toContain("replanAfterPortalMove(");
   });
 });
