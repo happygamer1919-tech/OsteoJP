@@ -269,14 +269,15 @@ test.describe("authoring (therapist)", () => {
     await expect(form.getByText("Peso (kg)")).toBeVisible();
     await expect(form.getByText("Altura (cm)")).toBeVisible();
 
-    // W5-19 ruling C — the section is now "Outros" (not "Problemas de Saúde"):
+    // FICHA-ORDER-01 (owner, 2026-11-06): the section reads "Problemas de Saúde"
+    // again (the W5-19 ruling C "Outros" override is removed):
     // all 19 conditions render as checkboxes (Lúpus included). Scope to the form
     // to avoid the header strip / rail. Assert a representative spread incl. Lúpus.
     for (const label of ["Fumador", "Lúpus", "Diabetes", "COVID-19", "Hipotensão", "Neoplasia"]) {
       await expect(form.getByText(label, { exact: false }).first()).toBeVisible();
     }
-    await expect(form.getByText("Outros", { exact: false }).first()).toBeVisible();
-    await expect(form.getByText("Problemas de Saúde", { exact: false })).toHaveCount(0);
+    await expect(form.getByText("Problemas de Saúde", { exact: false }).first()).toBeVisible();
+    await expect(form.getByText("Outros", { exact: true })).toHaveCount(0);
     // AMENDMENTS ruling F (W5-24): the free-text renders with NO visible label —
     // an unlabeled input carrying the "Outras..." placeholder (accessible name via
     // aria-label). The superseded ruling-C placeholder is gone.

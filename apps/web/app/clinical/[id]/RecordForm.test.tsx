@@ -6,7 +6,8 @@
  * and pins the sec 5 structure that W5-14 delivers:
  *  - the health_problems checkbox_group renders ALL 19 conditions in a
  *    FOUR-COLUMN grid, with the free-text sub-field AFTER the grid (bug fix);
- *  - W5-19 ruling C: the section is titled "Outros" (renderer override), and
+ *  - W5-19 ruling C titled the section "Outros"; FICHA-ORDER-01 (owner,
+ *    2026-11-06) removed that override, so it reads "Problemas de Saúde"; and
  *    the free-text renders unlabeled with the guidance placeholder;
  *  - the 5.1 header row keeps Peso (weight_kg) and Altura (height_cm) ADJACENT;
  *  - W5-19 ruling B: no episode_date input renders (created_at is auto-stamped
@@ -151,9 +152,9 @@ describe("Outros grid (SPEC-ficha-medica AMENDMENTS ruling F, W5-24) — legacy 
     expect(html).not.toContain("sm:grid-cols-3");
   });
 
-  it("titles the section 'Outros', not 'Problemas de Saúde' (ruling C override, kept)", () => {
-    expect(html).toContain("Outros");
-    expect(html).not.toContain("Problemas de Saúde");
+  it("titles the section 'Problemas de Saúde', not 'Outros' (FICHA-ORDER-01 removed the ruling C override)", () => {
+    expect(html).toContain("Problemas de Saúde");
+    expect(html).not.toMatch(/>Outros</);
   });
 
   it("renders the free-text unlabeled with the 'Outras...' placeholder, as the LAST cell after the grid", () => {
@@ -304,7 +305,7 @@ describe("FF2-A canonical order (SPEC AMENDMENT 2026-07-12) — top-to-bottom se
     "Diagnóstico",                            // 11
     "Condições Alívio",                       // 12 relief_aggravation
     "Anamnese por Sistemas",                  // 13
-    "Outros",                                 // 14 health_problems (renderer override)
+    "Problemas de Saúde",                     // 14 health_problems (template x-label)
     "Antecedentes Clínicos",                  // 15 clinical_history
     "Testes Especiais",                       // 16 special_tests
   ];
