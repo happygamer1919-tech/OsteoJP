@@ -20,7 +20,7 @@ on the owner's dispatch naming the three stage files below by filename (`CLAUDE.
 "Who applies migrations"). The authoring lane never runs these blocks against
 production. A separate session rehearses them on a throwaway database; the section
 "Rehearsed on a throwaway database" says what has run on these exact bytes, and
-today that is nothing.
+lists every step that did not run.
 
 | Fact | Value |
 |---|---|
@@ -621,8 +621,9 @@ count and md5 as the baseline.
 **What a reader should know.** Verdict 10 checks that `updated_at` equals
 `created_at`, and `form_templates` has no trigger that moves `updated_at`, so an
 UPDATE that leaves `updated_at` alone does not FAIL verdict 10; in the third break,
-verdicts 7 and 8 caught it. The Status line at the top of this document still reads
-NOT REHEARSED, because this session changed only this section.
+verdicts 7 and 8 caught it. When this record was written, the Status line at the top
+still read NOT REHEARSED, because this session changed only this section; the
+author updated the Status line afterwards (c1a0fc7b).
 
 ## What this does NOT do
 
