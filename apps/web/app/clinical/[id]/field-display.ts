@@ -17,13 +17,13 @@ import { labelOf, type FieldSchema } from "@/lib/clinical/form-template";
 export const HIDDEN_FIELD_KEYS = new Set(["episode_date"]);
 
 /**
- * Ruling C: the `health_problems` section is presented as "Outros" via a
- * renderer-level label override — migration-free; the template `x-label` and
- * the data key / AI binding are untouched.
+ * Renderer-level section-title overrides, keyed by field key. Empty since
+ * FICHA-ORDER-01 (owner, 2026-11-06): the W5-19 ruling C override that showed
+ * `health_problems` as "Outros" is removed, so the section shows its template
+ * `x-label`, "Problemas de Saúde", as the previous system did, on every
+ * template version. The data key and AI binding were never touched.
  */
-const SECTION_LABEL_OVERRIDES: Record<string, Record<string, string>> = {
-  health_problems: { pt: "Outros", en: "Other" },
-};
+const SECTION_LABEL_OVERRIDES: Record<string, Record<string, string>> = {};
 
 /** Field label with the W5-19 section-title overrides applied. */
 export function sectionLabel(field: FieldSchema, locale: Locale, key: string): string {

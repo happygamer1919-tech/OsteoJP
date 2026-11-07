@@ -6,7 +6,8 @@
  * and pins the sec 5 structure that W5-14 delivers:
  *  - the health_problems checkbox_group renders ALL 19 conditions in a
  *    FOUR-COLUMN grid, with the free-text sub-field AFTER the grid (bug fix);
- *  - W5-19 ruling C: the section is titled "Outros" (renderer override), and
+ *  - W5-19 ruling C titled the section "Outros"; FICHA-ORDER-01 (owner,
+ *    2026-11-06) removed that override, so it reads "Problemas de Saúde"; and
  *    the free-text renders unlabeled with the guidance placeholder;
  *  - the 5.1 header row keeps Peso (weight_kg) and Altura (height_cm) ADJACENT;
  *  - W5-19 ruling B: no episode_date input renders (created_at is auto-stamped
@@ -151,9 +152,9 @@ describe("Outros grid (SPEC-ficha-medica AMENDMENTS ruling F, W5-24) — legacy 
     expect(html).not.toContain("sm:grid-cols-3");
   });
 
-  it("titles the section 'Outros', not 'Problemas de Saúde' (ruling C override, kept)", () => {
-    expect(html).toContain("Outros");
-    expect(html).not.toContain("Problemas de Saúde");
+  it("titles the section 'Problemas de Saúde', not 'Outros' (FICHA-ORDER-01 removed the ruling C override)", () => {
+    expect(html).toContain("Problemas de Saúde");
+    expect(html).not.toMatch(/>Outros</);
   });
 
   it("renders the free-text unlabeled with the 'Outras...' placeholder, as the LAST cell after the grid", () => {
@@ -304,7 +305,7 @@ describe("FF2-A canonical order (SPEC AMENDMENT 2026-07-12) — top-to-bottom se
     "Diagnóstico",                            // 11
     "Condições Alívio",                       // 12 relief_aggravation
     "Anamnese por Sistemas",                  // 13
-    "Outros",                                 // 14 health_problems (renderer override)
+    "Problemas de Saúde",                     // 14 health_problems (template x-label)
     "Antecedentes Clínicos",                  // 15 clinical_history
     "Testes Especiais",                       // 16 special_tests
   ];
@@ -338,6 +339,55 @@ describe("Old-record proof (rule #5) — a v3-bound record still renders its ORI
     // v3 is immutable; records referencing it keep the removed fields forever.
     expect(html).toContain("Marcação respectiva");
     expect(html).toContain("Testes Neurológicos");
+  });
+});
+
+/** Top-level section anchors (id="section-<key>") in DOM order. */
+const sectionOrder = (html: string): string[] =>
+  [...html.matchAll(/id="section-([a-z_]+)"/g)].map((m) => m[1]!);
+
+describe("FICHA-ORDER-01: a v6 ficha renders the previous system's section order; a v5 record keeps v5's", () => {
+  const v5 = loadTpl("osteopathy-v5.json");
+  const v6 = loadTpl("osteopathy-v6.json");
+  const schemaV5 = parseTemplateSchema(jsonbShape(v5.schema))!;
+  const schemaV6 = parseTemplateSchema(jsonbShape(v6.schema))!;
+
+  it("renders the v6 sections top to bottom in the ruled order (episode_date has no input)", () => {
+    const html = render({}, false, schemaV6);
+    expect(sectionOrder(html)).toEqual([
+      "weight_kg", "height_cm", "red_flags", "health_problems",
+      "consultation_reason", "relief_aggravation", "clinical_history",
+      "systems_review", "bodychart", "mobilidade", "mobilidade_observacoes",
+      "special_tests", "diagnostico", "tratamento", "treatment_plan",
+      "treatment_objectives", "observations",
+    ]);
+    expect(html).not.toContain('id="section-episode_date"');
+  });
+
+  it("keeps Peso + Altura in their thin card at the top of v6", () => {
+    const html = render({}, false, schemaV6);
+    const card = html.indexOf('data-testid="ficha-peso-altura-card"');
+    expect(card).toBeGreaterThan(-1);
+    expect(card).toBeLessThan(html.indexOf('id="section-weight_kg"'));
+    expect(html.indexOf('id="section-height_cm"')).toBeLessThan(html.indexOf('id="section-red_flags"'));
+  });
+
+  it("puts the red-flag prompt right under Alertas on v6", () => {
+    const html = render({ red_flags: "x" }, false, schemaV6);
+    const prompt = html.indexOf('data-testid="red-flag-consultation-prompt"');
+    expect(prompt).toBeGreaterThan(html.indexOf('id="section-red_flags"'));
+    expect(prompt).toBeLessThan(html.indexOf('id="section-health_problems"'));
+  });
+
+  it("a record pinned to v5 still renders v5's order (rule #5)", () => {
+    const html = render({}, false, schemaV5);
+    expect(sectionOrder(html)).toEqual([
+      "weight_kg", "height_cm", "consultation_reason", "bodychart",
+      "relief_aggravation", "observations", "mobilidade", "special_tests",
+      "mobilidade_observacoes", "systems_review", "health_problems",
+      "clinical_history", "diagnostico", "treatment_objectives", "treatment_plan",
+      "tratamento", "red_flags",
+    ]);
   });
 });
 

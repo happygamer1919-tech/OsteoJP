@@ -385,10 +385,11 @@ export const THERAPIST_INSPECTOR = "E2E Terapeuta Inspetor";
  * (ficha_geral / physiotherapy / nesa). The superseded osteopathy labels below
  * must NOT appear on creation.
  */
-// W12-22: the current osteopathy version is now v5 (Rodica's R12 order, no CID).
-// The picker labels options `${title} v${version}` and offers only the highest
-// active version, so creation resolves to "Ficha Clínica v5".
-export const TEMPLATE_CURRENT_LABEL = "Ficha Clínica v5";
+// FICHA-ORDER-01: the current osteopathy version is now v6 (v5's fields in the
+// previous system's section order). The picker labels options
+// `${title} v${version}` and offers only the highest active version, so
+// creation resolves to "Ficha Clínica v6".
+export const TEMPLATE_CURRENT_LABEL = "Ficha Clínica v6";
 export const TEMPLATE_SUPERSEDED_LABEL = "Osteopatia — Avaliação de Episódio v2";
 /** A retired-from-creation template (still a real row; just not selectable). */
 export const TEMPLATE_RETIRED_LABEL = "Fisioterapia — Avaliação de Episódio v4";
