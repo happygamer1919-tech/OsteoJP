@@ -311,6 +311,25 @@ export const locations = pgTable(
     /* NOT blockable-around.                                              */
     middayClosedFrom: time("midday_closed_from"),
     middayClosedTo: time("midday_closed_to"),
+    /* ================================================================== */
+    /* HOR-02 - `saturday_opens_at` AND `saturday_closes_at` (migration   */
+    /* 0109) ARE DELIBERATELY NOT DECLARED HERE.                          */
+    /* ================================================================== */
+    /* A column declared on this table is named by every Drizzle select   */
+    /* of `locations` that lists no fields, and by every insert. 0109 is  */
+    /* a held migration: this code ships to databases that do not have    */
+    /* the columns yet, where such a query fails with 42703 and takes     */
+    /* every booking read down with it. So the staff app reads them by    */
+    /* name, only after asking the catalogue whether BOTH exist, in       */
+    /* packages/db/src/location-saturday.ts (HOR-01), which says the same */
+    /* from its side. Declaring them here is a later change, once 0109 is */
+    /* applied everywhere this code runs.                                 */
+    /*                                                                    */
+    /* Saturday is its own pair (owner, 2026-10-31: "Saturday hours per   */
+    /* clinic: 9am to 1pm", while weekdays open at 08:00), both NULL or   */
+    /* both set with closing after opening: CHECK                         */
+    /* locations_saturday_hours_valid, in the migration only.             */
+    /* ================================================================== */
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -376,6 +395,23 @@ export const services = pgTable(
     // names in apps/api/lib/appointments/services.ts; ships false by default so a
     // new service is never silently self-bookable.
     patientBookable: boolean("patient_bookable").notNull().default(false),
+    // TIPOS DE MARCACAO (the clinic's request of 2026-11-02, Fisiozero's
+    // "Tipo de Marcacoes / Tabelas de Precos" table). Five columns from the
+    // PENDING migration migrations-pending/NEXT-AFTER-0109_services_booking_
+    // type_fields.sql; the allowed values live in ./service-type-fields.ts.
+    // Each is STORED ONLY: no reminder, invoice, agenda or follow-up path
+    // reads them yet, and each of those is its own later decision.
+    //   color: '#RRGGBB' in capitals, NULL = none chosen.
+    color: text("color"),
+    //   vat_rate: 0, 6, 13 or 23 (percent), NULL = not set on the type.
+    vatRate: smallint("vat_rate"),
+    //   vat_exemption_code: the AT "Motivo IVA" code, NULL = none chosen.
+    vatExemptionCode: text("vat_exemption_code"),
+    //   follow_up_days: NULL = "FollowUP: nenhum", 2 = "FollowUp 2 dias".
+    followUpDays: smallint("follow_up_days"),
+    //   sms_reminders: The SMS tag. Whether it stops only the SMS or every
+    //   reminder is not ruled yet. TRUE (the default) for every existing row.
+    smsReminders: boolean("sms_reminders").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -389,6 +425,27 @@ export const services = pgTable(
     // will filter on patient_bookable too. Paired with tenant_id because it is
     // never the only predicate.
     index("services_tenant_patient_bookable_idx").on(t.tenantId, t.patientBookable),
+    // The pending migration's four CHECKs, by the same names. The value lists
+    // are written out because a CHECK is SQL; tests/service-type-fields.test.ts
+    // pins the migration's lists to ./service-type-fields.ts.
+    check("services_color_hex", sql`${t.color} is null or ${t.color} ~ '^#[0-9A-F]{6}$'`),
+    check(
+      "services_vat_rate_allowed",
+      sql`${t.vatRate} is null or ${t.vatRate} in (0, 6, 13, 23)`,
+    ),
+    check(
+      "services_vat_exemption_code_allowed",
+      sql`${t.vatExemptionCode} is null or ${t.vatExemptionCode} in (
+        'M01', 'M02', 'M04', 'M05', 'M06', 'M07', 'M09', 'M10', 'M11', 'M12',
+        'M13', 'M14', 'M15', 'M16', 'M19', 'M20', 'M21', 'M25', 'M26', 'M30',
+        'M31', 'M32', 'M33', 'M34', 'M35', 'M40', 'M41', 'M42', 'M43', 'M44',
+        'M45', 'M46', 'M99'
+      )`,
+    ),
+    check(
+      "services_follow_up_days_allowed",
+      sql`${t.followUpDays} is null or ${t.followUpDays} = 2`,
+    ),
   ],
 );
 

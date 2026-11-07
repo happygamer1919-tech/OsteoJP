@@ -1,7 +1,7 @@
 ---
 id: equipa-e-horarios.servicos-e-precos
 title: Serviços e preços
-goal: Criar um serviço, mudar o preço num local ou arquivá-lo.
+goal: Criar um tipo de marcação, mudar o preço num local ou desativá-lo.
 roles: proprietario
 order: proprietario 10
 capability: services:write
@@ -9,17 +9,19 @@ screens: admin-servicos
 ---
 ## Serviços e preços
 
-Em **Administração**, **Serviços** tem a lista dos serviços da clínica, com **Duração (min)**, **Preço (€)** e **Estado**.
+Em **Administração**, **Serviços**, a tabela **Tipo de Marcações / Tabelas de Preços** tem uma linha por tipo: **Preço**, **IVA**, **Motivo IVA**, interruptor de ativo, cor, **SMS**, **AGENDA** e **Duração (min)**.
 
-Para criar um serviço:
+Com IVA 0%, o **Motivo IVA** é obrigatório. Os valores de IVA e Motivo são confirmados pelo contabilista antes de qualquer faturação os usar. A etiqueta **SMS** ainda não tem efeito nos lembretes.
 
-1. Em **Adicionar serviço**, preencha **Nome**, **Duração (min)** e **Preço (€)**. Marque **Sensível a contraindicações NESA** se for o caso.
-2. Clique em **Adicionar serviço**.
+Para criar um tipo: preencha a linha por baixo da tabela e clique em **Inserir Novo Tipo de Marcação**.
 
-Para alterar um serviço ou o preço num local:
+Para alterar tipos:
 
-1. Clique em **Gerir** na linha do serviço, altere o que for preciso e clique em **Guardar**.
-2. Para um preço diferente num local, abra **Preços por local**, escreva o preço desse local e clique em **Guardar preços**. Um local com o campo em branco usa o preço base.
-3. Para deixar de oferecer o serviço, clique em **Arquivar** no mesmo painel.
+1. Altere na tabela o que for preciso e clique uma vez no botão de guardar. Se outra pessoa guardou entretanto, nada é guardado: recarregue a página.
+2. Para deixar de oferecer um tipo, desligue o interruptor e guarde. Um tipo usado por um pacote não pode ser desligado.
+3. Para um preço diferente num local, abra **Preços por local** e clique em **Guardar preços**.
+4. **Sensível a contraindicações NESA** está em **Gerir**.
 
-Nota: um serviço com marcações não pode ser eliminado; arquive-o. Abrir o serviço à marcação no portal está explicado na secção Portal do paciente.
+Notas da tabela: as marcações não guardam preço (vale o da fatura emitida) e as estatísticas contam apenas as faturas emitidas.
+
+Nota: um tipo com marcações não pode ser eliminado; desligue-o. O portal está explicado na secção Portal do paciente.

@@ -20,22 +20,25 @@ test("Serviços: per-location price toggles the offered-here affordance (W8-01b)
   // so an unscoped name filter would also match pack-table rows.
   const servicesTable = page.locator("table").first();
   const name = `E2E Pack Svc ${Date.now()}`;
-  const addForm = page
-    .locator("form")
-    .filter({ has: page.getByRole("button", { name: "Adicionar serviço" }) });
+  // Tipos de Marcacao (2026-11-02): the new-type row under the table.
+  const addForm = page.getByTestId("service-types-new-row");
   await addForm.locator('input[name="name"]').fill(name);
   await addForm.locator('input[name="durationMin"]').fill("30");
-  // Wait for the actual ?m=ok redirect to complete (a bare /admin/services wait
+  // Wait for the actual ?mn=ok redirect to complete (a bare /admin/services wait
   // returns immediately and races the summary click against the redirect).
   await Promise.all([
-    page.waitForURL(/m=ok/),
-    addForm.getByRole("button", { name: "Adicionar serviço" }).click(),
+    page.waitForURL(/mn=ok/),
+    addForm.getByRole("button", { name: "Inserir Novo Tipo de Marcação" }).click(),
   ]);
 
   // Opens the per-location price editor (the sibling row below the service row)
-  // on the freshly-loaded page and returns its Linda-a-Velha field.
+  // on the freshly-loaded page and returns its Linda-a-Velha field. The type's
+  // name is an input in its row, so the row is found by that input's value.
   const openPriceField = async () => {
-    const svcRow = servicesTable.locator("tbody > tr").filter({ hasText: name }).first();
+    const svcRow = servicesTable
+      .locator("tbody > tr")
+      .filter({ has: page.locator(`input[name^="name__"][value="${name}"]`) })
+      .first();
     await expect(svcRow).toBeVisible();
     const priceRow = svcRow.locator("xpath=following-sibling::tr[1]");
     await priceRow.getByText("Preços por local").click();

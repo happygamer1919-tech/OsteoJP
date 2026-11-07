@@ -5,11 +5,16 @@ import { requireRequestContext } from "@/lib/auth/context";
 import {
   createService,
   deleteService,
-  setServiceActive,
+  saveServiceTypesTable,
+  setServiceContraindicationSensitive,
   setServiceLocationPrices,
-  setServicePatientBookable,
-  updateService,
 } from "@/lib/admin/services";
+import {
+  ServiceTypesFormError,
+  formErrorQuery,
+  parseNewServiceType,
+  parseServiceTypesTable,
+} from "@/lib/admin/service-types-form";
 import {
   createPack,
   deletePack,
@@ -21,12 +26,6 @@ import {
 import { AdminError, isAdminError } from "@/lib/admin/errors";
 import { locationPriceEntries, parsePriceToCents } from "@/lib/admin/price-input";
 
-
-function parseDuration(raw: string): number {
-  const n = Number(raw.trim());
-  if (!Number.isInteger(n)) throw new AdminError("invalid", "invalid duration");
-  return n;
-}
 
 function parseSessionCount(raw: string): number {
   const n = Number(raw.trim());
@@ -72,52 +71,57 @@ async function runPack(fn: () => Promise<unknown>): Promise<never> {
   redirect(`/admin/services?mp=${code}`);
 }
 
-export async function createServiceAction(formData: FormData): Promise<void> {
-  const actor = await requireRequestContext();
-  await run(() =>
-    createService(actor, {
-      name: String(formData.get("name") ?? ""),
-      durationMin: parseDuration(String(formData.get("durationMin") ?? "")),
-      priceCents: parsePriceToCents(String(formData.get("price") ?? "")),
-      contraindicationSensitive: formData.get("contraindicationSensitive") === "on",
-    }),
-  );
-}
-
-export async function updateServiceAction(formData: FormData): Promise<void> {
-  const actor = await requireRequestContext();
-  const id = String(formData.get("id") ?? "");
-  await run(() =>
-    updateService(actor, id, {
-      name: String(formData.get("name") ?? ""),
-      durationMin: parseDuration(String(formData.get("durationMin") ?? "")),
-      priceCents: parsePriceToCents(String(formData.get("price") ?? "")),
-      contraindicationSensitive: formData.get("contraindicationSensitive") === "on",
-    }),
-  );
-}
-
-export async function setServiceActiveAction(formData: FormData): Promise<void> {
-  const actor = await requireRequestContext();
-  const id = String(formData.get("id") ?? "");
-  const active = String(formData.get("active") ?? "") === "true";
-  await run(() => setServiceActive(actor, id, active));
-}
-
 /**
- * W13-04 step 7 — toggle whether PATIENTS may book a service in the portal.
+ * TIPOS DE MARCACAO: the table's one save button and its new-type row.
  *
- * A separate action from setServiceActiveAction because the two answer
- * different questions: `active` is "does the clinic still offer this at all",
- * `patient_bookable` is "may a patient book it themselves". Folding them into
- * one control would make archiving a service the only way to take it off the
- * portal, which would also take it off the staff agenda.
+ * A form value the table cannot hold (a VAT rate Fisiozero does not offer, a
+ * price that is not euros) reads as `err:invalid`, and nothing is saved. The
+ * agenda's cached reference data is invalidated at once (as the pack actions
+ * do): a type's name, duration and active switch feed the booking drawer.
+ *
+ * Each action reports on its OWN query parameter (`mt` the table save, `mn` the
+ * new-type row), so the banner can say which of the two failed and why: "a value
+ * in the table is invalid" and "the new type has an invalid value" point at
+ * different boxes on the page.
+ *
+ * IVA 0% with no Motivo (strategy Q5) has its own code, `err:vat_reason`, so
+ * the banner says what to choose instead of "an invalid value", and from the
+ * table it carries the ids of every row at fault (`vr`), which the banner names.
+ * A Motivo on a 6, 13 or 23% rate (strategy B10) is the mirror refusal, with
+ * its own code, `err:vat_reason_not_exempt`, and the same `vr` row ids.
  */
-export async function setServicePatientBookableAction(formData: FormData): Promise<void> {
+async function runTypes(param: "mt" | "mn", fn: () => Promise<void>): Promise<never> {
+  let query = `${param}=ok`;
+  try {
+    await fn();
+  } catch (e) {
+    // A refused form cell; Q5's and B10's name the rows at fault (`vr`), see formErrorQuery.
+    query =
+      e instanceof ServiceTypesFormError
+        ? formErrorQuery(param, e)
+        : `${param}=${isAdminError(e) ? `err:${e.code}` : "err"}`;
+  }
+  revalidatePath("/admin/services");
+  updateTag("agenda-reference-data");
+  redirect(`/admin/services?${query}`);
+}
+
+export async function saveServiceTypesTableAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  await runTypes("mt", () => saveServiceTypesTable(actor, parseServiceTypesTable(formData.entries())));
+}
+
+export async function createServiceTypeAction(formData: FormData): Promise<void> {
+  const actor = await requireRequestContext();
+  await runTypes("mn", () => createService(actor, parseNewServiceType(formData.entries())));
+}
+
+/** The NESA contraindication flag, from the row's Gerir drawer. */
+export async function setServiceContraindicationAction(formData: FormData): Promise<void> {
   const actor = await requireRequestContext();
   const id = String(formData.get("id") ?? "");
-  const bookable = String(formData.get("bookable") ?? "") === "true";
-  await run(() => setServicePatientBookable(actor, id, bookable));
+  const sensitive = formData.get("contraindicationSensitive") === "on";
+  await run(() => setServiceContraindicationSensitive(actor, id, sensitive));
 }
 
 export async function deleteServiceAction(formData: FormData): Promise<void> {
