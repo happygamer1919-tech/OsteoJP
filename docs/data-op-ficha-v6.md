@@ -1,6 +1,6 @@
 # FICHA-V6: one data op that installs osteopathy version 6 in every tenant
 
-**Status: NOT RUN. NOT REHEARSED.** A DATA operation, not a migration: no schema
+**Status: NOT RUN. REHEARSED on a throwaway database, with every NOT REHEARSED step listed in that section.** A DATA operation, not a migration: no schema
 change, no journal entry. Four blocks, each pasted whole, on its own and in order:
 stage 0 (the files and the head it runs from), stage 1 (measure), stage 2 (write)
 and stage 3 (verify). One rule governs every halt, in these words here and in

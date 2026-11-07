@@ -397,9 +397,9 @@ test("every script a block runs is checked by sha256 in that block before it run
 
 /* ---- the document ---------------------------------------------------------------------------- */
 
-test("the document states the halt rule once, word for word, says NOT RUN and NOT REHEARSED, and leaves the rehearsal section to the rehearsal", () => {
+test("the document states the halt rule once, word for word, says NOT RUN and REHEARSED with its NOT REHEARSED steps, and carries the rehearsal record", () => {
   assert.equal(doc.split(HALT_RULE).length - 1, 1, "the halt rule is not stated exactly once, word for word");
-  assert.ok(doc.includes("**Status: NOT RUN. NOT REHEARSED.**"));
+  assert.ok(doc.includes("**Status: NOT RUN. REHEARSED on a throwaway database, with every NOT REHEARSED step listed in that section.**"));
   const rehearsal = doc.slice(doc.indexOf("## Rehearsed on a throwaway database"), doc.indexOf("## What this does NOT do"));
   assert.ok(rehearsal.length > 0);
   assert.ok(rehearsal.includes("**REHEARSED by a session that did not write these files, on a throwaway local\ndatabase, from head `d0c9ec0b`:**"));
