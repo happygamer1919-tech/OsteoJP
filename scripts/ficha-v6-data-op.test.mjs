@@ -402,7 +402,7 @@ test("the document states the halt rule once, word for word, says NOT RUN and NO
   assert.ok(doc.includes("**Status: NOT RUN. NOT REHEARSED.**"));
   const rehearsal = doc.slice(doc.indexOf("## Rehearsed on a throwaway database"), doc.indexOf("## What this does NOT do"));
   assert.ok(rehearsal.length > 0);
-  assert.ok(rehearsal.includes("**NOT REHEARSED.** Nothing in this document has run on any database."));
+  assert.ok(rehearsal.includes("**REHEARSED by a session that did not write these files, on a throwaway local\ndatabase, from head `d0c9ec0b`:**"));
   const ruling =
     '"FICHA-ORDER-01 v6: YES, on the Tier C list as proposed: one-row INSERT per tenant, ON CONFLICT DO NOTHING, its own document, ' +
     "rehearsal and sha256. GREEN runs it on a closed-hours night with no other sitting, AFTER the switch and its clean first-send read. " +

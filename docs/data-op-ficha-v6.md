@@ -531,9 +531,98 @@ undo leaves it, which is what it must do.
 
 ## Rehearsed on a throwaway database
 
-**NOT REHEARSED.** Nothing in this document has run on any database. This section is
-filled by the rehearsal session, a session that did not write these files, on these
-exact bytes. Until it is filled, this document is not READY.
+**REHEARSED by a session that did not write these files, on a throwaway local
+database, from head `d0c9ec0b`:** every stage file and every block ran byte for byte
+as they stand here; only this section has changed since. It ran on Saturday
+2026-11-07 between 02:44 and 02:50 Lisbon time (WET), inside closed hours, so every
+clock check ran as written. Each block was pasted whole from this document and run in
+zsh with an empty environment. Nothing but 127.0.0.1 was contacted, and no production
+file, host or secret was read.
+
+**The throwaway.** Its own Supabase stack (project id `ficha-v6-rehearsal`, every
+port in the 547xx range, Postgres 17), built from this head's `supabase/migrations`.
+It was seeded by INSERTs the rehearsal wrote, not by the seed loader: three synthetic
+tenants, two of them holding osteopathy versions 1 to 5 taken from `origin/main`'s
+`packages/db/seed/form-templates` (no version 6), the third holding no osteopathy
+row. Ten `form_templates` rows; both version 5 rows read the repo version 5 md5
+`b109e3af926fd6f51bbf485a173d2145`. The stack was stopped with `--no-backup` at the
+end.
+
+**The substitutions, and only these.** (a) The line that loads the production
+environment became `DATABASE_URL_DIRECT=` the throwaway URL on 127.0.0.1. (b) The `cd`
+into the apply worktree became a scratch clone whose `origin` is a local bare
+repository in which `main` is `d0c9ec0b`, the post-merge main the op runs from. (c)
+Every `/tmp/` path became a scratch folder. (d) The target guard lines were not run
+(below). Nothing else in a block changed. Between the arms below, the database seed
+and the scratch folder were reset together, as a new sitting; never inside an arm.
+
+**1. Happy path: PASS.** Stage 0 printed `docs/data-op-ficha-v6.md: OK`, `running
+from origin/main d0c9ec0b...` and `FICHA-V6 FILES VERIFIED`. Stage 1 classified both
+tenants `INSERT` (version 5 `yes`, active) and the third `NO OSTEOPATHY VERSION 5:
+LEFT ALONE`; eight refusal lines and no REFUSE (R02 read VACUOUS because the
+throwaway's audit log was empty, which production's is not); carries `fv6_count` 2
+and `fv6_rows` 10; it ended `STAGE 1 READ, NO REFUSAL. 2 tenant row(s) to write.`
+Stage 2 printed L1, P0, P1, P2 (all eight with n 0), P3, P4 (2 rows), `W1 inserted 2
+row(s), osteopathy version 6`, A1, `A2 the other 10 row(s) unchanged`, `total 12`, `A3
+the picker reads version 6 in every tenant written (2)`, `FICHA-V6 STAGE 2 DONE: 2
+osteopathy version 6 row(s) inserted, 2 audit row(s)`, `COMMITTED`, exit 0, and
+`FICHA-V6 WRITTEN. Paste stage 3 now.` Stage 3 printed `main has not moved since stage
+0`, ten verdicts OK, the SUMMARY `10 OK / 0 VACUOUS / 0 FAIL`, both version 6 rows
+active with schema md5 `752bf47bf11d46a49f74e94761ecea83`, and `FICHA-V6 VERIFIED: 10
+OK / 0 VACUOUS / 0 FAIL.`
+
+**2. Re-run after the write: PASS.** The stage 0, 1 and 2 blocks each stopped on
+their first check with `STOP: stage 2 has ALREADY WRITTEN.`, exit 1, before any
+database read. To show the database refuses on its own as well, the stage files were
+then run alone with psql on the throwaway (no block, so no marker): stage 1 printed
+R01, R02 (n 2) and R04 (n 2) as REFUSE, and stage 2, handed the happy run's carries,
+stopped at P0 with `STOP: FICHA-V6 has already run: 2 audit row(s)`, psql exit 3. The
+count and md5 of `form_templates` and of `audit_log` were the same before and after.
+
+**3. Negative arm: PASS.** On a fresh seed, one label of the first tenant's version 5
+(the English label of `weight_kg`) was changed. Stage 0 passed. Stage 1 classified
+that tenant `VERSION 5 IS NOT THE REPO VERSION 5 (R03)` and printed R03 as REFUSE (n
+1, control 2), "the premise is wrong, strategy rules"; the block stopped with `STOP:
+stage 1 printed REFUSE on 1 line(s)`, exit 1. The stage 2 block stopped with `STOP:
+stage 1 did not pass in this sitting.`, exit 1. Stage 2's file run alone, with that
+run's carries, stopped at P2 with `STOP: R03 refuses:` and `the premise is wrong,
+strategy rules. Nothing was written`, psql exit 3. Both tables were unchanged.
+
+**4. Each stage 3 control can fail: PASS.** After the happy write, three breaks were
+each committed, stage 3 was run, and the saved row was put back (the whole-table md5
+equal again, and stage 3 back to 10 OK). Deleting the second tenant's version 6 row
+FAILed verdicts 2, 3, 4 and 10 (`6 OK / 0 VACUOUS / 4 FAIL`). Changing the title of
+the first tenant's version 5 FAILed verdict 9. Setting the first tenant's version 6
+inactive FAILed verdicts 7 and 8. Each time the block stopped with `STOP: N stage 3
+verdict(s) read FAIL`, exit 1.
+
+**5. Every pre-existing row byte-unchanged: PASS.** The ten rows that existed before
+stage 2 were read whole before and after it, as one md5 over all of them and one md5
+per row: byte-identical by `cmp`. Stage 2's A2 and stage 3's verdict 9 read the same
+count and md5 as the baseline.
+
+**NOT REHEARSED, one by one:**
+
+- `node scripts/assert-production-target.mjs` and the `grep` for its line `target
+  verified: production, session pooler.`, in stages 1, 2 and 3: a production-only
+  guard, not run on a throwaway. Only that `grep` depends on it; every other line
+  after it ran.
+- Loading the production environment file: replaced by the throwaway URL,
+  substitution (a).
+- The real apply worktree, its fetch from GitHub and a real merge freeze: replaced by
+  a local bare origin, substitution (b). The HEAD CHECK's halt on a moved main was not
+  exercised.
+- L1 against a second writer holding a lock, the one-hour age limit on stage 1's
+  pass, and the STOP lines that need a lost connection or a failing `tee`: not
+  exercised here (the unit test's fault injection covers the STOP shapes).
+- Production's own data: its tenants, its row counts, its audit log (R02 read VACUOUS
+  here) and its version 5 rows were not read.
+
+**What a reader should know.** Verdict 10 checks that `updated_at` equals
+`created_at`, and `form_templates` has no trigger that moves `updated_at`, so an
+UPDATE that leaves `updated_at` alone does not FAIL verdict 10; in the third break,
+verdicts 7 and 8 caught it. The Status line at the top of this document still reads
+NOT REHEARSED, because this session changed only this section.
 
 ## What this does NOT do
 
