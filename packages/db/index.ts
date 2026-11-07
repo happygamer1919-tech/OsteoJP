@@ -74,3 +74,17 @@ export * from "./src/guest-intake-staff";
 // read and the creation form both gate on the same answer, and each keeping its
 // own check is how they would come to disagree about whether the table exists.
 export * from "./src/rgpd-acceptance-schema";
+
+// BLOQUEIOS DE REPETICAO SEMANAL - whether the pending therapist_weekly_blocks
+// table exists yet. Exported from the package for the reason `shared-resource`
+// above is: the staff conflict check, the agenda band, the availability read
+// and the patient portal (apps/api) all gate on the same answer, and each
+// keeping its own check is how they would come to disagree about whether a
+// weekly rule can block anything.
+export * from "./src/weekly-blocks-schema";
+
+// TIPOS DE MARCACAO - the allowed values of the five services columns the
+// pending migration NEXT-AFTER-0109_services_booking_type_fields adds (VAT
+// rate, exemption reason, follow-up, colour). Exported from the package because
+// the schema CHECKs, the admin screen and its server action must name one list.
+export * from "./src/service-type-fields";
